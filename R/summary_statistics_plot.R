@@ -8,7 +8,7 @@
 #' @export
 #'
 #' @examples
-summary_statistics <- function(mod,...){
+summary_statistics_bayes <- function(mod,...){
 
   n_pheno <-paste('Number of phenotypes=', (sum(!is.na(mod$model$y))))
   #Res <-  cat(tmp,'\n')
@@ -16,25 +16,25 @@ summary_statistics <- function(mod,...){
 
   #cat(' Min (Traning set)', response, '= ', min(mod$y,na.rm=TRUE),'\n')
   #cat(' Min', paste0(paste0("(",response),')'), '= ', min(mod$y,na.rm=TRUE),'\n')
-  trn_min <- paste(paste('Min', '= '), round(min(mod$y,na.rm=TRUE), 3), sep = "")
+  trn_min <- paste(paste('Min', '= '), round(min(mod$model$y,na.rm=TRUE), 3), sep = "")
   #cat(' Max (Traning set)',response, '= ', max(mod$y,na.rm=TRUE),'\n')
   #cat(' Max', paste0(paste0("(",response),')'), '= ', max(mod$y,na.rm=TRUE),'\n')
-  trn_max <- paste(paste('Max', '= '), round(max(mod$y,na.rm=TRUE), 3), sep = "")
+  trn_max <- paste(paste('Max', '= '), round(max(mod$model$y,na.rm=TRUE), 3), sep = "")
   #cat(' Variance of phenotypes (TRN)=', round(var(mod$y,na.rm=TRUE),4),'\n')
-  var_trn <- paste('Variance of phenotypes =', round(var(mod$y,na.rm=TRUE),3))
-  Res_trn <- paste('Residual variance=',round(mod$varE,3))
+  var_trn <- paste('Variance of phenotypes =', round(var(mod$model$y,na.rm=TRUE),3))
+  Res_trn <- paste('Residual variance=',round(mod$model$varE,3))
 
-  n<-length(mod$y)
+  n<-length(mod$model$y)
 
-  if(any(is.na(mod$y)))
+  if(any(is.na(mod$model$y)))
   {
-    tst <- which(is.na(mod$y))
+    tst <- which(is.na(mod$model$y))
 
     n_trn <- paste('Number of Traning =',n-length(tst))
 
     n_tst <- paste('Number of Testing =',length(tst))
 
-    pred_acc <-  paste('Prediction Accuarcy =',round(cor(mod$y[-tst],mod$yHat[-tst]),3))
+    pred_acc <-  paste('Prediction Accuarcy =',round(cor(mod$model$y[-tst],mod$model$yHat[-tst]),3))
 
   }else{
 
@@ -42,18 +42,18 @@ summary_statistics <- function(mod,...){
 
     n_tst <- paste('Number of Testing =',0)
 
-    pred_acc <- paste('Prediction Accu of Training =',round(cor(mod$y,mod$yHat),3))
+    pred_acc <- paste('Prediction Accu of Training =',round(cor(mod$model$y,mod$model$yHat),3))
 
   }
 
 
-  for(k in 1:length(mod$ETA))
+  for(k in 1:length(mod$model$ETA))
   {
 
-        if(!is.null(names(mod$ETA)[k])){
+        if(!is.null(names(mod$model$ETA)[k])){
           #cat(" Coefficientes in ETA[",k,"] (",names(mod$ETA)[k],") modeled as in ", mod$ETA[[k]]$model,"\n")
 
-           model <- names(mod$ETA)[k]
+           model <- names(mod$model$ETA)[k]
 
         }
 

@@ -266,9 +266,9 @@ ETA_compiler_bayes <- function(
 
        ETA_element_name = c("geno_data", "omic2_data", "omic3_data")
 
-       } else if(((((!is.null(geno_data) & !is.null(omic1_data)) &  !is.null(omic2_data)) & !is.null(omic3_data)))){
+       } else if(((((is.null(geno_data) & !is.null(omic1_data)) &  !is.null(omic2_data)) & !is.null(omic3_data)))){
 
-         ETA[[len_ETA + 1]] <- list(X= geno_data,
+         ETA[[len_ETA + 1]] <- list(X= omic1_data,
                                     model=rand_model,
                                     saveEffects=TRUE)
 
@@ -323,6 +323,8 @@ ETA_compiler_bayes <- function(
   names(output) <- c("ETA", "pheno_data", "ETA_element_name")
 
   return(output)
+
+
 
 }
 

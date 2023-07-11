@@ -152,8 +152,8 @@ model_execute <- function(
 
 
  #### Get the clean geno_data ready for model fit
+ #if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
  if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
-
      geno_clean <-  geno_to_model(geno_data = geno_data,
                                  train_geno_data = train_geno_data,
                                  test_geno_data = test_geno_data,
@@ -161,26 +161,33 @@ model_execute <- function(
 
  }
 
+
+ # if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
+ #    print('ok')
+ # }
+
+
 ######
 
  #### Get the clean omic1_data ready for model fit
+ #if(isFALSE(((!is.null(omic1_data) & is.null(train_omic1_data)) & is.null(test_omic1_data)))){
+
  if(isFALSE(((is.null(omic1_data) & is.null(train_omic1_data)) & is.null(test_omic1_data)))){
 
-     omic1_clean <-  omic_to_model(omic1_data = omic1_data,
-                                    train_omic1_data = train_omic1_data,
-                                    test_omic1_data = test_omic1_data,
-                                    message = message)
-
- }
-
+     #print('ok')
+     omic1_clean <-  omic_to_model(omic_data = omic1_data,
+                                   train_omic_data = train_omic1_data,
+                                   test_omic_data = test_omic1_data,
+                                   message = message)
+     }
 #########
 
  #### Get the clean omic2_data ready for model fit
  if(isFALSE(((is.null(omic2_data) & is.null(train_omic2_data)) & is.null(test_omic2_data)))){
 
-     omic2_clean <-  omic_to_model(omic2_data = omic2_data,
-                                       train_omic2_data = train_omic2_data,
-                                       test_omic2_data = test_omic2_data,
+     omic2_clean <-  omic_to_model(omic_data = omic2_data,
+                                       train_omic_data = train_omic2_data,
+                                       test_omic_data = test_omic2_data,
                                        message = message)
 
  }
@@ -189,9 +196,9 @@ model_execute <- function(
  #### Get the clean omic3_data ready for model fit
  if(isFALSE(((is.null(omic3_data) & is.null(train_omic3_data)) & is.null(test_omic3_data)))){
 
-     omic3_clean <-  omic_to_model(omic3_data = omic3_data,
-                                       train_omic3_data = train_omic3_data,
-                                       test_omic3_data = test_omic3_data,
+     omic3_clean <-  omic_to_model(omic_data = omic3_data,
+                                       train_omic_data = train_omic3_data,
+                                       test_omic_data = test_omic3_data,
                                        message = message)
 
  }
@@ -231,17 +238,19 @@ model_execute <- function(
                                           weights = weights,
                                           ETA = ETA$ETA,
                                           bayes_para = bayes_para,
-                                          verbose = FALSE
+                                          verbose = FALSE,
+                                          #files_key = "files_key"
                                           )
 
-    res_model_output <- mod_output_Bayes(mod = mod,
-                                geno_data = geno_clean,
-                                omic1_data = NULL,
-                                omic2_data = NULL,
-                                omic3_data = NULL
-                                )
+    res_model_output <- mod_output_bayes(mod = mod,
+                                         ETA = ETA,
+                                         geno_data = geno_clean,
+                                         gen_name = gen_name,
+                                         omic1_data = NULL,
+                                         omic2_data = NULL,
+                                         omic3_data = NULL)
 
-    res_summary_stat <- summary_statistics(mod = mod)
+    res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -260,7 +269,7 @@ model_execute <- function(
                 omic1_data = omic1_clean,
                 omic2_data = NULL,
                 omic3_data = NULL,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -274,14 +283,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = NULL,
+                                                 gen_name = gen_name,
                                                  omic1_data = omic1_clean,
                                                  omic2_data = NULL,
                                                  omic3_data = NULL
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -301,7 +312,7 @@ model_execute <- function(
                 omic1_data = NULL,
                 omic2_data = omic2_clean,
                 omic3_data = NULL,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -315,14 +326,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = NULL,
+                                                 gen_name = gen_name,
                                                  omic1_data = NULL,
                                                  omic2_data = omic2_clean,
                                                  omic3_data = NULL
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -344,7 +357,7 @@ model_execute <- function(
                 omic1_data = NULL,
                 omic2_data = NULL,
                 omic3_data = omic3_clean,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -358,14 +371,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = NULL,
+                                                 gen_name = gen_name,
                                                  omic1_data = NULL,
                                                  omic2_data = NULL,
                                                  omic3_data = omic3_clean
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -386,7 +401,7 @@ model_execute <- function(
                 omic1_data = omic1_clean,
                 omic2_data = NULL,
                 omic3_data = NULL,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -400,14 +415,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = geno_clean,
+                                                 gen_name = gen_name,
                                                  omic1_data = omic1_clean,
                                                  omic2_data = NULL,
                                                  omic3_data = NULL
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -428,7 +445,7 @@ model_execute <- function(
                 omic1_data = NULL,
                 omic2_data = omic2_clean,
                 omic3_data = NULL,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -442,14 +459,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = geno_clean,
+                                                 gen_name = gen_name,
                                                  omic1_data = NULL,
                                                  omic2_data = omic2_clean,
                                                  omic3_data = NULL
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -469,7 +488,7 @@ model_execute <- function(
                 omic1_data = NULL,
                 omic2_data = NULL,
                 omic3_data = omic3_clean,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -483,14 +502,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = geno_clean,
+                                                 gen_name = gen_name,
                                                  omic1_data = NULL,
                                                  omic2_data = NULL,
                                                  omic3_data = omic3_clean
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -511,7 +532,7 @@ model_execute <- function(
                 omic1_data = omic1_clean,
                 omic2_data = omic2_clean,
                 omic3_data = NULL,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -525,14 +546,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = NULL,
+                                                 gen_name = gen_name,
                                                  omic1_data = omic1_clean,
                                                  omic2_data = omic2_clean,
                                                  omic3_data = NULL
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -553,7 +576,7 @@ model_execute <- function(
                 omic1_data = omic1_clean,
                 omic2_data = NULL,
                 omic3_data = omic3_clean,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -567,14 +590,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = NULL,
+                                                 gen_name = gen_name,
                                                  omic1_data = omic1_clean,
                                                  omic2_data = NULL,
                                                  omic3_data = omic3_clean
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -596,7 +621,7 @@ model_execute <- function(
                 omic1_data = NULL,
                 omic2_data = omic2_clean,
                 omic3_data = omic3_clean,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -610,14 +635,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = NULL,
+                                                 gen_name = gen_name,
                                                  omic1_data = NULL,
                                                  omic2_data = omic2_clean,
                                                  omic3_data = omic3_clean
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -639,7 +666,7 @@ model_execute <- function(
                 omic1_data = omic1_clean,
                 omic2_data = omic2_clean,
                 omic3_data = NULL,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -653,14 +680,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = geno_clean,
+                                                 gen_name = gen_name,
                                                  omic1_data = omic1_clean,
                                                  omic2_data = omic2_clean,
                                                  omic3_data = NULL
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -681,7 +710,7 @@ model_execute <- function(
                 omic1_data = omic1_clean,
                 omic2_data = NULL,
                 omic3_data = omic3_clean,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -695,14 +724,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = geno_clean,
+                                                 gen_name = gen_name,
                                                  omic1_data = omic1_clean,
                                                  omic2_data = NULL,
                                                  omic3_data = omic3_clean
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -725,7 +756,7 @@ model_execute <- function(
                 omic1_data = NULL,
                 omic2_data = omic2_clean,
                 omic3_data = omic3_clean,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -739,21 +770,23 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = geno_clean,
+                                                 gen_name = gen_name,
                                                  omic1_data = NULL,
                                                  omic2_data = omic2_clean,
                                                  omic3_data = omic3_clean
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
 
         ##### omic1_clean, omic2clean and omic3_clean
 
-        if(exists("omic1_clean") & (exists("omic2_clean") & exists('omic3_clean'))){
+        if(((exists("omic1_clean") & exists("omic2_clean")) & exists('omic3_clean'))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -766,7 +799,7 @@ model_execute <- function(
                 omic1_data = omic1_clean,
                 omic2_data = omic2_clean,
                 omic3_data = omic3_clean,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
@@ -780,14 +813,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = NULL,
+                                                 gen_name = gen_name,
                                                  omic1_data = omic1_clean,
                                                  omic2_data = omic2_clean,
                                                  omic3_data = omic3_clean
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -808,13 +843,13 @@ model_execute <- function(
                 omic1_data = omic1_clean,
                 omic2_data = omic2_clean,
                 omic3_data = omic3_clean,
-                genotype = genotype)
+                gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  M_matrix_bayes_mod_single_loc(object = pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -822,14 +857,16 @@ model_execute <- function(
                                                   verbose = FALSE
                                                   )
 
-            res_model_output <- mod_output_Bayes(mod = mod,
+            res_model_output <- mod_output_bayes(mod = mod,
+                                                 ETA = ETA,
                                                  geno_data = geno_clean,
+                                                 gen_name = gen_name,
                                                  omic1_data = omic1_clean,
                                                  omic2_data = omic2_clean,
                                                  omic3_data = omic3_clean
             )
 
-            res_summary_stat <- summary_statistics(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
         }
@@ -840,6 +877,7 @@ model_execute <- function(
  output <- list(res_model_output, res_summary_stat)
 
  names(output) <- c('model oupt', 'summary statistic')
- return()
+
+ return(output)
 
 } ## end of function

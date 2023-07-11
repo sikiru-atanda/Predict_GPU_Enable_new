@@ -22,19 +22,22 @@ bayes_parameter_check <- function(
 
   msg <- sprintf("==================================================\n")
 
-  if(is.null(nIter) || nIter< 16000){
+  #if(is.null(nIter) || nIter< 16000){
+  if(is.null(nIter) ){
     message(paste(msg, "Number of iteration is missing. Default value of 16000 was assigned. \n Check if this appropriate for your data"))
     nIter = 200
 
   }
 
-  if(is.null(burnIn) || burnIn < 5000){
+  #if(is.null(burnIn) || burnIn < 5000){
+  if(is.null(burnIn)){
     message(paste(msg, "Number of burn-in is missing. Default value of 6000 was assigned. \n Check if this appropriate for your data"))
     burnIn = 30
 
   }
 
-  if(is.null(thin) || thin<10){
+  #if(is.null(thin) || thin<10){
+  if(is.null(thin)){
     message(paste(msg, "Number of thining is missing. Default value of 10 was assigned. \n Check if this appropriate for your data"))
     thin = 5
 

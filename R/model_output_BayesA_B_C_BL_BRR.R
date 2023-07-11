@@ -8,13 +8,15 @@
 #' @param omic2_data
 #' @param omic3_data
 #' @param ...
+#' @param gen_name
 #'
 #' @return
 #' @export
 #'
 #' @examples
-mod_output_Bayes <- function(mod,
+mod_output_bayes <- function(mod,
                              ETA,
+                             gen_name,
                              geno_data,
                              omic1_data,
                              omic2_data,
@@ -56,6 +58,7 @@ if(length(BIN)>1){
 
     genomic_h2 = (Var_U_1 + Var_U_2 + Var_U_3 + Var_U_4)/((Var_U_1 + Var_U_2 + Var_U_3 + Var_U_4)+Var_E)
 
+    Var_U = Var_U_1 + Var_U_2 + Var_U_3 + Var_U_4
   }
 
   if(length(BIN)==3){
@@ -73,6 +76,8 @@ if(length(BIN)>1){
 
     genomic_h2 = (Var_U_1 + Var_U_2 + Var_U_3)/((Var_U_1 + Var_U_2 + Var_U_3)+Var_E)
 
+    Var_U = Var_U_1 + Var_U_2 + Var_U_3
+
   }
 
   if(length(BIN)==2){
@@ -87,7 +92,7 @@ if(length(BIN)>1){
 
     genomic_h2 = (Var_U_1 + Var_U_2)/((Var_U_1 + Var_U_2)+Var_E)
 
-
+    Var_U = Var_U_1 + Var_U_2
   }
 
 } else {
@@ -126,7 +131,7 @@ if(length(BIN)>1){
       coeff <- colMeans(Bb)
       # Genomic estimated breeding values
       GEBV <- data.frame(names = rownames(geno_data), GEBV=geno_data%*%coeff)
-      colnames(GEBV)[1] = genotype
+      colnames(GEBV)[1] = gen_name
       #GEBV = data.frame(rowMeans(ebv))
 
       PEV = apply(g_ebv, 1, var)
@@ -151,7 +156,7 @@ if(length(BIN)>1){
       coeff_omic1 <- colMeans(Bb)
       # Genomic estimated breeding values
       omic1_EBV <- data.frame(names = rownames(omic1_data), omic1_EBV=omic1_data%*%coeff_omic1)
-      colnames(omic1_EBV)[1] = genotype
+      colnames(omic1_EBV)[1] = gen_name
       #GEBV = data.frame(rowMeans(ebv))
 
       PEV = apply(omic1_ebv, 1, var)
@@ -172,7 +177,7 @@ if(length(BIN)>1){
       coeff_omic2 <- colMeans(Bb)
       # Genomic estimated breeding values
       omic2_EBV <- data.frame(names = rownames(omic2_data), omic2_EBV=omic2_data%*%coeff_omic2)
-      colnames(omic2_EBV)[1] = genotype
+      colnames(omic2_EBV)[1] = gen_name
       #GEBV = data.frame(rowMeans(ebv))
 
       PEV = apply(omic2_ebv, 1, var)
@@ -197,7 +202,7 @@ if(length(BIN)>1){
       coeff_omic3 <- colMeans(Bb)
       # Genomic estimated breeding values
       omic3_EBV <- data.frame(names = rownames(omic3_data), omic3_EBV=omic3_data%*%coeff_omic3)
-      colnames(omic3_EBV)[1] = genotype
+      colnames(omic3_EBV)[1] = gen_name
       #GEBV = data.frame(rowMeans(ebv))
 
       PEV = apply(omic3_ebv, 1, var)
@@ -214,6 +219,8 @@ if(length(BIN)>1){
 
   }
   #### start from here
+
+  ### When you have just one M_matrix/X_matrix
 } else {
 
 
@@ -227,7 +234,7 @@ if(length(BIN)>1){
     coeff <- colMeans(Bb)
     # Genomic estimated breeding values
     GEBV <- data.frame(names = rownames(geno_data), GEBV=geno_data%*%coeff)
-    colnames(GEBV)[1] = genotype
+    colnames(GEBV)[1] = gen_name
     #GEBV = data.frame(rowMeans(ebv))
 
     PEV = apply(g_ebv, 1, var)
@@ -249,7 +256,7 @@ if(length(BIN)>1){
     coeff_omic1 <- colMeans(Bb)
     # Genomic estimated breeding values
     omic1_EBV <- data.frame(names = rownames(omic1_data), omic1_EBV=omic1_data%*%coeff_omic1)
-    colnames(omic1_EBV)[1] = genotype
+    colnames(omic1_EBV)[1] = gen_name
     #GEBV = data.frame(rowMeans(ebv))
 
     PEV = apply(omic1_ebv, 1, var)
@@ -271,7 +278,7 @@ if(length(BIN)>1){
     coeff_omic2 <- colMeans(Bb)
     # Genomic estimated breeding values
     omic2_EBV <- data.frame(names = rownames(omic2_data), omic2_EBV=omic2_data%*%coeff_omic2)
-    colnames(omic2_EBV)[1] = genotype
+    colnames(omic2_EBV)[1] = gen_name
     #GEBV = data.frame(rowMeans(ebv))
 
     PEV = apply(omic2_ebv, 1, var)
@@ -292,7 +299,7 @@ if(length(BIN)>1){
     coeff_omic3 <- colMeans(Bb)
     # Genomic estimated breeding values
     omic3_EBV <- data.frame(names = rownames(omic3_data), omic3_EBV=omic3_data%*%coeff_omic3)
-    colnames(omic3_EBV)[1] = genotype
+    colnames(omic3_EBV)[1] = gen_name
     #GEBV = data.frame(rowMeans(ebv))
 
     PEV = apply(omic3_ebv, 1, var)
@@ -309,7 +316,7 @@ if(length(BIN)>1){
 if(!is.null(geno_data)){
 Res = list(coefficients = coeff,
            GEBV = GEBV,
-           predict_value = mod$yHat,
+           predict_value = mod$model$yHat,
            genomic_variance = Var_U,
            residual_error = Var_E,
            genomic_heritability = genomic_h2)
@@ -317,7 +324,7 @@ Res = list(coefficients = coeff,
 } else if(!is.null(omic1_data)){
 
   Res = list(coefficients = coeff_omic1,
-             predict_value = mod$yHat,
+             predict_value = mod$model$yHat,
              EBV = omic1_EBV,
              genomic_variance = Var_U,
              residual_error = Var_E,
@@ -326,7 +333,7 @@ Res = list(coefficients = coeff,
 } else if(!is.null(omic2_data)){
 
   Res = list(coefficients = coeff_omic2,
-             predict_value = mod$yHat,
+             predict_value = mod$model$yHat,
              EBV = omic2_EBV,
              genomic_variance = Var_U,
              residual_error = Var_E,
@@ -335,7 +342,7 @@ Res = list(coefficients = coeff,
 } else if(!is.null(omic3_data)){
 
   Res = list(coefficients = coeff_omic3,
-             predict_value = mod$yHat,
+             predict_value = mod$model$yHat,
              EBV = omic3_EBV,
              genomic_variance = Var_U,
              residual_error = Var_E,
@@ -345,7 +352,7 @@ Res = list(coefficients = coeff,
 
   Res = list(coefficients_1 = coeff,
              coefficients_2 = coeff_omic1,
-             predict_value = mod$yHat,
+             predict_value = mod$model$yHat,
              EBV_1 = GEBV,
              EBV_2 = omic1_EBV,
              sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = GEBV$GEBV+omic1_EBV$omic1_EBV),
@@ -359,7 +366,7 @@ Res = list(coefficients = coeff,
 
   Res = list(coefficients_1 = coeff,
              coefficients_2 = coeff_omic2,
-             predict_value = mod$yHat,
+             predict_value = mod$model$yHat,
              EBV_1 = GEBV,
              EBV_2 = omic2_EBV,
              sum_EBV = data.frame(name = omic2_EBV[, 1], EBV = GEBV$GEBV+omic2_EBV$omic2_EBV),
@@ -373,7 +380,7 @@ Res = list(coefficients = coeff,
 
   Res = list(coefficients_1 = coeff,
              coefficients_2 = coeff_omic3,
-             predict_value = mod$yHat,
+             predict_value = mod$model$yHat,
              EBV_1 = GEBV,
              EBV_2 = omic3_EBV,
              sum_EBV = data.frame(name = omic3_EBV[, 1], EBV = GEBV$GEBV+omic3_EBV$omic3_EBV),
@@ -387,7 +394,7 @@ Res = list(coefficients = coeff,
 
   Res = list(coefficients_1 = coeff_omic1,
              coefficients_2 = coeff_omic2,
-             predict_value = mod$yHat,
+             predict_value = mod$model$yHat,
              EBV_1 = omic1_EBV,
              EBV_2 = omic2_EBV,
              sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = omic1_EBV$omic1_EBV + omic2_EBV$omic2_EBV),
@@ -401,7 +408,7 @@ Res = list(coefficients = coeff,
 
   Res = list(coefficients_1 = coeff_omic2,
              coefficients_2 = coeff_omic3,
-             predict_value = mod$yHat,
+             predict_value = mod$model$yHat,
              EBV_1 = omic2_EBV,
              EBV_2 = omic3_EBV,
              genomic_variance_1 = Var_U_1,
@@ -415,7 +422,7 @@ Res = list(coefficients = coeff,
 
   Res = list(coefficients_1 = coeff_omic1,
              coefficients_2 = coeff_omic3,
-             predict_value = mod$yHat,
+             predict_value = mod$model$yHat,
              EBV_1 = omic1_EBV,
              EBV_2 = omic3_EBV,
              sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = omic1_EBV$omic1_EBV + omic3_EBV$omic3_EBV),
@@ -430,7 +437,7 @@ Res = list(coefficients = coeff,
   Res = list(coefficients_1 = coeff,
              coefficients_2 = coeff_omic2,
              coefficients_3 = coeff_omic3,
-             predict_value = mod$yHat,
+             predict_value = mod$model$yHat,
              EBV_1 = GEBV,
              EBV_2 = omic2_EBV,
              EBV_3 = omic3_EBV,
@@ -447,7 +454,7 @@ Res = list(coefficients = coeff,
   Res = list(coefficients_1 = coeff,
              coefficients_2 = coeff_omic1,
              coefficients_3 = coeff_omic2,
-             predict_value = mod$yHat,
+             predict_value = mod$model$yHat,
              EBV_1 = GEBV,
              EBV_2 = omic1_EBV,
              EBV_3 = omic2_EBV,
@@ -464,7 +471,7 @@ Res = list(coefficients = coeff,
     Res = list(coefficients_1 = coeff_omic1,
                coefficients_2 = coeff_omic2,
                coefficients_3 = coeff_omic3,
-               predict_value = mod$yHat,
+               predict_value = mod$model$yHat,
                EBV_1 = omic1_EBV,
                EBV_2 = omic2_EBV,
                EBV_3 = omic3_EBV,
@@ -484,7 +491,7 @@ Res = list(coefficients = coeff,
                coefficients_2 = coeff_omic1,
                coefficients_3 = coeff_omic2,
                coefficients_4 = coeff_omic3,
-               predict_value = mod$yHat,
+               predict_value = mod$model$yHat,
                EBV_1 = GEBV,
                EBV_2 = omic1_EBV,
                EBV_3 = omic2_EBV,
@@ -507,9 +514,12 @@ Res = list(coefficients = coeff,
 
 
  #}
-
+### remove the generated output files from the working directory
+unlink(mod$output_files_names)
 return(Res)
 }
+
+
 
 
 

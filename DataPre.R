@@ -38,10 +38,10 @@ pheno$GID = as.factor(pheno$GID)
 rm(list = ls()); ls()
 gc()
 cat('\014')
-setwd("D:/PredictProR/PredictProR")
+setwd("D:/PredictProR")
 load('WheatPhenoGeno.Rdata')
 
-genotype = "GID"
+gen_name = "GID"
 
 pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR","F5I", "B5I"), ])
 
