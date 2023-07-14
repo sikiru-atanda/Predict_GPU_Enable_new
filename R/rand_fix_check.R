@@ -9,8 +9,8 @@
 #' @export
 #'
 #' @examples
-rand_fix_check <- function(object,
-                      rand_fix_term,
+rand_fix_check <- function(object = NULL,
+                      rand_fix_term = NULL,
                       ...){
   msg <- sprintf("==================================================\n")
 

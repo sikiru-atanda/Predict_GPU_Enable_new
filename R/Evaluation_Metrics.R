@@ -9,7 +9,8 @@
 #' @export
 #'
 #' @examples
- Evaluation_Metrics <- function(y_observed, y_predicted,
+ Evaluation_Metrics <- function(y_observed=NULL,
+                                y_predicted=NULL,
                                Metrics = c("Accuracy",
                                            "Bias",
                                            "Percent_Bias",

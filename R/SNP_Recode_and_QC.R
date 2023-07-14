@@ -75,19 +75,23 @@
 #' @param ind_rate
 #' @param recode
 #' @param impute
+#' @param message
+#' @param ...
 #'
 #' @return
 #' @export
 #'
 #' @examples
-marker_qc_recode <- function(hapmap,
+marker_qc_recode <- function(hapmap = NULL,
                              het=NULL,
                              maf=NULL,
                              call_rate=NULL,
                              ind_rate = NULL,
                              recode = c("Meth2_0",
                                         "Meth-1_1"),
-                             impute = NULL
+                             impute = NULL,
+                             message = TRUE,
+                             ...
 )
 {
   ### Remove All loci with All NAs and monomorphic markers
@@ -124,12 +128,16 @@ marker_qc_recode <- function(hapmap,
   # remove monomorphic loc and loci with all NAs
 
   if(length(loc.list > 0)){
+    if(message){
     print(paste("Removing monomorphic loci", length(loc.list)))
+    }
     # Remove loci flagged for deletion
     Xa <- Xa[,-loc.list]
     #SNP_base <- SNP_base[,!colnames(SNP_base)%in%loc.list]
   } else {
+    if(message){
     print("No monomorphic loci to remove")
+    }
   }
 
   ## Convert it back to SNP in the row and genotypes in the column for ease in the
@@ -156,8 +164,9 @@ marker_qc_recode <- function(hapmap,
 
   } else {
 
+    if(message){
     print("Alert: SNPS with high missing value not removed")
-
+}
 
     Xa <- Xa
   }
@@ -181,8 +190,9 @@ marker_qc_recode <- function(hapmap,
 
   } else {
 
+    if(message){
     print("Alert: Individual with high missing value not removed")
-
+}
 
     Xa <- Xa
   }
@@ -234,7 +244,9 @@ marker_qc_recode <- function(hapmap,
 
   } else {
 
+    if(message){
     print("Alert:SNPS with low maf not removed")
+    }
 
     filter = filter
 
@@ -314,7 +326,7 @@ marker_qc_recode <- function(hapmap,
         for(j in 1:ncol(filter)){
           if(j%%1000==0) cat("Marker=",j,"\n")
           tmp <- filter[,j]
-          filter[,j] <- ifelse(is.na(tmp),mean(tmp,na.rm=T),tmp)
+          filter[,j] <- ifelse(is.na(tmp),round(mean(tmp,na.rm=T)),tmp)
         }
 
       }

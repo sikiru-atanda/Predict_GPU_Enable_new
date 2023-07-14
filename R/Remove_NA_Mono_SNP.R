@@ -3,13 +3,15 @@
 #'
 #' @param geno
 #' @param ...
+#' @param message
 #'
 #' @return
 #' @export
 #'
 #' @examples
-Remove_NA_Mono_SNP <- function(geno,
-                            ...
+Remove_NA_Mono_SNP <- function(geno = NULL,
+                               message = TRUE,
+                               ...
                             ){
 
   na.counter <- 0
@@ -25,9 +27,12 @@ Remove_NA_Mono_SNP <- function(geno,
 
 
   msg <- sprintf("==================================================\n")
+
+  if(message){
   message(paste(msg,(paste('Number of Individuals', sep = ': ',N_Individuals))))
 
   message(paste(msg,(paste('Number of markers', sep = ': ', nL))))
+  }
 
   matrix <- as.matrix(geno)
   lN <- colnames(geno)
@@ -73,16 +78,20 @@ Remove_NA_Mono_SNP <- function(geno,
 
   if(length(loc.list.Mono)!=0){
 
+    if(message){
     message(paste(msg,("Removing monomorphic loci\n")))
+    }
 
     # Remove loci flagged for deletion
     geno <- geno[,!colnames(geno)%in%loc.list.Mono]
-
+    if(message){
     message(paste(msg,(paste('Number of monomorphic loci removed', sep = ': \t',length(loc.list.Mono)))))
-
+}
   } else {
 
+    if(message){
     message(paste(msg,("No monomorphic loci to remove\n")))
+    }
 
   }
 

@@ -98,7 +98,9 @@ geno_to_model <- function(geno_data = NULL,
 
     } else if(!is.null(train_geno_data) & is.null(test_geno_data)){
 
+      if(message){
       message (paste(msg, 'Only train_geno_data is provided'))
+      }
       ### It has to pass test before it can be declared geno_object
       if(attr(train_geno_data, "cleared")=="pass" & all(class(train_geno_data)==c("matrix", "array", "geno_data"))){
 
@@ -122,7 +124,9 @@ geno_to_model <- function(geno_data = NULL,
 
       if(is.null(train_geno_data) & !is.null(test_geno_data)){
 
+        if(message){
         message(paste(msg, 'Only test_geno_data is provided'))
+        }
 
         ### It has to pass test before it can be declared geno_object
         if(attr(test_geno_data, "cleared")=="pass" && all(class(test_geno_data)!=c("matrix", "array", "geno_data"))){

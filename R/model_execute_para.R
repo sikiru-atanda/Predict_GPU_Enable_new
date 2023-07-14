@@ -8,9 +8,6 @@
 #' @param omic2_data
 #' @param omic3_data
 #' @param gmatrix
-#' @param omic1_matrix
-#' @param omic2_matrix
-#' @param omic3_matrix
 #' @param train_geno_data
 #' @param train_omic1_data
 #' @param train_omic2_data
@@ -23,7 +20,6 @@
 #' @param train_set
 #' @param test_set
 #' @param gmatrix_method
-#' @param kernel_matrix_method
 #' @param response
 #' @param gen_name
 #' @param cova
@@ -48,6 +44,12 @@
 #' @param core
 #' @param message
 #' @param ...
+#' @param gkernel
+#' @param kernel_method
+#' @param center
+#' @param omic1_kernel
+#' @param omic2_kernel
+#' @param omic3_kernel
 #'
 #' @return
 #' @export
@@ -62,9 +64,10 @@ model_execute <- function(
     omic2_data = NULL,
     omic3_data = NULL,
     gmatrix= NULL,
-    omic1_matrix = NULL,
-    omic2_matrix = NULL,
-    omic3_matrix = NULL,
+    gkernel = NULL,
+    omic1_kernel = NULL,
+    omic2_kernel = NULL,
+    omic3_kernel = NULL,
     train_geno_data = NULL,
     train_omic1_data = NULL,
     train_omic2_data = NULL,
@@ -76,13 +79,15 @@ model_execute <- function(
     train_coefficient = NULL,
     train_set = NULL,
     test_set = NULL,
-    gmatrix_method = c("VanRaden",
-                       "Yang"),
-    kernel_matrix_method = c("Gaussian",
-                             "Linear",
-                             "Poly2",
-                             "Poly3",
-                             "Poly4"),
+    gmatrix_method = NULL,
+    # gmatrix_method = c("VanRaden",
+    #                    "Yang"),
+    # kernel_method = c("Gaussian",
+    #                          "Linear",
+    #                          "Poly2",
+    #                          "Poly3",
+    #                          "Poly4"),
+    kernel_method = NULL,
     response=NULL,
     gen_name=NULL,
     cova=NULL,
@@ -124,6 +129,7 @@ model_execute <- function(
     CV = NULL,
     core = NULL,
     message = TRUE,
+    center = TRUE,
     ...
 ) {
 
@@ -159,7 +165,50 @@ model_execute <- function(
                                  test_geno_data = test_geno_data,
                                  message = message)
 
+     if(attr(geno_clean, "cleared")!="for_model_fit" && all(class(geno_clean)!=c("matrix", "array", "geno_data"))) {
+
+         stop(print(paste(msg,'Data is not fit for model')), call. = FALSE)
+
+     }
+
+     if((exists("geno_clean") & exists("pheno_clean"))){
+     geno_pheno_match = pheno_geno_match(object_pheno = pheno_clean$pheno_data,
+                            object_geno = geno_clean,
+                            gen_name = gen_name,
+                            message = message)
+
+
+         if(length(geno_pheno_match)>1){
+         geno_model_ready <- geno_pheno_match[[1]]
+         test_set <- geno_pheno_match[[2]]
+         } else {
+        geno_model_ready <- geno_pheno_match[[1]]
+
+         }
+
+     rm(geno_pheno_match)
+     }
+
+     #### To calculate the gkernel only geno_clean is acceptable
+     if (exists("geno_clean") & !is.null(kernel_method)) {
+         gkernel <- kernel_calculation(
+             M_matrix_clean = geno_clean,
+             center=center,
+             method = kernel_method,
+             message = message )
+     }
+
+     #### To calculate the gmatrix only geno_clean is acceptable
+     if (exists("geno_clean") & !is.null(kernel_method)) {
+        gmatrix <- grm_calculation(
+        geno_clean = geno_clean,
+        method=gmatrix_method)
+     }
+
+
  }
+
+
 
 
  # if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
@@ -179,6 +228,40 @@ model_execute <- function(
                                    train_omic_data = train_omic1_data,
                                    test_omic_data = test_omic1_data,
                                    message = message)
+
+     if(attr(omic1_clean, "cleared")!="for_model_fit" && all(class(omic1_clean)!=c("matrix", "array", "omic_matrix"))) {
+
+         stop(print(paste(msg,'Data is not fit for model')), call. = FALSE)
+
+     }
+
+     if(exists('omic1_clean') & exists("pheno_clean")){
+         omic1_pheno_match = pheno_geno_match(object_pheno = pheno_clean$pheno_data,
+                                             object_geno = omic1_clean,
+                                             gen_name = gen_name,
+                                             message = message)
+
+
+         if(length(omic1_pheno_match)>1){
+             omic1_model_ready <- omic1_pheno_match[[1]]
+             test_set <- omic1_pheno_match[[2]]
+         } else {
+
+        omic1_model_ready <- omic1_pheno_match[[1]]
+         }
+
+         rm(omic1_pheno_match)
+     }
+
+     #### To calculate the omic1_kernel only omic1_clean is acceptable
+     if (exists("omic1_clean") & !is.null(kernel_method)) {
+         omic1_kernel <-  kernel_calculation(
+             M_matrix_clean = omic1_clean,
+             center=center,
+             method = kernel_method,
+             message = message )
+     }
+
      }
 #########
 
@@ -189,6 +272,40 @@ model_execute <- function(
                                        train_omic_data = train_omic2_data,
                                        test_omic_data = test_omic2_data,
                                        message = message)
+
+     if(attr(omic2_clean, "cleared")!="for_model_fit" && all(class(omic2_clean)!=c("matrix", "array", "omic_matrix"))) {
+
+         stop(print(paste(msg,'Data is not fit for model')), call. = FALSE)
+
+     }
+
+
+     if(exists('omic2_clean') & exists("pheno_clean")){
+         omic2_pheno_match = pheno_geno_match(object_pheno = pheno_clean$pheno_data,
+                                              object_geno = omic2_clean,
+                                              gen_name = gen_name,
+                                              message = message)
+
+
+         if(length(omic2_pheno_match)>1){
+             omic2_model_ready <- omic2_pheno_match[[1]]
+             test_set <- omic2_pheno_match[[2]]
+         }else {
+
+             omic2_model_ready <- omic2_pheno_match[[1]]
+         }
+
+         rm(omic2_pheno_match)
+     }
+
+     #### To calculate the omic2_kernel only omic2_clean is acceptable
+     if (exists("omic2_clean") & !is.null(kernel_method)) {
+         omic2_kernel <-  kernel_calculation(
+             M_matrix_clean = omic2_clean,
+             center=center,
+             method = kernel_method,
+             message = message )
+     }
 
  }
  #########
@@ -201,7 +318,189 @@ model_execute <- function(
                                        test_omic_data = test_omic3_data,
                                        message = message)
 
+     if(attr(omic3_clean, "cleared")!="for_model_fit" && all(class(omic3_clean)!=c("matrix", "array", "omic_matrix"))) {
+
+         stop(print(paste(msg,'Data is not fit for model')), call. = FALSE)
+
+     }
+
+
+     if(exists('omic3_clean') & exists("pheno_clean")){
+         omic3_pheno_match = pheno_geno_match(object_pheno = pheno_clean$pheno_data,
+                                              object_geno = omic3_clean,
+                                              gen_name = gen_name,
+                                              message = message)
+
+
+         if(length(omic3_pheno_match)>1){
+             omic3_model_ready <- omic3_pheno_match[[1]]
+             test_set <- omic3_pheno_match[[2]]
+         } else {
+
+             omic3_model_ready <- omic3_pheno_match[[1]]
+         }
+
+         rm(omic3_pheno_match)
+     }
+
+     #### To calculate the omic3_kernel only omic3_clean is acceptable
+     if (exists("omic3_clean") & !is.null(kernel_method)) {
+         omic3_kernel <-  kernel_calculation(
+             M_matrix_clean = omic3_clean,
+             center=center,
+             method = kernel_method,
+             message = message )
+     }
+
  }
+###################################################################################
+ #  Pre-Check for grm/kernel matrix if calculated from the marker/omic data
+ # or provided by the user.
+ # It has to pass through this pre-check before going to
+ # conditioning effect such as bend or blending. The conditioning of the grm/kernel
+ # matrix is important especially the bend but we going to give user the opportunity
+ # to decide to do it or not.
+######################################################################################3
+
+     if(!is.null(gmatrix)){
+
+         gmatrix_checked <- grm_kernel_precheck(object= gmatrix,
+                                                message= message)
+     }
+
+
+     if(!is.null(gkernel)){
+
+         gkernel_checked <- grm_kernel_precheck(object= gkernel,
+                                                message= message)
+     }
+
+
+
+     if(!is.null(gmatrix)){
+
+         gmatrix_checked <- grm_kernel_precheck(object= gmatrix,
+                                                message= message)
+     }
+
+
+     if(!is.null(omic1_kernel)){
+
+         omic1_kernel_checked <- grm_kernel_precheck(object= omic1_kernel,
+                                                     message= message)
+     }
+
+     if(!is.null(omic2_kernel)){
+
+         omic2_kernel_checked <- grm_kernel_precheck(object= omic2_kernel,
+                                                     message= message)
+     }
+
+
+     if(!is.null(omic3_kernel)){
+
+         omic3_kernel_checked <- grm_kernel_precheck(object= omic3_kernel,
+                                                     message= message)
+     }
+################################################################
+ ##### Pheno to geno match
+ ################################################
+
+ if(exists("gkernel_checked")){
+
+
+    gkernel_pheno_match <- pheno_geno_match(object_pheno = pheno_clean$pheno_data,
+                     object_geno = gkernel_checked,
+                     gen_name = gen_name,
+                     message = message)
+
+    if(length(gkernel_pheno_match)>1){
+    gkernel_model_ready <- gkernel_pheno_match[[1]]
+    test_set <- gkernel_pheno_match[[2]]
+    } else{
+        gkernel_model_ready <- gkernel_pheno_match[[1]]
+
+    }
+
+ }
+
+ if(exists("gmatrix_checked")){
+
+
+     gmatrix_pheno_match <- pheno_geno_match(object_pheno = pheno_clean$pheno_data,
+                                             object_geno = gmatrix_checked,
+                                             gen_name = gen_name,
+                                             message = message)
+
+     if(length(gmatrix_pheno_match)>1){
+         gmatrix_model_ready <- gmatrix_pheno_match[[1]]
+         test_set <- gmatrix_pheno_match[[2]]
+     } else {
+         gmatrix_model_ready <- gmatrix_pheno_match[[1]]
+
+     }
+
+ }
+
+
+ if(exists("omic1_kernel_checked")){
+
+
+     omic1_kernel_pheno_match <- pheno_geno_match(object_pheno = pheno_clean$pheno_data,
+                                             object_geno = omic1_kernel_checked,
+                                             gen_name = gen_name,
+                                             message = message)
+
+     if(length(omic1_kernel_pheno_match)>1){
+         omic1_kernel_model_ready <- omic1_kernel_pheno_match[[1]]
+         test_set <- omic1_kernel_pheno_match[[2]]
+     } else {
+         omic1_kernel_model_ready <- omic1_kernel_pheno_match[[1]]
+     }
+
+
+ }
+
+
+ if(exists("omic2_kernel_checked")){
+
+
+     omic2_kernel_pheno_match <- pheno_geno_match(object_pheno = pheno_clean$pheno_data,
+                                                  object_geno = omic2_kernel_checked,
+                                                  gen_name = gen_name,
+                                                  message = message)
+
+     if(length(omic2_kernel_pheno_match)>1){
+         omic2_kernel_model_ready <- omic2_kernel_pheno_match[[1]]
+         test_set <- omic2_kernel_pheno_match[[2]]
+     } else {
+         omic2_kernel_model_ready <- omic2_kernel_pheno_match[[1]]
+     }
+ }
+
+ if(exists("omic3_kernel_checked")){
+
+
+     omic3_kernel_pheno_match <- pheno_geno_match(object_pheno = pheno_clean$pheno_data,
+                                                  object_geno = omic3_kernel_checked,
+                                                  gen_name = gen_name,
+                                                  message = message)
+
+     if(length(omic3_kernel_pheno_match)>1){
+         omic3_kernel_model_ready <- omic3_kernel_pheno_match[[1]]
+         test_set <- omic3_kernel_pheno_match[[2]]
+     } else {
+         omic3_kernel_model_ready <- omic3_kernel_pheno_match[[1]]
+     }
+
+
+ }
+
+
+ ### End
+#####################################################################
+
+
 
  #### TO DO put a condition to check the user is providing only one location
  ### If the user provide only the marker matrix
@@ -214,7 +513,7 @@ model_execute <- function(
        ((is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))))) |
        ((!is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL")))))){
 
-        if(exists('geno_clean')){
+        if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
 
    ETA  <-  ETA_compiler_bayes(
         fixed = fixed,
@@ -223,7 +522,7 @@ model_execute <- function(
         fixed_term_model_bayesian = fixed_term_model_bayesian,
         rand_term_model_bayesian = rand_term_model_bayesian,
         pheno_data = pheno_clean[[1]],
-        geno_data = geno_clean,
+        geno_data = geno_model_ready,
         omic1_data = NULL,
         omic2_data = NULL,
         omic3_data = NULL,
@@ -244,7 +543,7 @@ model_execute <- function(
 
     res_model_output <- mod_output_bayes(mod = mod,
                                          ETA = ETA,
-                                         geno_data = geno_clean,
+                                         geno_data = geno_model_ready,
                                          gen_name = gen_name,
                                          omic1_data = NULL,
                                          omic2_data = NULL,
@@ -256,7 +555,7 @@ model_execute <- function(
         }
         ###### omic1_clean
 
-        if(exists('omic1_clean')){
+        if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -266,7 +565,7 @@ model_execute <- function(
                 rand_term_model_bayesian = rand_term_model_bayesian,
                 pheno_data = pheno_clean[[1]],
                 geno_data = NULL,
-                omic1_data = omic1_clean,
+                omic1_data = omic1_model_ready,
                 omic2_data = NULL,
                 omic3_data = NULL,
                 gen_name = gen_name)
@@ -287,7 +586,7 @@ model_execute <- function(
                                                  ETA = ETA,
                                                  geno_data = NULL,
                                                  gen_name = gen_name,
-                                                 omic1_data = omic1_clean,
+                                                 omic1_data = omic1_model_ready,
                                                  omic2_data = NULL,
                                                  omic3_data = NULL
             )
@@ -297,9 +596,9 @@ model_execute <- function(
 
         }
 
-        ##### omic2_clean
+        ##### omic2_model_ready
 
-        if(exists('omic2_clean')){
+        if((!exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -310,7 +609,7 @@ model_execute <- function(
                 pheno_data = pheno_clean[[1]],
                 geno_data = NULL,
                 omic1_data = NULL,
-                omic2_data = omic2_clean,
+                omic2_data = omic2_model_ready,
                 omic3_data = NULL,
                 gen_name = gen_name)
 
@@ -331,7 +630,7 @@ model_execute <- function(
                                                  geno_data = NULL,
                                                  gen_name = gen_name,
                                                  omic1_data = NULL,
-                                                 omic2_data = omic2_clean,
+                                                 omic2_data = omic2_model_ready,
                                                  omic3_data = NULL
             )
 
@@ -342,9 +641,9 @@ model_execute <- function(
 
         ####
 
-        ##### omic3_clean
+        ##### omic3_model_ready
 
-        if(exists('omic3_clean')){
+        if((!exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -356,7 +655,7 @@ model_execute <- function(
                 geno_data = NULL,
                 omic1_data = NULL,
                 omic2_data = NULL,
-                omic3_data = omic3_clean,
+                omic3_data = omic3_model_ready,
                 gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
@@ -377,7 +676,7 @@ model_execute <- function(
                                                  gen_name = gen_name,
                                                  omic1_data = NULL,
                                                  omic2_data = NULL,
-                                                 omic3_data = omic3_clean
+                                                 omic3_data = omic3_model_ready
             )
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
@@ -386,9 +685,9 @@ model_execute <- function(
         }
 
 
-        ##### geno_clean and omic1_clean
+        ##### geno_model_ready and omic1_model_ready
 
-        if(exists("geno_clean") & exists('omic1_clean')){
+        if((exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -397,8 +696,8 @@ model_execute <- function(
                 fixed_term_model_bayesian = fixed_term_model_bayesian,
                 rand_term_model_bayesian = rand_term_model_bayesian,
                 pheno_data = pheno_clean[[1]],
-                geno_data = geno_clean,
-                omic1_data = omic1_clean,
+                geno_data = geno_model_ready,
+                omic1_data = omic1_model_ready,
                 omic2_data = NULL,
                 omic3_data = NULL,
                 gen_name = gen_name)
@@ -417,9 +716,9 @@ model_execute <- function(
 
             res_model_output <- mod_output_bayes(mod = mod,
                                                  ETA = ETA,
-                                                 geno_data = geno_clean,
+                                                 geno_data = geno_model_ready,
                                                  gen_name = gen_name,
-                                                 omic1_data = omic1_clean,
+                                                 omic1_data = omic1_model_ready,
                                                  omic2_data = NULL,
                                                  omic3_data = NULL
             )
@@ -432,7 +731,7 @@ model_execute <- function(
 
         ##### geno_clean and omic2_clean
 
-        if(exists("geno_clean") & exists('omic2_clean')){
+        if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -441,9 +740,9 @@ model_execute <- function(
                 fixed_term_model_bayesian = fixed_term_model_bayesian,
                 rand_term_model_bayesian = rand_term_model_bayesian,
                 pheno_data = pheno_clean[[1]],
-                geno_data = geno_clean,
+                geno_data = geno_model_ready,
                 omic1_data = NULL,
-                omic2_data = omic2_clean,
+                omic2_data = omic2_model_ready,
                 omic3_data = NULL,
                 gen_name = gen_name)
 
@@ -461,10 +760,10 @@ model_execute <- function(
 
             res_model_output <- mod_output_bayes(mod = mod,
                                                  ETA = ETA,
-                                                 geno_data = geno_clean,
+                                                 geno_data = geno_model_ready,
                                                  gen_name = gen_name,
                                                  omic1_data = NULL,
-                                                 omic2_data = omic2_clean,
+                                                 omic2_data = omic2_model_ready,
                                                  omic3_data = NULL
             )
 
@@ -475,7 +774,7 @@ model_execute <- function(
 
         ##### geno_clean and omic3_clean
 
-        if(exists("geno_clean") & exists('omic3_clean')){
+        if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -484,10 +783,10 @@ model_execute <- function(
                 fixed_term_model_bayesian = fixed_term_model_bayesian,
                 rand_term_model_bayesian = rand_term_model_bayesian,
                 pheno_data = pheno_clean[[1]],
-                geno_data = geno_clean,
+                geno_data = geno_model_ready,
                 omic1_data = NULL,
                 omic2_data = NULL,
-                omic3_data = omic3_clean,
+                omic3_data = omic3_model_ready,
                 gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
@@ -504,11 +803,11 @@ model_execute <- function(
 
             res_model_output <- mod_output_bayes(mod = mod,
                                                  ETA = ETA,
-                                                 geno_data = geno_clean,
+                                                 geno_data = geno_model_ready,
                                                  gen_name = gen_name,
                                                  omic1_data = NULL,
                                                  omic2_data = NULL,
-                                                 omic3_data = omic3_clean
+                                                 omic3_data = omic3_model_ready
             )
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
@@ -517,9 +816,9 @@ model_execute <- function(
         }
 
 
-        ##### omic1_clean and omic2_clean
+        ##### omic1_model_ready and omic2_model_ready
 
-        if(exists("omic1_clean") & exists('omic2_clean')){
+        if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -529,8 +828,8 @@ model_execute <- function(
                 rand_term_model_bayesian = rand_term_model_bayesian,
                 pheno_data = pheno_clean[[1]],
                 geno_data = NULL,
-                omic1_data = omic1_clean,
-                omic2_data = omic2_clean,
+                omic1_data = omic1_model_ready,
+                omic2_data = omic2_model_ready,
                 omic3_data = NULL,
                 gen_name = gen_name)
 
@@ -550,8 +849,8 @@ model_execute <- function(
                                                  ETA = ETA,
                                                  geno_data = NULL,
                                                  gen_name = gen_name,
-                                                 omic1_data = omic1_clean,
-                                                 omic2_data = omic2_clean,
+                                                 omic1_data = omic1_model_ready,
+                                                 omic2_data = omic2_model_ready,
                                                  omic3_data = NULL
             )
 
@@ -561,9 +860,9 @@ model_execute <- function(
         }
 
 
-        ##### omic1_clean and omic3_clean
+        ##### omic1_model_ready and omic3_model_ready
 
-        if(exists("omic1_clean") & exists('omic3_clean')){
+        if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -573,9 +872,9 @@ model_execute <- function(
                 rand_term_model_bayesian = rand_term_model_bayesian,
                 pheno_data = pheno_clean[[1]],
                 geno_data = NULL,
-                omic1_data = omic1_clean,
+                omic1_data = omic1_model_ready,
                 omic2_data = NULL,
-                omic3_data = omic3_clean,
+                omic3_data = omic3_model_ready,
                 gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
@@ -594,9 +893,9 @@ model_execute <- function(
                                                  ETA = ETA,
                                                  geno_data = NULL,
                                                  gen_name = gen_name,
-                                                 omic1_data = omic1_clean,
+                                                 omic1_data = omic1_model_ready,
                                                  omic2_data = NULL,
-                                                 omic3_data = omic3_clean
+                                                 omic3_data = omic3_model_ready
             )
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
@@ -606,9 +905,9 @@ model_execute <- function(
 
 
         ####
-        ##### omic2clean and omic3_clean
+        ##### omic2_model_ready and omic3_model_ready
 
-        if(exists("omic2_clean") & exists('omic3_clean')){
+        if((!exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -619,8 +918,8 @@ model_execute <- function(
                 pheno_data = pheno_clean[[1]],
                 geno_data = NULL,
                 omic1_data = NULL,
-                omic2_data = omic2_clean,
-                omic3_data = omic3_clean,
+                omic2_data = omic2_model_ready,
+                omic3_data = omic3_model_ready,
                 gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
@@ -640,8 +939,8 @@ model_execute <- function(
                                                  geno_data = NULL,
                                                  gen_name = gen_name,
                                                  omic1_data = NULL,
-                                                 omic2_data = omic2_clean,
-                                                 omic3_data = omic3_clean
+                                                 omic2_data = omic2_model_ready,
+                                                 omic3_data = omic3_model_ready
             )
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
@@ -651,9 +950,9 @@ model_execute <- function(
 
         ########
 
-        ##### geno_clean, omic2clean and omic3_clean
+        ##### geno_model_ready, omic1_model_ready and omic2_model_ready
 
-        if(exists("geno_clean") & (exists("omic1_clean") & exists('omic2_clean'))){
+        if((exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -662,9 +961,9 @@ model_execute <- function(
                 fixed_term_model_bayesian = fixed_term_model_bayesian,
                 rand_term_model_bayesian = rand_term_model_bayesian,
                 pheno_data = pheno_clean[[1]],
-                geno_data = geno_clean,
-                omic1_data = omic1_clean,
-                omic2_data = omic2_clean,
+                geno_data = geno_model_ready,
+                omic1_data = omic1_model_ready,
+                omic2_data = omic2_model_ready,
                 omic3_data = NULL,
                 gen_name = gen_name)
 
@@ -682,10 +981,10 @@ model_execute <- function(
 
             res_model_output <- mod_output_bayes(mod = mod,
                                                  ETA = ETA,
-                                                 geno_data = geno_clean,
+                                                 geno_data = geno_model_ready,
                                                  gen_name = gen_name,
-                                                 omic1_data = omic1_clean,
-                                                 omic2_data = omic2_clean,
+                                                 omic1_data = omic1_model_ready,
+                                                 omic2_data = omic2_model_ready,
                                                  omic3_data = NULL
             )
 
@@ -695,9 +994,9 @@ model_execute <- function(
         }
 
 
-        ##### geno_clean, omic1clean and omic3_clean
+        ##### geno_model_ready, omic1_model_ready and omic3_model_ready
 
-        if(exists("geno_clean") & (exists("omic1_clean") & exists('omic3_clean'))){
+        if((exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -706,10 +1005,10 @@ model_execute <- function(
                 fixed_term_model_bayesian = fixed_term_model_bayesian,
                 rand_term_model_bayesian = rand_term_model_bayesian,
                 pheno_data = pheno_clean[[1]],
-                geno_data = geno_clean,
-                omic1_data = omic1_clean,
+                geno_data = geno_model_ready,
+                omic1_data = omic1_model_ready,
                 omic2_data = NULL,
-                omic3_data = omic3_clean,
+                omic3_data = omic3_model_ready,
                 gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
@@ -726,11 +1025,11 @@ model_execute <- function(
 
             res_model_output <- mod_output_bayes(mod = mod,
                                                  ETA = ETA,
-                                                 geno_data = geno_clean,
+                                                 geno_data = geno_model_ready,
                                                  gen_name = gen_name,
-                                                 omic1_data = omic1_clean,
+                                                 omic1_data = omic1_model_ready,
                                                  omic2_data = NULL,
-                                                 omic3_data = omic3_clean
+                                                 omic3_data = omic3_model_ready
             )
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
@@ -741,9 +1040,9 @@ model_execute <- function(
 
     #####
 
-        ##### geno_clean, omic2clean and omic3_clean
+        ##### geno_model_ready, omic2_model_ready and omic3_model_ready
 
-        if(exists("geno_clean") & (exists("omic2_clean") & exists('omic3_clean'))){
+        if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -752,10 +1051,10 @@ model_execute <- function(
                 fixed_term_model_bayesian = fixed_term_model_bayesian,
                 rand_term_model_bayesian = rand_term_model_bayesian,
                 pheno_data = pheno_clean[[1]],
-                geno_data = geno_clean,
+                geno_data = geno_model_ready,
                 omic1_data = NULL,
-                omic2_data = omic2_clean,
-                omic3_data = omic3_clean,
+                omic2_data = omic2_model_ready,
+                omic3_data = omic3_model_ready,
                 gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
@@ -772,11 +1071,11 @@ model_execute <- function(
 
             res_model_output <- mod_output_bayes(mod = mod,
                                                  ETA = ETA,
-                                                 geno_data = geno_clean,
+                                                 geno_data = geno_model_ready,
                                                  gen_name = gen_name,
                                                  omic1_data = NULL,
-                                                 omic2_data = omic2_clean,
-                                                 omic3_data = omic3_clean
+                                                 omic2_data = omic2_model_ready,
+                                                 omic3_data = omic3_model_ready
             )
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
@@ -784,9 +1083,9 @@ model_execute <- function(
 
         }
 
-        ##### omic1_clean, omic2clean and omic3_clean
+        ##### omic1_model_ready, omic2_model_ready and omic3_model_ready
 
-        if(((exists("omic1_clean") & exists("omic2_clean")) & exists('omic3_clean'))){
+        if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -796,9 +1095,9 @@ model_execute <- function(
                 rand_term_model_bayesian = rand_term_model_bayesian,
                 pheno_data = pheno_clean[[1]],
                 geno_data = NULL,
-                omic1_data = omic1_clean,
-                omic2_data = omic2_clean,
-                omic3_data = omic3_clean,
+                omic1_data = omic1_model_ready,
+                omic2_data = omic2_model_ready,
+                omic3_data = omic3_model_ready,
                 gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
@@ -817,9 +1116,9 @@ model_execute <- function(
                                                  ETA = ETA,
                                                  geno_data = NULL,
                                                  gen_name = gen_name,
-                                                 omic1_data = omic1_clean,
-                                                 omic2_data = omic2_clean,
-                                                 omic3_data = omic3_clean
+                                                 omic1_data = omic1_model_ready,
+                                                 omic2_data = omic2_model_ready,
+                                                 omic3_data = omic3_model_ready
             )
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
@@ -830,7 +1129,7 @@ model_execute <- function(
 
         ##### omic1_clean, omic2clean and omic3_clean
 
-        if((exists("geno_clean") & exists("omic1_clean")) & (exists("omic2_clean") & exists('omic3_clean'))){
+        if((exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
 
             ETA  <-  ETA_compiler_bayes(
                 fixed = fixed,
@@ -839,10 +1138,10 @@ model_execute <- function(
                 fixed_term_model_bayesian = fixed_term_model_bayesian,
                 rand_term_model_bayesian = rand_term_model_bayesian,
                 pheno_data = pheno_clean[[1]],
-                geno_data = geno_clean,
-                omic1_data = omic1_clean,
-                omic2_data = omic2_clean,
-                omic3_data = omic3_clean,
+                geno_data = geno_model_ready,
+                omic1_data = omic1_model_ready,
+                omic2_data = omic2_model_ready,
+                omic3_data = omic3_model_ready,
                 gen_name = gen_name)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
@@ -859,11 +1158,11 @@ model_execute <- function(
 
             res_model_output <- mod_output_bayes(mod = mod,
                                                  ETA = ETA,
-                                                 geno_data = geno_clean,
+                                                 geno_data = geno_model_ready,
                                                  gen_name = gen_name,
-                                                 omic1_data = omic1_clean,
-                                                 omic2_data = omic2_clean,
-                                                 omic3_data = omic3_clean
+                                                 omic1_data = omic1_model_ready,
+                                                 omic2_data = omic2_model_ready,
+                                                 omic3_data = omic3_model_ready
             )
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
@@ -876,7 +1175,7 @@ model_execute <- function(
 
  output <- list(res_model_output, res_summary_stat)
 
- names(output) <- c('model oupt', 'summary statistic')
+ names(output) <- c('model_results', 'summary_statistic')
 
  return(output)
 

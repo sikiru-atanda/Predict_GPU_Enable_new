@@ -10,9 +10,9 @@
 #' @export
 #'
 #' @examples
-phenotype_precheck <- function(pheno,
-                               gen_name,
-                               response,
+phenotype_precheck <- function(pheno = NULL,
+                               gen_name = NULL,
+                               response = NULL,
                                ...)
   {
 

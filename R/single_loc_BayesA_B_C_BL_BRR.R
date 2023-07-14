@@ -7,8 +7,8 @@
 #' @param weights
 #' @param ETA
 #' @param bayes_para
+#' @param ...
 #' @param verbose
-#' @param saveAt
 #'
 #' @return
 #' @export

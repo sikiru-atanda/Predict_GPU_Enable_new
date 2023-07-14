@@ -8,7 +8,8 @@
 #' @export
 #'
 #' @examples
-summary_statistics_bayes <- function(mod,...){
+summary_statistics_bayes <- function(mod=NULL,
+                                     ...){
 
   n_pheno <-paste('Number of phenotypes=', (sum(!is.na(mod$model$y))))
   #Res <-  cat(tmp,'\n')

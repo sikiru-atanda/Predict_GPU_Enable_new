@@ -8,7 +8,7 @@
 #' @export
 #'
 #' @examples
-omic_precheck <- function(object,
+omic_precheck <- function(object = NULL,
                           message = TRUE){
   msg <- sprintf("==================================================\n")
   if(!is.null(object)){

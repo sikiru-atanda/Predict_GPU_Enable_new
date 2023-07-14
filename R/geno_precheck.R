@@ -10,7 +10,7 @@
 #' @export
 #'
 #' @examples
-geno_precheck <- function(object,
+geno_precheck <- function(object = NULL,
                           message = TRUE,
                           ...) {
 

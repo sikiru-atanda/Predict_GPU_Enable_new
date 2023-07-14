@@ -14,13 +14,13 @@
 #' @export
 #'
 #' @examples
-mod_output_bayes <- function(mod,
-                             ETA,
-                             gen_name,
-                             geno_data,
-                             omic1_data,
-                             omic2_data,
-                             omic3_data,...){
+mod_output_bayes <- function(mod=NULL,
+                             ETA=NULL,
+                             gen_name=NULL,
+                             geno_data=NULL,
+                             omic1_data=NULL,
+                             omic2_data=NULL,
+                             omic3_data=NULL,...){
 
 # sik$ETA_element_name
 # TT = DT$output_files_names
@@ -313,197 +313,464 @@ if(length(BIN)>1){
 
 }
 
-if(!is.null(geno_data)){
-Res = list(coefficients = coeff,
+if(!is.null(geno_data) & ((is.null(omic1_data) &  is.null(omic2_data)) & is.null(omic3_data))){
+Res <-  list(coefficients = coeff,
            GEBV = GEBV,
            predict_value = mod$model$yHat,
            genomic_variance = Var_U,
            residual_error = Var_E,
-           genomic_heritability = genomic_h2)
+           genomic_heritability = genomic_h2,
+           geno_model_ready = geno_data)
 
-} else if(!is.null(omic1_data)){
+names(Res) <- c("coefficients",
+                "GEBV",
+                "predict_value",
+                "genomic_variance",
+                "residual_error",
+                "genomic_heritability",
+                "geno_model_ready")
 
-  Res = list(coefficients = coeff_omic1,
-             predict_value = mod$model$yHat,
+} else if(is.null(geno_data) & ((!is.null(omic1_data) &  is.null(omic2_data)) & is.null(omic3_data))){
+
+  Res <-  list(coefficients = coeff_omic1,
              EBV = omic1_EBV,
+             predict_value = mod$model$yHat,
              genomic_variance = Var_U,
              residual_error = Var_E,
-             genomic_heritability = genomic_h2)
+             genomic_heritability = genomic_h2,
+             omic_model_ready = omic1_data)
 
-} else if(!is.null(omic2_data)){
+  names(Res) <- c("coefficients",
+             "EBV",
+             "predict_value",
+             "genomic_variance",
+             "residual_error",
+             "genomic_heritability",
+             "M_matrix_model_ready")
 
-  Res = list(coefficients = coeff_omic2,
-             predict_value = mod$model$yHat,
+} else if(is.null(geno_data) & ((is.null(omic1_data) &  !is.null(omic2_data)) & is.null(omic3_data))){
+
+  Res <-  list(coefficients = coeff_omic2,
              EBV = omic2_EBV,
+             predict_value = mod$model$yHat,
              genomic_variance = Var_U,
              residual_error = Var_E,
-             genomic_heritability = genomic_h2)
+             genomic_heritability = genomic_h2,
+             omic_model_ready = omic2_data)
 
-} else if(!is.null(omic3_data)){
 
-  Res = list(coefficients = coeff_omic3,
-             predict_value = mod$model$yHat,
+  names(Res) <- c("coefficients",
+                  "EBV",
+                  "predict_value",
+                  "genomic_variance",
+                  "residual_error",
+                  "genomic_heritability",
+                  "M_matrix_model_ready")
+
+} else if(is.null(geno_data) & ((is.null(omic1_data) &  is.null(omic2_data)) & !is.null(omic3_data))){
+
+  Res <-  list(coefficients = coeff_omic3,
              EBV = omic3_EBV,
+             predict_value = mod$model$yHat,
              genomic_variance = Var_U,
              residual_error = Var_E,
-             genomic_heritability = genomic_h2)
+             genomic_heritability = genomic_h2,
+             omic_model_ready = omic3_data)
 
-} else if(!is.null(omic1_data) & !is.null(geno_data)){
+  names(Res) <- c("coefficients",
+                  "EBV",
+                  "predict_value",
+                  "genomic_variance",
+                  "residual_error",
+                  "genomic_heritability",
+                  "M_matrix_model_ready")
 
-  Res = list(coefficients_1 = coeff,
+} else if(!is.null(geno_data) & ((!is.null(omic1_data) &  is.null(omic2_data)) & is.null(omic3_data))){
+
+  Res <-  list(coefficients_1 = coeff,
              coefficients_2 = coeff_omic1,
-             predict_value = mod$model$yHat,
              EBV_1 = GEBV,
              EBV_2 = omic1_EBV,
              sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = GEBV$GEBV+omic1_EBV$omic1_EBV),
+             predict_value = mod$model$yHat,
              genomic_variance_1 = Var_U_1,
              genomic_variance_2 = Var_U_2,
              total_genomic_variance = sum(Var_U_1, Var_U_2),
              residual_error = Var_E,
-             genomic_heritability = genomic_h2)
+             genomic_heritability = genomic_h2,
+             omic_model_ready = omic1_data,
+             geno_model_ready = geno_data)
 
-} else if(!is.null(omic2_data) & !is.null(geno_data)){
+  names(Res) <- c("coefficients_1",
+             "coefficients_2",
+             "EBV_1",
+             "EBV_2",
+             "total_EBV",
+             "predict_value",
+             "genomic_variance_1",
+             "genomic_variance_2",
+             "total_genomic_variance",
+             "residual_error",
+             "genomic_heritability",
+             "M_matrix_model_ready",
+              "geno_model_ready")
 
-  Res = list(coefficients_1 = coeff,
+} else if(!is.null(geno_data) & ((is.null(omic1_data) &  !is.null(omic2_data)) & is.null(omic3_data))){
+
+  Res <-  list(coefficients_1 = coeff,
              coefficients_2 = coeff_omic2,
-             predict_value = mod$model$yHat,
              EBV_1 = GEBV,
              EBV_2 = omic2_EBV,
              sum_EBV = data.frame(name = omic2_EBV[, 1], EBV = GEBV$GEBV+omic2_EBV$omic2_EBV),
+             predict_value = mod$model$yHat,
              genomic_variance_1 = Var_U_1,
              genomic_variance_2 = Var_U_2,
              total_genomic_variance = sum(Var_U_1, Var_U_2),
              residual_error = Var_E,
-             genomic_heritability = genomic_h2)
+             genomic_heritability = genomic_h2,
+             omic_model_ready = omic2_data,
+             geno_model_ready = geno_data)
 
-} else if(!is.null(omic3_data) & !is.null(geno_data)){
+  names(Res) <- c("coefficients_1",
+           "coefficients_2",
+           "EBV_1",
+           "EBV_2",
+           "total_EBV",
+           "predict_value",
+           "genomic_variance_1",
+           "genomic_variance_2",
+           "total_genomic_variance",
+           "residual_error",
+           "genomic_heritability",
+           "M_matrix_model_ready",
+           "geno_model_ready")
 
-  Res = list(coefficients_1 = coeff,
+} else if(!is.null(geno_data) & ((is.null(omic1_data) &  is.null(omic2_data)) & !is.null(omic3_data))){
+
+  Res <-  list(coefficients_1 = coeff,
              coefficients_2 = coeff_omic3,
-             predict_value = mod$model$yHat,
              EBV_1 = GEBV,
              EBV_2 = omic3_EBV,
              sum_EBV = data.frame(name = omic3_EBV[, 1], EBV = GEBV$GEBV+omic3_EBV$omic3_EBV),
+             predict_value = mod$model$yHat,
              genomic_variance_1 = Var_U_1,
              genomic_variance_2 = Var_U_2,
              total_genomic_variance = sum(Var_U_1, Var_U_2),
              residual_error = Var_E,
-             genomic_heritability = genomic_h2)
+             genomic_heritability = genomic_h2,
+             omic_model_ready = omic3_data,
+             geno_model_ready = geno_data)
 
-} else if(!is.null(omic1_data) & !is.null(omic2_data)){
+  names(Res) <- c("coefficients_1",
+                  "coefficients_2",
+                  "EBV_1",
+                  "EBV_2",
+                  "total_EBV",
+                  "predict_value",
+                  "genomic_variance_1",
+                  "genomic_variance_2",
+                  "total_genomic_variance",
+                  "residual_error",
+                  "genomic_heritability",
+                  "M_matrix_model_ready",
+                  "geno_model_ready")
 
-  Res = list(coefficients_1 = coeff_omic1,
+} else if(is.null(geno_data) & ((!is.null(omic1_data) &  !is.null(omic2_data)) & is.null(omic3_data))){
+
+  Res <-  list(coefficients_1 = coeff_omic1,
              coefficients_2 = coeff_omic2,
-             predict_value = mod$model$yHat,
              EBV_1 = omic1_EBV,
              EBV_2 = omic2_EBV,
              sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = omic1_EBV$omic1_EBV + omic2_EBV$omic2_EBV),
+             predict_value = mod$model$yHat,
              genomic_variance_1 = Var_U_1,
              genomic_variance_2 = Var_U_2,
              total_genomic_variance = sum(Var_U_1, Var_U_2),
              residual_error = Var_E,
-             genomic_heritability = genomic_h2)
+             genomic_heritability = genomic_h2,
+             omic1_model_ready = omic1_data,
+             omic2_model_ready = omic2_data
+             )
 
-} else if(!is.null(omic2_data) & !is.null(omic3_data)){
 
-  Res = list(coefficients_1 = coeff_omic2,
+  names(Res) <- c("coefficients_1",
+                  "coefficients_2",
+                  "EBV_1",
+                  "EBV_2",
+                  "total_EBV",
+                  "predict_value",
+                  "genomic_variance_1",
+                  "genomic_variance_2",
+                  "total_genomic_variance",
+                  "residual_error",
+                  "genomic_heritability",
+                  "M1_matrix_model_ready",
+                  "M2_matrix_model_ready")
+
+} else if(is.null(geno_data) & ((is.null(omic1_data) &  !is.null(omic2_data)) & !is.null(omic3_data))){
+
+  Res <- list(coefficients_1 = coeff_omic2,
              coefficients_2 = coeff_omic3,
-             predict_value = mod$model$yHat,
              EBV_1 = omic2_EBV,
              EBV_2 = omic3_EBV,
              genomic_variance_1 = Var_U_1,
              genomic_variance_2 = Var_U_2,
              sum_EBV = data.frame(name = omic2_EBV[, 1], EBV = omic2_EBV$omic2_EBV + omic3_EBV$omic3_EBV),
+             predict_value = mod$model$yHat,
              total_genomic_variance = sum(Var_U_1, Var_U_2),
              residual_error = Var_E,
-             genomic_heritability = genomic_h2)
+             genomic_heritability = genomic_h2,
+             omic1_model_ready = omic2_data,
+             omic2_model_ready = omic3_data)
 
-} else if(!is.null(omic1_data) & !is.null(omic3_data)){
+  names(Res) <- c("coefficients_1",
+                  "coefficients_2",
+                  "EBV_1",
+                  "EBV_2",
+                  "total_EBV",
+                  "predict_value",
+                  "genomic_variance_1",
+                  "genomic_variance_2",
+                  "total_genomic_variance",
+                  "residual_error",
+                  "genomic_heritability",
+                  "M1_matrix_model_ready",
+                  "M2_matrix_model_ready")
 
-  Res = list(coefficients_1 = coeff_omic1,
+} else if(is.null(geno_data) & ((!is.null(omic1_data) &  is.null(omic2_data)) & !is.null(omic3_data))){
+
+  Res <-  list(coefficients_1 = coeff_omic1,
              coefficients_2 = coeff_omic3,
-             predict_value = mod$model$yHat,
              EBV_1 = omic1_EBV,
              EBV_2 = omic3_EBV,
              sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = omic1_EBV$omic1_EBV + omic3_EBV$omic3_EBV),
+             predict_value = mod$model$yHat,
              genomic_variance_1 = Var_U_1,
              genomic_variance_2 = Var_U_2,
              total_genomic_variance = sum(Var_U_1, Var_U_2),
              residual_error = Var_E,
-             genomic_heritability = genomic_h2)
+             genomic_heritability = genomic_h2,
+             omic1_model_ready = omic1_data,
+             omic2_model_ready = omic3_data)
 
-} else if(!is.null(geno_data) & !is.null(omic2_data) & !is.null(omic3_data)){
+  names(Res) <- c("coefficients_1",
+                  "coefficients_2",
+                  "EBV_1",
+                  "EBV_2",
+                  "total_EBV",
+                  "predict_value",
+                  "genomic_variance_1",
+                  "genomic_variance_2",
+                  "total_genomic_variance",
+                  "residual_error",
+                  "genomic_heritability",
+                  "M1_matrix_model_ready",
+                  "M2_matrix_model_ready")
 
-  Res = list(coefficients_1 = coeff,
+} else if(!is.null(geno_data) & ((is.null(omic1_data) &  !is.null(omic2_data)) & !is.null(omic3_data))){
+
+  Res <-  list(coefficients_1 = coeff,
              coefficients_2 = coeff_omic2,
              coefficients_3 = coeff_omic3,
-             predict_value = mod$model$yHat,
              EBV_1 = GEBV,
              EBV_2 = omic2_EBV,
              EBV_3 = omic3_EBV,
-             sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = (GEBV$GEBV + omic2_EBV$omic2_EBV + omic3_EBV$omic3_EBV)),
-             genomic_variance_1 = Var_U_1,
-             genomic_variance_2 = Var_U_2,
-             genomic_variance_3 = Var_U_3,
-             total_genomic_variance = sum(Var_U_1, Var_U_2, Var_U_3),
-             residual_error = Var_E,
-             genomic_heritability = genomic_h2)
-
-} else if(!is.null(geno_data) & !is.null(omic1_data) & !is.null(omic2_data)){
-
-  Res = list(coefficients_1 = coeff,
-             coefficients_2 = coeff_omic1,
-             coefficients_3 = coeff_omic2,
+             sum_EBV = data.frame(name = omic2_EBV[, 1], EBV = (GEBV$GEBV + omic2_EBV$omic2_EBV + omic3_EBV$omic3_EBV)),
              predict_value = mod$model$yHat,
-             EBV_1 = GEBV,
-             EBV_2 = omic1_EBV,
-             EBV_3 = omic2_EBV,
-             sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = (GEBV$GEBV + omic1_EBV$omic1_EBV + omic2_EBV$omic2_EBV)),
              genomic_variance_1 = Var_U_1,
              genomic_variance_2 = Var_U_2,
              genomic_variance_3 = Var_U_3,
              total_genomic_variance = sum(Var_U_1, Var_U_2, Var_U_3),
              residual_error = Var_E,
-             genomic_heritability = genomic_h2)
+             genomic_heritability = genomic_h2,
+             omic1_model_ready = omic2_data,
+             omic2_model_ready = omic3_data,
+             geno_model_ready = geno_data)
 
-} else if(!is.null(omic1_data) & (!is.null(omic2_data) & !is.null(omic3_data))){
 
-    Res = list(coefficients_1 = coeff_omic1,
-               coefficients_2 = coeff_omic2,
+  names(Res) <-  c("coefficients_1",
+             "coefficients_2",
+             "coefficients_3",
+             "EBV_1",
+             "EBV_2",
+             "EBV_3",
+             "total_EBV",
+             "predict_value",
+             "genomic_variance_1",
+             "genomic_variance_2",
+             "genomic_variance_3",
+             "total_genomic_variance",
+             "residual_error",
+             "genomic_heritability",
+             "M1_matrix_model_ready",
+             "M2_matrix_model_ready",
+             "geno_model_ready")
+
+  #####
+
+} else if(!is.null(geno_data) & ((!is.null(omic1_data) &  is.null(omic2_data)) & !is.null(omic3_data))){
+
+  Res <-  list(coefficients_1 = coeff,
+               coefficients_2 = coeff_omic1,
                coefficients_3 = coeff_omic3,
-               predict_value = mod$model$yHat,
-               EBV_1 = omic1_EBV,
-               EBV_2 = omic2_EBV,
+               EBV_1 = GEBV,
+               EBV_2 = omic1_EBV,
                EBV_3 = omic3_EBV,
-               sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = (omic1_EBV$omic1_EBV + omic2_EBV$omic2_EBV + omic3_EBV$omic3_EBV)),
+               sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = (GEBV$GEBV + omic1_EBV$omic1_EBV + omic3_EBV$omic3_EBV)),
+               predict_value = mod$model$yHat,
                genomic_variance_1 = Var_U_1,
                genomic_variance_2 = Var_U_2,
                genomic_variance_3 = Var_U_3,
                total_genomic_variance = sum(Var_U_1, Var_U_2, Var_U_3),
                residual_error = Var_E,
-               genomic_heritability = genomic_h2)
+               genomic_heritability = genomic_h2,
+               omic1_model_ready = omic1_data,
+               omic2_model_ready = omic3_data,
+               geno_model_ready = geno_data)
+
+
+  names(Res) <-  c("coefficients_1",
+                   "coefficients_2",
+                   "coefficients_3",
+                   "EBV_1",
+                   "EBV_2",
+                   "EBV_3",
+                   "total_EBV",
+                   "predict_value",
+                   "genomic_variance_1",
+                   "genomic_variance_2",
+                   "genomic_variance_3",
+                   "total_genomic_variance",
+                   "residual_error",
+                   "genomic_heritability",
+                   "M1_matrix_model_ready",
+                   "M2_matrix_model_ready",
+                   "geno_model_ready")
+
+} else if(!is.null(geno_data) & ((!is.null(omic1_data) &  !is.null(omic2_data)) & is.null(omic3_data))){
+
+  Res <-  list(coefficients_1 = coeff,
+             coefficients_2 = coeff_omic1,
+             coefficients_3 = coeff_omic2,
+             EBV_1 = GEBV,
+             EBV_2 = omic1_EBV,
+             EBV_3 = omic2_EBV,
+             sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = (GEBV$GEBV + omic1_EBV$omic1_EBV + omic2_EBV$omic2_EBV)),
+             predict_value = mod$model$yHat,
+             genomic_variance_1 = Var_U_1,
+             genomic_variance_2 = Var_U_2,
+             genomic_variance_3 = Var_U_3,
+             total_genomic_variance = sum(Var_U_1, Var_U_2, Var_U_3),
+             residual_error = Var_E,
+             genomic_heritability = genomic_h2,
+             omic1_model_ready = omic1_data,
+             omic2_model_ready = omic2_data,
+             geno_model_ready = geno_data)
+
+  names(Res) <-  c("coefficients_1",
+                 "coefficients_2",
+                 "coefficients_3",
+                 "EBV_1",
+                 "EBV_2",
+                 "EBV_3",
+                 "total_EBV",
+                 "predict_value",
+                 "genomic_variance_1",
+                 "genomic_variance_2",
+                 "genomic_variance_3",
+                 "total_genomic_variance",
+                 "residual_error",
+                 "genomic_heritability",
+                 "M1_matrix_model_ready",
+                 "M2_matrix_model_ready",
+                 "geno_model_ready")
+
+} else if(is.null(geno_data) & ((!is.null(omic1_data) &  !is.null(omic2_data)) & !is.null(omic3_data))){
+
+    Res <-  list(coefficients_1 = coeff_omic1,
+               coefficients_2 = coeff_omic2,
+               coefficients_3 = coeff_omic3,
+               EBV_1 = omic1_EBV,
+               EBV_2 = omic2_EBV,
+               EBV_3 = omic3_EBV,
+               sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = (omic1_EBV$omic1_EBV + omic2_EBV$omic2_EBV + omic3_EBV$omic3_EBV)),
+               predict_value = mod$model$yHat,
+               genomic_variance_1 = Var_U_1,
+               genomic_variance_2 = Var_U_2,
+               genomic_variance_3 = Var_U_3,
+               total_genomic_variance = sum(Var_U_1, Var_U_2, Var_U_3),
+               residual_error = Var_E,
+               genomic_heritability = genomic_h2,
+               omic1_model_ready = omic1_data,
+               omic2_model_ready= omic2_data,
+               omic3_model_ready = omic3_data)
+
+    names(Res) <-  c("coefficients_1",
+                   "coefficients_2",
+                   "coefficients_3",
+                   "EBV_1",
+                   "EBV_2",
+                   "EBV_3",
+                   "total_EBV",
+                   "predict_value",
+                   "genomic_variance_1",
+                   "genomic_variance_2",
+                   "genomic_variance_3",
+                   "total_genomic_variance",
+                   "residual_error",
+                   "genomic_heritability",
+                   "M1_matrix_model_ready",
+                   "M2_matrix_model_ready",
+                   "M3_matrix_model_ready")
 
 } else{
 
-  if((!is.null(geno_data) & !is.null(omic1_data)) & (!is.null(omic2_data) & !is.null(omic3_data))){
+  if(!is.null(geno_data) & ((!is.null(omic1_data) &  !is.null(omic2_data)) & !is.null(omic3_data))){
 
-    Res = list(coefficients_1 = coeff,
+    Res <-  list(coefficients_1 = coeff,
                coefficients_2 = coeff_omic1,
                coefficients_3 = coeff_omic2,
                coefficients_4 = coeff_omic3,
-               predict_value = mod$model$yHat,
                EBV_1 = GEBV,
                EBV_2 = omic1_EBV,
                EBV_3 = omic2_EBV,
                EBV_4 = omic3_EBV,
                sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = (GEBV$GEBV + omic1_EBV$omic1_EBV + omic2_EBV$omic2_EBV + omic3_EBV$omic3_EBV)),
+               predict_value = mod$model$yHat,
                genomic_variance_1 = Var_U_1,
                genomic_variance_2 = Var_U_2,
                genomic_variance_3 = Var_U_3,
                genomic_variance_4 = Var_U_4,
                total_genomic_variance = sum(Var_U_1, Var_U_2, Var_U_3, Var_U_4),
                residual_error = Var_E,
-               genomic_heritability = genomic_h2)
+               genomic_heritability = genomic_h2,
+               omic1_model_ready = omic1_data,
+               omic2_model_ready = omic2_data,
+               omic3_model_ready = omic3_data,
+               geno_model_ready = geno_data)
+
+
+    names(Res) <- c("coefficients_1",
+                   "coefficients_2",
+                   "coefficients_3",
+                   "coefficients_4",
+                   "EBV_1",
+                   "EBV_2",
+                   "EBV_3",
+                   "EBV_4",
+                   "total_EBV",
+                   "predict_value",
+                   "genomic_variance_1",
+                   "genomic_variance_2",
+                   "genomic_variance_3",
+                   "genomic_variance_4",
+                   "total_genomic_variance",
+                   "residual_error",
+                   "genomic_heritability",
+                   "M1_matrix_model_ready",
+                   "M2_matrix_model_ready",
+                   "M3_matrix_model_ready",
+                   "geno_model_ready")
 
   }
 

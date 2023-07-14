@@ -132,9 +132,9 @@ omic_to_model <- function(omic_data = NULL,
     } else {
 
       if(is.null(train_omic_data) & !is.null(test_omic_data)){
-
+        if(message){
         message(paste(msg, 'Only test_omic_data is provided'))
-
+}
         ### It has to pass test before it can be declared omic_object
         if(attr(test_omic_data, "cleared")=="pass" & all(class(test_omic_data)==c("matrix", "array", "omic_matrix"))){
 
