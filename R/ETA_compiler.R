@@ -89,9 +89,9 @@ ETA_compiler_bayes <- function(
                                      object = pheno_data)
 
   ### Assign
-  rand_model <- random_term_model(rand_term_no_inter,
-                                  rand_term_model_bayesian,
-                                  GS_model)
+  rand_model <- random_term_model(rand_terms = rand_term_no_inter,
+                                  rand_term_model_bayesian = rand_term_model_bayesian,
+                                  GS_model = GS_model)
 
   if(!is.null(fixed)){
    ETA <-  ETA_compiler_fixed_term(fixed = fixed,

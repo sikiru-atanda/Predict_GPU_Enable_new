@@ -302,6 +302,10 @@ random_term_model <- function(rand_terms = NULL,
 
         if(length(rand_term_model_bayesian)!= length(rand_terms)){
 
+          if(length(rand_term_model_bayesian)>length(rand_terms)){
+            stop(print(paste(msg,'The number of model is greater than the random terms')), call. = FALSE)
+          }
+
           mod_len = length(rand_terms) - length(rand_term_model_bayesian)
           rand_term_model_bayesian = c(rand_term_model_bayesian,  rep("BRR",  mod_len))
 

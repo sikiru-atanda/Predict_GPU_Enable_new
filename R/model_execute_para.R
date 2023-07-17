@@ -76,7 +76,10 @@ model_execute <- function(
     test_omic1_data = NULL,
     test_omic2_data = NULL,
     test_omic3_data = NULL,
-    train_coefficient = NULL,
+    coefficient_1 = NULL,
+    coefficient_2 = NULL,
+    coefficient_3 = NULL,
+    coefficient_4 = NULL,
     train_set = NULL,
     test_set = NULL,
     gmatrix_method = NULL,
@@ -354,12 +357,11 @@ model_execute <- function(
 
  }
 ###################################################################################
- #  Pre-Check for grm/kernel matrix if calculated from the marker/omic data
- # or provided by the user.
- # It has to pass through this pre-check before going to
- # conditioning effect such as bend or blending. The conditioning of the grm/kernel
- # matrix is important especially the bend but we going to give user the opportunity
- # to decide to do it or not.
+ # Pre-Check for grm/kernel matrix if calculated from the marker/omic data
+ # or provided by the user.  # It has to pass through this pre-check before going
+ # to conditioning effect such as bend or blending.
+ # The conditioning of the grm/kernel matrix is important especially the bend
+ # but we going to give user the opportunity to decide to do it or not.
 ######################################################################################3
 
      if(!is.null(gmatrix)){

@@ -32,7 +32,7 @@ Var_E <- mean(scan(mod$output_files_names[grepl("varE.dat", mod$output_files_nam
                    what = numeric(),
                    sep = "\n"))
 
-### If more than one M-matrix is priovided. Effect will have it own coefficient
+### If more than one M-matrix is provided. Effect will have it own coefficient
 ### These lines of code exttract the genomic variance and the error term
 if(length(BIN)>1){
 
@@ -320,7 +320,8 @@ Res <-  list(coefficients = coeff,
            genomic_variance = Var_U,
            residual_error = Var_E,
            genomic_heritability = genomic_h2,
-           geno_model_ready = geno_data)
+           geno_model_ready = geno_data,
+           mu = mod$model$mu)
 
 names(Res) <- c("coefficients",
                 "GEBV",
@@ -328,7 +329,8 @@ names(Res) <- c("coefficients",
                 "genomic_variance",
                 "residual_error",
                 "genomic_heritability",
-                "geno_model_ready")
+                "geno_model_ready",
+                "intercept")
 
 } else if(is.null(geno_data) & ((!is.null(omic1_data) &  is.null(omic2_data)) & is.null(omic3_data))){
 
@@ -338,7 +340,8 @@ names(Res) <- c("coefficients",
              genomic_variance = Var_U,
              residual_error = Var_E,
              genomic_heritability = genomic_h2,
-             omic_model_ready = omic1_data)
+             omic_model_ready = omic1_data,
+             mu = mod$model$mu)
 
   names(Res) <- c("coefficients",
              "EBV",
@@ -346,7 +349,8 @@ names(Res) <- c("coefficients",
              "genomic_variance",
              "residual_error",
              "genomic_heritability",
-             "M_matrix_model_ready")
+             "M_matrix_model_ready",
+             "intercept")
 
 } else if(is.null(geno_data) & ((is.null(omic1_data) &  !is.null(omic2_data)) & is.null(omic3_data))){
 
@@ -356,7 +360,8 @@ names(Res) <- c("coefficients",
              genomic_variance = Var_U,
              residual_error = Var_E,
              genomic_heritability = genomic_h2,
-             omic_model_ready = omic2_data)
+             omic_model_ready = omic2_data,
+             mu = mod$model$mu)
 
 
   names(Res) <- c("coefficients",
@@ -365,7 +370,8 @@ names(Res) <- c("coefficients",
                   "genomic_variance",
                   "residual_error",
                   "genomic_heritability",
-                  "M_matrix_model_ready")
+                  "M_matrix_model_ready",
+                  "intercept")
 
 } else if(is.null(geno_data) & ((is.null(omic1_data) &  is.null(omic2_data)) & !is.null(omic3_data))){
 
@@ -375,7 +381,8 @@ names(Res) <- c("coefficients",
              genomic_variance = Var_U,
              residual_error = Var_E,
              genomic_heritability = genomic_h2,
-             omic_model_ready = omic3_data)
+             omic_model_ready = omic3_data,
+             mu = mod$model$mu)
 
   names(Res) <- c("coefficients",
                   "EBV",
@@ -383,7 +390,8 @@ names(Res) <- c("coefficients",
                   "genomic_variance",
                   "residual_error",
                   "genomic_heritability",
-                  "M_matrix_model_ready")
+                  "M_matrix_model_ready",
+                  "intercept")
 
 } else if(!is.null(geno_data) & ((!is.null(omic1_data) &  is.null(omic2_data)) & is.null(omic3_data))){
 
@@ -399,7 +407,8 @@ names(Res) <- c("coefficients",
              residual_error = Var_E,
              genomic_heritability = genomic_h2,
              omic_model_ready = omic1_data,
-             geno_model_ready = geno_data)
+             geno_model_ready = geno_data,
+             mu = mod$model$mu)
 
   names(Res) <- c("coefficients_1",
              "coefficients_2",
@@ -413,7 +422,8 @@ names(Res) <- c("coefficients",
              "residual_error",
              "genomic_heritability",
              "M_matrix_model_ready",
-              "geno_model_ready")
+             "geno_model_ready",
+             "intercept")
 
 } else if(!is.null(geno_data) & ((is.null(omic1_data) &  !is.null(omic2_data)) & is.null(omic3_data))){
 
@@ -429,7 +439,8 @@ names(Res) <- c("coefficients",
              residual_error = Var_E,
              genomic_heritability = genomic_h2,
              omic_model_ready = omic2_data,
-             geno_model_ready = geno_data)
+             geno_model_ready = geno_data,
+             mu = mod$model$mu)
 
   names(Res) <- c("coefficients_1",
            "coefficients_2",
@@ -443,7 +454,8 @@ names(Res) <- c("coefficients",
            "residual_error",
            "genomic_heritability",
            "M_matrix_model_ready",
-           "geno_model_ready")
+           "geno_model_ready",
+           "intercept")
 
 } else if(!is.null(geno_data) & ((is.null(omic1_data) &  is.null(omic2_data)) & !is.null(omic3_data))){
 
@@ -459,7 +471,8 @@ names(Res) <- c("coefficients",
              residual_error = Var_E,
              genomic_heritability = genomic_h2,
              omic_model_ready = omic3_data,
-             geno_model_ready = geno_data)
+             geno_model_ready = geno_data,
+             mu = mod$model$mu)
 
   names(Res) <- c("coefficients_1",
                   "coefficients_2",
@@ -473,7 +486,8 @@ names(Res) <- c("coefficients",
                   "residual_error",
                   "genomic_heritability",
                   "M_matrix_model_ready",
-                  "geno_model_ready")
+                  "geno_model_ready",
+                  "intercept")
 
 } else if(is.null(geno_data) & ((!is.null(omic1_data) &  !is.null(omic2_data)) & is.null(omic3_data))){
 
@@ -489,8 +503,8 @@ names(Res) <- c("coefficients",
              residual_error = Var_E,
              genomic_heritability = genomic_h2,
              omic1_model_ready = omic1_data,
-             omic2_model_ready = omic2_data
-             )
+             omic2_model_ready = omic2_data,
+             mu = mod$model$mu)
 
 
   names(Res) <- c("coefficients_1",
@@ -505,7 +519,8 @@ names(Res) <- c("coefficients",
                   "residual_error",
                   "genomic_heritability",
                   "M1_matrix_model_ready",
-                  "M2_matrix_model_ready")
+                  "M2_matrix_model_ready",
+                  "intercept")
 
 } else if(is.null(geno_data) & ((is.null(omic1_data) &  !is.null(omic2_data)) & !is.null(omic3_data))){
 
@@ -521,7 +536,8 @@ names(Res) <- c("coefficients",
              residual_error = Var_E,
              genomic_heritability = genomic_h2,
              omic1_model_ready = omic2_data,
-             omic2_model_ready = omic3_data)
+             omic2_model_ready = omic3_data,
+             mu = mod$model$mu)
 
   names(Res) <- c("coefficients_1",
                   "coefficients_2",
@@ -535,7 +551,8 @@ names(Res) <- c("coefficients",
                   "residual_error",
                   "genomic_heritability",
                   "M1_matrix_model_ready",
-                  "M2_matrix_model_ready")
+                  "M2_matrix_model_ready",
+                  "intercept")
 
 } else if(is.null(geno_data) & ((!is.null(omic1_data) &  is.null(omic2_data)) & !is.null(omic3_data))){
 
@@ -551,7 +568,8 @@ names(Res) <- c("coefficients",
              residual_error = Var_E,
              genomic_heritability = genomic_h2,
              omic1_model_ready = omic1_data,
-             omic2_model_ready = omic3_data)
+             omic2_model_ready = omic3_data,
+             mu = mod$model$mu)
 
   names(Res) <- c("coefficients_1",
                   "coefficients_2",
@@ -565,7 +583,8 @@ names(Res) <- c("coefficients",
                   "residual_error",
                   "genomic_heritability",
                   "M1_matrix_model_ready",
-                  "M2_matrix_model_ready")
+                  "M2_matrix_model_ready",
+                  "intercept")
 
 } else if(!is.null(geno_data) & ((is.null(omic1_data) &  !is.null(omic2_data)) & !is.null(omic3_data))){
 
@@ -585,7 +604,8 @@ names(Res) <- c("coefficients",
              genomic_heritability = genomic_h2,
              omic1_model_ready = omic2_data,
              omic2_model_ready = omic3_data,
-             geno_model_ready = geno_data)
+             geno_model_ready = geno_data,
+             mu = mod$model$mu)
 
 
   names(Res) <-  c("coefficients_1",
@@ -604,7 +624,8 @@ names(Res) <- c("coefficients",
              "genomic_heritability",
              "M1_matrix_model_ready",
              "M2_matrix_model_ready",
-             "geno_model_ready")
+             "geno_model_ready",
+             "intercept")
 
   #####
 
@@ -626,7 +647,8 @@ names(Res) <- c("coefficients",
                genomic_heritability = genomic_h2,
                omic1_model_ready = omic1_data,
                omic2_model_ready = omic3_data,
-               geno_model_ready = geno_data)
+               geno_model_ready = geno_data,
+               mu = mod$model$mu)
 
 
   names(Res) <-  c("coefficients_1",
@@ -645,7 +667,8 @@ names(Res) <- c("coefficients",
                    "genomic_heritability",
                    "M1_matrix_model_ready",
                    "M2_matrix_model_ready",
-                   "geno_model_ready")
+                   "geno_model_ready",
+                   "intercept")
 
 } else if(!is.null(geno_data) & ((!is.null(omic1_data) &  !is.null(omic2_data)) & is.null(omic3_data))){
 
@@ -665,7 +688,8 @@ names(Res) <- c("coefficients",
              genomic_heritability = genomic_h2,
              omic1_model_ready = omic1_data,
              omic2_model_ready = omic2_data,
-             geno_model_ready = geno_data)
+             geno_model_ready = geno_data,
+             mu = mod$model$mu)
 
   names(Res) <-  c("coefficients_1",
                  "coefficients_2",
@@ -683,7 +707,8 @@ names(Res) <- c("coefficients",
                  "genomic_heritability",
                  "M1_matrix_model_ready",
                  "M2_matrix_model_ready",
-                 "geno_model_ready")
+                 "geno_model_ready",
+                 "intercept")
 
 } else if(is.null(geno_data) & ((!is.null(omic1_data) &  !is.null(omic2_data)) & !is.null(omic3_data))){
 
@@ -703,7 +728,8 @@ names(Res) <- c("coefficients",
                genomic_heritability = genomic_h2,
                omic1_model_ready = omic1_data,
                omic2_model_ready= omic2_data,
-               omic3_model_ready = omic3_data)
+               omic3_model_ready = omic3_data,
+               mu = mod$model$mu)
 
     names(Res) <-  c("coefficients_1",
                    "coefficients_2",
@@ -721,7 +747,8 @@ names(Res) <- c("coefficients",
                    "genomic_heritability",
                    "M1_matrix_model_ready",
                    "M2_matrix_model_ready",
-                   "M3_matrix_model_ready")
+                   "M3_matrix_model_ready",
+                   "intercept")
 
 } else{
 
@@ -747,7 +774,8 @@ names(Res) <- c("coefficients",
                omic1_model_ready = omic1_data,
                omic2_model_ready = omic2_data,
                omic3_model_ready = omic3_data,
-               geno_model_ready = geno_data)
+               geno_model_ready = geno_data,
+               mu = mod$model$mu)
 
 
     names(Res) <- c("coefficients_1",
@@ -770,7 +798,8 @@ names(Res) <- c("coefficients",
                    "M1_matrix_model_ready",
                    "M2_matrix_model_ready",
                    "M3_matrix_model_ready",
-                   "geno_model_ready")
+                   "geno_model_ready",
+                   "intercept")
 
   }
 

@@ -47,6 +47,7 @@ summary_statistics_bayes <- function(mod=NULL,
 
   }
 
+  model = data.frame()
 
   for(k in 1:length(mod$model$ETA))
   {
@@ -54,7 +55,7 @@ summary_statistics_bayes <- function(mod=NULL,
         if(!is.null(names(mod$model$ETA)[k])){
           #cat(" Coefficientes in ETA[",k,"] (",names(mod$ETA)[k],") modeled as in ", mod$ETA[[k]]$model,"\n")
 
-           model <- names(mod$model$ETA)[k]
+           model <- rbind(model, names(mod$model$ETA)[k])
 
         }
 
@@ -72,8 +73,6 @@ summary_statistics_bayes <- function(mod=NULL,
   return(output)
 
 }
-
-
 
 
 
