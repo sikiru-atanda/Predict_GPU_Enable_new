@@ -52,16 +52,17 @@ summary_statistics_bayes <- function(mod=NULL,
   for(k in 1:length(mod$model$ETA))
   {
 
-        if(!is.null(names(mod$model$ETA)[k])){
+        if(!is.null(mod$model$ETA[[k]]$model)){
           #cat(" Coefficientes in ETA[",k,"] (",names(mod$ETA)[k],") modeled as in ", mod$ETA[[k]]$model,"\n")
 
-           model <- rbind(model, names(mod$model$ETA)[k])
+           model <- rbind(model, mod$model$ETA[[k]]$model)
 
         }
 
 
   }
 
+  colnames(model) = "model_for_Linear_predictors"
   output <- list(Min = trn_min, Max = trn_max, Variance = var_trn,
                  Residual = Res_trn, n_trn = n_trn, n_tst = n_tst,
                  pred_acc = pred_acc, model_type = model)

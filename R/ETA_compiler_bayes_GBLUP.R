@@ -54,26 +54,22 @@ ETA_compiler_bayes_GBLUP <- function(
                                     pheno_data = pheno_data,
                                     fixed_term_model_bayesian = fixed_term_model_bayesian)
 
-    len_ETA = length(ETA)
 
-  } else {
-
-    len_ETA = 0
   }
 
   if(length(rand_model)==1 && length(rand_term_no_inter)==1){
 
-    if((!is.null(gmatrix) || !is.null(gkernel)) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
+    if((!is.null(gmatrix) | !is.null(gkernel)) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
       if(!is.null(gmatrix)){
         if(rand_model== "RKHS"){
-      ETA[[len_ETA + 1]] <- list(K= as.matrix(gmatrix),
+      ETA[[length(ETA) + 1]] <- list(K= as.matrix(gmatrix),
                                  model=rand_model,
                                  saveEffects=TRUE)
         } else {
 
           if(rand_model== "BRR"){
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(gmatrix),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(gmatrix),
                                        model=rand_model,
                                        saveEffects=TRUE)
           }
@@ -86,13 +82,13 @@ ETA_compiler_bayes_GBLUP <- function(
         if(!is.null(gkernel)){
 
           if(rand_model== "RKHS"){
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(gkernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(gkernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
           } else {
 
             if(rand_model== "BRR"){
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(gkernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(gkernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
             }
@@ -105,13 +101,13 @@ ETA_compiler_bayes_GBLUP <- function(
     } else if((is.null(gmatrix) & is.null(gkernel)) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
       if(rand_model== "RKHS"){
-        ETA[[len_ETA + 1]] <- list(K= as.matrix(omic1_kernel),
+        ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic1_kernel),
                                    model=rand_model,
                                    saveEffects=TRUE)
       } else {
 
         if(rand_model== "BRR"){
-          ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_kernel),
+          ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
         }
@@ -122,13 +118,13 @@ ETA_compiler_bayes_GBLUP <- function(
     } else if((is.null(gmatrix) & is.null(gkernel)) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
         if(rand_model== "RKHS"){
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(omic2_kernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic2_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
         } else {
 
           if(rand_model== "BRR"){
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_kernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
           }
@@ -140,13 +136,13 @@ ETA_compiler_bayes_GBLUP <- function(
     } else if((is.null(gmatrix) & is.null(gkernel)) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
       if(rand_model== "RKHS"){
-        ETA[[len_ETA + 1]] <- list(K= as.matrix(omic3_kernel),
+        ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic3_kernel),
                                    model=rand_model,
                                    saveEffects=TRUE)
       } else {
 
         if(rand_model== "BRR"){
-          ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_kernel),
+          ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
         }
@@ -161,11 +157,11 @@ ETA_compiler_bayes_GBLUP <- function(
       if(rand_model== "RKHS"){
 
         if(!is.null(gkernel)){
-        ETA[[len_ETA + 1]] <- list(K= as.matrix(gkernel),
+        ETA[[length(ETA) + 1]] <- list(K= as.matrix(gkernel),
                                    model=rand_model,
                                    saveEffects=TRUE)
 
-        ETA[[len_ETA + 1]] <- list(K= as.matrix(omic1_kernel),
+        ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic1_kernel),
                                    model=rand_model,
                                    saveEffects=TRUE)
 
@@ -174,11 +170,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
           if(!is.null(gmatrix)){
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(gmatrix),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(gmatrix),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(omic1_kernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic1_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
           }
@@ -190,11 +186,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
         if(rand_model== "BRR"){
           if(!is.null(gkernel)){
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(gkernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(gkernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_kernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
@@ -203,11 +199,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
             if(!is.null(gmatrix)){
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(gmatrix),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(gmatrix),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_kernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
             }
@@ -226,11 +222,11 @@ ETA_compiler_bayes_GBLUP <- function(
       if(rand_model== "RKHS"){
 
         if(!is.null(gkernel)){
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(gkernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(gkernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(omic2_kernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic2_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
@@ -239,11 +235,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
           if(!is.null(gmatrix)){
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(gmatrix),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(gmatrix),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(omic2_kernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic2_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
           }
@@ -255,11 +251,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
         if(rand_model== "BRR"){
           if(!is.null(gkernel)){
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(gkernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(gkernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_kernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
@@ -268,11 +264,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
             if(!is.null(gmatrix)){
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(gmatrix),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(gmatrix),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_kernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
             }
@@ -290,11 +286,11 @@ ETA_compiler_bayes_GBLUP <- function(
       if(rand_model== "RKHS"){
 
         if(!is.null(gkernel)){
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(gkernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(gkernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(omic3_kernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic3_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
@@ -303,11 +299,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
           if(!is.null(gmatrix)){
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(gmatrix),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(gmatrix),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(omic3_kernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic3_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
           }
@@ -319,11 +315,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
         if(rand_model== "BRR"){
           if(!is.null(gkernel)){
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(gkernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(gkernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_kernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
@@ -332,11 +328,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
             if(!is.null(gmatrix)){
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(gmatrix),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(gmatrix),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_kernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
             }
@@ -353,11 +349,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
       if(rand_model== "RKHS"){
 
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(omic1_kernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic1_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(omic2_kernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic2_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
@@ -366,11 +362,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
         if(rand_model== "BRR"){
 
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_kernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_kernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
@@ -384,11 +380,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
       if(rand_model== "RKHS"){
 
-        ETA[[len_ETA + 1]] <- list(K= as.matrix(omic1_kernel),
+        ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic1_kernel),
                                    model=rand_model,
                                    saveEffects=TRUE)
 
-        ETA[[len_ETA + 1]] <- list(K= as.matrix(omic3_kernel),
+        ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic3_kernel),
                                    model=rand_model,
                                    saveEffects=TRUE)
 
@@ -397,11 +393,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
         if(rand_model== "BRR"){
 
-          ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_kernel),
+          ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_kernel),
+          ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
@@ -416,11 +412,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
       if(rand_model== "RKHS"){
 
-        ETA[[len_ETA + 1]] <- list(K= as.matrix(omic2_kernel),
+        ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic2_kernel),
                                    model=rand_model,
                                    saveEffects=TRUE)
 
-        ETA[[len_ETA + 1]] <- list(K= as.matrix(omic3_kernel),
+        ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic3_kernel),
                                    model=rand_model,
                                    saveEffects=TRUE)
 
@@ -429,11 +425,11 @@ ETA_compiler_bayes_GBLUP <- function(
 
         if(rand_model== "BRR"){
 
-          ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_kernel),
+          ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_kernel),
+          ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
@@ -449,32 +445,32 @@ ETA_compiler_bayes_GBLUP <- function(
       if(rand_model== "RKHS"){
 
         if(!is.null(gkernel)){
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(gkernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(gkernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(omic1_kernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic1_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(omic2_kernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic2_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA_element_name = c("gkernel", "omic1_kernel", "omic3_kernel")
+          ETA_element_name = c("gkernel", "omic1_kernel", "omic2_kernel")
         } else {
 
           if(!is.null(gmatrix)){
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(gmatrix),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(gmatrix),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(omic1_kernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic1_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(omic2_kernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic2_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
           }
@@ -486,15 +482,15 @@ ETA_compiler_bayes_GBLUP <- function(
 
         if(rand_model== "BRR"){
           if(!is.null(gkernel)){
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(gkernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(gkernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_kernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_kernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
@@ -503,15 +499,15 @@ ETA_compiler_bayes_GBLUP <- function(
 
             if(!is.null(gmatrix)){
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(gmatrix),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(gmatrix),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_kernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_kernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
             }
@@ -529,15 +525,15 @@ ETA_compiler_bayes_GBLUP <- function(
       if(rand_model== "RKHS"){
 
         if(!is.null(gkernel)){
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(gkernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(gkernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(omic1_kernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic1_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(omic3_kernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic3_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
@@ -546,15 +542,15 @@ ETA_compiler_bayes_GBLUP <- function(
 
           if(!is.null(gmatrix)){
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(gmatrix),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(gmatrix),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(omic1_kernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic1_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(omic3_kernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic3_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
           }
@@ -566,15 +562,15 @@ ETA_compiler_bayes_GBLUP <- function(
 
         if(rand_model== "BRR"){
           if(!is.null(gkernel)){
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(gkernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(gkernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_kernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_kernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
@@ -583,15 +579,15 @@ ETA_compiler_bayes_GBLUP <- function(
 
             if(!is.null(gmatrix)){
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(gmatrix),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(gmatrix),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_kernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_kernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
             }
@@ -608,15 +604,15 @@ ETA_compiler_bayes_GBLUP <- function(
       if(rand_model== "RKHS"){
 
         if(!is.null(gkernel)){
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(gkernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(gkernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(omic2_kernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic2_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(K= as.matrix(omic3_kernel),
+          ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic3_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
@@ -625,15 +621,15 @@ ETA_compiler_bayes_GBLUP <- function(
 
           if(!is.null(gmatrix)){
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(gmatrix),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(gmatrix),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(omic2_kernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic2_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(omic3_kernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic3_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
           }
@@ -645,15 +641,15 @@ ETA_compiler_bayes_GBLUP <- function(
 
         if(rand_model== "BRR"){
           if(!is.null(gkernel)){
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(gkernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(gkernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_kernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_kernel),
+            ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
@@ -662,15 +658,15 @@ ETA_compiler_bayes_GBLUP <- function(
 
             if(!is.null(gmatrix)){
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(gmatrix),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(gmatrix),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_kernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_kernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
             }
@@ -687,15 +683,15 @@ ETA_compiler_bayes_GBLUP <- function(
 
       if(rand_model== "RKHS"){
 
-        ETA[[len_ETA + 1]] <- list(K= as.matrix(omic1_kernel),
+        ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic1_kernel),
                                    model=rand_model,
                                    saveEffects=TRUE)
 
-        ETA[[len_ETA + 1]] <- list(K= as.matrix(omic2_kernel),
+        ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic2_kernel),
                                    model=rand_model,
                                    saveEffects=TRUE)
 
-        ETA[[len_ETA + 1]] <- list(K= as.matrix(omic3_kernel),
+        ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic3_kernel),
                                    model=rand_model,
                                    saveEffects=TRUE)
 
@@ -704,15 +700,15 @@ ETA_compiler_bayes_GBLUP <- function(
 
         if(rand_model== "BRR"){
 
-          ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_kernel),
+          ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_kernel),
+          ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
-          ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_kernel),
+          ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_kernel),
                                      model=rand_model,
                                      saveEffects=TRUE)
 
@@ -731,19 +727,19 @@ ETA_compiler_bayes_GBLUP <- function(
         if(rand_model== "RKHS"){
 
           if(!is.null(gkernel)){
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(gkernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(gkernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(omic1_kernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic1_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(omic2_kernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic2_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
-            ETA[[len_ETA + 1]] <- list(K= as.matrix(omic3_kernel),
+            ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic3_kernel),
                                        model=rand_model,
                                        saveEffects=TRUE)
 
@@ -752,19 +748,19 @@ ETA_compiler_bayes_GBLUP <- function(
 
             if(!is.null(gmatrix)){
 
-              ETA[[len_ETA + 1]] <- list(K= as.matrix(gmatrix),
+              ETA[[length(ETA) + 1]] <- list(K= as.matrix(gmatrix),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(K= as.matrix(omic1_kernel),
+              ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic1_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(K= as.matrix(omic2_kernel),
+              ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic2_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(K= as.matrix(omic3_kernel),
+              ETA[[length(ETA) + 1]] <- list(K= as.matrix(omic3_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
             }
@@ -776,19 +772,19 @@ ETA_compiler_bayes_GBLUP <- function(
 
           if(rand_model== "BRR"){
             if(!is.null(gkernel)){
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(gkernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(gkernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_kernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_kernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
-              ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_kernel),
+              ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_kernel),
                                          model=rand_model,
                                          saveEffects=TRUE)
 
@@ -797,19 +793,19 @@ ETA_compiler_bayes_GBLUP <- function(
 
               if(!is.null(gmatrix)){
 
-                ETA[[len_ETA + 1]] <- list(X= as.matrix(gmatrix),
+                ETA[[length(ETA) + 1]] <- list(X= as.matrix(gmatrix),
                                            model=rand_model,
                                            saveEffects=TRUE)
 
-                ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_kernel),
+                ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_kernel),
                                            model=rand_model,
                                            saveEffects=TRUE)
 
-                ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_kernel),
+                ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_kernel),
                                            model=rand_model,
                                            saveEffects=TRUE)
 
-                ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_kernel),
+                ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_kernel),
                                            model=rand_model,
                                            saveEffects=TRUE)
               }

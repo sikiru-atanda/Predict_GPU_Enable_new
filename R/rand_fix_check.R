@@ -14,6 +14,8 @@ rand_fix_check <- function(object = NULL,
                       ...){
   msg <- sprintf("==================================================\n")
 
+  ## object is the phenotypic data
+
   # if(attr(object, "cleared")!="pass" & class(object)!=c("data.table", "data.frame", "phenotype")) {
   #
   #   stop(print(paste(msg,paste(object, 'is not class phenotype.', sep = ""))), call. = FALSE)

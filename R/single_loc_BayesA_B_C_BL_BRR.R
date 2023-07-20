@@ -14,12 +14,14 @@
 #' @export
 #'
 #' @examples
+# @importFrom foreach %dopar%
  M_matrix_bayes_mod_single_loc <- function(object = NULL,
                                          response = NULL,
                                          weights = NULL,
                                          ETA = NULL,
                                          bayes_para = NULL,
                                          verbose = FALSE,
+                                         core,
                                          ...
                                          ){
 
@@ -46,6 +48,29 @@ files_key= gsub(":", "_", files_key)
 #
 # files_key = gsub("-", "", files_key)
 
+# #### Initializing parallel
+# if(length(response)>1){
+# if (is.null(core)){
+#   cl = parallel::detectCores()
+#
+#   if (cl> 4){
+#     # Try in parallel
+#     cl <- parallel::makeCluster(4)
+#   } else{
+#     cl <- parallel::makeCluster(2)
+#   }
+#
+# } else {
+#   if(!is.null(core)){
+#
+#     cl <- parallel::makeCluster(core)
+#   }
+# }
+#
+# doParallel::registerDoParallel(cl)
+#
+# }
+
 
 if(is.null(weights)){
   fm <- BGLR::BGLR(
@@ -62,7 +87,7 @@ if(is.null(weights)){
   if(!is.null(weights)){
     fm <- BGLR::BGLR(
       y=object[, response],
-      ETA=ETA$ETA,
+      ETA=ETA,
       weights = weights,
       nIter= bayes_para$nIter,
       burnIn= bayes_para$burnIn,

@@ -174,7 +174,7 @@ model_execute <- function(
 
      }
 
-     if((exists("geno_clean") & exists("pheno_clean"))){
+     if(((exists("geno_clean") & exists("pheno_clean"))) & (is.null(gmatrix_method) & is.null(kernel_method))){
      geno_pheno_match = pheno_geno_match(object_pheno = pheno_clean$pheno_data,
                             object_geno = geno_clean,
                             gen_name = gen_name,
@@ -189,23 +189,27 @@ model_execute <- function(
 
          }
 
-     rm(geno_pheno_match)
+     rm(geno_pheno_match, geno_clean)
      }
 
      #### To calculate the gkernel only geno_clean is acceptable
-     if (exists("geno_clean") & !is.null(kernel_method)) {
+     if ((exists("geno_clean") & !is.null(kernel_method))) {
          gkernel <- kernel_calculation(
              M_matrix_clean = geno_clean,
              center=center,
              method = kernel_method,
              message = message )
+
+         rm(geno_clean)
      }
 
      #### To calculate the gmatrix only geno_clean is acceptable
-     if (exists("geno_clean") & !is.null(kernel_method)) {
+     if (exists("geno_clean") & !is.null(gmatrix_method)) {
         gmatrix <- grm_calculation(
         geno_clean = geno_clean,
         method=gmatrix_method)
+
+        rm(geno_clean)
      }
 
 
@@ -238,7 +242,7 @@ model_execute <- function(
 
      }
 
-     if(exists('omic1_clean') & exists("pheno_clean")){
+     if((exists('omic1_clean') & exists("pheno_clean")) & (is.null(gmatrix_method) & is.null(kernel_method))){
          omic1_pheno_match = pheno_geno_match(object_pheno = pheno_clean$pheno_data,
                                              object_geno = omic1_clean,
                                              gen_name = gen_name,
@@ -253,7 +257,7 @@ model_execute <- function(
         omic1_model_ready <- omic1_pheno_match[[1]]
          }
 
-         rm(omic1_pheno_match)
+         rm(omic1_pheno_match, omic1_clean)
      }
 
      #### To calculate the omic1_kernel only omic1_clean is acceptable
@@ -263,6 +267,8 @@ model_execute <- function(
              center=center,
              method = kernel_method,
              message = message )
+
+         rm(omic1_clean)
      }
 
      }
@@ -283,7 +289,7 @@ model_execute <- function(
      }
 
 
-     if(exists('omic2_clean') & exists("pheno_clean")){
+     if((exists('omic2_clean') & exists("pheno_clean")) & (is.null(gmatrix_method) | is.null(kernel_method))){
          omic2_pheno_match = pheno_geno_match(object_pheno = pheno_clean$pheno_data,
                                               object_geno = omic2_clean,
                                               gen_name = gen_name,
@@ -298,7 +304,7 @@ model_execute <- function(
              omic2_model_ready <- omic2_pheno_match[[1]]
          }
 
-         rm(omic2_pheno_match)
+         rm(omic2_pheno_match, omic2_clean)
      }
 
      #### To calculate the omic2_kernel only omic2_clean is acceptable
@@ -308,6 +314,8 @@ model_execute <- function(
              center=center,
              method = kernel_method,
              message = message )
+
+         rm(omic2_clean)
      }
 
  }
@@ -328,7 +336,7 @@ model_execute <- function(
      }
 
 
-     if(exists('omic3_clean') & exists("pheno_clean")){
+     if((exists('omic3_clean') & exists("pheno_clean")) & (is.null(gmatrix_method) & is.null(kernel_method))){
          omic3_pheno_match = pheno_geno_match(object_pheno = pheno_clean$pheno_data,
                                               object_geno = omic3_clean,
                                               gen_name = gen_name,
@@ -343,7 +351,7 @@ model_execute <- function(
              omic3_model_ready <- omic3_pheno_match[[1]]
          }
 
-         rm(omic3_pheno_match)
+         rm(omic3_pheno_match, omic3_clean)
      }
 
      #### To calculate the omic3_kernel only omic3_clean is acceptable
@@ -353,6 +361,8 @@ model_execute <- function(
              center=center,
              method = kernel_method,
              message = message )
+
+         rm(omic3_clean)
      }
 
  }
@@ -374,14 +384,6 @@ model_execute <- function(
      if(!is.null(gkernel)){
 
          gkernel_checked <- grm_kernel_precheck(object= gkernel,
-                                                message= message)
-     }
-
-
-
-     if(!is.null(gmatrix)){
-
-         gmatrix_checked <- grm_kernel_precheck(object= gmatrix,
                                                 message= message)
      }
 
@@ -424,6 +426,7 @@ model_execute <- function(
 
     }
 
+    rm(gkernel_pheno_match, gkernel, gkernel_checked)
  }
 
  if(exists("gmatrix_checked")){
@@ -442,6 +445,7 @@ model_execute <- function(
 
      }
 
+     rm(gmatrix_pheno_match, gmatrix, gmatrix_checked)
  }
 
 
@@ -460,7 +464,7 @@ model_execute <- function(
          omic1_kernel_model_ready <- omic1_kernel_pheno_match[[1]]
      }
 
-
+ rm(omic1_kernel_pheno_match, omic1_kernel, omic1_kernel_checked)
  }
 
 
@@ -478,6 +482,8 @@ model_execute <- function(
      } else {
          omic2_kernel_model_ready <- omic2_kernel_pheno_match[[1]]
      }
+
+     rm(omic2_kernel_pheno_match, omic2_kernel, omic2_kernel_checked)
  }
 
  if(exists("omic3_kernel_checked")){
@@ -495,7 +501,7 @@ model_execute <- function(
          omic3_kernel_model_ready <- omic3_kernel_pheno_match[[1]]
      }
 
-
+     rm(omic3_kernel_pheno_match, omic3_kernel, omic3_kernel_checked)
  }
 
 
@@ -506,6 +512,14 @@ model_execute <- function(
 
  #### TO DO put a condition to check the user is providing only one location
  ### If the user provide only the marker matrix
+
+ ##########################################################################
+ #########################################################################
+ ## Start of Bayes A, B, C, BL and BRR Models for Single Location       ##                     ##                          ##
+ ##  This only accommodate n x p matrix  not nxn                        ##                                      ##
+ ##                                                                     ##
+ ##########################################################################
+ #######################################################################
 
 
     ### Model BRR for single location
@@ -534,12 +548,12 @@ model_execute <- function(
                                         burnIn = burnIn,
                                         thin = thin)
 
-    mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+    mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                           response = response,
                                           weights = weights,
                                           ETA = ETA$ETA,
                                           bayes_para = bayes_para,
-                                          verbose = FALSE,
+                                          verbose = FALSE
                                           #files_key = "files_key"
                                           )
 
@@ -575,8 +589,8 @@ model_execute <- function(
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,
                                                  thin = thin)
-
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+ ## M_matrix_bayes_mod_single_loc
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -619,7 +633,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -664,7 +678,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -708,7 +722,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -752,7 +766,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -795,7 +809,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -839,7 +853,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -883,7 +897,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -928,7 +942,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -973,7 +987,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -1017,7 +1031,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights =weights,
                                                   ETA = ETA$ETA,
@@ -1063,7 +1077,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -1106,7 +1120,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = ETA$pheno_data,
+            mod <-  bayes_mod_execute(object = ETA$pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -1129,7 +1143,7 @@ model_execute <- function(
         }
 
 
-        ##### omic1_clean, omic2clean and omic3_clean
+        ##### geno,  omic1_clean, omic2clean and omic3_clean
 
         if((exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
 
@@ -1150,7 +1164,7 @@ model_execute <- function(
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  M_matrix_bayes_mod_single_loc(object = pheno_data,
+            mod <-  bayes_mod_execute(object = pheno_data,
                                                   response = response,
                                                   weights = weights,
                                                   ETA = ETA$ETA,
@@ -1171,7 +1185,1273 @@ model_execute <- function(
 
 
         }
-}
+
+
+} ## End of  Bayes A, B, C, BRR, BL
+
+ ##########################################################################
+ #########################################################################
+ ## Start of RKHS  Model for Single Location                            ##                          ##
+ ##                                                                     ##
+ ##                                                                     ##
+ ##########################################################################
+ #######################################################################
+
+ # if((isTRUE(GS_model== "RKHS") |
+ #     ((is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%"RKHS"))) |
+ #     ((!is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%"RKHS"))))){
+
+ if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "BRR")) & is.null(rand_term_model_bayesian)) |
+    ((is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%c("RKHS", "BRR")))) |
+    ((!is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%c("RKHS", "BRR"))))){
+
+
+     if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
+
+         if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
+
+         if(exists('gkernel_model_ready')){
+             ETA  <-  ETA_compiler_bayes_GBLUP(
+                 fixed = fixed,
+                 random = random,
+                 GS_model = GS_model,
+                 fixed_term_model_bayesian = fixed_term_model_bayesian,
+                 rand_term_model_bayesian = rand_term_model_bayesian,
+                 pheno_data = pheno_clean[[1]],
+                 gkernel =  gkernel_model_ready,
+                 gen_name = gen_name)
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+                 ETA  <-  ETA_compiler_bayes_GBLUP(
+                     fixed = fixed,
+                     random = random,
+                     GS_model = GS_model,
+                     fixed_term_model_bayesian = fixed_term_model_bayesian,
+                     rand_term_model_bayesian = rand_term_model_bayesian,
+                     pheno_data = pheno_clean[[1]],
+                     gmatrix = gmatrix_model_ready,
+                     gen_name = gen_name)
+
+             }
+
+         }
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin)
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para
+         )
+
+         if(exists("gkernel_model_ready")){
+             if(GS_model=="RKHS"){
+             res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                       ETA = ETA,
+                                                       gkernel =  gkernel_model_ready,
+                                                       gen_name = gen_name
+             )
+
+             }
+
+             if(GS_model=="BRR"){
+                 res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                           ETA = ETA,
+                                                           gkernel =  gkernel_model_ready,
+                                                           gen_name = gen_name
+                 )
+
+             }
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+
+                 if(GS_model=="RKHS"){
+                 res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                           ETA = ETA,
+                                                           gmatrix = gmatrix_model_ready,
+                                                           gen_name = gen_name
+                 )
+
+                 }
+
+                 if(GS_model=="BRR"){
+                     res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                               ETA = ETA,
+                                                               gmatrix = gmatrix_model_ready,
+                                                               gen_name = gen_name
+                     )
+                 }
+             }
+
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+     ###### omic1_clean
+
+     if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
+
+         ETA  <-  ETA_compiler_bayes_GBLUP(
+             fixed = fixed,
+             random = random,
+             GS_model = GS_model,
+             fixed_term_model_bayesian = fixed_term_model_bayesian,
+             rand_term_model_bayesian = rand_term_model_bayesian,
+             pheno_data = pheno_clean[[1]],
+             omic1_kernel =  omic1_kernel_model_ready,
+             gen_name = gen_name
+         )
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para
+         )
+
+         if(GS_model=="RKHS"){
+         res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                   ETA = ETA,
+                                                   gen_name = gen_name,
+                                                   omic1_kernel = omic1_kernel_model_ready
+         )
+
+         }
+
+         if(GS_model=="BRR"){
+             res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       omic1_kernel = omic1_kernel_model_ready
+             )
+         }
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+     ##### omic2_model_ready
+
+     if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
+
+         ETA  <-  ETA_compiler_bayes_GBLUP(
+             fixed = fixed,
+             random = random,
+             GS_model = GS_model,
+             fixed_term_model_bayesian = fixed_term_model_bayesian,
+             rand_term_model_bayesian = rand_term_model_bayesian,
+             pheno_data = pheno_clean[[1]],
+             omic2_kernel = omic2_kernel_model_ready,
+             gen_name = gen_name)
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para
+         )
+
+         if(GS_model=="RKHS"){
+         res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                   ETA = ETA,
+                                                   gen_name = gen_name,
+                                                   omic2_kernel = omic2_kernel_model_ready
+         )
+
+         }
+         if(GS_model=="BRR"){
+             res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       omic2_kernel = omic2_kernel_model_ready
+             )
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+     ####
+
+     ##### omic3_model_ready
+
+     if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
+
+         ETA  <-  ETA_compiler_bayes_GBLUP(
+             fixed = fixed,
+             random = random,
+             GS_model = GS_model,
+             fixed_term_model_bayesian = fixed_term_model_bayesian,
+             rand_term_model_bayesian = rand_term_model_bayesian,
+             pheno_data = pheno_clean[[1]],
+             omic3_kernel = omic3_kernel_model_ready,
+             gen_name = gen_name)
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para
+         )
+
+         if(GS_model=="RKHS"){
+         res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                   ETA = ETA,
+                                                   gen_name = gen_name,
+                                                   omic3_kernel = omic3_kernel_model_ready
+         )
+
+         }
+
+         if(GS_model=="BRR"){
+
+             res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       omic3_kernel = omic3_kernel_model_ready
+             )
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+
+     ##### geno_model_ready and omic1_model_ready
+
+     if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
+
+         if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
+
+         if(exists('gkernel_model_ready')){
+             ETA  <-  ETA_compiler_bayes_GBLUP(
+                 fixed = fixed,
+                 random = random,
+                 GS_model = GS_model,
+                 fixed_term_model_bayesian = fixed_term_model_bayesian,
+                 rand_term_model_bayesian = rand_term_model_bayesian,
+                 pheno_data = pheno_clean[[1]],
+                 gkernel = gkernel_model_ready,
+                 omic1_kernel = omic1_kernel_model_ready,
+                 gen_name = gen_name
+             )
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+                 ETA  <-  ETA_compiler_bayes_GBLUP(
+                     fixed = fixed,
+                     random = random,
+                     GS_model = GS_model,
+                     fixed_term_model_bayesian = fixed_term_model_bayesian,
+                     rand_term_model_bayesian = rand_term_model_bayesian,
+                     pheno_data = pheno_clean[[1]],
+                     gmatrix = gmatrix_model_ready,
+                     omic1_kernel = omic1_kernel_model_ready,
+                     gen_name = gen_name
+                 )
+
+             }
+
+         }
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para)
+
+         if(exists('gkernel_model_ready')){
+
+             if(GS_model=="RKHS"){
+             res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       gkernel = gkernel_model_ready,
+                                                       omic1_kernel = omic1_kernel_model_ready
+             )
+
+             }
+
+             if(GS_model=="BRR"){
+                 res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gkernel = gkernel_model_ready,
+                                                           omic1_kernel = omic1_kernel_model_ready
+                 )
+             }
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+
+                 if(GS_model=="RKHS"){
+                 res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gmatrix = gmatrix_model_ready,
+                                                           omic1_kernel = omic1_kernel_model_ready
+                 )
+
+                 }
+
+
+                 if(GS_model=="BRR"){
+
+                     res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                               ETA = ETA,
+                                                               gen_name = gen_name,
+                                                               gmatrix = gmatrix_model_ready,
+                                                               omic1_kernel = omic1_kernel_model_ready
+                     )
+
+                 }
+
+             }
+
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+
+     ##### geno_clean and omic2_clean
+
+     if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
+
+         if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
+
+         if(exists('gkernel_model_ready')){
+             ETA  <-  ETA_compiler_bayes_GBLUP(
+                 fixed = fixed,
+                 random = random,
+                 GS_model = GS_model,
+                 fixed_term_model_bayesian = fixed_term_model_bayesian,
+                 rand_term_model_bayesian = rand_term_model_bayesian,
+                 pheno_data = pheno_clean[[1]],
+                 gkernel = gkernel_model_ready,
+                 omic2_kernel = omic2_kernel_model_ready,
+                 gen_name = gen_name
+             )
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+                 ETA  <-  ETA_compiler_bayes_GBLUP(
+                     fixed = fixed,
+                     random = random,
+                     GS_model = GS_model,
+                     fixed_term_model_bayesian = fixed_term_model_bayesian,
+                     rand_term_model_bayesian = rand_term_model_bayesian,
+                     pheno_data = pheno_clean[[1]],
+                     gmatrix = gmatrix_model_ready,
+                     omic2_kernel = omic2_kernel_model_ready,
+                     gen_name = gen_name
+                 )
+
+             }
+
+         }
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para
+         )
+
+         if(exists('gkernel_model_ready')){
+
+             if(GS_model=="RKHS"){
+             res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       gkernel = gkernel_model_ready,
+                                                       omic2_kernel = omic2_kernel_model_ready
+             )
+
+             }
+
+             if(GS_model=="BRR"){
+                 res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gkernel = gkernel_model_ready,
+                                                           omic2_kernel = omic2_kernel_model_ready
+                 )
+
+             }
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+
+                 if(GS_model=="RKHS"){
+                 res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gmatrix = gmatrix_model_ready,
+                                                           omic2_kernel = omic2_kernel_model_ready
+                 )
+
+                 }
+
+                 if(GS_model=="BRR"){
+                     res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                               ETA = ETA,
+                                                               gen_name = gen_name,
+                                                               gmatrix = gmatrix_model_ready,
+                                                               omic2_kernel = omic2_kernel_model_ready
+                     )
+
+                 }
+
+             }
+
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+     ##### geno_clean and omic3_clean
+
+     if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
+
+         if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
+
+         if(exists('gkernel_model_ready')){
+             ETA  <-  ETA_compiler_bayes_GBLUP(
+                 fixed = fixed,
+                 random = random,
+                 GS_model = GS_model,
+                 fixed_term_model_bayesian = fixed_term_model_bayesian,
+                 rand_term_model_bayesian = rand_term_model_bayesian,
+                 pheno_data = pheno_clean[[1]],
+                 gkernel = gkernel_model_ready,
+                 omic3_kernel = omic3_kernel_model_ready,
+                 gen_name = gen_name
+             )
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+                 ETA  <-  ETA_compiler_bayes_GBLUP(
+                     fixed = fixed,
+                     random = random,
+                     GS_model = GS_model,
+                     fixed_term_model_bayesian = fixed_term_model_bayesian,
+                     rand_term_model_bayesian = rand_term_model_bayesian,
+                     pheno_data = pheno_clean[[1]],
+                     gmatrix = gmatrix_model_ready,
+                     omic3_kernel = omic3_kernel_model_ready,
+                     gen_name = gen_name
+                 )
+
+             }
+
+         }
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para
+         )
+
+         if(exists('gkernel_model_ready')){
+
+             if(GS_model=="RKHS"){
+             res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       gkernel = gkernel_model_ready,
+                                                       omic3_kernel = omic3_kernel_model_ready
+             )
+
+             }
+
+             if(GS_model=="BRR"){
+                 res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gkernel = gkernel_model_ready,
+                                                           omic3_kernel = omic3_kernel_model_ready
+                 )
+
+             }
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+
+                 if(GS_model=="RKHS"){
+
+                 res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gmatrix = gmatrix_model_ready,
+                                                           omic3_kernel = omic3_kernel_model_ready
+                 )
+
+                 }
+
+
+                 if(GS_model=="BRR"){
+
+                     res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                               ETA = ETA,
+                                                               gen_name = gen_name,
+                                                               gmatrix = gmatrix_model_ready,
+                                                               omic3_kernel = omic3_kernel_model_ready
+                     )
+
+                 }
+
+
+             }
+
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+
+     ##### omic1_model_ready and omic2_model_ready
+
+     if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
+
+         ETA  <-  ETA_compiler_bayes_GBLUP(
+             fixed = fixed,
+             random = random,
+             GS_model = GS_model,
+             fixed_term_model_bayesian = fixed_term_model_bayesian,
+             rand_term_model_bayesian = rand_term_model_bayesian,
+             pheno_data = pheno_clean[[1]],
+             omic1_kernel = omic1_kernel_model_ready,
+             omic2_kernel = omic2_kernel_model_ready,
+             gen_name = gen_name)
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para
+         )
+
+         if(GS_model=="RKHS"){
+         res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                   ETA = ETA,
+                                                   gen_name = gen_name,
+                                                   omic1_kernel = omic1_kernel_model_ready,
+                                                   omic2_kernel = omic2_kernel_model_ready
+         )
+
+         }
+
+         if(GS_model=="BRR"){
+             res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       omic1_kernel = omic1_kernel_model_ready,
+                                                       omic2_kernel = omic2_kernel_model_ready
+             )
+
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+
+
+     ##### omic1_model_ready and omic3_model_ready
+
+
+     if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
+
+         ETA  <-  ETA_compiler_bayes_GBLUP(
+             fixed = fixed,
+             random = random,
+             GS_model = GS_model,
+             fixed_term_model_bayesian = fixed_term_model_bayesian,
+             rand_term_model_bayesian = rand_term_model_bayesian,
+             pheno_data = pheno_clean[[1]],
+             omic1_kernel = omic1_kernel_model_ready,
+             omic3_kernel = omic3_kernel_model_ready,
+             gen_name = gen_name)
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para
+         )
+
+         if(GS_model=="RKHS"){
+         res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                   ETA = ETA,
+                                                   gen_name = gen_name,
+                                                   omic1_kernel = omic1_kernel_model_ready,
+                                                   omic3_kernel = omic3_kernel_model_ready
+         )
+
+         }
+
+         if(GS_model=="BRR"){
+             res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       omic1_kernel = omic1_kernel_model_ready,
+                                                       omic3_kernel = omic3_kernel_model_ready
+             )
+
+         }
+
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+
+     ####
+     ##### omic2_model_ready and omic3_model_ready
+
+
+     if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
+
+         ETA  <-  ETA_compiler_bayes_GBLUP(
+             fixed = fixed,
+             random = random,
+             GS_model = GS_model,
+             fixed_term_model_bayesian = fixed_term_model_bayesian,
+             rand_term_model_bayesian = rand_term_model_bayesian,
+             pheno_data = pheno_clean[[1]],
+             omic2_kernel = omic2_kernel_model_ready,
+             omic3_kernel = omic3_kernel_model_ready,
+             gen_name = gen_name)
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para
+         )
+
+         if(GS_model=="RKHS"){
+         res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                   ETA = ETA,
+                                                   gen_name = gen_name,
+                                                   omic2_kernel = omic2_kernel_model_ready,
+                                                   omic3_kernel = omic3_kernel_model_ready
+         )
+
+         }
+
+         if(GS_model=="BRR"){
+             res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       omic2_kernel = omic2_kernel_model_ready,
+                                                       omic3_kernel = omic3_kernel_model_ready
+             )
+
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+     ########
+
+     ##### geno_model_ready, omic1_model_ready and omic2_model_ready
+
+     if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
+
+         if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
+
+         if(exists('gkernel_model_ready')){
+             ETA  <-  ETA_compiler_bayes_GBLUP(
+                 fixed = fixed,
+                 random = random,
+                 GS_model = GS_model,
+                 fixed_term_model_bayesian = fixed_term_model_bayesian,
+                 rand_term_model_bayesian = rand_term_model_bayesian,
+                 pheno_data = pheno_clean[[1]],
+                 gkernel = gkernel_model_ready,
+                 omic1_kernel = omic1_kernel_model_ready,
+                 omic2_kernel = omic2_kernel_model_ready,
+                 gen_name = gen_name
+             )
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+                 ETA  <-  ETA_compiler_bayes_GBLUP(
+                     fixed = fixed,
+                     random = random,
+                     GS_model = GS_model,
+                     fixed_term_model_bayesian = fixed_term_model_bayesian,
+                     rand_term_model_bayesian = rand_term_model_bayesian,
+                     pheno_data = pheno_clean[[1]],
+                     gmatrix = gmatrix_model_ready,
+                     omic1_kernel = omic1_kernel_model_ready,
+                     omic2_kernel = omic2_kernel_model_ready,
+                     gen_name = gen_name
+                 )
+
+             }
+
+         }
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para
+         )
+
+         if(exists('gkernel_model_ready')){
+
+             if(GS_model=="RKHS"){
+             res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       gkernel = gkernel_model_ready,
+                                                       omic1_kernel = omic1_kernel_model_ready,
+                                                       omic2_kernel = omic2_kernel_model_ready
+             )
+
+             }
+
+             if(GS_model=="BRR"){
+                 res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gkernel = gkernel_model_ready,
+                                                           omic1_kernel = omic1_kernel_model_ready,
+                                                           omic2_kernel = omic2_kernel_model_ready
+                 )
+
+             }
+
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+
+                 if(GS_model=="RKHS"){
+                 res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gmatrix = gmatrix_model_ready,
+                                                           omic1_kernel = omic1_kernel_model_ready,
+                                                           omic2_kernel = omic2_kernel_model_ready
+                 )
+
+                 }
+
+                 if(GS_model=="BRR"){
+                     res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                               ETA = ETA,
+                                                               gen_name = gen_name,
+                                                               gmatrix = gmatrix_model_ready,
+                                                               omic1_kernel = omic1_kernel_model_ready,
+                                                               omic2_kernel = omic2_kernel_model_ready
+                     )
+
+                 }
+
+             }
+
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+
+
+     ##### geno_model_ready, omic1_model_ready and omic3_model_ready
+
+
+     if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
+
+         if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
+
+         if(exists('gkernel_model_ready')){
+             ETA  <-  ETA_compiler_bayes_GBLUP(
+                 fixed = fixed,
+                 random = random,
+                 GS_model = GS_model,
+                 fixed_term_model_bayesian = fixed_term_model_bayesian,
+                 rand_term_model_bayesian = rand_term_model_bayesian,
+                 pheno_data = pheno_clean[[1]],
+                 gkernel = gkernel_model_ready,
+                 omic1_kernel = omic1_kernel_model_ready,
+                 omic3_kernel = omic3_kernel_model_ready,
+                 gen_name = gen_name
+             )
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+                 ETA  <-  ETA_compiler_bayes_GBLUP(
+                     fixed = fixed,
+                     random = random,
+                     GS_model = GS_model,
+                     fixed_term_model_bayesian = fixed_term_model_bayesian,
+                     rand_term_model_bayesian = rand_term_model_bayesian,
+                     pheno_data = pheno_clean[[1]],
+                     gmatrix = gmatrix_model_ready,
+                     omic1_kernel = omic1_kernel_model_ready,
+                     omic3_kernel = omic3_kernel_model_ready,
+                     gen_name = gen_name
+                 )
+
+             }
+
+         }
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para)
+
+         if(exists('gkernel_model_ready')){
+
+             if(GS_model=="RKHS"){
+             res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       gkernel = gkernel_model_ready,
+                                                       omic1_kernel = omic1_kernel_model_ready,
+                                                       omic3_kernel = omic3_kernel_model_ready
+             )
+
+             }
+
+             if(GS_model=="BRR"){
+                 res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gkernel = gkernel_model_ready,
+                                                           omic1_kernel = omic1_kernel_model_ready,
+                                                           omic3_kernel = omic3_kernel_model_ready
+                 )
+
+             }
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+
+                 if(GS_model=="RKHS"){
+                 res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gmatrix = gmatrix_model_ready,
+                                                           omic1_kernel = omic1_kernel_model_ready,
+                                                           omic3_kernel = omic3_kernel_model_ready
+                 )
+
+                 }
+
+
+                 if(GS_model=="BRR"){
+                     res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                               ETA = ETA,
+                                                               gen_name = gen_name,
+                                                               gmatrix = gmatrix_model_ready,
+                                                               omic1_kernel = omic1_kernel_model_ready,
+                                                               omic3_kernel = omic3_kernel_model_ready
+                     )
+
+                 }
+
+             }
+
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+     #####
+
+     ##### geno_model_ready, omic2_model_ready and omic3_model_ready
+
+
+     if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
+
+         if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
+
+         if(exists('gkernel_model_ready')){
+             ETA  <-  ETA_compiler_bayes_GBLUP(
+                 fixed = fixed,
+                 random = random,
+                 GS_model = GS_model,
+                 fixed_term_model_bayesian = fixed_term_model_bayesian,
+                 rand_term_model_bayesian = rand_term_model_bayesian,
+                 pheno_data = pheno_clean[[1]],
+                 gkernel = gkernel_model_ready,
+                 omic2_kernel = omic2_kernel_model_ready,
+                 omic3_kernel = omic3_kernel_model_ready,
+                 gen_name = gen_name
+             )
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+                 ETA  <-  ETA_compiler_bayes_GBLUP(
+                     fixed = fixed,
+                     random = random,
+                     GS_model = GS_model,
+                     fixed_term_model_bayesian = fixed_term_model_bayesian,
+                     rand_term_model_bayesian = rand_term_model_bayesian,
+                     pheno_data = pheno_clean[[1]],
+                     gmatrix = gmatrix_model_ready,
+                     omic2_kernel = omic2_kernel_model_ready,
+                     omic3_kernel = omic3_kernel_model_ready,
+                     gen_name = gen_name
+                 )
+
+             }
+
+         }
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para)
+
+         if(exists('gkernel_model_ready')){
+
+             if(GS_model=="RKHS"){
+             res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       gkernel = gkernel_model_ready,
+                                                       omic2_kernel = omic2_kernel_model_ready,
+                                                       omic3_kernel = omic3_kernel_model_ready
+             )
+
+             }
+
+
+             if(GS_model=="BRR"){
+                 res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gkernel = gkernel_model_ready,
+                                                           omic2_kernel = omic2_kernel_model_ready,
+                                                           omic3_kernel = omic3_kernel_model_ready
+                 )
+
+             }
+
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+
+                 if(GS_model=="RKHS"){
+
+                 res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gmatrix = gmatrix_model_ready,
+                                                           omic2_kernel = omic2_kernel_model_ready,
+                                                           omic3_kernel = omic3_kernel_model_ready
+                 )
+
+                 }
+
+                 if(GS_model=="BRR"){
+
+                     res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                               ETA = ETA,
+                                                               gen_name = gen_name,
+                                                               gmatrix = gmatrix_model_ready,
+                                                               omic2_kernel = omic2_kernel_model_ready,
+                                                               omic3_kernel = omic3_kernel_model_ready
+                     )
+
+                 }
+
+             }
+
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+
+     ##### omic1_model_ready, omic2_model_ready and omic3_model_ready
+
+     if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
+
+         ETA  <-  ETA_compiler_bayes_GBLUP(
+             fixed = fixed,
+             random = random,
+             GS_model = GS_model,
+             fixed_term_model_bayesian = fixed_term_model_bayesian,
+             rand_term_model_bayesian = rand_term_model_bayesian,
+             pheno_data = pheno_clean[[1]],
+             omic1_kernel = omic1_kernel_model_ready,
+             omic2_kernel = omic2_kernel_model_ready,
+             omic3_kernel = omic3_kernel_model_ready,
+             gen_name = gen_name)
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para
+         )
+
+         if(GS_model=="RKHS"){
+         res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                   ETA = ETA,
+                                                   gen_name = gen_name,
+                                                   omic1_kernel = omic1_kernel_model_ready,
+                                                   omic2_kernel = omic2_kernel_model_ready,
+                                                   omic3_kernel = omic3_kernel_model_ready
+         )
+
+         }
+
+         if(GS_model=="BRR"){
+             res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       omic1_kernel = omic1_kernel_model_ready,
+                                                       omic2_kernel = omic2_kernel_model_ready,
+                                                       omic3_kernel = omic3_kernel_model_ready
+             )
+
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+
+
+     ##### geno, omic1_clean, omic2clean and omic3_clean
+
+     if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
+
+         if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
+
+         if(exists('gkernel_model_ready')){
+             ETA  <-  ETA_compiler_bayes_GBLUP(
+                 fixed = fixed,
+                 random = random,
+                 GS_model = GS_model,
+                 fixed_term_model_bayesian = fixed_term_model_bayesian,
+                 rand_term_model_bayesian = rand_term_model_bayesian,
+                 pheno_data = pheno_clean[[1]],
+                 gkernel = gkernel_model_ready,
+                 omic1_kernel = omic1_kernel_model_ready,
+                 omic2_kernel = omic2_kernel_model_ready,
+                 omic3_kernel = omic3_kernel_model_ready,
+                 gen_name = gen_name
+             )
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+                 ETA  <-  ETA_compiler_bayes_GBLUP(
+                     fixed = fixed,
+                     random = random,
+                     GS_model = GS_model,
+                     fixed_term_model_bayesian = fixed_term_model_bayesian,
+                     rand_term_model_bayesian = rand_term_model_bayesian,
+                     pheno_data = pheno_clean[[1]],
+                     gmatrix = gmatrix_model_ready,
+                     omic1_kernel = omic1_kernel_model_ready,
+                     omic2_kernel = omic2_kernel_model_ready,
+                     omic3_kernel = omic3_kernel_model_ready,
+                     gen_name = gen_name
+                 )
+
+             }
+
+         }
+
+         bayes_para <-  bayes_parameter_check(nIter = nIter,
+                                              burnIn = burnIn,
+                                              thin = thin
+         )
+
+         ## bayes_mod_execute
+
+         mod <-  bayes_mod_execute(object = ETA$pheno_data,
+                                   response = response,
+                                   weights = weights,
+                                   ETA = ETA$ETA,
+                                   bayes_para = bayes_para
+         )
+
+         if(exists('gkernel_model_ready')){
+
+             if(GS_model=="RKHS"){
+             res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                       ETA = ETA,
+                                                       gen_name = gen_name,
+                                                       gkernel = gkernel_model_ready,
+                                                       omic1_kernel = omic1_kernel_model_ready,
+                                                       omic2_kernel = omic2_kernel_model_ready,
+                                                       omic3_kernel = omic3_kernel_model_ready
+             )
+
+             }
+
+             if(GS_model=="BRR"){
+                 res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gkernel = gkernel_model_ready,
+                                                           omic1_kernel = omic1_kernel_model_ready,
+                                                           omic2_kernel = omic2_kernel_model_ready,
+                                                           omic3_kernel = omic3_kernel_model_ready
+                 )
+
+             }
+
+
+         } else {
+
+             if(exists('gmatrix_model_ready')){
+
+                 if(GS_model=="RKHS"){
+                 res_model_output <- mod_output_bayes_RKHS(mod = mod,
+                                                           ETA = ETA,
+                                                           gen_name = gen_name,
+                                                           gmatrix = gmatrix_model_ready,
+                                                           omic1_kernel = omic1_kernel_model_ready,
+                                                           omic2_kernel = omic2_kernel_model_ready,
+                                                           omic3_kernel = omic3_kernel_model_ready
+                 )
+
+                 }
+
+                 if(GS_model=="BRR"){
+                     res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
+                                                               ETA = ETA,
+                                                               gen_name = gen_name,
+                                                               gmatrix = gmatrix_model_ready,
+                                                               omic1_kernel = omic1_kernel_model_ready,
+                                                               omic2_kernel = omic2_kernel_model_ready,
+                                                               omic3_kernel = omic3_kernel_model_ready
+                     )
+
+                 }
+
+             }
+
+         }
+
+         res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+
+     }
+
+
+ } #### END GBLUP_RKHS
+
 
  ### if user provide only
 

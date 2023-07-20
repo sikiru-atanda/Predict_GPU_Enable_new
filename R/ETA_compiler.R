@@ -98,31 +98,31 @@ ETA_compiler_bayes <- function(
                                    pheno_data = pheno_data,
                                    fixed_term_model_bayesian = fixed_term_model_bayesian)
 
-   len_ETA = length(ETA)
-
-  } else {
-
-    len_ETA = 0
-  }
+   #len_ETA = length(ETA)
+}
+  # } else {
+  #
+  #   len_ETA = 0
+  # }
 
    if(length(rand_model)==1 && length(rand_term_no_inter)==1){
 
      if(!is.null(geno_data) & ((is.null(omic1_data) &  is.null(omic2_data)) & is.null(omic3_data))){
 
-     ETA[[len_ETA + 1]] <- list(X= as.matrix(geno_data),
+     ETA[[length(ETA) + 1]] <- list(X= as.matrix(geno_data),
                                  model=rand_model,
                                  saveEffects=TRUE)
 
      ETA_element_name = c("geno_data")
      } else if(is.null(geno_data) & ((!is.null(omic1_data) &  is.null(omic2_data)) & is.null(omic3_data))){
 
-       ETA[[len_ETA + 1]] <- list(X= as.matrix(omic1_data),
+       ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_data),
                                   model=rand_model,
                                   saveEffects=TRUE)
       ETA_element_name = c("omic1_data")
      } else if ((is.null(geno_data) & is.null(omic1_data)) &  (!is.null(omic2_data) & is.null(omic3_data))){
 
-       ETA[[len_ETA + 1]] <- list(X= as.matrix(omic2_data),
+       ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_data),
                                   model=rand_model,
                                   saveEffects=TRUE)
 
@@ -130,7 +130,7 @@ ETA_compiler_bayes <- function(
 
      } else if((is.null(geno_data) & is.null(omic1_data)) &  (is.null(omic2_data) & !is.null(omic3_data))){
 
-       ETA[[len_ETA + 1]] <- list(X= as.matrix(omic3_data),
+       ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_data),
                                   model=rand_model,
                                   saveEffects=TRUE)
 
@@ -139,7 +139,7 @@ ETA_compiler_bayes <- function(
 
      } else if ((!is.null(geno_data) & !is.null(omic1_data)) &  (is.null(omic2_data) & is.null(omic3_data))){
 
-       ETA[[len_ETA + 1]] <- list(X= geno_data,
+       ETA[[length(ETA) + 1]] <- list(X= geno_data,
                                   model=rand_model,
                                   saveEffects=TRUE)
 
@@ -153,7 +153,7 @@ ETA_compiler_bayes <- function(
 
      } else if((!is.null(geno_data) & !is.null(omic2_data)) &  (is.null(omic1_data) & is.null(omic3_data))){
 
-       ETA[[len_ETA + 1]] <- list(X= geno_data,
+       ETA[[length(ETA) + 1]] <- list(X= geno_data,
                                   model=rand_model,
                                   saveEffects=TRUE)
 
@@ -166,7 +166,7 @@ ETA_compiler_bayes <- function(
 
      } else if ((!is.null(geno_data) & is.null(omic1_data)) &  (is.null(omic2_data) & !is.null(omic3_data))){
 
-       ETA[[len_ETA + 1]] <- list(X= geno_data,
+       ETA[[length(ETA) + 1]] <- list(X= geno_data,
                                   model=rand_model,
                                   saveEffects=TRUE)
 
@@ -179,7 +179,7 @@ ETA_compiler_bayes <- function(
 
      } else if ((is.null(geno_data) & !is.null(omic1_data)) &  (!is.null(omic2_data) & is.null(omic3_data))){
 
-       ETA[[len_ETA + 1]] <- list(X= omic1_data,
+       ETA[[length(ETA) + 1]] <- list(X= omic1_data,
                                   model=rand_model,
                                   saveEffects=TRUE)
 
@@ -192,7 +192,7 @@ ETA_compiler_bayes <- function(
        ETA_element_name = c("omic1_data", "omic2_data")
      } else if((is.null(geno_data) & !is.null(omic1_data)) &  (is.null(omic2_data) & !is.null(omic3_data))){
 
-       ETA[[len_ETA + 1]] <- list(X= omic1_data,
+       ETA[[length(ETA) + 1]] <- list(X= omic1_data,
                                   model=rand_model,
                                   saveEffects=TRUE)
 
@@ -204,7 +204,7 @@ ETA_compiler_bayes <- function(
        ETA_element_name = c("omic1_data", "omic3_data")
      } else if((is.null(geno_data) & is.null(omic1_data)) &  (!is.null(omic2_data) & !is.null(omic3_data))){
 
-       ETA[[len_ETA + 1]] <- list(X= omic2_data,
+       ETA[[length(ETA) + 1]] <- list(X= omic2_data,
                                   model=rand_model,
                                   saveEffects=TRUE)
 
@@ -216,7 +216,7 @@ ETA_compiler_bayes <- function(
        ETA_element_name = c("omic2_data", "omic3_data")
      } else if ((((!is.null(geno_data) & !is.null(omic1_data)) &  !is.null(omic2_data)) & is.null(omic3_data))){
 
-       ETA[[len_ETA + 1]] <- list(X= geno_data,
+       ETA[[length(ETA) + 1]] <- list(X= geno_data,
                                   model=rand_model,
                                   saveEffects=TRUE)
 
@@ -233,7 +233,7 @@ ETA_compiler_bayes <- function(
 
      } else if(((((!is.null(geno_data) & !is.null(omic1_data)) &  is.null(omic2_data)) & !is.null(omic3_data)))){
 
-       ETA[[len_ETA + 1]] <- list(X= geno_data,
+       ETA[[length(ETA) + 1]] <- list(X= geno_data,
                                   model=rand_model,
                                   saveEffects=TRUE)
 
@@ -250,7 +250,7 @@ ETA_compiler_bayes <- function(
        ###
      } else if(((((!is.null(geno_data) & is.null(omic1_data)) &  !is.null(omic2_data)) & !is.null(omic3_data)))){
 
-       ETA[[len_ETA + 1]] <- list(X= geno_data,
+       ETA[[length(ETA) + 1]] <- list(X= geno_data,
                                   model=rand_model,
                                   saveEffects=TRUE)
 
@@ -268,7 +268,7 @@ ETA_compiler_bayes <- function(
 
        } else if(((((is.null(geno_data) & !is.null(omic1_data)) &  !is.null(omic2_data)) & !is.null(omic3_data)))){
 
-         ETA[[len_ETA + 1]] <- list(X= omic1_data,
+         ETA[[length(ETA) + 1]] <- list(X= omic1_data,
                                     model=rand_model,
                                     saveEffects=TRUE)
 
@@ -289,7 +289,7 @@ ETA_compiler_bayes <- function(
 
        if(((((!is.null(geno_data) & !is.null(omic1_data)) &  !is.null(omic2_data)) & !is.null(omic3_data)))){
 
-       ETA[[len_ETA + 1]] <- list(X= geno_data,
+       ETA[[length(ETA) + 1]] <- list(X= geno_data,
                                   model=rand_model,
                                   saveEffects=TRUE)
 

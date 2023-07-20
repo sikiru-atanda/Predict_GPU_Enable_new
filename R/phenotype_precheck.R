@@ -36,8 +36,8 @@ phenotype_precheck <- function(pheno = NULL,
 
       ### Check the provided response name correspond to the name in the data file
 
-      if(!response%in%colnames(pheno)){
-
+      #if(!response%in%colnames(pheno)){
+      if(sum(colnames(pheno)%in%response)<length(response)) {
         stop(print(paste(msg,paste(paste("The specified ",  response),
                                    " did not match with your data.\n\t\t Please check and use apppropriatly"))), call. = FALSE)
 
@@ -54,6 +54,13 @@ phenotype_precheck <- function(pheno = NULL,
       stop(print(paste(msg,paste(paste('column',  gen_name),
                                  'should not have NA/missing'))), call. = FALSE)
     }
+
+      if(!all(sapply(response, function(x, pheno) is.numeric(pheno[,x]),  pheno))) {
+        pheno[, response] <-
+          lapply(pheno[, response, drop = FALSE],
+                 function(x) as.double(as.character(x)))
+
+      }
 
       # Assign appropriate class.
       class(pheno) <- c("data.frame", "phenotype")
