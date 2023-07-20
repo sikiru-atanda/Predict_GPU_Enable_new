@@ -47,11 +47,18 @@ pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR","F5I", "B5I"), ])
 
 pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR"), ])
 
-Omic2 = as.matrix(COP)
+pheno$PH = pheno$Yield
 
 response = "Yield"
 
+Omic2 = COP
+
+response = c("Yield","PH")
+
 random = ~GID
+fixed = NULL
+GS_model = "BRR"
+
 
 #fixed = ~Env
 
