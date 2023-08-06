@@ -34,7 +34,7 @@ sik$model_results$genomic_variance_1
 
 
 
-sik2 <- predict_R(object_coeff1 = sik$model_results$coefficients_1,
+sik2 <- predict_proR(object_coeff1 = sik$model_results$coefficients_1,
                   object_coeff2 = sik$model_results$coefficients_2,
                   geno)
 

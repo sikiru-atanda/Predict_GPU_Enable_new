@@ -62,7 +62,7 @@ GS_model = "BRR"
 
 #fixed = ~Env
 
-ZE<-model.matrix(~factor(pheno$Env)-1)
+ZE<-model.matrix(~factor(pheno.data$Env)-1)
 dim(ZE)
 dim(Geno.data)
 
