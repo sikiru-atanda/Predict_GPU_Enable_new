@@ -1,10 +1,8 @@
 #' Title
 #'
-#' @param pheno
-#' @param pheno_train
-#' @param pheno_test
-#' @param train_set
-#' @param test_set
+#' @param pheno_data
+#' @param pheno_data_train
+#' @param pheno_data_test
 #' @param response
 #' @param gen_name
 #' @param ...
@@ -15,11 +13,11 @@
 #' @examples
 
 phenotype_to_model <- function(
-    pheno = NULL,
-    pheno_train = NULL,
-    pheno_test = NULL,
-    train_set = NULL,
-    test_set = NULL,
+    pheno_data = NULL,
+    pheno_data_train = NULL,
+    pheno_data_test = NULL,
+    #train_set = NULL,
+    #test_set = NULL,
     response=NULL,
     gen_name=NULL,
     ...
@@ -28,28 +26,28 @@ phenotype_to_model <- function(
   msg <- sprintf("==================================================\n")
 
 
-  ## Check availability of phenotypic data (training and testing set). This
+  ## Check availability of pheno_datatypic data (training and testing set). This
   ## accommodate missing value with the assumption that testing will have NA
 
-  if (!is.null(pheno)){
+  if (!is.null(pheno_data)){
 
-    pheno <- phenotype_precheck(pheno= pheno,
+    pheno_data <- phenotype_precheck(pheno_data= pheno_data,
                                  gen_name = gen_name,
                                  response = response)
 
     ### The result object has to pass the test attribute before it can be stored
-    if(attr(pheno, "cleared")=="pass" && all(class(pheno)==c("data.frame", "phenotype"))) {
+    if(attr(pheno_data, "cleared")=="pass" && all(class(pheno_data)==c("data.frame", "phenotype"))) {
 
     # Assign appropriate class.
-    class(pheno) <- c("data.frame", "phenotype")
+    class(pheno_data) <- c("data.frame", "phenotype")
 
-    attr(pheno, "cleared") <- "for_model_fit"
+    attr(pheno_data, "cleared") <- "for_model_fit"
 
-    output =  list(pheno)
+    output =  list(pheno_data)
 
     names(output) <- c("pheno_data")
 
-    rm(pheno)
+    #rm(pheno_data)
 
     } else {
 
@@ -58,57 +56,62 @@ phenotype_to_model <- function(
 
   } else {
 
-    ### If pheno is missing, pheno traning should be available for traning and it is expected
-    ## pheno testing is also available
-    ## However, pheno testing might be missing if the user objective for cross-validation
-    ## In general, missing value is not expected in the pheno training.
-    if (!is.null(pheno_train)){
+    ### If pheno_data is missing, pheno_data traning should be available for traning and it is expected
+    ## pheno_data testing is also available
+    ## However, pheno_data testing might be missing if the user objective for cross-validation
+    ## In general, missing value is not expected in the pheno_data training.
+    if (!is.null(pheno_data_train)){
 
-      pheno_train <- phenotype_precheck(pheno= pheno_train,
+      pheno_data_train <- phenotype_precheck(pheno_data= pheno_data_train,
                                    gen_name = gen_name,
                                    response = response)
 
-      if(attr(pheno_train, "cleared")=="pass" && all(class(pheno_train)==c("data.frame", "phenotype"))) {
+      if(attr(pheno_data_train, "cleared")!="pass" && all(class(pheno_data_train)!=c("data.frame", "phenotype"))) {
 
-        stop('pheno_train is not object phenotype')
+        stop(paste(msg, 'pheno_data_train is not object phenotype'))
+
+
       }
+
+      if(anyNA(pheno_data_train)){ stop(paste(msg,"Missing value in not accepted in training set"))}
 
     }
 
-    ### pheno test can be present or absent. It is expected this will contain
+    ### pheno_data test can be present or absent. It is expected this will contain
     ## missing value for the response variable
 
-    if (!is.null(pheno_test)){
+    if (!is.null(pheno_data_test)){
 
-      pheno_test <- phenotype_precheck(pheno= pheno_test,
+      pheno_data_test <- phenotype_precheck(pheno_data= pheno_data_test,
                                    gen_name = gen_name,
                                    response = response)
 
-      if(attr(pheno_test, "cleared")=="pass" && all(class(pheno_test)==c("data.frame", "phenotype"))) {
+      if(attr(pheno_data_test, "cleared")!="pass" && all(class(pheno_data_test)!=c("data.frame", "phenotype"))) {
 
-        stop('pheno_train is not object phenotype')
+        stop(paste(msg, 'pheno_data_train is not object phenotype'))
       }
     }
 
-    #### if both pheno_train and pheno_test are provided
+    #### if both pheno_data_train and pheno_data_test are provided
 
-    if ((!is.null(pheno_train) && !is.null(pheno_test)) & is.null(pheno)){
+    if ((!is.null(pheno_data_train) & !is.null(pheno_data_test)) & is.null(pheno_data)){
 
-      if (!identical(colnames(pheno_train), colnames(pheno_test))){
-        stop(print(paste(msg,'Columns name in the pheno_train not the same as pheno_test')), call. = FALSE)
+      if (!identical(colnames(pheno_data_train), colnames(pheno_data_test))){
+        stop(print(paste(msg,'Columns name in the pheno_data_train not the same as pheno_data_test')), call. = FALSE)
 
       } else{
 
-        pheno <- rbind(pheno_train, pheno_test)
+        pheno_data <- rbind(pheno_data_train, pheno_data_test)
 
-        test_set <- as.character(unique(pheno_test[, gen_name]))
+        test_set <- data.frame(name = as.character(unique(pheno_data_test[, gen_name])))
+        names(test_set) = gen_name
 
         ### The result object has to pass the test attribute before it can be stored
 
           # Assign appropriate class.
-          class(pheno) <- c("data.frame", "phenotype")
+          class(pheno_data) <- c("data.frame", "phenotype")
 
-          attr(pheno, "cleared") <- "for_model_fit"
+          attr(pheno_data, "cleared") <- "for_model_fit"
 
 
 
@@ -122,24 +125,39 @@ phenotype_to_model <- function(
 
 
 
-  if(!is.null(pheno) & (!is.null(test_set) && !is.null(train_set))){
+  #if(!is.null(pheno_data) & (!is.null(test_set) && !is.null(train_set))){
 
-    output =  list(pheno, test_set, train_set)
+  if(!is.null(pheno_data) & exists('test_set')){
 
-    names(output) <- c("pheno_data", "test_set", "train_set")
+    if(!is.null(test_set)){
+
+    output =  list(pheno_data, test_set)
 
 
+    names(output) <- c("pheno_data", "test_set")
+
+    }
+
+    #rm(pheno_data, test_set)
+
+    }else if (!is.null(pheno_data) & (is.null(pheno_data_train) & is.null(pheno_data_test))){
+
+      output =  list(pheno_data)
+
+      names(output) <- c("pheno_data")
+
+      #rm(pheno_data)
 
   } else {
 
 
-    if (!is.null(pheno_train) & !is.null(pheno_test)){
+    if (!is.null(pheno_data_train) & !is.null(pheno_data_test)){
 
-    output =  list(pheno, test_set)
+    output =  list(pheno_data, test_set)
 
     names(output) <- c("pheno_data", "test_set")
 
-
+    #rm(pheno_data, test_set)
 
     }
 

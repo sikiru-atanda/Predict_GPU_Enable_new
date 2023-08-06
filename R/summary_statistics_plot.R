@@ -9,8 +9,18 @@
 #'
 #' @examples
 summary_statistics_bayes <- function(mod=NULL,
+                                     eval_metrics = c("Accuracy",
+                                                      "Mean_Squared_Error",
+                                                      "Bias",
+                                                      "Root_Mean_Squared_Error",
+                                                      "Relative_Squared_Error",
+                                                      "Mean_Absolute_Error",
+                                                      "Mean_Absolute_Percent_Error"),
                                      ...){
 
+  Eval_met <- matrix(NA, nrow = length(eval_metrics), ncol = 1)
+
+  rownames(Eval_met) <- eval_metrics
   n_pheno <-paste('Number of phenotypes=', (sum(!is.na(mod$model$y))))
   #Res <-  cat(tmp,'\n')
 
@@ -35,7 +45,15 @@ summary_statistics_bayes <- function(mod=NULL,
 
     n_tst <- paste('Number of Testing =',length(tst))
 
-    pred_acc <-  paste('Prediction Accuarcy =',round(cor(mod$model$y[-tst],mod$model$yHat[-tst]),3))
+    #pred_acc <-  paste('Prediction Accuarcy =',round(cor(mod$model$y[-tst],mod$model$yHat[-tst]),3))
+
+    for (i in 1:length(eval_metrics)){
+
+      Eval_met[i, ] <- evaluation_metrics(y_observed = mod$model$y[tst],
+                                          y_predicted = mod$model$yHat[tst],
+                                          eval_metrics = eval_metrics[i])
+
+    }
 
   }else{
 
@@ -43,8 +61,15 @@ summary_statistics_bayes <- function(mod=NULL,
 
     n_tst <- paste('Number of Testing =',0)
 
-    pred_acc <- paste('Prediction Accu of Training =',round(cor(mod$model$y,mod$model$yHat),3))
+    #pred_acc <- paste('Prediction Accu of Training =',round(cor(mod$model$y,mod$model$yHat),3))
 
+    for (i in 1:length(eval_metrics)){
+
+      Eval_met[i, ] <- evaluation_metrics(y_observed = mod$model$y,
+                                          y_predicted = mod$model$yHat,
+                                          eval_metrics = eval_metrics[i])
+
+    }
   }
 
   model = data.frame()
@@ -63,13 +88,35 @@ summary_statistics_bayes <- function(mod=NULL,
   }
 
   colnames(model) = "model_for_Linear_predictors"
-  output <- list(Min = trn_min, Max = trn_max, Variance = var_trn,
-                 Residual = Res_trn, n_trn = n_trn, n_tst = n_tst,
-                 pred_acc = pred_acc, model_type = model)
+  # output <- list(Min = trn_min, Max = trn_max, Variance = var_trn,
+  #                Residual = Res_trn, n_trn = n_trn, n_tst = n_tst,
+  #                pred_acc = pred_acc, model_type = model)
+  #
+  # names(output) <-  c("trn_min", "trn_max", "variance_trn",
+  #                     "Residual", "n_trn", "n_tst",
+  #                     "pred_acc", "model_type")
 
-  names(output) <-  c("trn_min", "trn_max", "variance_trn",
-                      "Residual", "n_trn", "n_tst",
-                      "pred_acc", "model_type")
+  Stat_Res = as.data.frame(t(data.frame(Min = trn_min, Max = trn_max,
+                                        Variance = var_trn,
+                                        Residual = Res_trn,
+                                        n_trn = n_trn,
+                                        n_tst = n_tst,
+                                        model_type = "model_for_Linear_predictors"
+  )))
+  Stat_Res$stat = rownames( Stat_Res)
+  Stat_Res =  Stat_Res[, c(2,1)]
+  names(Stat_Res)[2] <- "summary"
+#####
+  Eval_met = data.frame(Eval_met)
+  Eval_met$stat = rownames(Eval_met)
+  Eval_met =  Eval_met[, c(2,1)]
+  names(Eval_met)[2] <- "summary"
+####
+  Stat_Res = rbind(Stat_Res, Eval_met)
+
+  output <-  list(Stat_Res)
+
+  names(output) <- "Statics_summary"
 
   return(output)
 
@@ -77,35 +124,54 @@ summary_statistics_bayes <- function(mod=NULL,
 
 
 
-# plot_acc <- function(mod,...){
-#
-#   # DT_ <- data.frame(y = c(mod$y,mod$yHat),yhat = c(mod$yhat, mod$y))
-#   #   # Scatter plot by group
-#   # ggplot2::ggplot(DT_, aes(x = y, y = yhat)) +
-#   #   ggplot2::geom_point()+
-#   #   ggplot2::geom_smooth(method="lm") +
-#   #   ggpmisc::stat_poly_line() +
-#   #   ggpmisc::stat_poly_eq(use_label(c("R2")))
-#   #
-#
-#   #DT = data.frame(y = mod$y, yhat = mod$yHat)
-#   if(any(is.na(mod$y)))
-#   {
-#     tst <- which(is.na(mod$y))
-#  PL <- plot(mod$y[tst]~I(mod$yHat[tst]),ylab="Fitted Value",
-#        xlab="Predicted Value" ,cex=1,bty="L")
-#   points(y=mod$y[tst],x=mod$yHat[tst],col=c("red", 'blue'),cex=1,pch=21)
-#   #points(y=mod$y,x=mod$yHat,col=c("red", 'blue'),cex=1,pch=21)
-#   legend("topleft", legend=c("testing", "training"),bty="n",
-#          pch=c(1,19), col=c("red","blue"))
-#   #abline(lm(I(mod$y[-tst])~I(mod$yHat[-tst]))$coef,col=1,lwd=2)
-#   abline(lm(I(mod$y[tst])~I(mod$yHat[tst]))$coef,col=2,lwd=2)
-#
-#   }
-#
-#   return()
-#
-# }
+#' Title
+#'
+#' @param mod
+#' @param ...
+#'
+#' @return
+#' @export
+#'
+#' @examples
+plot_acc <- function(mod,...){
+
+  # DT_ <- data.frame(y = c(mod$y,mod$yHat),yhat = c(mod$yhat, mod$y))
+  #   # Scatter plot by group
+  # ggplot2::ggplot(DT_, aes(x = y, y = yhat)) +
+  #   ggplot2::geom_point()+
+  #   ggplot2::geom_smooth(method="lm") +
+  #   ggpmisc::stat_poly_line() +
+  #   ggpmisc::stat_poly_eq(use_label(c("R2")))
+  #
+
+  #DT = data.frame(y = mod$y, yhat = mod$yHat)
+  if(any(is.na(mod$y)))
+  {
+    tst <- which(is.na(mod$y))
+
+    # grDevices::tiff(file="saving_plot3.tiff", units="in",
+    #      width=8, height=5, res=300)
+
+
+ graphics::plot(mod$y[tst]~I(mod$yHat[tst]),ylab="Fitted Value",
+       xlab="Predicted Value" ,cex=1,bty="L")
+    graphics::points(y=mod$y[tst],x=mod$yHat[tst],col=c("red", 'blue'),cex=1,pch=21)
+  #points(y=mod$y,x=mod$yHat,col=c("red", 'blue'),cex=1,pch=21)
+    graphics::legend("topleft", legend=c("testing", "training"),bty="n",
+         pch=c(1,19), col=c("red","blue"))
+  #abline(lm(I(mod$y[-tst])~I(mod$yHat[-tst]))$coef,col=1,lwd=2)
+    graphics::abline(stats::lm(I(mod$y[tst])~I(mod$yHat[tst]))$coef,col=2,lwd=2)
+
+    grDevices::dev.off()
+
+  }
+
+  return(grDevices::jpeg(filename=paste(paste(response, "predAccuracy", sep="_"), "jpg", sep = "."), units="in",
+                         width=8, height=5, res=300))
+
+  grDevices::dev.off()
+
+}
 
 
 

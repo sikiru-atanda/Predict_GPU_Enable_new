@@ -1,5 +1,5 @@
 
-predict_R <- function(object_coeff1 = NULL,
+predict_proR <- function(object_coeff1 = NULL,
                       object_coeff2 = NULL,
                       object_coeff3 = NULL,
                       object_coeff4 = NULL,

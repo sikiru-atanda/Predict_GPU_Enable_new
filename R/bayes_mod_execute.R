@@ -21,7 +21,7 @@ bayes_mod_execute <- function(object = NULL,
                               ETA = NULL,
                               bayes_para = NULL,
                               verbose = FALSE,
-                              core,
+                              core = NULL,
                               ...)
   {
   ###
@@ -120,6 +120,9 @@ bayes_mod_execute <- function(object = NULL,
 
   names(Univariate) <- response
 
+  output <-  Univariate
+
+  rm(Univariate)
 
   } else {
 

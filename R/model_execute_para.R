@@ -1,8 +1,6 @@
 #' Title
 #'
 #' @param pheno_data
-#' @param pheno_train
-#' @param pheno_test
 #' @param geno_data
 #' @param omic1_data
 #' @param omic2_data
@@ -16,7 +14,6 @@
 #' @param test_omic1_data
 #' @param test_omic2_data
 #' @param test_omic3_data
-#' @param train_coefficient
 #' @param train_set
 #' @param test_set
 #' @param gmatrix_method
@@ -35,12 +32,6 @@
 #' @param GS_model
 #' @param fixed_term_model_bayesian
 #' @param rand_term_model_bayesian
-#' @param Cross_validation
-#' @param test_size
-#' @param random_state
-#' @param replication
-#' @param nFolds
-#' @param CV
 #' @param core
 #' @param message
 #' @param ...
@@ -50,6 +41,14 @@
 #' @param omic1_kernel
 #' @param omic2_kernel
 #' @param omic3_kernel
+#' @param pheno_data_train
+#' @param pheno_data_test
+#' @param coefficient_1
+#' @param coefficient_2
+#' @param coefficient_3
+#' @param coefficient_4
+#' @param eval_metrics
+#' @param para_tunning
 #'
 #' @return
 #' @export
@@ -57,8 +56,8 @@
 #' @examples
 model_execute <- function(
     pheno_data=NULL,
-    pheno_train = NULL,
-    pheno_test = NULL,
+    pheno_data_train = NULL,
+    pheno_data_test = NULL,
     geno_data = NULL,
     omic1_data = NULL,
     omic2_data = NULL,
@@ -109,27 +108,22 @@ model_execute <- function(
                  "BayesA",
                  "BayesB",
                  "BayesC",
-                 "BayesL"),
+                 "BayesL",
+                 "Xgboost",
+                 "RandomForest",
+                 "PartialLeastSquare",
+                 "SupportVectorMachine",
+                 ),
+    eval_metrics = c("Accuracy",
+                     "Mean_Squared_Error",
+                     "Bias",
+                     "Root_Mean_Squared_Error",
+                     "Relative_Squared_Error",
+                     "Mean_Absolute_Error",
+                     "Mean_Absolute_Percent_Error"),
+    para_tunning = FALSE,
     fixed_term_model_bayesian = 'FIXED',
     rand_term_model_bayesian = NULL,
-    Cross_validation = c("Hold_Out",
-                         "Stratified_Hold_Out",
-                         "Repeated_Hold_Out",
-                         "Repeated_Stratified_Hold_Out",
-                         "K-Folds",
-                         "Stratified_K-Folds",
-                         "Repeated_K-Folds",
-                         "Repeated_Stratified_K-Folds",
-                         "Leave_one_Out",
-                         "CV1",
-                         "Repeated_CV1",
-                         "CV2",
-                         "Repeated_CV2"),
-    test_size = 0.5,
-    random_state = NULL,
-    replication = 1,
-    nFolds = NULL,
-    CV = NULL,
     core = NULL,
     message = TRUE,
     center = TRUE,
@@ -141,18 +135,18 @@ model_execute <- function(
 
 
  pheno_clean <- phenotype_to_model(
-                    pheno = pheno_data,
-                    pheno_train = pheno_train,
-                    pheno_test = pheno_test,
-                    train_set = train_set,
-                    test_set = test_set,
+                    pheno_data = pheno_data,
+                    pheno_data_train = pheno_data_train,
+                    pheno_data_test = pheno_data_test,
+                    #train_set = train_set,
+                    #test_set = test_set,
                     response = response,
                     gen_name = gen_name)
 
  ### pheno_clean is a list with three elements.
  ## First element is pheno_data
- ## Second element is test_set
- ## Third element is train_set
+ ## Second element is test_set if user provide it as input
+ ## Third element is train_set if user provide it as input.
 
  if(attr(pheno_clean[[1]], "cleared")!="for_model_fit" && all(class(pheno_clean[[1]])!=c("data.frame", "phenotype"))) {
 
@@ -525,9 +519,13 @@ model_execute <- function(
     ### Model BRR for single location
  #if(((GS_model=="BRR") & is.null(rand_term_model_bayesian)) || ((is.null(GS_model) & (rand_term_model_bayesian=="BRR")))){
 
-    if((isTRUE(GS_model== "BRR" | GS_model== "BayesA"|  GS_model== "BayesB"| GS_model== "BayesC" | GS_model== "BL") & is.null(rand_term_model_bayesian)) |
-       ((is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))))) |
-       ((!is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL")))))){
+    # if((isTRUE(GS_model== "BRR" | GS_model== "BayesA"|  GS_model== "BayesB"| GS_model== "BayesC" | GS_model== "BL") & is.null(rand_term_model_bayesian)) |
+    #    ((is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))))) |
+    #    ((!is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL")))))){
+
+ if((isTRUE(GS_model== "BRR" | GS_model== "BayesA"|  GS_model== "BayesB"| GS_model== "BayesC" | GS_model== "BL") & is.null(rand_term_model_bayesian)) |
+    (is.null(GS_model) & length(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))!=0) |
+    (!is.null(GS_model) & length(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))!=0)){
 
         if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
 
@@ -566,6 +564,8 @@ model_execute <- function(
                                          omic3_data = NULL)
 
     res_summary_stat <- summary_statistics_bayes(mod = mod)
+
+   res_plot <-  plot_acc(mod = mod)
 
 
         }
@@ -609,6 +609,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -652,6 +653,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -697,6 +699,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -741,6 +744,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -785,6 +789,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -828,6 +833,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -872,6 +878,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -916,6 +923,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -961,6 +969,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -1006,6 +1015,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -1050,6 +1060,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -1096,6 +1107,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -1140,6 +1152,8 @@ model_execute <- function(
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
+            res_plot <-  plot_acc(mod = mod)
+
         }
 
 
@@ -1183,6 +1197,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+            res_plot <-  plot_acc(mod = mod)
 
         }
 
@@ -1201,9 +1216,12 @@ model_execute <- function(
  #     ((is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%"RKHS"))) |
  #     ((!is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%"RKHS"))))){
 
+ # if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "BRR")) & is.null(rand_term_model_bayesian)) |
+ #    ((is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%c("RKHS", "BRR")))) |
+ #    ((!is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%c("RKHS", "BRR"))))){
  if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "BRR")) & is.null(rand_term_model_bayesian)) |
-    ((is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%c("RKHS", "BRR")))) |
-    ((!is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%c("RKHS", "BRR"))))){
+    (is.null(GS_model) & length(rand_term_model_bayesian%in%c("RKHS", "BRR"))!=0) |
+    (!is.null(GS_model) & length(rand_term_model_bayesian%in%c("RKHS", "BRR"))!=0)){
 
 
      if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
@@ -1294,6 +1312,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
      ###### omic1_clean
@@ -1341,6 +1360,7 @@ model_execute <- function(
          }
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
 
@@ -1388,6 +1408,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
 
@@ -1439,6 +1460,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
 
@@ -1545,6 +1567,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
 
@@ -1651,6 +1674,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
      ##### geno_clean and omic3_clean
@@ -1760,6 +1784,8 @@ model_execute <- function(
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
+         res_plot <-  plot_acc(mod = mod)
+
      }
 
 
@@ -1812,6 +1838,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
 
@@ -1868,6 +1895,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
 
@@ -1923,6 +1951,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
 
@@ -2037,6 +2066,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
 
@@ -2151,6 +2181,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
 
@@ -2268,6 +2299,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
 
@@ -2324,6 +2356,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
 
@@ -2446,18 +2479,2084 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
+         res_plot <-  plot_acc(mod = mod)
 
      }
 
 
  } #### END GBLUP_RKHS
 
+ ######################################################
+ ######################################################
+ ##                                                 ###
+ ## Machine Learning Models                         ###
+ ##                                                 ###
+ ######################################################
+ ######################################################
+
+ ##########################################################################
+ ############################################################################
+ ## Start data organization for ML model fitting
+ ##
+ ##############################################################################
+ ##############################################################################
+
+ #if(exists("pheno_clean")){
+
+ # if(length(pheno_clean)==2){
+ #
+ #   object_pheno <- object_pheno$pheno_data
+ #
+ #      test_set <- object_pheno$test_set
+ # } else {
+
+ if(isTRUE(GS_model== "Xgboost" | GS_model== "RandomForest" | GS_model== "PartialLeastSquare" | GS_model== "SupportVectorMachine" | GS_model== "Knn"))   {
+
+
+ pheno_clean <- ML_undefined_test_train(object_pheno = pheno_clean,
+                                        response = response)
+
+ if(length(pheno_clean)==1){
+     pheno_clean <- pheno_clean$pheno_data
+     if(length(pheno_clean)==2){
+
+         pheno_clean <- pheno_clean$pheno_data
+
+         test_set_ <- pheno_clean$test_set
+     }
+
+ }
+
+ #}
+ ####################################
+
+ if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+
+         rm(geno_model_ready)
+     } else {
+
+         geno_model_ready_train <-  geno_model_ready
+
+         rm(geno_model_ready)
+     }
+
+
+ }
+ #####
+ if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         rm(omic1_model_ready)
+
+     } else {
+
+         omic1_model_ready_train <-  omic1_model_ready
+
+         rm(omic1_model_ready)
+     }
+
+
+ }
+ ############
+ if((!exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         rm(omic2_model_ready)
+     } else {
+
+         omic2_model_ready_train <-  omic2_model_ready
+
+         rm(omic2_model_ready)
+     }
+
+
+
+ }
+ #############
+
+ if((!exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         rm(omic3_model_ready)
+
+     }  else {
+
+         omic3_model_ready_train <-  omic3_model_ready
+
+         rm(omic3_model_ready)
+     }
+
+
+ }
+
+ ########
+
+ ##### geno_model_ready and omic1_model_ready
+
+ if((exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+
+         ###
+         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_omic1_test = cbind(geno_model_ready_test, omic1_model_ready_test)
+
+         geno_omic1_train = cbind(geno_model_ready_train, omic1_model_ready_train)
+
+         rm(geno_model_ready, omic1_model_ready,
+            geno_model_ready_test, omic1_model_ready_test,
+            geno_model_ready_train, omic1_model_ready_train)
+
+     } else {
+
+         geno_omic1_train = cbind(geno_model_ready, omic1_model_ready)
+
+         rm(geno_model_ready, omic1_model_ready)
+     }
+
+ }
+ ################
+
+ ##### geno_model_ready and omic2_model_ready
+
+ if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+
+         ###
+         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_omic2_test = cbind(geno_model_ready_test, omic2_model_ready_test)
+
+         geno_omic2_train = cbind(geno_model_ready_train, omic2_model_ready_train)
+
+         rm(geno_model_ready, omic2_model_ready,
+            geno_model_ready_test, omic2_model_ready_test,
+            geno_model_ready_train, omic2_model_ready_train)
+
+     } else {
+
+         geno_omic2_train = cbind(geno_model_ready, omic2_model_ready)
+
+         rm(geno_model_ready, omic2_model_ready)
+     }
+
+ }
+
+
+ ################
+ ##### geno_model_ready and omic3_model_ready
+
+ if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+
+         ###
+         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_omic3_test = cbind(geno_model_ready_test, omic3_model_ready_test)
+
+         geno_omic3_train = cbind(geno_model_ready_train, omic3_model_ready_train)
+
+         rm(geno_model_ready, omic3_model_ready,
+            geno_model_ready_test, omic3_model_ready_test,
+            geno_model_ready_train, omic3_model_ready_train)
+
+     } else {
+
+         geno_omic3_train = cbind(geno_model_ready, omic3_model_ready)
+
+         rm(geno_model_ready, omic3_model_ready)
+     }
+
+ }
+
+ ####
+ ################
+ #####  omic1_model_ready and omic2_model_ready
+
+ if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         ###
+         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         omic1_omic2_test = cbind(omic1_model_ready_test, omic2_model_ready_test)
+
+         omic1_omic2_train = cbind(omic1_model_ready_train, omic2_model_ready_train)
+
+         rm(omic1_model_ready, omic2_model_ready,
+            omic1_model_ready_test, omic2_model_ready_test,
+            omic1_model_ready_train, omic2_model_ready_train)
+
+     } else {
+
+         omic1_omic2_train = cbind(omic1_model_ready, omic2_model_ready)
+
+         rm(omic1_model_ready, omic2_model_ready)
+     }
+
+ }
+
+ ################
+ #####  omic1_model_ready and omic3_model_ready
+
+ if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         ###
+         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         omic1_omic3_test = cbind(omic1_model_ready_test, omic3_model_ready_test)
+
+         omic1_omic3_train = cbind(omic1_model_ready_train, omic3_model_ready_train)
+
+         rm(omic1_model_ready, omic3_model_ready,
+            omic1_model_ready_test, omic3_model_ready_test,
+            omic1_model_ready_train, omic3_model_ready_train)
+
+     } else {
+
+         omic1_omic3_train = cbind(omic1_model_ready, omic3_model_ready)
+
+         rm(omic1_model_ready, omic3_model_ready)
+     }
+
+ }
+
+
+ ################
+ #####  omic1_model_ready and omic3_model_ready
+
+ if((!exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         ###
+         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         omic2_omic3_test = cbind(omic2_model_ready_test, omic3_model_ready_test)
+
+         omic2_omic3_train = cbind(omic2_model_ready_train, omic3_model_ready_train)
+
+         rm(omic2_model_ready, omic3_model_ready,
+            omic2_model_ready_test, omic3_model_ready_test,
+            omic2_model_ready_train, omic3_model_ready_train)
+
+     } else {
+
+         omic2_omic3_train = cbind(omic2_model_ready, omic3_model_ready)
+
+         rm(omic2_model_ready, omic3_model_ready)
+     }
+
+ }
+
+ ################
+ ##### geno_model_ready,  omic1_model_ready and omic2_model_ready
+
+ if((exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+         ####
+
+         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         ###
+         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_omic1_omic2_test = scale(cbind(cbind(geno_model_ready_test, omic1_model_ready_test), omic2_model_ready_test))
+
+         geno_omic1_omic2_train = scale(cbind(cbind(geno_model_ready_train,omic1_model_ready_train), omic2_model_ready_train))
+
+         rm(geno_model_ready, omic1_model_ready, omic2_model_ready,
+            geno_model_ready_test, omic1_model_ready_test, omic2_model_ready_test,
+            geno_model_ready_train, omic1_model_ready_train, omic2_model_ready_train)
+
+     } else {
+
+         geno_omic1_omic2_train = scale(cbind(cbind(geno_model_ready, omic1_model_ready), omic2_model_ready))
+
+         rm(geno_model_ready, omic1_model_ready, omic2_model_ready)
+     }
+
+ }
+
+
+ ################
+ ##### geno_model_ready,  omic1_model_ready and omic3_model_ready
+
+ if((exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+         ####
+
+         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         ###
+         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_omic1_omic3_test = scale(cbind(cbind(geno_model_ready_test, omic1_model_ready_test), omic3_model_ready_test))
+
+         geno_omic1_omic3_train = scale(cbind(cbind(geno_model_ready_train,omic1_model_ready_train), omic3_model_ready_train))
+
+         rm(geno_model_ready, omic1_model_ready, omic3_model_ready,
+            geno_model_ready_test, omic1_model_ready_test, omic3_model_ready_test,
+            geno_model_ready_train, omic1_model_ready_train, omic3_model_ready_train)
+
+     } else {
+
+         geno_omic1_omic3_train = scale(cbind(cbind(geno_model_ready, omic1_model_ready), omic3_model_ready))
+
+         rm(geno_model_ready, omic1_model_ready, omic3_model_ready)
+     }
+
+ }
+
+
+ ################
+ ##### geno_model_ready,  omic2_model_ready and omic3_model_ready
+
+ if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+         ####
+
+         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         ###
+         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_omic2_omic3_test = scale(cbind(cbind(geno_model_ready_test, omic2_model_ready_test), omic3_model_ready_test))
+
+         geno_omic2_omic3_train = scale(cbind(cbind(geno_model_ready_train,omic2_model_ready_train), omic3_model_ready_train))
+
+         rm(geno_model_ready, omic2_model_ready, omic3_model_ready,
+            geno_model_ready_test, omic2_model_ready_test, omic3_model_ready_test,
+            geno_model_ready_train, omic2_model_ready_train, omic3_model_ready_train)
+
+     } else {
+
+         geno_omic2_omic3_train = scale(cbind(cbind(geno_model_ready, omic2_model_ready), omic3_model_ready))
+
+         rm(geno_model_ready, omic2_model_ready, omic3_model_ready)
+     }
+
+ }
+ #########
+ #### omic1, omic2, omic 3
+
+ if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+
+         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         ####
+         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         ###
+         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         omic1_omic2_omic3_test = scale(cbind(cbind(omic1_model_ready_test, omic2_model_ready_test), omic3_model_ready_test))
+
+         omic1_omic2_omic3_train = scale(cbind(cbind(omic1_model_ready_train,omic2_model_ready_train), omic3_model_ready_train))
+
+         rm(omic1_model_ready, omic2_model_ready, omic3_model_ready,
+            omic1_model_ready_test, omic2_model_ready_test, omic3_model_ready_test,
+            omic1_model_ready_train, omic2_model_ready_train, omic3_model_ready_train)
+
+     } else {
+
+         geno_omic1_omic3_train = scale(cbind(cbind(geno_model_ready, omic1_model_ready), omic3_model_ready))
+
+         rm(geno_model_ready, omic1_model_ready, omic3_model_ready)
+     }
+
+ }
+
+
+ ################
+ ##### geno_model_ready, omic1_model_ready, omic2_model_ready and omic3_model_ready
+
+ if((exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
+
+     if(exists("test_set_")){
+
+         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
+         ####
+
+         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+
+         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
+         ####
+
+         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
+
+         ###
+         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
+
+         geno_omic1_omic2_omic3_test = scale(cbind(cbind(geno_model_ready_test, omic1_model_ready_test),
+                                                   cbind(omic2_model_ready_test, omic3_model_ready_test)))
+
+         geno_omic1_omic2_omic3_train = scale(cbind(cbind(geno_model_ready_train,omic1_model_ready_train),
+                                                    cbind(omic2_model_ready_train, omic3_model_ready_train)))
+
+         rm(geno_model_ready, omic1_model_ready, omic2_model_ready, omic3_model_ready,
+            geno_model_ready_test, omic1_model_ready_test, omic2_model_ready_test, omic3_model_ready_test,
+            geno_model_ready_train, omic1_model_ready_train, omic2_model_ready_train, omic3_model_ready_train)
+
+     } else {
+
+         geno_omic1_omic2_omic3_train = scale(cbind(cbind(geno_model_ready, omic1_model_ready),
+                                                    cbind(omic2_model_ready, omic3_model_ready)))
+
+         rm(geno_model_ready, omic1_model_ready, omic2_model_ready, omic3_model_ready)
+     }
+
+ }
+
+
+ ##############################################################
+ ###################################################################
+ ###  Start ML Analysis
+ ###
+ ######################################################################
+ #####################################################################
+
+ if(exists('geno_model_ready_test') & exists('geno_model_ready_train')) {
+
+     if(GS_model=="Xgboost"){
+
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = geno_model_ready_train,
+                                geno_omic_test_object = geno_model_ready_test,
+                                para_tunning = para_tunning
+                                )
+
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                                       geno_model_ready_train = geno_model_ready_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+                                                       )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                         pheno_object= pheno_clean,
+                         response = response,
+                         test_set = test_set_)
+
+     }
+
+     #### random Forest
+
+     if(GS_model=="RandomForest"){
+
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_model_ready_train,
+                                    geno_omic_test_object = geno_model_ready_test,
+                                    para_tunning = para_tunning
+         )
+
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                           test_set = test_set_,
+                                                            geno_omic_object = geno_model_ready_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     } ## End random Forest
+
+
+
+ } else {
+
+
+     if(!exists('geno_model_ready_test') & exists('geno_model_ready_train')) {
+
+         if(GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_model_ready_train,
+                                    para_tunning = para_tunning
+         )
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   geno_omic_object = geno_model_ready_train,
+                                                  eval_metrics = eval_metrics,
+                                                  GS_model="Xgboost"
+         )
+        } ## end of Xgboost
+
+         ### Start RandomForest
+         if(GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_model_ready_train,
+                                        para_tunning = para_tunning
+             )
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = geno_model_ready_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+         }
+
+     }
+ }
+
+ if(exists('omic1_model_ready_test') & exists('omic1_model_ready_train'))  {
+
+     if(GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = omic1_model_ready_train,
+                                geno_omic_test_object = omic1_model_ready_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic1_model_ready_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     } ## End of Xgboost
+
+     ### start of RandomForest
+     if(GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_model_ready_train,
+                                    geno_omic_test_object = omic1_model_ready_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = omic1_model_ready_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     } ## End of randomForest
+
+ } else {
+
+     if(!exists('omic1_model_ready_test') & exists('omic1_model_ready_train')) {
+
+         if (GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_model_ready_train,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic1_model_ready_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+     } ## End Xgboost
+
+         ### Start randomForest
+         if (GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic1_model_ready_train,
+                                        para_tunning = para_tunning
+             )
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = omic1_model_ready_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+         }
+
+
+     }
+
+ }
+
+ if(exists('omic2_model_ready_test') & exists('omic2_model_ready_train')) {
+
+     if(GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = omic2_model_ready_train,
+                                geno_omic_test_object = omic2_model_ready_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic2_model_ready_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     }
+
+     ## Strat random forest
+     if(GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic2_model_ready_train,
+                                    geno_omic_test_object = omic2_model_ready_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = omic2_model_ready_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     }
+
+ } else {
+
+     if(!exists('omic2_model_ready_test') & exists('omic2_model_ready_train')) {
+
+         if(GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic2_model_ready_train,
+                                    para_tunning = para_tunning
+         )
+
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic2_model_ready_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+         }
+
+
+         ## Start of ranom Foprest
+
+         if(GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic2_model_ready_train,
+                                        para_tunning = para_tunning
+             )
+
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = omic2_model_ready_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+         }
+
+     }
+
+ }
+
+
+ if(exists('omic3_model_ready_test') & exists('omic3_model_ready_train')) {
+
+     if (GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = omic3_model_ready_train,
+                                geno_omic_test_object = omic3_model_ready_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic3_model_ready_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     }
+
+     ## Strat of ranopdm foes
+
+     if (GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic3_model_ready_train,
+                                    geno_omic_test_object = omic3_model_ready_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = omic3_model_ready_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     }
+
+
+ } else {
+
+     if(!exists('omic3_model_ready_test') & exists('omic3_model_ready_train')) {
+
+         if(GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic3_model_ready_train,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic3_model_ready_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+
+         }
+
+
+         ### Strat of ranodm
+         if(GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic3_model_ready_train,
+                                        para_tunning = para_tunning
+             )
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = omic3_model_ready_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+
+         }
+
+     }
+
+ }
+
+
+ if(exists('geno_omic1_test') & exists('geno_omic1_train')) {
+
+     if(GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = geno_omic1_train,
+                                geno_omic_test_object = geno_omic1_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic1_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     }
+
+     ## start rf
+     if(GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_train,
+                                    geno_omic_test_object = geno_omic1_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = geno_omic1_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     }
+
+
+ } else {
+
+     if(!exists('geno_omic1_test') & exists('geno_omic1_train')) {
+
+         if(GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_train,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic1_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+
+         }
+
+
+         ### stat rf
+
+         if(GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic1_train,
+                                        para_tunning = para_tunning
+             )
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = geno_omic1_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+
+         }
+
+     }
+
+
+ }
+
+
+ if(exists('geno_omic2_test') & exists('geno_omic2_train')) {
+
+     if(GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = geno_omic2_train,
+                                geno_omic_test_object = geno_omic2_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic2_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     }
+
+     ### strat rf
+
+     if(GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic2_train,
+                                    geno_omic_test_object = geno_omic2_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = geno_omic2_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     }
+
+
+ } else {
+
+     if(!exists('geno_omic2_test') & exists('geno_omic2_train')) {
+
+         if (GS_model=="Xgboost"){
+
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic2_train,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic2_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+
+         }
+
+         ## start rf
+         if (GS_model=="RandomForest"){
+
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic2_train,
+                                        para_tunning = para_tunning
+             )
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = geno_omic2_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+
+         }
+
+     }
+
+
+ }
+
+
+ if(exists('geno_omic3_test') & exists('geno_omic3_train')) {
+
+     if(GS_model=="Xgboost"){
+
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = geno_omic3_train,
+                                geno_omic_test_object = geno_omic3_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     }
+
+     ## Strat rf
+
+     if(GS_model=="RandomForest"){
+
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic3_train,
+                                    geno_omic_test_object = geno_omic3_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = geno_omic3_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     }
+
+
+ } else {
+
+     if(!exists('geno_omic3_test') & exists('geno_omic3_train')) {
+
+         if (GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic3_train,
+                                    para_tunning = para_tunning
+         )
+
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+         }
+
+         ### Strat rf
+
+         if (GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic3_train,
+                                        para_tunning = para_tunning
+             )
+
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = geno_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+         }
+
+     }
+
+
+ }
+
+
+ if(exists('omic1_omic2_test') & exists('omic1_omic2_train')) {
+
+     if(GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = omic1_omic2_train,
+                                geno_omic_test_object = omic1_omic2_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic1_omic2_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     }
+
+     ## strat rf
+
+     if(GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_omic2_train,
+                                    geno_omic_test_object = omic1_omic2_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = omic1_omic2_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     }
+
+
+ } else {
+
+     if(!exists('omic1_omic2_test') & exists('omic1_omic2_train')) {
+
+         if(GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_omic2_train,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic1_omic2_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+
+         }
+
+         ### strat rf
+
+         if(GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic1_omic2_train,
+                                        para_tunning = para_tunning
+             )
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = omic1_omic2_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+
+         }
+
+
+
+     }
+
+
+ }
+
+
+ if(exists('omic1_omic3_test') & exists('omic1_omic3_train')) {
+
+     if(GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = omic1_omic3_train,
+                                geno_omic_test_object = omic1_omic3_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic1_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     }
+
+     ## strat rf
+
+     if(GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_omic3_train,
+                                    geno_omic_test_object = omic1_omic3_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = omic1_omic3_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     }
+
+ } else {
+
+     if(!exists('omic1_omic3_test') & exists('omic1_omic3_train')) {
+
+         if(GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_omic3_train,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic1_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+
+         }
+
+         ## strat rf
+
+         if(GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic1_omic3_train,
+                                        para_tunning = para_tunning
+             )
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = omic1_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+
+         }
+
+     }
+
+
+ }
+
+
+ if(exists('omic2_omic3_test') & exists('omic2_omic3_train')) {
+
+     if(GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = omic2_omic3_train,
+                                geno_omic_test_object = omic2_omic3_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic2_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     }
+
+     ## strat rf
+
+     if(GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic2_omic3_train,
+                                    geno_omic_test_object = omic2_omic3_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = omic2_omic3_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     }
+
+
+ } else {
+
+     if(!exists('omic2_omic3_test') & exists('omic2_omic3_train')) {
+
+         if(GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic2_omic3_train,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic2_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+
+         }
+
+         ## start rf
+
+         if(GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic2_omic3_train,
+                                        para_tunning = para_tunning
+             )
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = omic2_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+
+         }
+
+
+     }
+
+
+ }
+
+
+ if(exists('geno_omic1_omic2_test') & exists('geno_omic1_omic2_train')) {
+
+     if(GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = geno_omic1_omic2_train,
+                                geno_omic_test_object = geno_omic1_omic2_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic1_omic2_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     }
+
+     ## strat rf
+
+     if(GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_omic2_train,
+                                    geno_omic_test_object = geno_omic1_omic2_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = geno_omic1_omic2_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     }
+
+
+ } else {
+
+     if(!exists('geno_omic1_omic2_test') & exists('geno_omic1_omic2_train')) {
+
+         if(GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_omic2_train,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic1_omic2_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+
+         }
+
+         ## strat rf
+
+         if(GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic1_omic2_train,
+                                        para_tunning = para_tunning
+             )
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = geno_omic1_omic2_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+
+         }
+
+     }
+
+
+ }
+
+
+ if(exists('geno_omic1_omic3_test') & exists('geno_omic1_omic3_train')) {
+
+     if (GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = geno_omic1_omic3_train,
+                                geno_omic_test_object = geno_omic1_omic3_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic1_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     }
+
+     ### star rf
+
+     if (GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_omic3_train,
+                                    geno_omic_test_object = geno_omic1_omic3_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = geno_omic1_omic3_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     }
+
+
+ } else {
+
+     if(!exists('geno_omic1_omic3_test') & exists('geno_omic1_omic3_train')) {
+
+         if (GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_omic3_train,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic1_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+
+         }
+
+         ## strat rf
+
+         if (GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic1_omic3_train,
+                                        para_tunning = para_tunning
+             )
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = geno_omic1_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+
+         }
+
+     }
+
+
+ }
+
+ ######
+ if(exists('geno_omic2_omic3_test') & exists('geno_omic2_omic3_train')) {
+
+     if(GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = geno_omic2_omic3_train,
+                                geno_omic_test_object = geno_omic2_omic3_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic2_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+
+     }
+
+     ## strat rf
+
+     if(GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic2_omic3_train,
+                                    geno_omic_test_object = geno_omic2_omic3_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = geno_omic2_omic3_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+
+     }
+
+
+ } else {
+
+     if(!exists('geno_omic2_omic3_test') & exists('geno_omic2_omic3_train')) {
+
+         if (GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic2_omic3_train,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic2_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+
+
+         }
+
+         ## strat rf
+
+         if (GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic2_omic3_train,
+                                        para_tunning = para_tunning
+             )
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = geno_omic2_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+
+
+         }
+
+
+     }
+
+
+ }
+
+ #####
+
+ if(exists('omic1_omic2_omic3_test') & exists('omic1_omic2_omic3_train')) {
+
+     if (GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = omic1_omic2_omic3_train,
+                                geno_omic_test_object = omic1_omic2_omic3_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic1_omic2_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     }
+
+     ## strat rf
+
+     if (GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_omic2_omic3_train,
+                                    geno_omic_test_object = omic1_omic2_omic3_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = omic1_omic2_omic3_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     }
+
+ } else {
+
+     if(!exists('omic1_omic2_omic3_test') & exists('omic1_omic2_omic3_train')) {
+
+         if (GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_omic2_omic3_train,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic1_omic2_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+
+         }
+
+
+         ## start rf
+
+         if (GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic1_omic2_omic3_train,
+                                        para_tunning = para_tunning
+             )
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = omic1_omic2_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+
+         }
+
+     }
+
+
+ }
+
+ #####
+ if(exists('geno_omic1_omic2_omic3_test') & exists('geno_omic1_omic2_omic3_train')) {
+
+     if (GS_model=="Xgboost"){
+     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                response = response,
+                                geno_omic_object = geno_omic1_omic2_omic3_train,
+                                geno_omic_test_object = geno_omic1_omic2_omic3_test,
+                                para_tunning = para_tunning
+     )
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic1_omic2_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model="Xgboost"
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_)
+
+     }
+
+     ### start rf
+
+     if (GS_model=="RandomForest"){
+         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_omic2_omic3_train,
+                                    geno_omic_test_object = geno_omic1_omic2_omic3_test,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   test_set = test_set_,
+                                                   geno_omic_object = geno_omic1_omic2_omic3_train,
+                                                   eval_metrics = eval_metrics,
+                                                   GS_model="RandomForest"
+         )
+
+         res_plot <- plot_acc_AI(mod=res_model_output,
+                                 pheno_object= pheno_clean,
+                                 response = response,
+                                 test_set = test_set_)
+
+     }
+
+ } else {
+
+     if(!exists('geno_omic1_omic2_omic3_test') & exists('geno_omic1_omic2_omic3_train')) {
+
+         if (GS_model=="Xgboost"){
+         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_omic2_omic3_train,
+                                    para_tunning = para_tunning
+         )
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic1_omic2_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model="Xgboost"
+         )
+
+}
+
+         ## Strat rf
+         if (GS_model=="RandomForest"){
+             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic1_omic2_omic3_train,
+                                        para_tunning = para_tunning
+             )
+
+             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       geno_omic_object = geno_omic1_omic2_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                                       GS_model="RandomForest"
+             )
+
+         }
+     }
+
+
+ }
+
+
+
+}  ### End of extreme gradient boosting
 
  ### if user provide only
 
- output <- list(res_model_output, res_summary_stat)
+ #if(GS_model)
+ if (GS_model=="Xgboost"){
+     if(exists("test_set_")){
+ output <- list(res_model_output, res_summary_stat, res_plot)
 
- names(output) <- c('model_results', 'summary_statistic')
+ names(output) <- c('model_results', 'summary_statistic', 'res_plot')
+
+     } else {
+
+         output <- list(res_model_output, res_summary_stat)
+
+         names(output) <- c('model_results', 'summary_statistic')
+     }
+
+ } else {
+
+     output <- list(res_model_output, res_summary_stat)
+
+     names(output) <- c('model_results', 'summary_statistic')
+
+ }
 
  return(output)
 
