@@ -142,7 +142,7 @@ if(length(response)>1){
           params = xgb_params,
           data = geno_omic_object,
           nrounds = iteration,
-          verbose = 1
+          verbose = 0
         )
 
 
@@ -197,7 +197,7 @@ if(length(response)>1){
         params = xgb_params,
         data = geno_omic_object,
         nrounds = iteration,
-        verbose = 1
+        verbose = 0
       )
 
 
@@ -224,7 +224,7 @@ if(length(response)>1){
         params = xgb_params,
         data = geno_omic_object,
         nrounds = iteration,
-        verbose = 1
+        verbose = 0
       )
 
 
@@ -340,7 +340,7 @@ xgb_grid = expand.grid(nrounds = xgb_paras_tunning$Iter_tune , # number of boost
           params = xgb_params,
           data = geno_omic_object,
           nrounds = iteration,
-          verbose = 1
+          verbose = 0
         )
 
 
@@ -395,7 +395,7 @@ xgb_grid = expand.grid(nrounds = xgb_paras_tunning$Iter_tune , # number of boost
         params = xgb_params,
         data = geno_omic_object,
         nrounds = iteration,
-        verbose = 1
+        verbose = 0
       )
 
 
@@ -422,7 +422,7 @@ xgb_grid = expand.grid(nrounds = xgb_paras_tunning$Iter_tune , # number of boost
           params = xgb_params,
           data = geno_omic_object,
           nrounds = iteration,
-          verbose = 1
+          verbose = 0
         )
 
 

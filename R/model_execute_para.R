@@ -113,6 +113,9 @@ model_execute <- function(
                  "RandomForest",
                  "PartialLeastSquare",
                  "SupportVectorMachine",
+                 "K-NearestNeighbors",
+                 "Lasso",
+                 "Ridge_Regression"
                  ),
     eval_metrics = c("Accuracy",
                      "Mean_Squared_Error",
@@ -2510,7 +2513,7 @@ model_execute <- function(
  #      test_set <- object_pheno$test_set
  # } else {
 
- if(isTRUE(GS_model== "Xgboost" | GS_model== "RandomForest" | GS_model== "PartialLeastSquare" | GS_model== "SupportVectorMachine" | GS_model== "Knn"))   {
+ if(isTRUE(GS_model== "Xgboost" | GS_model== "RandomForest" | GS_model== "PartialLeastSquare" | GS_model== "SupportVectorMachine" | GS_model== "K-NearestNeighbors" | GS_model=="Lasso" | GS_model=="Ridge_Regression"))   {
 
 
  pheno_clean <- ML_undefined_test_train(object_pheno = pheno_clean,
@@ -3032,24 +3035,7 @@ model_execute <- function(
                                 para_tunning = para_tunning
                                 )
 
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                                       geno_model_ready_train = geno_model_ready_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-                                                       )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                         pheno_object= pheno_clean,
-                         response = response,
-                         test_set = test_set_)
-
      }
-
-     #### random Forest
 
      if(GS_model=="RandomForest"){
 
@@ -3060,22 +3046,58 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
+     }
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                           test_set = test_set_,
-                                                            geno_omic_object = geno_model_ready_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     if(GS_model=="K-NearestNeighbors"){
+
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = geno_model_ready_train,
+                                             geno_omic_test_object = geno_model_ready_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
 
-     } ## End random Forest
+     if(GS_model=="SupportVectorMachine"){
+
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_model_ready_train,
+                                    geno_omic_test_object = geno_model_ready_test,
+                                    para_tunning = para_tunning
+         )
+
+     }
+
+     ##### RR and Lasso
+     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+
+         res_model_output <- AI_RidgeRegression_Lasso(
+             pheno_object = pheno_clean,
+             response = response,
+             geno_omic_object = geno_model_ready_train,
+             geno_omic_test_object = geno_model_ready_test,
+             para_tunning = para_tunning,
+             GS_model = GS_model
+         )
+
+     }
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                                       geno_model_ready_train = geno_model_ready_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model=GS_model
+                                                       )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                         pheno_object= pheno_clean,
+                         response = response,
+                         test_set = test_set_,
+                         GS_model=GS_model)
 
 
 
@@ -3090,30 +3112,57 @@ model_execute <- function(
                                     geno_omic_object = geno_model_ready_train,
                                     para_tunning = para_tunning
          )
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = geno_model_ready_train,
-                                                  eval_metrics = eval_metrics,
-                                                  GS_model="Xgboost"
-         )
-        } ## end of Xgboost
 
-         ### Start RandomForest
+         }
+
          if(GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
                                         response = response,
                                         geno_omic_object = geno_model_ready_train,
                                         para_tunning = para_tunning
              )
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = geno_model_ready_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
-             )
+
          }
+
+         if(GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = geno_model_ready_train,
+                                                 para_tunning = para_tunning
+             )
+
+         }
+
+         if(GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_model_ready_train,
+                                        para_tunning = para_tunning
+             )
+
+         }
+
+
+         ####
+         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(
+                                        pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_model_ready_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
+                                                   geno_omic_object = geno_model_ready_train,
+                                                  eval_metrics = eval_metrics,
+                                                  GS_model=GS_model
+         )
+        #} ## end of Xgboost
 
      }
  }
@@ -3128,23 +3177,8 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = omic1_model_ready_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
+     }
 
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
-     } ## End of Xgboost
-
-     ### start of RandomForest
      if(GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
                                     response = response,
@@ -3153,21 +3187,60 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = omic1_model_ready_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if(GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = omic1_model_ready_train,
+                                             geno_omic_test_object = omic1_model_ready_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
 
-     } ## End of randomForest
+
+     if(GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_model_ready_train,
+                                    geno_omic_test_object = omic1_model_ready_test,
+                                    para_tunning = para_tunning
+         )
+
+     }
+
+     #### RR and Lasso
+     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(
+                                    pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_model_ready_train,
+                                    geno_omic_test_object = omic1_model_ready_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic1_model_ready_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model=GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model=GS_model)
+
+     #} ## End of Xgboost
+
+
 
  } else {
 
@@ -3180,17 +3253,8 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = omic1_model_ready_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
+         }
 
-     } ## End Xgboost
-
-         ### Start randomForest
          if (GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
                                         response = response,
@@ -3198,15 +3262,48 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = omic1_model_ready_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         }
+
+         if (GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = omic1_model_ready_train,
+                                                 para_tunning = para_tunning
              )
 
          }
+
+         if (GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic1_model_ready_train,
+                                        para_tunning = para_tunning
+             )
+
+         }
+
+         ### RR and Lasso
+
+         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(
+                                        pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic1_model_ready_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic1_model_ready_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model=GS_model
+         )
+
+     #} ## End Xgboost
 
 
      }
@@ -3223,23 +3320,8 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = omic2_model_ready_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
      }
 
-     ## Strat random forest
      if(GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
                                     response = response,
@@ -3248,21 +3330,59 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = omic2_model_ready_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if(GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = omic2_model_ready_train,
+                                             geno_omic_test_object = omic2_model_ready_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
+
+     if(GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic2_model_ready_train,
+                                    geno_omic_test_object = omic2_model_ready_test,
+                                    para_tunning = para_tunning
+         )
 
      }
+
+
+     ### RR and Lasso
+
+     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(
+                                    pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic2_model_ready_train,
+                                    geno_omic_test_object = omic2_model_ready_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic2_model_ready_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model=GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model=GS_model)
+
+     #}
+
 
  } else {
 
@@ -3275,19 +3395,7 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = omic2_model_ready_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
-
-         }
-
-
-         ## Start of ranom Foprest
+}
 
          if(GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -3296,16 +3404,47 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
+         }
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = omic2_model_ready_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         if(GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = omic2_model_ready_train,
+                                                 para_tunning = para_tunning
              )
 
          }
+
+         if(GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic2_model_ready_train,
+                                        para_tunning = para_tunning
+             )
+
+         }
+
+         ### RR and Lasso
+         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(
+                                        pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic2_model_ready_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+
+            res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic2_model_ready_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model=GS_model
+         )
+
+         #}
 
      }
 
@@ -3322,24 +3461,7 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = omic3_model_ready_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
      }
-
-     ## Strat of ranopdm foes
 
      if (GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -3349,23 +3471,62 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = omic3_model_ready_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if (GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = omic3_model_ready_train,
+                                             geno_omic_test_object = omic3_model_ready_test,
+                                             para_tunning = para_tunning
          )
-
-
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
 
      }
 
+     if (GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic3_model_ready_train,
+                                    geno_omic_test_object = omic3_model_ready_test,
+                                    para_tunning = para_tunning
+         )
+
+     }
+
+
+     ### RR and Lasso
+
+     if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(
+                                    pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic3_model_ready_train,
+                                    geno_omic_test_object = omic3_model_ready_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic3_model_ready_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model=GS_model
+     )
+
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model=GS_model)
+
+     #}
+
+     ## Strat of ranopdm foes
 
  } else {
 
@@ -3378,19 +3539,8 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = omic3_model_ready_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
-
-
          }
 
-
-         ### Strat of ranodm
          if(GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
                                         response = response,
@@ -3398,18 +3548,52 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = omic3_model_ready_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         }
+
+         if(GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = omic3_model_ready_train,
+                                                 para_tunning = para_tunning
              )
+
+         }
+
+         if(GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic3_model_ready_train,
+                                        para_tunning = para_tunning
+             )
+
+         }
+
+         ## RR and Lasso
+
+         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(
+                                        pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic3_model_ready_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic3_model_ready_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model=GS_model
+         )
 
 
          }
 
-     }
+
 
  }
 
@@ -3424,23 +3608,9 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = geno_omic1_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
      }
 
-     ## start rf
+
      if(GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
                                     response = response,
@@ -3449,21 +3619,58 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = geno_omic1_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if(GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = geno_omic1_train,
+                                             geno_omic_test_object = geno_omic1_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
+
+     if(GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_train,
+                                    geno_omic_test_object = geno_omic1_test,
+                                    para_tunning = para_tunning
+         )
 
      }
+
+
+     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(
+                                    pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_train,
+                                    geno_omic_test_object = geno_omic1_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic1_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model=GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model=GS_model)
+
+     #}
+
 
 
  } else {
@@ -3477,19 +3684,7 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = geno_omic1_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
-
-
          }
-
-
-         ### stat rf
 
          if(GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -3498,16 +3693,50 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = geno_omic1_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         }
+
+         if(GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = geno_omic1_train,
+                                                 para_tunning = para_tunning
              )
 
+         }
+
+         if(GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic1_train,
+                                        para_tunning = para_tunning
+             )
 
          }
+
+         ### RR and lasso
+
+         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(
+                                        pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic1_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic1_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model = GS_model
+         )
+
+
+         #}
+
 
      }
 
@@ -3525,23 +3754,7 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = geno_omic2_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
      }
-
-     ### strat rf
 
      if(GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -3551,21 +3764,60 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = geno_omic2_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if(GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = geno_omic2_train,
+                                             geno_omic_test_object = geno_omic2_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
+
+     if(GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic2_train,
+                                    geno_omic_test_object = geno_omic2_test,
+                                    para_tunning = para_tunning
+         )
 
      }
+
+
+     ## RR and lasso
+
+     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(
+                                    pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic2_train,
+                                    geno_omic_test_object = geno_omic2_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic2_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model=GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model=GS_model)
+
+     #}
 
 
  } else {
@@ -3580,18 +3832,9 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = geno_omic2_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
-
-
          }
 
-         ## start rf
+
          if (GS_model=="RandomForest"){
 
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -3600,16 +3843,52 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = geno_omic2_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         }
+
+         if (GS_model=="K-NearestNeighbors"){
+
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = geno_omic2_train,
+                                                 para_tunning = para_tunning
              )
 
+         }
+
+         if (GS_model=="SupportVectorMachine"){
+
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic2_train,
+                                        para_tunning = para_tunning
+             )
 
          }
+
+
+         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+
+             res_model_output <- AI_RidgeRegression_Lasso(
+                                        pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic2_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic2_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model= GS_model
+         )
+
+
+         #}
+
 
      }
 
@@ -3628,23 +3907,7 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = geno_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
      }
-
-     ## Strat rf
 
      if(GS_model=="RandomForest"){
 
@@ -3655,21 +3918,61 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = geno_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if(GS_model=="K-NearestNeighbors"){
+
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = geno_omic3_train,
+                                             geno_omic_test_object = geno_omic3_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
+
+     if(GS_model=="SupportVectorMachine"){
+
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic3_train,
+                                    geno_omic_test_object = geno_omic3_test,
+                                    para_tunning = para_tunning
+         )
 
      }
+
+     ### RR and lasso
+     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+
+         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic3_train,
+                                    geno_omic_test_object = geno_omic3_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model= GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model= GS_model)
+
+     #}
+
+     ## Strat rf
 
 
  } else {
@@ -3683,18 +3986,8 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = geno_omic3_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
-
          }
 
-         ### Strat rf
 
          if (GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -3703,16 +3996,47 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
+         }
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = geno_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         if (GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = geno_omic3_train,
+                                                 para_tunning = para_tunning
              )
 
          }
+
+         if (GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic3_train,
+                                        para_tunning = para_tunning
+             )
+
+         }
+
+
+         ##
+         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic3_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model=GS_model
+         )
+
+         #}
 
      }
 
@@ -3730,23 +4054,7 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = omic1_omic2_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
      }
-
-     ## strat rf
 
      if(GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -3756,21 +4064,56 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = omic1_omic2_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if(GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = omic1_omic2_train,
+                                             geno_omic_test_object = omic1_omic2_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
+
+     if(GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_omic2_train,
+                                    geno_omic_test_object = omic1_omic2_test,
+                                    para_tunning = para_tunning
+         )
 
      }
+
+
+     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_omic2_train,
+                                    geno_omic_test_object = omic1_omic2_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic1_omic2_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model= GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model= GS_model)
+
+     #}
 
 
  } else {
@@ -3784,18 +4127,7 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = omic1_omic2_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
-
-
          }
-
-         ### strat rf
 
          if(GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -3804,17 +4136,48 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = omic1_omic2_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
-             )
+         }
 
+         if(GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = omic1_omic2_train,
+                                                 para_tunning = para_tunning
+             )
 
          }
 
+         if(GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic1_omic2_train,
+                                        para_tunning = para_tunning
+             )
+
+         }
+
+
+         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(
+                                        pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic1_omic2_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic1_omic2_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model= GS_model
+         )
+
+
+         #}
 
 
      }
@@ -3833,23 +4196,7 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = omic1_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
      }
-
-     ## strat rf
 
      if(GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -3859,21 +4206,59 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = omic1_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+
+     if(GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = omic1_omic3_train,
+                                             geno_omic_test_object = omic1_omic3_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
+
+     if(GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_omic3_train,
+                                    geno_omic_test_object = omic1_omic3_test,
+                                    para_tunning = para_tunning
+         )
 
      }
+
+
+     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(
+                                    pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_omic3_train,
+                                    geno_omic_test_object = omic1_omic3_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic1_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model= GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model= GS_model)
+
+     #}
+
 
  } else {
 
@@ -3886,18 +4271,7 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = omic1_omic3_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
-
-
          }
-
-         ## strat rf
 
          if(GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -3906,16 +4280,48 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = omic1_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         }
+
+         if(GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = omic1_omic3_train,
+                                                 para_tunning = para_tunning
              )
 
+         }
+
+         if(GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic1_omic3_train,
+                                        para_tunning = para_tunning
+             )
 
          }
+
+
+         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(
+                                        pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic1_omic3_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic1_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model = GS_model
+         )
+
+
+         #}
 
      }
 
@@ -3933,23 +4339,7 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = omic2_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
      }
-
-     ## strat rf
 
      if(GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -3959,21 +4349,57 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = omic2_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if(GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = omic2_omic3_train,
+                                             geno_omic_test_object = omic2_omic3_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
+
+     if(GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic2_omic3_train,
+                                    geno_omic_test_object = omic2_omic3_test,
+                                    para_tunning = para_tunning
+         )
 
      }
+
+
+     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(
+                                   pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic2_omic3_train,
+                                    geno_omic_test_object = omic2_omic3_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic2_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model = GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model=  GS_model)
+
+     #}
+
 
 
  } else {
@@ -3987,18 +4413,7 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = omic2_omic3_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
-
-
          }
-
-         ## start rf
 
          if(GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -4007,16 +4422,47 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = omic2_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         }
+
+         if(GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = omic2_omic3_train,
+                                                 para_tunning = para_tunning
              )
 
+         }
+
+         if(GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic2_omic3_train,
+                                        para_tunning = para_tunning
+             )
 
          }
+
+
+         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(
+                                        pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic2_omic3_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic2_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model= GS_model
+         )
+
+
+         #}
 
 
      }
@@ -4035,23 +4481,7 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = geno_omic1_omic2_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
      }
-
-     ## strat rf
 
      if(GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -4061,21 +4491,57 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = geno_omic1_omic2_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if(GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = geno_omic1_omic2_train,
+                                             geno_omic_test_object = geno_omic1_omic2_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
+
+     if(GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_omic2_train,
+                                    geno_omic_test_object = geno_omic1_omic2_test,
+                                    para_tunning = para_tunning
+         )
 
      }
+
+     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_omic2_train,
+                                    geno_omic_test_object = geno_omic1_omic2_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic1_omic2_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model= GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model= GS_model)
+
+     #}
+
+     ## strat rf
 
 
  } else {
@@ -4089,18 +4555,7 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = geno_omic1_omic2_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
-
-
          }
-
-         ## strat rf
 
          if(GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -4109,16 +4564,46 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = geno_omic1_omic2_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         }
+
+         if(GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = geno_omic1_omic2_train,
+                                                 para_tunning = para_tunning
              )
 
+         }
+
+         if(GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic1_omic2_train,
+                                        para_tunning = para_tunning
+             )
 
          }
+
+
+         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic1_omic2_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic1_omic2_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model= GS_model
+         )
+
+
+         #}
 
      }
 
@@ -4136,23 +4621,7 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = geno_omic1_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
      }
-
-     ### star rf
 
      if (GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -4162,21 +4631,56 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = geno_omic1_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if (GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = geno_omic1_omic3_train,
+                                             geno_omic_test_object = geno_omic1_omic3_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
+
+     if (GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_omic3_train,
+                                    geno_omic_test_object = geno_omic1_omic3_test,
+                                    para_tunning = para_tunning
+         )
 
      }
+
+     if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(
+                                    pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_omic3_train,
+                                    geno_omic_test_object = geno_omic1_omic3_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic1_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model = GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model= GS_model)
+
+     #}
 
 
  } else {
@@ -4190,18 +4694,7 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = geno_omic1_omic3_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
-
-
          }
-
-         ## strat rf
 
          if (GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -4210,16 +4703,46 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = geno_omic1_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         }
+
+         if (GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = geno_omic1_omic3_train,
+                                                 para_tunning = para_tunning
              )
 
+         }
+
+         if (GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic1_omic3_train,
+                                        para_tunning = para_tunning
+             )
 
          }
+
+
+         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic1_omic3_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic1_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model= GS_model
+         )
+
+
+         #}
 
      }
 
@@ -4237,24 +4760,7 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = geno_omic2_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
-
      }
-
-     ## strat rf
 
      if(GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -4264,23 +4770,58 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = geno_omic2_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if(GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = geno_omic2_omic3_train,
+                                             geno_omic_test_object = geno_omic2_omic3_test,
+                                             para_tunning = para_tunning
          )
-
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
-
 
      }
 
+     if(GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic2_omic3_train,
+                                    geno_omic_test_object = geno_omic2_omic3_test,
+                                    para_tunning = para_tunning
+         )
+
+     }
+
+
+     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(
+                                    pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic2_omic3_train,
+                                    geno_omic_test_object = geno_omic2_omic3_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic2_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model= GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model= GS_model)
+
+
+     #}
 
  } else {
 
@@ -4293,19 +4834,7 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = geno_omic2_omic3_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
-
-
-
          }
-
-         ## strat rf
 
          if (GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -4314,17 +4843,46 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = geno_omic2_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         }
+
+         if (GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = geno_omic2_omic3_train,
+                                                 para_tunning = para_tunning
              )
 
+         }
 
+         if (GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic2_omic3_train,
+                                        para_tunning = para_tunning
+             )
 
          }
+
+         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(
+                                        pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic2_omic3_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic2_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model= GS_model
+         )
+
+         #}
 
 
      }
@@ -4344,23 +4902,7 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = omic1_omic2_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
      }
-
-     ## strat rf
 
      if (GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -4370,21 +4912,58 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = omic1_omic2_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if (GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = omic1_omic2_omic3_train,
+                                             geno_omic_test_object = omic1_omic2_omic3_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
+
+
+     if (GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_omic2_omic3_train,
+                                    geno_omic_test_object = omic1_omic2_omic3_test,
+                                    para_tunning = para_tunning
+         )
 
      }
+
+     if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(
+                                    pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = omic1_omic2_omic3_train,
+                                    geno_omic_test_object = omic1_omic2_omic3_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = omic1_omic2_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model= GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model= GS_model)
+
+     #}
+
 
  } else {
 
@@ -4397,19 +4976,7 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = omic1_omic2_omic3_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
-
-
          }
-
-
-         ## start rf
 
          if (GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -4418,16 +4985,47 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = omic1_omic2_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         }
+
+         if (GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = omic1_omic2_omic3_train,
+                                                 para_tunning = para_tunning
              )
 
+         }
+
+         if (GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic1_omic2_omic3_train,
+                                        para_tunning = para_tunning
+             )
 
          }
+
+         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(
+                                        pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = omic1_omic2_omic3_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = omic1_omic2_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model= GS_model
+         )
+
+
+         #}
 
      }
 
@@ -4445,23 +5043,7 @@ model_execute <- function(
                                 para_tunning = para_tunning
      )
 
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = geno_omic1_omic2_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model="Xgboost"
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_)
-
      }
-
-     ### start rf
 
      if (GS_model=="RandomForest"){
          res_model_output <- AI_randomForest(pheno_object = pheno_clean,
@@ -4471,21 +5053,58 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   test_set = test_set_,
-                                                   geno_omic_object = geno_omic1_omic2_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model="RandomForest"
+     }
+
+     if (GS_model=="K-NearestNeighbors"){
+         res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                             response = response,
+                                             geno_omic_object = geno_omic1_omic2_omic3_train,
+                                             geno_omic_test_object = geno_omic1_omic2_omic3_test,
+                                             para_tunning = para_tunning
          )
 
-         res_plot <- plot_acc_AI(mod=res_model_output,
-                                 pheno_object= pheno_clean,
-                                 response = response,
-                                 test_set = test_set_)
+     }
+
+     if (GS_model=="SupportVectorMachine"){
+         res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_omic2_omic3_train,
+                                    geno_omic_test_object = geno_omic1_omic2_omic3_test,
+                                    para_tunning = para_tunning
+         )
 
      }
+
+
+     if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+         res_model_output <- AI_RidgeRegression_Lasso(
+                                    pheno_object = pheno_clean,
+                                    response = response,
+                                    geno_omic_object = geno_omic1_omic2_omic3_train,
+                                    geno_omic_test_object = geno_omic1_omic2_omic3_test,
+                                    para_tunning = para_tunning,
+                                    GS_model = GS_model
+         )
+
+     }
+
+     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                       pheno_object= pheno_clean,
+                                                       response = response,
+                                                       test_set = test_set_,
+                                               geno_omic_object = geno_omic1_omic2_omic3_train,
+                                                       eval_metrics = eval_metrics,
+                                               GS_model= GS_model
+     )
+
+     res_plot <- plot_acc_AI(mod=res_model_output,
+                          pheno_object= pheno_clean,
+                          response = response,
+                          test_set = test_set_,
+                          GS_model= GS_model)
+
+     #}
+
 
  } else {
 
@@ -4498,17 +5117,8 @@ model_execute <- function(
                                     para_tunning = para_tunning
          )
 
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = geno_omic1_omic2_omic3_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model="Xgboost"
-         )
+         }
 
-}
-
-         ## Strat rf
          if (GS_model=="RandomForest"){
              res_model_output <- AI_randomForest(pheno_object = pheno_clean,
                                         response = response,
@@ -4516,15 +5126,51 @@ model_execute <- function(
                                         para_tunning = para_tunning
              )
 
-             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       geno_omic_object = geno_omic1_omic2_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                                       GS_model="RandomForest"
+         }
+
+
+         if (GS_model=="K-NearestNeighbors"){
+             res_model_output <- AI_knn(pheno_object = pheno_clean,
+                                                 response = response,
+                                                 geno_omic_object = geno_omic1_omic2_omic3_train,
+                                                 para_tunning = para_tunning
              )
 
          }
+
+         if (GS_model=="SupportVectorMachine"){
+             res_model_output <- AI_svm(pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic1_omic2_omic3_train,
+                                        para_tunning = para_tunning
+             )
+
+         }
+
+
+         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
+             res_model_output <- AI_RidgeRegression_Lasso(
+                                        pheno_object = pheno_clean,
+                                        response = response,
+                                        geno_omic_object = geno_omic1_omic2_omic3_train,
+                                        para_tunning = para_tunning,
+                                        GS_model = GS_model
+             )
+
+         }
+
+
+         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
+                                                           pheno_object= pheno_clean,
+                                                           response = response,
+                                                   geno_omic_object = geno_omic1_omic2_omic3_train,
+                                                           eval_metrics = eval_metrics,
+                                                   GS_model= GS_model
+         )
+
+#}
+
+
      }
 
 
@@ -4532,7 +5178,7 @@ model_execute <- function(
 
 
 
-}  ### End of extreme gradient boosting
+}  ### End
 
  ### if user provide only
 

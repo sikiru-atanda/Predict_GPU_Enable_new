@@ -127,7 +127,7 @@ if(GS_model=="Xgboost"){
 
 }
 
-  if(GS_model=="RandomForest"){
+  if(GS_model=="RandomForest" | GS_model== "K-NearestNeighbors" | GS_model== "SupportVectorMachine" | GS_model=="Lasso" | GS_model=="Ridge_Regression"){
 
     model_para = data.frame(Value= mod$model_parameters)
     model_para$Parameters = rownames(model_para)
@@ -175,6 +175,7 @@ plot_acc_AI <-function(mod=NULL,
                     pheno_object= NULL,
                     response = NULL,
                     test_set = NULL,
+                    GS_model = NULL,
                     ...){
 
   yhat <-  mod$predicted_values
@@ -209,7 +210,7 @@ plot_acc_AI <-function(mod=NULL,
   }
 
 
-  return(grDevices::jpeg(filename=paste(paste(response, "predAccuracy", sep="_"), "jpg", sep = "."), units="in",
+  return(grDevices::jpeg(filename=paste(paste(paste(GS_model, response, sep="_"), "predAccuracy", sep="_"), "jpg", sep = "."), units="in",
                                width=8, height=5, res=300))
 
   grDevices::dev.off()
