@@ -22,10 +22,13 @@ Imports:
     foreach,
     graphics,
     grDevices,
+    keras,
+    kernlab,
     Matrix,
     matrixcalc,
     parallel,
     sommer,
     stats,
     stringr,
+    tensorflow,
     utils
