@@ -47,6 +47,8 @@ pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR","F5I", "B5I"), ])
 
 pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR"), ])
 
+COP = as.matrix(COP)
+
 pheno$PH = pheno$Yield
 
 response = "Yield"
