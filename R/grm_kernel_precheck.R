@@ -33,6 +33,16 @@ if (!is.null(object)){
     object <- Matrix::forceSymmetric(object)
     object <- Matrix::as.matrix(object)
   }
+
+  if(isFALSE(matrixcalc::is.positive.definite(object))){
+
+    message(paste(msg,"Relationsip Matrix is not positive definite. We fix it"))
+
+    object <- as.matrix(Matrix::nearPD(object, posd.tol=1e-02, trace=FALSE)$mat)
+
+  }
+
+
 }
 
   #### Declare it also as an object for final usage

@@ -10,6 +10,8 @@
 #' @param omic1_kernel
 #' @param omic2_kernel
 #' @param omic3_kernel
+#' @param pheno_data
+#' @param heter_groups
 #'
 #' @return
 #' @export
@@ -23,10 +25,64 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                              omic1_kernel=NULL,
                              omic2_kernel=NULL,
                              omic3_kernel=NULL,
+                             pheno_data = NULL,
+                             heter_groups = NULL,
                              ...){
 
   # sik$ETA_element_name
   # TT = DT$output_files_names
+  #### When the genotype are present in more than one environment/location
+  if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+    ### incidence matrix for main eff. of the genotypes
+    Zg<-stats::model.matrix(~factor(pheno_data[,gen_name])-1)
+
+    if(!is.null(gmatrix)){
+      gmatrix <- Zg%*%gmatrix%*%t(Zg)
+
+      gmatrix <- grm_kernel_precheck(gmatrix)
+    }
+
+    if(!is.null(gkernel)){
+      gkernel <- Zg%*%gkernel%*%t(Zg)
+
+      gkernel <- grm_kernel_precheck(gkernel)
+    }
+
+    if(!is.null(omic1_kernel)){
+      omic1_kernel <- Zg%*%omic1_kernel%*%t(Zg)
+
+      omic1_kernel <- grm_kernel_precheck(omic1_kernel)
+
+    }
+
+    if(!is.null(omic2_kernel)){
+      omic2_kernel <- Zg%*%omic2_kernel%*%t(Zg)
+
+      omic2_kernel <- grm_kernel_precheck(omic2_kernel)
+    }
+
+    if(!is.null(omic3_kernel)){
+      omic3_kernel <- Zg%*%omic3_kernel%*%t(Zg)
+
+      omic3_kernel <- grm_kernel_precheck(omic3_kernel)
+
+    }
+
+    # if(!is.null(heter_groups)){
+    #   ZE <- model.matrix(~factor(pheno_data[,heter_groups])-1)
+    #   ZEZE<-tcrossprod(ZE)
+    #
+    # }
+    ENV = pheno_data[,heter_groups]
+
+    predict_value = data.frame(name = pheno_data[,gen_name], Env = ENV, predict_value = mod$model$yHat)
+    names(predict_value)[1] = gen_name
+    } else {
+
+    predict_value = data.frame(name = pheno_data[,gen_name], predict_value = mod$model$yHat)
+    names(predict_value)[1] = gen_name
+     }
+
 
   BIN = mod$output_files_names[grepl("_varU.dat", mod$output_files_names)]
 
@@ -154,7 +210,13 @@ mod_output_bayes_RKHS <- function(mod=NULL,
         coeffRaw = solve(t(g_use)*g_use)*t(g_use)*g_ebv
         coeff <- colMeans(coeffRaw)
         # Genomic estimated breeding values
-        GEBV <- data.frame(names = rownames(g_use), GEBV=g_ebv)
+        if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+        GEBV <- data.frame(names = rownames(g_use), Env = ENV, GEBV=g_ebv)
+        } else {
+
+          GEBV <- data.frame(names = rownames(g_use), GEBV=g_ebv)
+        }
+
         colnames(GEBV)[1] = gen_name
         #GEBV = data.frame(rowMeans(ebv))
 
@@ -181,7 +243,13 @@ mod_output_bayes_RKHS <- function(mod=NULL,
         coeff_omic1 <- colMeans(coeffRaw_omic1)
 
         # Genomic estimated breeding values
-        omic1_EBV <- data.frame(names = rownames(omic1_kernel), omic1_EBV=omic1_ebv)
+        if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+        omic1_EBV <- data.frame(names = rownames(omic1_kernel), Env = ENV, omic1_EBV=omic1_ebv)
+        } else{
+
+          omic1_EBV <- data.frame(names = rownames(omic1_kernel), omic1_EBV=omic1_ebv)
+
+        }
         colnames(omic1_EBV)[1] = gen_name
         #GEBV = data.frame(rowMeans(ebv))
 
@@ -204,7 +272,12 @@ mod_output_bayes_RKHS <- function(mod=NULL,
         coeff_omic2 <- colMeans(coeffRaw_omic2)
 
         # Genomic estimated breeding values
-        omic2_EBV <- data.frame(names = rownames(omic2_kernel), omic2_EBV=omic2_ebv)
+        if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+        omic2_EBV <- data.frame(names = rownames(omic2_kernel), Env = ENV, omic2_EBV=omic2_ebv)
+        } else {
+          omic2_EBV <- data.frame(names = rownames(omic2_kernel), omic2_EBV=omic2_ebv)
+
+        }
         colnames(omic2_EBV)[1] = gen_name
         #GEBV = data.frame(rowMeans(ebv))
 
@@ -227,7 +300,14 @@ mod_output_bayes_RKHS <- function(mod=NULL,
         coeff_omic3 <- colMeans(coeffRaw_omic3)
 
         # Genomic estimated breeding values
-        omic3_EBV <- data.frame(names = rownames(omic3_kernel), omic3_EBV=omic3_ebv)
+        if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+        omic3_EBV <- data.frame(names = rownames(omic3_kernel), Env = ENV,  omic3_EBV=omic3_ebv)
+
+        } else {
+          omic3_EBV <- data.frame(names = rownames(omic3_kernel), omic3_EBV=omic3_ebv)
+
+        }
+
         colnames(omic3_EBV)[1] = gen_name
         #GEBV = data.frame(rowMeans(ebv))
 
@@ -273,7 +353,12 @@ mod_output_bayes_RKHS <- function(mod=NULL,
         coeffRaw = solve(t(g_use)*g_use)*t(g_use)*g_ebv
         coeff <- colMeans(coeffRaw)
         # Genomic estimated breeding values
-        GEBV <- data.frame(names = rownames(g_use), GEBV=g_ebv)
+        if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+        GEBV <- data.frame(names = rownames(g_use), Env = ENV, GEBV=g_ebv)
+        } else {
+          GEBV <- data.frame(names = rownames(g_use), GEBV=g_ebv)
+
+        }
         colnames(GEBV)[1] = gen_name
         #GEBV = data.frame(rowMeans(ebv))
 
@@ -298,7 +383,13 @@ mod_output_bayes_RKHS <- function(mod=NULL,
       coeff_omic1 <- colMeans(coeffRaw_omic1)
 
       # Genomic estimated breeding values
-      omic1_EBV <- data.frame(names = rownames(omic1_kernel), omic1_EBV=omic1_ebv)
+      if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+      omic1_EBV <- data.frame(names = rownames(omic1_kernel), Env = ENV, omic1_EBV=omic1_ebv)
+
+      } else {
+
+        omic1_EBV <- data.frame(names = rownames(omic1_kernel), omic1_EBV=omic1_ebv)
+      }
       colnames(omic1_EBV)[1] = gen_name
       #GEBV = data.frame(rowMeans(ebv))
 
@@ -321,7 +412,12 @@ mod_output_bayes_RKHS <- function(mod=NULL,
       coeff_omic2 <- colMeans(coeffRaw_omic2)
 
       # Genomic estimated breeding values
-      omic2_EBV <- data.frame(names = rownames(omic2_kernel), omic2_EBV=omic2_ebv)
+      if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+      omic2_EBV <- data.frame(names = rownames(omic2_kernel), Env = ENV, omic2_EBV=omic2_ebv)
+      } else {
+
+        omic2_EBV <- data.frame(names = rownames(omic2_kernel), omic2_EBV=omic2_ebv)
+      }
       colnames(omic2_EBV)[1] = gen_name
       #GEBV = data.frame(rowMeans(ebv))
 
@@ -344,7 +440,12 @@ mod_output_bayes_RKHS <- function(mod=NULL,
       coeff_omic3 <- colMeans(coeffRaw_omic3)
 
       # Genomic estimated breeding values
-      omic3_EBV <- data.frame(names = rownames(omic3_kernel), omic3_EBV=omic3_ebv)
+      if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+      omic3_EBV <- data.frame(names = rownames(omic3_kernel), Env = ENV,  omic3_EBV=omic3_ebv)
+      } else {
+        omic3_EBV <- data.frame(names = rownames(omic3_kernel), omic3_EBV=omic3_ebv)
+
+      }
       colnames(omic3_EBV)[1] = gen_name
       #GEBV = data.frame(rowMeans(ebv))
 
@@ -364,7 +465,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
   if(exists("g_use") & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
     Res <-  list(coefficients = coeff,
                  GEBV = GEBV,
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance = Var_U,
                  residual_error = Var_E,
                  genomic_heritability = genomic_h2,
@@ -385,7 +486,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
     Res <-  list(coefficients = coeff_omic1,
                  EBV = omic1_EBV,
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance = Var_U,
                  residual_error = Var_E,
                  genomic_heritability = genomic_h2,
@@ -406,7 +507,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
     Res <-  list(coefficients = coeff_omic2,
                  EBV = omic2_EBV,
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance = Var_U,
                  residual_error = Var_E,
                  genomic_heritability = genomic_h2,
@@ -428,7 +529,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
     Res <-  list(coefficients = coeff_omic3,
                  EBV = omic3_EBV,
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance = Var_U,
                  residual_error = Var_E,
                  genomic_heritability = genomic_h2,
@@ -452,7 +553,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                  EBV_1 = GEBV,
                  EBV_2 = omic1_EBV,
                  sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = GEBV$GEBV+omic1_EBV$omic1_EBV),
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance_1 = Var_U_1,
                  genomic_variance_2 = Var_U_2,
                  total_genomic_variance = sum(Var_U_1, Var_U_2),
@@ -485,7 +586,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                  EBV_1 = GEBV,
                  EBV_2 = omic2_EBV,
                  sum_EBV = data.frame(name = omic2_EBV[, 1], EBV = GEBV$GEBV+omic2_EBV$omic2_EBV),
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance_1 = Var_U_1,
                  genomic_variance_2 = Var_U_2,
                  total_genomic_variance = sum(Var_U_1, Var_U_2),
@@ -518,7 +619,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                  EBV_1 = GEBV,
                  EBV_2 = omic3_EBV,
                  sum_EBV = data.frame(name = omic3_EBV[, 1], EBV = GEBV$GEBV+omic3_EBV$omic3_EBV),
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance_1 = Var_U_1,
                  genomic_variance_2 = Var_U_2,
                  total_genomic_variance = sum(Var_U_1, Var_U_2),
@@ -551,7 +652,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                  EBV_1 = omic1_EBV,
                  EBV_2 = omic2_EBV,
                  sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = omic1_EBV$omic1_EBV + omic2_EBV$omic2_EBV),
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance_1 = Var_U_1,
                  genomic_variance_2 = Var_U_2,
                  total_genomic_variance = sum(Var_U_1, Var_U_2),
@@ -587,7 +688,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                 genomic_variance_1 = Var_U_1,
                 genomic_variance_2 = Var_U_2,
                 sum_EBV = data.frame(name = omic2_EBV[, 1], EBV = omic2_EBV$omic2_EBV + omic3_EBV$omic3_EBV),
-                predict_value = mod$model$yHat,
+                predict_value = predict_value,
                 total_genomic_variance = sum(Var_U_1, Var_U_2),
                 residual_error = Var_E,
                 genomic_heritability = genomic_h2,
@@ -618,7 +719,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                  EBV_1 = omic1_EBV,
                  EBV_2 = omic3_EBV,
                  sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = omic1_EBV$omic1_EBV + omic3_EBV$omic3_EBV),
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance_1 = Var_U_1,
                  genomic_variance_2 = Var_U_2,
                  total_genomic_variance = sum(Var_U_1, Var_U_2),
@@ -653,7 +754,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                  EBV_2 = omic2_EBV,
                  EBV_3 = omic3_EBV,
                  sum_EBV = data.frame(name = omic2_EBV[, 1], EBV = (GEBV$GEBV + omic2_EBV$omic2_EBV + omic3_EBV$omic3_EBV)),
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance_1 = Var_U_1,
                  genomic_variance_2 = Var_U_2,
                  genomic_variance_3 = Var_U_3,
@@ -697,7 +798,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                  EBV_2 = omic1_EBV,
                  EBV_3 = omic3_EBV,
                  sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = (GEBV$GEBV + omic1_EBV$omic1_EBV + omic3_EBV$omic3_EBV)),
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance_1 = Var_U_1,
                  genomic_variance_2 = Var_U_2,
                  genomic_variance_3 = Var_U_3,
@@ -739,7 +840,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                  EBV_2 = omic1_EBV,
                  EBV_3 = omic2_EBV,
                  sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = (GEBV$GEBV + omic1_EBV$omic1_EBV + omic2_EBV$omic2_EBV)),
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance_1 = Var_U_1,
                  genomic_variance_2 = Var_U_2,
                  genomic_variance_3 = Var_U_3,
@@ -780,7 +881,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                  EBV_2 = omic2_EBV,
                  EBV_3 = omic3_EBV,
                  sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = (omic1_EBV$omic1_EBV + omic2_EBV$omic2_EBV + omic3_EBV$omic3_EBV)),
-                 predict_value = mod$model$yHat,
+                 predict_value = predict_value,
                  genomic_variance_1 = Var_U_1,
                  genomic_variance_2 = Var_U_2,
                  genomic_variance_3 = Var_U_3,
@@ -825,7 +926,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                    EBV_3 = omic2_EBV,
                    EBV_4 = omic3_EBV,
                    sum_EBV = data.frame(name = omic1_EBV[, 1], EBV = (GEBV$GEBV + omic1_EBV$omic1_EBV + omic2_EBV$omic2_EBV + omic3_EBV$omic3_EBV)),
-                   predict_value = mod$model$yHat,
+                   predict_value = predict_value,
                    genomic_variance_1 = Var_U_1,
                    genomic_variance_2 = Var_U_2,
                    genomic_variance_3 = Var_U_3,

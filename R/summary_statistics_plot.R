@@ -133,7 +133,7 @@ summary_statistics_bayes <- function(mod=NULL,
 #' @export
 #'
 #' @examples
-plot_acc <- function(mod,...){
+plot_acc <- function(mod,response, ...){
 
   # DT_ <- data.frame(y = c(mod$y,mod$yHat),yhat = c(mod$yhat, mod$y))
   #   # Scatter plot by group

@@ -8,7 +8,7 @@ importance_matrix <- xgboost::xgb.importance(
   feature_names = colnames(X_train),
   model = xgb_fit
 )
-importance_matrix
+#importance_matrix
 
 names(importance_matrix) <- c("Feature", "Importance")
 

@@ -526,9 +526,13 @@ model_execute <- function(
     #    ((is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))))) |
     #    ((!is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL")))))){
 
+ #### These models only works with one environment/location
+ if(length(pheno_clean[[1]][,gen_name])==length(unique(pheno_clean[[1]][,gen_name]))){
+
  if((isTRUE(GS_model== "BRR" | GS_model== "BayesA"|  GS_model== "BayesB"| GS_model== "BayesC" | GS_model== "BL") & is.null(rand_term_model_bayesian)) |
     (is.null(GS_model) & length(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))!=0) |
     (!is.null(GS_model) & length(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))!=0)){
+
 
         if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
 
@@ -568,7 +572,7 @@ model_execute <- function(
 
     res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-   res_plot <-  plot_acc(mod = mod)
+   res_plot <-  plot_acc(mod = mod, response = response)
 
 
         }
@@ -612,7 +616,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -656,7 +660,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -702,7 +706,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -747,7 +751,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -792,7 +796,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -836,7 +840,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -881,7 +885,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -926,7 +930,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -972,7 +976,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -1018,7 +1022,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -1063,7 +1067,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -1110,7 +1114,7 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -1155,7 +1159,7 @@ model_execute <- function(
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
@@ -1200,16 +1204,16 @@ model_execute <- function(
 
             res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-            res_plot <-  plot_acc(mod = mod)
+            res_plot <-  plot_acc(mod = mod, response = response)
 
         }
 
-
+ }
 } ## End of  Bayes A, B, C, BRR, BL
 
  ##########################################################################
  #########################################################################
- ## Start of RKHS  Model for Single Location                            ##                          ##
+ ## Start of RKHS  Model for Single Location and multiple loc           ##
  ##                                                                     ##
  ##                                                                     ##
  ##########################################################################
@@ -1275,7 +1279,9 @@ model_execute <- function(
              res_model_output <- mod_output_bayes_RKHS(mod = mod,
                                                        ETA = ETA,
                                                        gkernel =  gkernel_model_ready,
-                                                       gen_name = gen_name
+                                                       gen_name = gen_name,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
 
              }
@@ -1284,7 +1290,9 @@ model_execute <- function(
                  res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
                                                            ETA = ETA,
                                                            gkernel =  gkernel_model_ready,
-                                                           gen_name = gen_name
+                                                           gen_name = gen_name,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
              }
@@ -1297,7 +1305,9 @@ model_execute <- function(
                  res_model_output <- mod_output_bayes_RKHS(mod = mod,
                                                            ETA = ETA,
                                                            gmatrix = gmatrix_model_ready,
-                                                           gen_name = gen_name
+                                                           gen_name = gen_name,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
                  }
@@ -1306,7 +1316,9 @@ model_execute <- function(
                      res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
                                                                ETA = ETA,
                                                                gmatrix = gmatrix_model_ready,
-                                                               gen_name = gen_name
+                                                               gen_name = gen_name,
+                                                               pheno_data = ETA$pheno_data,
+                                                               heter_groups  = heter_groups
                      )
                  }
              }
@@ -1315,7 +1327,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
      ###### omic1_clean
@@ -1349,7 +1361,9 @@ model_execute <- function(
          res_model_output <- mod_output_bayes_RKHS(mod = mod,
                                                    ETA = ETA,
                                                    gen_name = gen_name,
-                                                   omic1_kernel = omic1_kernel_model_ready
+                                                   omic1_kernel = omic1_kernel_model_ready,
+                                                   pheno_data = ETA$pheno_data,
+                                                   heter_groups  = heter_groups
          )
 
          }
@@ -1358,12 +1372,14 @@ model_execute <- function(
              res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
                                                        ETA = ETA,
                                                        gen_name = gen_name,
-                                                       omic1_kernel = omic1_kernel_model_ready
+                                                       omic1_kernel = omic1_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
          }
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -1397,7 +1413,9 @@ model_execute <- function(
          res_model_output <- mod_output_bayes_RKHS(mod = mod,
                                                    ETA = ETA,
                                                    gen_name = gen_name,
-                                                   omic2_kernel = omic2_kernel_model_ready
+                                                   omic2_kernel = omic2_kernel_model_ready,
+                                                   pheno_data = ETA$pheno_data,
+                                                   heter_groups  = heter_groups
          )
 
          }
@@ -1405,13 +1423,15 @@ model_execute <- function(
              res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
                                                        ETA = ETA,
                                                        gen_name = gen_name,
-                                                       omic2_kernel = omic2_kernel_model_ready
+                                                       omic2_kernel = omic2_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
          }
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -1447,7 +1467,9 @@ model_execute <- function(
          res_model_output <- mod_output_bayes_RKHS(mod = mod,
                                                    ETA = ETA,
                                                    gen_name = gen_name,
-                                                   omic3_kernel = omic3_kernel_model_ready
+                                                   omic3_kernel = omic3_kernel_model_ready,
+                                                   pheno_data = ETA$pheno_data,
+                                                   heter_groups  = heter_groups
          )
 
          }
@@ -1457,13 +1479,15 @@ model_execute <- function(
              res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
                                                        ETA = ETA,
                                                        gen_name = gen_name,
-                                                       omic3_kernel = omic3_kernel_model_ready
+                                                       omic3_kernel = omic3_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
          }
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -1524,7 +1548,9 @@ model_execute <- function(
                                                        ETA = ETA,
                                                        gen_name = gen_name,
                                                        gkernel = gkernel_model_ready,
-                                                       omic1_kernel = omic1_kernel_model_ready
+                                                       omic1_kernel = omic1_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
 
              }
@@ -1534,7 +1560,9 @@ model_execute <- function(
                                                            ETA = ETA,
                                                            gen_name = gen_name,
                                                            gkernel = gkernel_model_ready,
-                                                           omic1_kernel = omic1_kernel_model_ready
+                                                           omic1_kernel = omic1_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
              }
 
@@ -1547,7 +1575,9 @@ model_execute <- function(
                                                            ETA = ETA,
                                                            gen_name = gen_name,
                                                            gmatrix = gmatrix_model_ready,
-                                                           omic1_kernel = omic1_kernel_model_ready
+                                                           omic1_kernel = omic1_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
                  }
@@ -1559,7 +1589,9 @@ model_execute <- function(
                                                                ETA = ETA,
                                                                gen_name = gen_name,
                                                                gmatrix = gmatrix_model_ready,
-                                                               omic1_kernel = omic1_kernel_model_ready
+                                                               omic1_kernel = omic1_kernel_model_ready,
+                                                               pheno_data = ETA$pheno_data,
+                                                               heter_groups  = heter_groups
                      )
 
                  }
@@ -1570,7 +1602,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -1632,7 +1664,9 @@ model_execute <- function(
                                                        ETA = ETA,
                                                        gen_name = gen_name,
                                                        gkernel = gkernel_model_ready,
-                                                       omic2_kernel = omic2_kernel_model_ready
+                                                       omic2_kernel = omic2_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
 
              }
@@ -1642,7 +1676,9 @@ model_execute <- function(
                                                            ETA = ETA,
                                                            gen_name = gen_name,
                                                            gkernel = gkernel_model_ready,
-                                                           omic2_kernel = omic2_kernel_model_ready
+                                                           omic2_kernel = omic2_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
              }
@@ -1656,7 +1692,9 @@ model_execute <- function(
                                                            ETA = ETA,
                                                            gen_name = gen_name,
                                                            gmatrix = gmatrix_model_ready,
-                                                           omic2_kernel = omic2_kernel_model_ready
+                                                           omic2_kernel = omic2_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
                  }
@@ -1666,7 +1704,9 @@ model_execute <- function(
                                                                ETA = ETA,
                                                                gen_name = gen_name,
                                                                gmatrix = gmatrix_model_ready,
-                                                               omic2_kernel = omic2_kernel_model_ready
+                                                               omic2_kernel = omic2_kernel_model_ready,
+                                                               pheno_data = ETA$pheno_data,
+                                                               heter_groups  = heter_groups
                      )
 
                  }
@@ -1677,7 +1717,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
      ##### geno_clean and omic3_clean
@@ -1737,7 +1777,9 @@ model_execute <- function(
                                                        ETA = ETA,
                                                        gen_name = gen_name,
                                                        gkernel = gkernel_model_ready,
-                                                       omic3_kernel = omic3_kernel_model_ready
+                                                       omic3_kernel = omic3_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
 
              }
@@ -1747,7 +1789,9 @@ model_execute <- function(
                                                            ETA = ETA,
                                                            gen_name = gen_name,
                                                            gkernel = gkernel_model_ready,
-                                                           omic3_kernel = omic3_kernel_model_ready
+                                                           omic3_kernel = omic3_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
              }
@@ -1762,7 +1806,9 @@ model_execute <- function(
                                                            ETA = ETA,
                                                            gen_name = gen_name,
                                                            gmatrix = gmatrix_model_ready,
-                                                           omic3_kernel = omic3_kernel_model_ready
+                                                           omic3_kernel = omic3_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
                  }
@@ -1774,7 +1820,9 @@ model_execute <- function(
                                                                ETA = ETA,
                                                                gen_name = gen_name,
                                                                gmatrix = gmatrix_model_ready,
-                                                               omic3_kernel = omic3_kernel_model_ready
+                                                               omic3_kernel = omic3_kernel_model_ready,
+                                                               pheno_data = ETA$pheno_data,
+                                                               heter_groups  = heter_groups
                      )
 
                  }
@@ -1787,7 +1835,7 @@ model_execute <- function(
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -1824,7 +1872,9 @@ model_execute <- function(
                                                    ETA = ETA,
                                                    gen_name = gen_name,
                                                    omic1_kernel = omic1_kernel_model_ready,
-                                                   omic2_kernel = omic2_kernel_model_ready
+                                                   omic2_kernel = omic2_kernel_model_ready,
+                                                   pheno_data = ETA$pheno_data,
+                                                   heter_groups  = heter_groups
          )
 
          }
@@ -1834,14 +1884,16 @@ model_execute <- function(
                                                        ETA = ETA,
                                                        gen_name = gen_name,
                                                        omic1_kernel = omic1_kernel_model_ready,
-                                                       omic2_kernel = omic2_kernel_model_ready
+                                                       omic2_kernel = omic2_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
 
          }
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -1880,7 +1932,9 @@ model_execute <- function(
                                                    ETA = ETA,
                                                    gen_name = gen_name,
                                                    omic1_kernel = omic1_kernel_model_ready,
-                                                   omic3_kernel = omic3_kernel_model_ready
+                                                   omic3_kernel = omic3_kernel_model_ready,
+                                                   pheno_data = ETA$pheno_data,
+                                                   heter_groups  = heter_groups
          )
 
          }
@@ -1890,7 +1944,9 @@ model_execute <- function(
                                                        ETA = ETA,
                                                        gen_name = gen_name,
                                                        omic1_kernel = omic1_kernel_model_ready,
-                                                       omic3_kernel = omic3_kernel_model_ready
+                                                       omic3_kernel = omic3_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
 
          }
@@ -1898,7 +1954,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -1937,7 +1993,9 @@ model_execute <- function(
                                                    ETA = ETA,
                                                    gen_name = gen_name,
                                                    omic2_kernel = omic2_kernel_model_ready,
-                                                   omic3_kernel = omic3_kernel_model_ready
+                                                   omic3_kernel = omic3_kernel_model_ready,
+                                                   pheno_data = ETA$pheno_data,
+                                                   heter_groups  = heter_groups
          )
 
          }
@@ -1947,14 +2005,16 @@ model_execute <- function(
                                                        ETA = ETA,
                                                        gen_name = gen_name,
                                                        omic2_kernel = omic2_kernel_model_ready,
-                                                       omic3_kernel = omic3_kernel_model_ready
+                                                       omic3_kernel = omic3_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
 
          }
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -2020,7 +2080,9 @@ model_execute <- function(
                                                        gen_name = gen_name,
                                                        gkernel = gkernel_model_ready,
                                                        omic1_kernel = omic1_kernel_model_ready,
-                                                       omic2_kernel = omic2_kernel_model_ready
+                                                       omic2_kernel = omic2_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
 
              }
@@ -2031,7 +2093,9 @@ model_execute <- function(
                                                            gen_name = gen_name,
                                                            gkernel = gkernel_model_ready,
                                                            omic1_kernel = omic1_kernel_model_ready,
-                                                           omic2_kernel = omic2_kernel_model_ready
+                                                           omic2_kernel = omic2_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
              }
@@ -2047,7 +2111,9 @@ model_execute <- function(
                                                            gen_name = gen_name,
                                                            gmatrix = gmatrix_model_ready,
                                                            omic1_kernel = omic1_kernel_model_ready,
-                                                           omic2_kernel = omic2_kernel_model_ready
+                                                           omic2_kernel = omic2_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
                  }
@@ -2058,7 +2124,9 @@ model_execute <- function(
                                                                gen_name = gen_name,
                                                                gmatrix = gmatrix_model_ready,
                                                                omic1_kernel = omic1_kernel_model_ready,
-                                                               omic2_kernel = omic2_kernel_model_ready
+                                                               omic2_kernel = omic2_kernel_model_ready,
+                                                               pheno_data = ETA$pheno_data,
+                                                               heter_groups  = heter_groups
                      )
 
                  }
@@ -2069,7 +2137,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -2135,7 +2203,9 @@ model_execute <- function(
                                                        gen_name = gen_name,
                                                        gkernel = gkernel_model_ready,
                                                        omic1_kernel = omic1_kernel_model_ready,
-                                                       omic3_kernel = omic3_kernel_model_ready
+                                                       omic3_kernel = omic3_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
 
              }
@@ -2146,7 +2216,9 @@ model_execute <- function(
                                                            gen_name = gen_name,
                                                            gkernel = gkernel_model_ready,
                                                            omic1_kernel = omic1_kernel_model_ready,
-                                                           omic3_kernel = omic3_kernel_model_ready
+                                                           omic3_kernel = omic3_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
              }
@@ -2161,7 +2233,9 @@ model_execute <- function(
                                                            gen_name = gen_name,
                                                            gmatrix = gmatrix_model_ready,
                                                            omic1_kernel = omic1_kernel_model_ready,
-                                                           omic3_kernel = omic3_kernel_model_ready
+                                                           omic3_kernel = omic3_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
                  }
@@ -2173,7 +2247,9 @@ model_execute <- function(
                                                                gen_name = gen_name,
                                                                gmatrix = gmatrix_model_ready,
                                                                omic1_kernel = omic1_kernel_model_ready,
-                                                               omic3_kernel = omic3_kernel_model_ready
+                                                               omic3_kernel = omic3_kernel_model_ready,
+                                                               pheno_data = ETA$pheno_data,
+                                                               heter_groups  = heter_groups
                      )
 
                  }
@@ -2184,7 +2260,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -2250,7 +2326,9 @@ model_execute <- function(
                                                        gen_name = gen_name,
                                                        gkernel = gkernel_model_ready,
                                                        omic2_kernel = omic2_kernel_model_ready,
-                                                       omic3_kernel = omic3_kernel_model_ready
+                                                       omic3_kernel = omic3_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
 
              }
@@ -2262,7 +2340,9 @@ model_execute <- function(
                                                            gen_name = gen_name,
                                                            gkernel = gkernel_model_ready,
                                                            omic2_kernel = omic2_kernel_model_ready,
-                                                           omic3_kernel = omic3_kernel_model_ready
+                                                           omic3_kernel = omic3_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
              }
@@ -2279,7 +2359,9 @@ model_execute <- function(
                                                            gen_name = gen_name,
                                                            gmatrix = gmatrix_model_ready,
                                                            omic2_kernel = omic2_kernel_model_ready,
-                                                           omic3_kernel = omic3_kernel_model_ready
+                                                           omic3_kernel = omic3_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
                  }
@@ -2291,7 +2373,9 @@ model_execute <- function(
                                                                gen_name = gen_name,
                                                                gmatrix = gmatrix_model_ready,
                                                                omic2_kernel = omic2_kernel_model_ready,
-                                                               omic3_kernel = omic3_kernel_model_ready
+                                                               omic3_kernel = omic3_kernel_model_ready,
+                                                               pheno_data = ETA$pheno_data,
+                                                               heter_groups  = heter_groups
                      )
 
                  }
@@ -2302,7 +2386,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -2341,7 +2425,9 @@ model_execute <- function(
                                                    gen_name = gen_name,
                                                    omic1_kernel = omic1_kernel_model_ready,
                                                    omic2_kernel = omic2_kernel_model_ready,
-                                                   omic3_kernel = omic3_kernel_model_ready
+                                                   omic3_kernel = omic3_kernel_model_ready,
+                                                   pheno_data = ETA$pheno_data,
+                                                   heter_groups  = heter_groups
          )
 
          }
@@ -2352,14 +2438,16 @@ model_execute <- function(
                                                        gen_name = gen_name,
                                                        omic1_kernel = omic1_kernel_model_ready,
                                                        omic2_kernel = omic2_kernel_model_ready,
-                                                       omic3_kernel = omic3_kernel_model_ready
+                                                       omic3_kernel = omic3_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
 
          }
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -2430,7 +2518,9 @@ model_execute <- function(
                                                        gkernel = gkernel_model_ready,
                                                        omic1_kernel = omic1_kernel_model_ready,
                                                        omic2_kernel = omic2_kernel_model_ready,
-                                                       omic3_kernel = omic3_kernel_model_ready
+                                                       omic3_kernel = omic3_kernel_model_ready,
+                                                       pheno_data = ETA$pheno_data,
+                                                       heter_groups  = heter_groups
              )
 
              }
@@ -2442,7 +2532,9 @@ model_execute <- function(
                                                            gkernel = gkernel_model_ready,
                                                            omic1_kernel = omic1_kernel_model_ready,
                                                            omic2_kernel = omic2_kernel_model_ready,
-                                                           omic3_kernel = omic3_kernel_model_ready
+                                                           omic3_kernel = omic3_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
              }
@@ -2459,7 +2551,9 @@ model_execute <- function(
                                                            gmatrix = gmatrix_model_ready,
                                                            omic1_kernel = omic1_kernel_model_ready,
                                                            omic2_kernel = omic2_kernel_model_ready,
-                                                           omic3_kernel = omic3_kernel_model_ready
+                                                           omic3_kernel = omic3_kernel_model_ready,
+                                                           pheno_data = ETA$pheno_data,
+                                                           heter_groups  = heter_groups
                  )
 
                  }
@@ -2471,7 +2565,9 @@ model_execute <- function(
                                                                gmatrix = gmatrix_model_ready,
                                                                omic1_kernel = omic1_kernel_model_ready,
                                                                omic2_kernel = omic2_kernel_model_ready,
-                                                               omic3_kernel = omic3_kernel_model_ready
+                                                               omic3_kernel = omic3_kernel_model_ready,
+                                                               pheno_data = ETA$pheno_data,
+                                                               heter_groups  = heter_groups
                      )
 
                  }
@@ -2482,7 +2578,7 @@ model_execute <- function(
 
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
-         res_plot <-  plot_acc(mod = mod)
+         res_plot <-  plot_acc(mod = mod, response = response)
 
      }
 
@@ -2512,6 +2608,9 @@ model_execute <- function(
  #
  #      test_set <- object_pheno$test_set
  # } else {
+
+ #### These models only works with one environment/location
+ if(length(pheno_clean[[1]][,gen_name])==length(unique(pheno_clean[[1]][,gen_name]))){
 
  if(isTRUE(GS_model== "Xgboost" | GS_model== "RandomForest" | GS_model== "PartialLeastSquare" | GS_model== "SupportVectorMachine" | GS_model== "K-NearestNeighbors" | GS_model=="Lasso" | GS_model=="Ridge_Regression"))   {
 
@@ -5178,7 +5277,9 @@ model_execute <- function(
 
 
 
-}  ### End
+}  ### End machine learning
+
+ }
 
  ### if user provide only
 
