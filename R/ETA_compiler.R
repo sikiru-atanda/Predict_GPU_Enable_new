@@ -90,7 +90,7 @@ ETA_compiler_bayes <- function(
 
   ### Assign
   rand_model <- random_term_model(rand_terms = rand_term_no_inter,
-                                  rand_term_model_bayesian = rand_term_model_bayesian,
+                                  rand_terms_model_bayesian = rand_term_model_bayesian,
                                   GS_model = GS_model)
 
   if(!is.null(fixed)){

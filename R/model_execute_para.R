@@ -24,7 +24,6 @@
 #' @param random
 #' @param heter_resid
 #' @param heter_groups
-#' @param varcov_str
 #' @param weights
 #' @param nIter
 #' @param burnIn
@@ -49,6 +48,8 @@
 #' @param coefficient_4
 #' @param eval_metrics
 #' @param para_tunning
+#' @param VarCov_str
+#' @param engine
 #'
 #' @return
 #' @export
@@ -82,13 +83,6 @@ model_execute <- function(
     train_set = NULL,
     test_set = NULL,
     gmatrix_method = NULL,
-    # gmatrix_method = c("VanRaden",
-    #                    "Yang"),
-    # kernel_method = c("Gaussian",
-    #                          "Linear",
-    #                          "Poly2",
-    #                          "Poly3",
-    #                          "Poly4"),
     kernel_method = NULL,
     response=NULL,
     gen_name=NULL,
@@ -97,7 +91,7 @@ model_execute <- function(
     random=NULL,
     heter_resid=FALSE,
     heter_groups=NULL,
-    varcov_str = NULL,
+    VarCov_str = NULL,
     weights =NULL,
     nIter=NULL,
     burnIn=NULL,
@@ -128,8 +122,12 @@ model_execute <- function(
     fixed_term_model_bayesian = 'FIXED',
     rand_term_model_bayesian = NULL,
     core = NULL,
+    engine = NULL,
     message = TRUE,
     center = TRUE,
+    workspace = 1e08,
+    pworkspace= 1e06,
+    maxit = 50,
     ...
 ) {
 
@@ -1213,7 +1211,8 @@ model_execute <- function(
 
  ##########################################################################
  #########################################################################
- ## Start of RKHS  Model for Single Location and multiple loc           ##
+ ## Start of RKHS, (BRR- Bayesian GBLUP ) and GBLUP (asreml) Model
+ ## for Single Location and multiple loc                                ##
  ##                                                                     ##
  ##                                                                     ##
  ##########################################################################
@@ -1226,7 +1225,7 @@ model_execute <- function(
  # if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "BRR")) & is.null(rand_term_model_bayesian)) |
  #    ((is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%c("RKHS", "BRR")))) |
  #    ((!is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%c("RKHS", "BRR"))))){
- if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "BRR")) & is.null(rand_term_model_bayesian)) |
+ if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "BRR") | isTRUE(GS_model== "GBLUP")) & is.null(rand_term_model_bayesian)) |
     (is.null(GS_model) & length(rand_term_model_bayesian%in%c("RKHS", "BRR"))!=0) |
     (!is.null(GS_model) & length(rand_term_model_bayesian%in%c("RKHS", "BRR"))!=0)){
 
@@ -1235,6 +1234,7 @@ model_execute <- function(
 
          if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
 
+         if(GS_model=="BRR" | GS_model=="RKHS"){
          if(exists('gkernel_model_ready')){
              ETA  <-  ETA_compiler_bayes_GBLUP(
                  fixed = fixed,
@@ -1329,11 +1329,91 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+         } else {
+             if(GS_model=="GBLUP" & engine == 'asreml'){
+
+                 if(exists('gmatrix_model_ready')){
+                 mod = asreml_utilis(fixed = fixed,
+                                     random = random,
+                                     cova=cova,
+                                     GS_model = GS_model,
+                                     response = response,
+                                     pheno_data = pheno_clean[[1]],
+                                     gmatrix = gmatrix_model_ready,
+                                     gen_name = gen_name,
+                                     heter_groups = heter_groups,
+                                     heter_resid = heter_resid,
+                                     VarCov_str = VarCov_str,
+                                     weights = weights,
+                                     core = core,
+                                     pworkspace= pworkspace,
+                                     workspace = workspace,
+                                     maxit = maxit)
+
+        res_model_output <- asreml_mod_output(
+                                    mod_asreml = mod,
+                                    pheno_data = pheno_clean[[1]],
+                                    gmatrix = gmatrix_model_ready,
+                                    heter_groups = heter_groups,
+                                    gen_name = gen_name,
+                                    VarCov_str = VarCov_str,
+                                    heter_groups = heter_groups,
+                                    heter_resid = heter_resid,
+                                    pworkspace= pworkspace,
+                                    workspace = workspace,
+                                    maxit = maxit
+                                             )
+
+                 } else {
+
+                     if(exists('gkernel_model_ready')){
+                         mod = asreml_utilis(fixed = fixed,
+                                             random = random,
+                                             cova=cova,
+                                             GS_model = GS_model,
+                                             response = response,
+                                             pheno_data = pheno_clean[[1]],
+                                             gkernel = gkernel_model_ready,
+                                             gen_name = gen_name,
+                                             heter_groups = heter_groups,
+                                             heter_resid = heter_resid,
+                                             VarCov_str = VarCov_str,
+                                             weights = weights,
+                                             core = core,
+                                             pworkspace= pworkspace,
+                                             workspace = workspace,
+                                             maxit = maxit)
+
+                         res_model_output <- asreml_mod_output(
+                             mod_asreml = mod,
+                             pheno_data = pheno_clean[[1]],
+                             gkernel = gkernel_model_ready,
+                             heter_groups = heter_groups,
+                             gen_name = gen_name,
+                             VarCov_str = VarCov_str,
+                             heter_groups = heter_groups,
+                             heter_resid = heter_resid,
+                             pworkspace= pworkspace,
+                             workspace = workspace,
+                             maxit = maxit
+                         )
+                     }
+
+                 }
+
+        # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+        #                       response = response)
+
+             }
+
+         }
+
      }
      ###### omic1_clean
 
      if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
 
+         if(GS_model=="BRR" | GS_model=="RKHS"){
          ETA  <-  ETA_compiler_bayes_GBLUP(
              fixed = fixed,
              random = random,
@@ -1381,12 +1461,52 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+         } else {
+           if(GS_model=="GBLUP" & engine =="asreml")  {
+
+               mod = asreml_utilis(fixed = fixed,
+                                   random = random,
+                                   cova=cova,
+                                   GS_model = GS_model,
+                                   response = response,
+                                   pheno_data = pheno_clean[[1]],
+                                   omic1_kernel = omic1_kernel_model_ready,
+                                   gen_name = gen_name,
+                                   heter_groups = heter_groups,
+                                   heter_resid = heter_resid,
+                                   VarCov_str = VarCov_str,
+                                   weights = weights,
+                                   core = core,
+                                   pworkspace= pworkspace,
+                                   workspace = workspace,
+                                   maxit = maxit)
+
+               res_model_output <- asreml_mod_output(
+                   mod_asreml = mod,
+                   pheno_data = pheno_clean[[1]],
+                   omic1_kernel = omic1_kernel_model_ready,
+                   gen_name = gen_name,
+                   VarCov_str = VarCov_str,
+                   heter_groups = heter_groups,
+                   heter_resid = heter_resid,
+                   pworkspace= pworkspace,
+                   workspace = workspace,
+                   maxit = maxit
+               )
+
+               # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+               #                       response = response)
+           }
+
+         }
+
      }
 
      ##### omic2_model_ready
 
      if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
 
+         if(GS_model=="BRR" | GS_model=="RKHS"){
          ETA  <-  ETA_compiler_bayes_GBLUP(
              fixed = fixed,
              random = random,
@@ -1433,6 +1553,45 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+         } else {
+             if(GS_model=="GBLUP" & engine =="asreml")  {
+
+                 mod = asreml_utilis(fixed = fixed,
+                                     random = random,
+                                     cova=cova,
+                                     GS_model = GS_model,
+                                     response = response,
+                                     pheno_data = pheno_clean[[1]],
+                                     omic2_kernel = omic2_kernel_model_ready,
+                                     gen_name = gen_name,
+                                     heter_groups = heter_groups,
+                                     heter_resid = heter_resid,
+                                     VarCov_str = VarCov_str,
+                                     weights = weights,
+                                     core = core,
+                                     pworkspace= pworkspace,
+                                     workspace = workspace,
+                                     maxit = maxit)
+
+                 res_model_output <- asreml_mod_output(
+                     mod_asreml = mod,
+                     pheno_data = pheno_clean[[1]],
+                     omic2_kernel = omic2_kernel_model_ready,
+                     gen_name = gen_name,
+                     VarCov_str = VarCov_str,
+                     heter_groups = heter_groups,
+                     heter_resid = heter_resid,
+                     pworkspace= pworkspace,
+                     workspace = workspace,
+                     maxit = maxit
+                 )
+
+                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+                 #                       response = response)
+             }
+
+         }
+
      }
 
      ####
@@ -1441,6 +1600,7 @@ model_execute <- function(
 
      if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
 
+         if(GS_model == "BRR" | GS_model == "RKHS"){
          ETA  <-  ETA_compiler_bayes_GBLUP(
              fixed = fixed,
              random = random,
@@ -1489,6 +1649,45 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+         } else {
+             if(GS_model=="GBLUP" & engine =="asreml")  {
+
+                 mod = asreml_utilis(fixed = fixed,
+                                     random = random,
+                                     cova=cova,
+                                     GS_model = GS_model,
+                                     response = response,
+                                     pheno_data = pheno_clean[[1]],
+                                     omic3_kernel = omic3_kernel_model_ready,
+                                     gen_name = gen_name,
+                                     heter_groups = heter_groups,
+                                     heter_resid = heter_resid,
+                                     VarCov_str = VarCov_str,
+                                     weights = weights,
+                                     core = core,
+                                     pworkspace= pworkspace,
+                                     workspace = workspace,
+                                     maxit = maxit)
+
+                 res_model_output <- asreml_mod_output(
+                     mod_asreml = mod,
+                     pheno_data = pheno_clean[[1]],
+                     omic3_kernel = omic3_kernel_model_ready,
+                     gen_name = gen_name,
+                     VarCov_str = VarCov_str,
+                     heter_groups = heter_groups,
+                     heter_resid = heter_resid,
+                     pworkspace= pworkspace,
+                     workspace = workspace,
+                     maxit = maxit
+                 )
+
+                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+                 #                       response = response)
+             }
+
+         }
+
      }
 
 
@@ -1497,6 +1696,8 @@ model_execute <- function(
      if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
 
          if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
+
+         if(GS_model=="BRR" | GS_model=="RKHS"){
 
          if(exists('gkernel_model_ready')){
              ETA  <-  ETA_compiler_bayes_GBLUP(
@@ -1604,6 +1805,84 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+         } else {
+             if(GS_model=="GBLUP" & engine =="asreml")  {
+                 if(exists('gmatrix_model_ready')){
+                 mod = asreml_utilis(fixed = fixed,
+                                     random = random,
+                                     cova=cova,
+                                     GS_model = GS_model,
+                                     response = response,
+                                     pheno_data = pheno_clean[[1]],
+                                     gmatrix = gmatrix_model_ready,
+                                     omic1_kernel = omic1_kernel_model_ready,
+                                     gen_name = gen_name,
+                                     heter_groups = heter_groups,
+                                     heter_resid = heter_resid,
+                                     VarCov_str = VarCov_str,
+                                     weights = weights,
+                                     core = core,
+                                     pworkspace= pworkspace,
+                                     workspace = workspace,
+                                     maxit = maxit)
+
+                 res_model_output <- asreml_mod_output(
+                     mod_asreml = mod,
+                     pheno_data = pheno_clean[[1]],
+                     gmatrix = gmatrix_model_ready,
+                     omic1_kernel = omic1_kernel_model_ready,
+                     gen_name = gen_name,
+                     VarCov_str = VarCov_str,
+                     heter_groups = heter_groups,
+                     heter_resid = heter_resid,
+                     pworkspace= pworkspace,
+                     workspace = workspace,
+                     maxit = maxit
+                 )
+
+                 } else {
+
+                if( exists('gkernel_model_ready')){
+                    mod = asreml_utilis(fixed = fixed,
+                                        random = random,
+                                        cova=cova,
+                                        GS_model = GS_model,
+                                        response = response,
+                                        pheno_data = pheno_clean[[1]],
+                                        gkernel = gkernel_model_ready,
+                                        omic1_kernel = omic1_kernel_model_ready,
+                                        gen_name = gen_name,
+                                        heter_groups = heter_groups,
+                                        heter_resid = heter_resid,
+                                        VarCov_str = VarCov_str,
+                                        weights = weights,
+                                        core = core,
+                                        workspace = workspace,
+                                        maxit = maxit)
+
+                    res_model_output <- asreml_mod_output(
+                        mod_asreml = mod,
+                        pheno_data = pheno_clean[[1]],
+                        gkernel = gkernel_model_ready,
+                        omic1_kernel = omic1_kernel_model_ready,
+                        gen_name = gen_name,
+                        VarCov_str = VarCov_str,
+                        heter_groups = heter_groups,
+                        heter_resid = heter_resid,
+                        pworkspace= pworkspace,
+                        workspace = workspace,
+                        maxit = maxit
+                    )
+
+                }
+                 }
+
+                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+                 #                       response = response)
+             }
+
+         }
+
      }
 
 
@@ -1613,6 +1892,7 @@ model_execute <- function(
 
          if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
 
+         if(GS_model =="BRR" | GS_model =="RKHS"){
          if(exists('gkernel_model_ready')){
              ETA  <-  ETA_compiler_bayes_GBLUP(
                  fixed = fixed,
@@ -1719,12 +1999,93 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+         } else {
+             if(GS_model=="GBLUP" & engine =="asreml")  {
+                 if(exists('gmatrix_model_ready')){
+                     mod = asreml_utilis(fixed = fixed,
+                                         random = random,
+                                         cova=cova,
+                                         GS_model = GS_model,
+                                         response = response,
+                                         pheno_data = pheno_clean[[1]],
+                                         gmatrix = gmatrix_model_ready,
+                                         omic2_kernel = omic2_kernel_model_ready,
+                                         gen_name = gen_name,
+                                         heter_groups = heter_groups,
+                                         heter_resid = heter_resid,
+                                         VarCov_str = VarCov_str,
+                                         weights = weights,
+                                         core = core,
+                                         pworkspace= pworkspace,
+                                         workspace = workspace,
+                                         maxit = maxit)
+
+                     res_model_output <- asreml_mod_output(
+                         mod_asreml = mod,
+                         pheno_data = pheno_clean[[1]],
+                         gmatrix = gmatrix_model_ready,
+                         omic2_kernel = omic2_kernel_model_ready,
+                         gen_name = gen_name,
+                         VarCov_str = VarCov_str,
+                         heter_groups = heter_groups,
+                         heter_resid = heter_resid,
+                         pworkspace= pworkspace,
+                         workspace = workspace,
+                         maxit = maxit
+                     )
+
+                 } else {
+
+                     if( exists('gkernel_model_ready')){
+                         mod = asreml_utilis(fixed = fixed,
+                                             random = random,
+                                             cova=cova,
+                                             GS_model = GS_model,
+                                             response = response,
+                                             pheno_data = pheno_clean[[1]],
+                                             gkernel = gkernel_model_ready,
+                                             omic2_kernel = omic2_kernel_model_ready,
+                                             gen_name = gen_name,
+                                             heter_groups = heter_groups,
+                                             heter_resid = heter_resid,
+                                             VarCov_str = VarCov_str,
+                                             weights = weights,
+                                             core = core,
+                                             pworkspace= pworkspace,
+                                             workspace = workspace,
+                                             maxit = maxit)
+
+                         res_model_output <- asreml_mod_output(
+                             mod_asreml = mod,
+                             pheno_data = pheno_clean[[1]],
+                             gkernel = gkernel_model_ready,
+                             omic2_kernel = omic2_kernel_model_ready,
+                             gen_name = gen_name,
+                             VarCov_str = VarCov_str,
+                             heter_groups = heter_groups,
+                             heter_resid = heter_resid,
+                             pworkspace= pworkspace,
+                             workspace = workspace,
+                             maxit = maxit
+                         )
+
+                     }
+                 }
+
+                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+                 #                       response = response)
+             }
+
+         }
+
      }
      ##### geno_clean and omic3_clean
 
      if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
 
          if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
+
+         if(GS_model=="BRR" | GS_model =="RKHS"){
 
          if(exists('gkernel_model_ready')){
              ETA  <-  ETA_compiler_bayes_GBLUP(
@@ -1837,6 +2198,81 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+         } else {
+             if(GS_model=="GBLUP" & engine =="asreml")  {
+                 if(exists('gmatrix_model_ready')){
+                     mod = asreml_utilis(fixed = fixed,
+                                         random = random,
+                                         cova=cova,
+                                         GS_model = GS_model,
+                                         response = response,
+                                         pheno_data = pheno_clean[[1]],
+                                         gmatrix = gmatrix_model_ready,
+                                         omic3_kernel = omic3_kernel_model_ready,
+                                         gen_name = gen_name,
+                                         heter_groups = heter_groups,
+                                         heter_resid = heter_resid,
+                                         VarCov_str = VarCov_str,
+                                         weights = weights,
+                                         core = core,
+                                         pworkspace= pworkspace,
+                                         workspace = workspace,
+                                         maxit = maxit)
+
+                     res_model_output <- asreml_mod_output(
+                         mod_asreml = mod,
+                         pheno_data = pheno_clean[[1]],
+                         gmatrix = gmatrix_model_ready,
+                         omic3_kernel = omic3_kernel_model_ready,
+                         gen_name = gen_name,
+                         VarCov_str = VarCov_str,
+                         heter_groups = heter_groups,
+                         heter_resid = heter_resid,
+                         pworkspace= pworkspace,
+                         workspace = workspace,
+                         maxit = maxit
+                     )
+
+                 } else {
+
+                     if( exists('gkernel_model_ready')){
+                         mod = asreml_utilis(fixed = fixed,
+                                             random = random,
+                                             cova=cova,
+                                             GS_model = GS_model,
+                                             response = response,
+                                             pheno_data = pheno_clean[[1]],
+                                             gkernel = gkernel_model_ready,
+                                             omic3_kernel = omic3_kernel_model_ready,
+                                             gen_name = gen_name,
+                                             heter_groups = heter_groups,
+                                             heter_resid = heter_resid,
+                                             VarCov_str = VarCov_str,
+                                             weights = weights,
+                                             core = core,
+                                             workspace = workspace,
+                                             maxit = maxit)
+
+                         res_model_output <- asreml_mod_output(
+                             mod_asreml = mod,
+                             pheno_data = pheno_clean[[1]],
+                             gkernel = gkernel_model_ready,
+                             omic3_kernel = omic3_kernel_model_ready,
+                             gen_name = gen_name,
+                             VarCov_str = VarCov_str,
+                             heter_groups = heter_groups,
+                             heter_resid = heter_resid
+                         )
+
+                     }
+                 }
+
+                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+                 #                       response = response)
+             }
+
+         }
+
      }
 
 
@@ -1844,6 +2280,7 @@ model_execute <- function(
 
      if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
 
+         if(GS_model =="BRR" | GS_model =="RKHS"){
          ETA  <-  ETA_compiler_bayes_GBLUP(
              fixed = fixed,
              random = random,
@@ -1894,6 +2331,48 @@ model_execute <- function(
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
          res_plot <-  plot_acc(mod = mod, response = response)
+
+
+         } else {
+             if(GS_model=="GBLUP" & engine =="asreml")  {
+
+                 mod = asreml_utilis(fixed = fixed,
+                                     random = random,
+                                     cova=cova,
+                                     GS_model = GS_model,
+                                     response = response,
+                                     pheno_data = pheno_clean[[1]],
+                                     omic1_kernel = omic1_kernel_model_ready,
+                                     omic2_kernel = omic2_kernel_model_ready,
+                                     gen_name = gen_name,
+                                     heter_groups = heter_groups,
+                                     heter_resid = heter_resid,
+                                     VarCov_str = VarCov_str,
+                                     weights = weights,
+                                     core = core,
+                                     pworkspace= pworkspace,
+                                     workspace = workspace,
+                                     maxit = maxit)
+
+                 res_model_output <- asreml_mod_output(
+                     mod_asreml = mod,
+                     pheno_data = pheno_clean[[1]],
+                     omic1_kernel = omic1_kernel_model_ready,
+                     omic2_kernel = omic2_kernel_model_ready,
+                     gen_name = gen_name,
+                     VarCov_str = VarCov_str,
+                     heter_groups = heter_groups,
+                     heter_resid = heter_resid,
+                     pworkspace= pworkspace,
+                     workspace = workspace,
+                     maxit = maxit
+                 )
+
+                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+                 #                       response = response)
+             }
+
+         }
 
      }
 
@@ -1904,6 +2383,7 @@ model_execute <- function(
 
      if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
 
+         if(GS_model =="BRR" | GS_model =="RKHS"){
          ETA  <-  ETA_compiler_bayes_GBLUP(
              fixed = fixed,
              random = random,
@@ -1956,6 +2436,47 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+         } else {
+             if(GS_model=="GBLUP" & engine =="asreml")  {
+
+                 mod = asreml_utilis(fixed = fixed,
+                                     random = random,
+                                     cova=cova,
+                                     GS_model = GS_model,
+                                     response = response,
+                                     pheno_data = pheno_clean[[1]],
+                                     omic1_kernel = omic1_kernel_model_ready,
+                                     omic3_kernel = omic3_kernel_model_ready,
+                                     gen_name = gen_name,
+                                     heter_groups = heter_groups,
+                                     heter_resid = heter_resid,
+                                     VarCov_str = VarCov_str,
+                                     weights = weights,
+                                     core = core,
+                                     pworkspace= pworkspace,
+                                     workspace = workspace,
+                                     maxit = maxit)
+
+                 res_model_output <- asreml_mod_output(
+                     mod_asreml = mod,
+                     pheno_data = pheno_clean[[1]],
+                     omic1_kernel = omic1_kernel_model_ready,
+                     omic3_kernel = omic3_kernel_model_ready,
+                     gen_name = gen_name,
+                     VarCov_str = VarCov_str,
+                     heter_groups = heter_groups,
+                     heter_resid = heter_resid,
+                     pworkspace= pworkspace,
+                     workspace = workspace,
+                     maxit = maxit
+                 )
+
+                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+                 #                       response = response)
+             }
+
+         }
+
      }
 
 
@@ -1965,6 +2486,7 @@ model_execute <- function(
 
      if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
 
+         if(GS_model=="BRR" | GS_model =="RKHS"){
          ETA  <-  ETA_compiler_bayes_GBLUP(
              fixed = fixed,
              random = random,
@@ -2015,6 +2537,47 @@ model_execute <- function(
          res_summary_stat <- summary_statistics_bayes(mod = mod)
 
          res_plot <-  plot_acc(mod = mod, response = response)
+
+         } else {
+             if(GS_model=="GBLUP" & engine =="asreml")  {
+
+                 mod = asreml_utilis(fixed = fixed,
+                                     random = random,
+                                     cova=cova,
+                                     GS_model = GS_model,
+                                     response = response,
+                                     pheno_data = pheno_clean[[1]],
+                                     omic2_kernel = omic2_kernel_model_ready,
+                                     omic3_kernel = omic3_kernel_model_ready,
+                                     gen_name = gen_name,
+                                     heter_groups = heter_groups,
+                                     heter_resid = heter_resid,
+                                     VarCov_str = VarCov_str,
+                                     weights = weights,
+                                     core = core,
+                                     pworkspace= pworkspace,
+                                     workspace = workspace,
+                                     maxit = maxit)
+
+                 res_model_output <- asreml_mod_output(
+                     mod_asreml = mod,
+                     pheno_data = pheno_clean[[1]],
+                     omic2_kernel = omic2_kernel_model_ready,
+                     omic3_kernel = omic3_kernel_model_ready,
+                     gen_name = gen_name,
+                     VarCov_str = VarCov_str,
+                     heter_groups = heter_groups,
+                     heter_resid = heter_resid,
+                     pworkspace= pworkspace,
+                     workspace = workspace,
+                     maxit = maxit
+                 )
+
+                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+                 #                       response = response)
+             }
+
+         }
 
      }
 
@@ -2026,6 +2589,7 @@ model_execute <- function(
 
          if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
 
+         if(GS_model =="BRR" | GS_model=="RKHS"){
          if(exists('gkernel_model_ready')){
              ETA  <-  ETA_compiler_bayes_GBLUP(
                  fixed = fixed,
@@ -2139,8 +2703,90 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+         } else {
+
+             if(GS_model=="GBLUP" & engine =="asreml")  {
+                 if(exists('gmatrix_model_ready')){
+                     mod = asreml_utilis(fixed = fixed,
+                                         random = random,
+                                         cova=cova,
+                                         GS_model = GS_model,
+                                         response = response,
+                                         pheno_data = pheno_clean[[1]],
+                                         gmatrix = gmatrix_model_ready,
+                                         omic1_kernel = omic1_kernel_model_ready,
+                                         omic2_kernel = omic2_kernel_model_ready,
+                                         gen_name = gen_name,
+                                         heter_groups = heter_groups,
+                                         heter_resid = heter_resid,
+                                         VarCov_str = VarCov_str,
+                                         weights = weights,
+                                         core = core,
+                                         pworkspace= pworkspace,
+                                         workspace = workspace,
+                                         maxit = maxit)
+
+                     res_model_output <- asreml_mod_output(
+                         mod_asreml = mod,
+                         pheno_data = pheno_clean[[1]],
+                         gmatrix = gmatrix_model_ready,
+                         omic1_kernel = omic1_kernel_model_ready,
+                         omic2_kernel = omic2_kernel_model_ready,
+                         gen_name = gen_name,
+                         VarCov_str = VarCov_str,
+                         heter_groups = heter_groups,
+                         heter_resid = heter_resid,
+                         pworkspace= pworkspace,
+                         workspace = workspace,
+                         maxit = maxit
+                     )
+
+                 } else {
+
+                     if( exists('gkernel_model_ready')){
+                         mod = asreml_utilis(fixed = fixed,
+                                             random = random,
+                                             cova=cova,
+                                             GS_model = GS_model,
+                                             response = response,
+                                             pheno_data = pheno_clean[[1]],
+                                             gkernel = gkernel_model_ready,
+                                             omic1_kernel = omic1_kernel_model_ready,
+                                             omic2_kernel = omic2_kernel_model_ready,
+                                             gen_name = gen_name,
+                                             heter_groups = heter_groups,
+                                             heter_resid = heter_resid,
+                                             VarCov_str = VarCov_str,
+                                             weights = weights,
+                                             core = core,
+                                             pworkspace= pworkspace,
+                                             workspace = workspace,
+                                             maxit = maxit)
+
+                         res_model_output <- asreml_mod_output(
+                             mod_asreml = mod,
+                             pheno_data = pheno_clean[[1]],
+                             gkernel = gkernel_model_ready,
+                             omic1_kernel = omic1_kernel_model_ready,
+                             omic2_kernel = omic2_kernel_model_ready,
+                             gen_name = gen_name,
+                             VarCov_str = VarCov_str,
+                             heter_groups = heter_groups,
+                             heter_resid = heter_resid,
+                             pworkspace= pworkspace,
+                             workspace = workspace,
+                             maxit = maxit
+                         )
+
+                     }
+                 }
+
+                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+                 #                       response = response)
+             }
      }
 
+     }
 
 
      ##### geno_model_ready, omic1_model_ready and omic3_model_ready
@@ -2150,6 +2796,7 @@ model_execute <- function(
 
          if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
 
+         if(GS_model == "BRR" | GS_model == "RKHS"){
          if(exists('gkernel_model_ready')){
              ETA  <-  ETA_compiler_bayes_GBLUP(
                  fixed = fixed,
@@ -2262,7 +2909,90 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+     } else {
+         if(GS_model=="GBLUP" & engine =="asreml")  {
+             if(exists('gmatrix_model_ready')){
+                 mod = asreml_utilis(fixed = fixed,
+                                     random = random,
+                                     cova=cova,
+                                     GS_model = GS_model,
+                                     response = response,
+                                     pheno_data = pheno_clean[[1]],
+                                     gmatrix = gmatrix_model_ready,
+                                     omic1_kernel = omic1_kernel_model_ready,
+                                     omic3_kernel = omic3_kernel_model_ready,
+                                     gen_name = gen_name,
+                                     heter_groups = heter_groups,
+                                     heter_resid = heter_resid,
+                                     VarCov_str = VarCov_str,
+                                     weights = weights,
+                                     core = core,
+                                     pworkspace= pworkspace,
+                                     workspace = workspace,
+                                     maxit = maxit)
+
+                 res_model_output <- asreml_mod_output(
+                     mod_asreml = mod,
+                     pheno_data = pheno_clean[[1]],
+                     gmatrix = gmatrix_model_ready,
+                     omic1_kernel = omic1_kernel_model_ready,
+                     omic3_kernel = omic3_kernel_model_ready,
+                     gen_name = gen_name,
+                     VarCov_str = VarCov_str,
+                     heter_groups = heter_groups,
+                     heter_resid = heter_resid,
+                     pworkspace= pworkspace,
+                     workspace = workspace,
+                     maxit = maxit
+                 )
+
+             } else {
+
+                 if( exists('gkernel_model_ready')){
+                     mod = asreml_utilis(fixed = fixed,
+                                         random = random,
+                                         cova=cova,
+                                         GS_model = GS_model,
+                                         response = response,
+                                         pheno_data = pheno_clean[[1]],
+                                         gkernel = gkernel_model_ready,
+                                         omic1_kernel = omic1_kernel_model_ready,
+                                         omic3_kernel = omic3_kernel_model_ready,
+                                         gen_name = gen_name,
+                                         heter_groups = heter_groups,
+                                         heter_resid = heter_resid,
+                                         VarCov_str = VarCov_str,
+                                         weights = weights,
+                                         core = core,
+                                         pworkspace= pworkspace,
+                                         workspace = workspace,
+                                         maxit = maxit)
+
+                     res_model_output <- asreml_mod_output(
+                         mod_asreml = mod,
+                         pheno_data = pheno_clean[[1]],
+                         gkernel = gkernel_model_ready,
+                         omic1_kernel = omic1_kernel_model_ready,
+                         omic3_kernel = omic3_kernel_model_ready,
+                         gen_name = gen_name,
+                         VarCov_str = VarCov_str,
+                         heter_groups = heter_groups,
+                         heter_resid = heter_resid,
+                         pworkspace= pworkspace,
+                         workspace = workspace,
+                         maxit = maxit
+                     )
+
+                 }
+             }
+
+             # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+             #                       response = response)
+         }
+
      }
+
+   }
 
      #####
 
@@ -2273,6 +3003,7 @@ model_execute <- function(
 
          if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
 
+         if(GS_model =="BRR" | GS_model == "RKHS"){
          if(exists('gkernel_model_ready')){
              ETA  <-  ETA_compiler_bayes_GBLUP(
                  fixed = fixed,
@@ -2388,6 +3119,89 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+         } else {
+             if(GS_model=="GBLUP" & engine =="asreml")  {
+                 if(exists('gmatrix_model_ready')){
+                     mod = asreml_utilis(fixed = fixed,
+                                         random = random,
+                                         cova=cova,
+                                         GS_model = GS_model,
+                                         response = response,
+                                         pheno_data = pheno_clean[[1]],
+                                         gmatrix = gmatrix_model_ready,
+                                         omic2_kernel = omic2_kernel_model_ready,
+                                         omic3_kernel = omic3_kernel_model_ready,
+                                         gen_name = gen_name,
+                                         heter_groups = heter_groups,
+                                         heter_resid = heter_resid,
+                                         VarCov_str = VarCov_str,
+                                         weights = weights,
+                                         core = core,
+                                         pworkspace= pworkspace,
+                                         workspace = workspace,
+                                         maxit = maxit)
+
+                     res_model_output <- asreml_mod_output(
+                         mod_asreml = mod,
+                         pheno_data = pheno_clean[[1]],
+                         gmatrix = gmatrix_model_ready,
+                         omic2_kernel = omic2_kernel_model_ready,
+                         omic3_kernel = omic3_kernel_model_ready,
+                         gen_name = gen_name,
+                         VarCov_str = VarCov_str,
+                         heter_groups = heter_groups,
+                         heter_resid = heter_resid,
+                         pworkspace= pworkspace,
+                         workspace = workspace,
+                         maxit = maxit
+                     )
+
+                 } else {
+
+                     if( exists('gkernel_model_ready')){
+                         mod = asreml_utilis(fixed = fixed,
+                                             random = random,
+                                             cova=cova,
+                                             GS_model = GS_model,
+                                             response = response,
+                                             pheno_data = pheno_clean[[1]],
+                                             gkernel = gkernel_model_ready,
+                                             omic2_kernel = omic2_kernel_model_ready,
+                                             omic3_kernel = omic3_kernel_model_ready,
+                                             gen_name = gen_name,
+                                             heter_groups = heter_groups,
+                                             heter_resid = heter_resid,
+                                             VarCov_str = VarCov_str,
+                                             weights = weights,
+                                             core = core,
+                                             pworkspace= pworkspace,
+                                             workspace = workspace,
+                                             maxit = maxit)
+
+                         res_model_output <- asreml_mod_output(
+                             mod_asreml = mod,
+                             pheno_data = pheno_clean[[1]],
+                             gkernel = gkernel_model_ready,
+                             omic2_kernel = omic2_kernel_model_ready,
+                             omic3_kernel = omic3_kernel_model_ready,
+                             gen_name = gen_name,
+                             VarCov_str = VarCov_str,
+                             heter_groups = heter_groups,
+                             heter_resid = heter_resid,
+                             pworkspace= pworkspace,
+                             workspace = workspace,
+                             maxit = maxit
+                         )
+
+                     }
+                 }
+
+                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+                 #                       response = response)
+             }
+
+         }
+
      }
 
 
@@ -2395,6 +3209,7 @@ model_execute <- function(
 
      if(((!exists('gkernel_model_ready') & !exists('gmatrix_model_ready')) & (exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
 
+         if(GS_model =="BRR" | GS_model =="RKHS"){
          ETA  <-  ETA_compiler_bayes_GBLUP(
              fixed = fixed,
              random = random,
@@ -2449,6 +3264,50 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+         } else {
+             if(GS_model=="GBLUP" & engine =="asreml")  {
+
+                 mod = asreml_utilis(fixed = fixed,
+                                     random = random,
+                                     cova=cova,
+                                     GS_model = GS_model,
+                                     response = response,
+                                     pheno_data = pheno_clean[[1]],
+                                     omic1_kernel = omic1_kernel_model_ready,
+                                     omic2_kernel = omic2_kernel_model_ready,
+                                     omic3_kernel = omic3_kernel_model_ready,
+                                     gen_name = gen_name,
+                                     heter_groups = heter_groups,
+                                     heter_resid = heter_resid,
+                                     VarCov_str = VarCov_str,
+                                     weights = weights,
+                                     core = core,
+                                     pworkspace= pworkspace,
+                                     workspace = workspace,
+                                     maxit = maxit)
+
+                 res_model_output <- asreml_mod_output(
+                     mod_asreml = mod,
+                     pheno_data = pheno_clean[[1]],
+                     omic1_kernel = omic1_kernel_model_ready,
+                     omic2_kernel = omic2_kernel_model_ready,
+                     omic3_kernel = omic3_kernel_model_ready,
+                     gen_name = gen_name,
+                     VarCov_str = VarCov_str,
+                     heter_groups = heter_groups,
+                     heter_resid = heter_resid,
+                     pworkspace= pworkspace,
+                     workspace = workspace,
+                     maxit = maxit
+                 )
+
+                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+                 #                       response = response)
+             }
+
+         }
+
+
      }
 
 
@@ -2459,6 +3318,7 @@ model_execute <- function(
 
          if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
 
+         if(GS_model=="BRR" | GS_model =="RKHS"){
          if(exists('gkernel_model_ready')){
              ETA  <-  ETA_compiler_bayes_GBLUP(
                  fixed = fixed,
@@ -2580,10 +3440,97 @@ model_execute <- function(
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
+         } else {
+             if(GS_model=="GBLUP" & engine =="asreml")  {
+                 if(exists('gmatrix_model_ready')){
+                     mod = asreml_utilis(fixed = fixed,
+                                         random = random,
+                                         cova=cova,
+                                         GS_model = GS_model,
+                                         response = response,
+                                         pheno_data = pheno_clean[[1]],
+                                         gmatrix = gmatrix_model_ready,
+                                         omic1_kernel = omic1_kernel_model_ready,
+                                         omic2_kernel = omic2_kernel_model_ready,
+                                         omic3_kernel = omic3_kernel_model_ready,
+                                         gen_name = gen_name,
+                                         heter_groups = heter_groups,
+                                         heter_resid = heter_resid,
+                                         VarCov_str = VarCov_str,
+                                         weights = weights,
+                                         core = core,
+                                         pworkspace= pworkspace,
+                                         workspace = workspace,
+                                         maxit = maxit)
+
+                     res_model_output <- asreml_mod_output(
+                         mod_asreml = mod,
+                         pheno_data = pheno_clean[[1]],
+                         gmatrix = gmatrix_model_ready,
+                         omic1_kernel = omic1_kernel_model_ready,
+                         omic2_kernel = omic2_kernel_model_ready,
+                         omic3_kernel = omic3_kernel_model_ready,
+                         gen_name = gen_name,
+                         VarCov_str = VarCov_str,
+                         heter_groups = heter_groups,
+                         heter_resid = heter_resid,
+                         pworkspace= pworkspace,
+                         workspace = workspace,
+                         maxit = maxit
+                     )
+
+                 } else {
+
+                     if( exists('gkernel_model_ready')){
+                         mod = asreml_utilis(fixed = fixed,
+                                             random = random,
+                                             cova=cova,
+                                             GS_model = GS_model,
+                                             response = response,
+                                             pheno_data = pheno_clean[[1]],
+                                             gkernel = gkernel_model_ready,
+                                             omic1_kernel = omic1_kernel_model_ready,
+                                             omic2_kernel = omic2_kernel_model_ready,
+                                             omic3_kernel = omic3_kernel_model_ready,
+                                             gen_name = gen_name,
+                                             heter_groups = heter_groups,
+                                             heter_resid = heter_resid,
+                                             VarCov_str = VarCov_str,
+                                             weights = weights,
+                                             core = core,
+                                             pworkspace= pworkspace,
+                                             workspace = workspace,
+                                             maxit = maxit)
+
+                         res_model_output <- asreml_mod_output(
+                             mod_asreml = mod,
+                             pheno_data = pheno_clean[[1]],
+                             gkernel = gkernel_model_ready,
+                             omic1_kernel = omic1_kernel_model_ready,
+                             omic2_kernel = omic2_kernel_model_ready,
+                             omic3_kernel = omic3_kernel_model_ready,
+                             gen_name = gen_name,
+                             VarCov_str = VarCov_str,
+                             heter_groups = heter_groups,
+                             heter_resid = heter_resid,
+                             pworkspace= pworkspace,
+                             workspace = workspace,
+                             maxit = maxit
+                         )
+
+                     }
+                 }
+
+                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
+                 #                       response = response)
+             }
+
+         }
+
      }
 
 
- } #### END GBLUP_RKHS
+ } #### END GBLUP_RKHS, GBLUP_BRR and GBLUP (asreml)
 
  ######################################################
  ######################################################
@@ -3466,11 +4413,11 @@ model_execute <- function(
 
      }
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
+                                               pheno_object= pheno_clean,
+                                               response = response,
+                                               test_set = test_set_,
                                                geno_omic_object = omic2_model_ready_train,
-                                                       eval_metrics = eval_metrics,
+                                               eval_metrics = eval_metrics,
                                                GS_model=GS_model
      )
 
@@ -3507,9 +4454,9 @@ model_execute <- function(
 
          if(GS_model=="K-NearestNeighbors"){
              res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = omic2_model_ready_train,
-                                                 para_tunning = para_tunning
+                                         response = response,
+                                         geno_omic_object = omic2_model_ready_train,
+                                         para_tunning = para_tunning
              )
 
          }
@@ -3536,10 +4483,10 @@ model_execute <- function(
          }
 
             res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
+                                                    pheno_object= pheno_clean,
+                                                    response = response,
                                                    geno_omic_object = omic2_model_ready_train,
-                                                           eval_metrics = eval_metrics,
+                                                   eval_metrics = eval_metrics,
                                                    GS_model=GS_model
          )
 
@@ -3608,11 +4555,11 @@ model_execute <- function(
      }
 
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
+                                               pheno_object= pheno_clean,
+                                               response = response,
+                                               test_set = test_set_,
                                                geno_omic_object = omic3_model_ready_train,
-                                                       eval_metrics = eval_metrics,
+                                               eval_metrics = eval_metrics,
                                                GS_model=GS_model
      )
 
@@ -3651,9 +4598,9 @@ model_execute <- function(
 
          if(GS_model=="K-NearestNeighbors"){
              res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = omic3_model_ready_train,
-                                                 para_tunning = para_tunning
+                                         response = response,
+                                         geno_omic_object = omic3_model_ready_train,
+                                         para_tunning = para_tunning
              )
 
          }
@@ -3682,10 +4629,10 @@ model_execute <- function(
 
 
          res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
                                                    geno_omic_object = omic3_model_ready_train,
-                                                           eval_metrics = eval_metrics,
+                                                   eval_metrics = eval_metrics,
                                                    GS_model=GS_model
          )
 
@@ -3754,11 +4701,11 @@ model_execute <- function(
      }
 
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
+                                               pheno_object= pheno_clean,
+                                               response = response,
+                                               test_set = test_set_,
                                                geno_omic_object = geno_omic1_train,
-                                                       eval_metrics = eval_metrics,
+                                               eval_metrics = eval_metrics,
                                                GS_model=GS_model
      )
 
@@ -3796,9 +4743,9 @@ model_execute <- function(
 
          if(GS_model=="K-NearestNeighbors"){
              res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = geno_omic1_train,
-                                                 para_tunning = para_tunning
+                                        response = response,
+                                        geno_omic_object = geno_omic1_train,
+                                        para_tunning = para_tunning
              )
 
          }
@@ -3826,10 +4773,10 @@ model_execute <- function(
          }
 
          res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
                                                    geno_omic_object = geno_omic1_train,
-                                                           eval_metrics = eval_metrics,
+                                                   eval_metrics = eval_metrics,
                                                    GS_model = GS_model
          )
 
@@ -3867,10 +4814,10 @@ model_execute <- function(
 
      if(GS_model=="K-NearestNeighbors"){
          res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                             response = response,
-                                             geno_omic_object = geno_omic2_train,
-                                             geno_omic_test_object = geno_omic2_test,
-                                             para_tunning = para_tunning
+                                    response = response,
+                                    geno_omic_object = geno_omic2_train,
+                                    geno_omic_test_object = geno_omic2_test,
+                                    para_tunning = para_tunning
          )
 
      }
@@ -3902,11 +4849,11 @@ model_execute <- function(
 
 
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
+                                               pheno_object= pheno_clean,
+                                               response = response,
+                                               test_set = test_set_,
                                                geno_omic_object = geno_omic2_train,
-                                                       eval_metrics = eval_metrics,
+                                               eval_metrics = eval_metrics,
                                                GS_model=GS_model
      )
 
@@ -3947,9 +4894,9 @@ model_execute <- function(
          if (GS_model=="K-NearestNeighbors"){
 
              res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = geno_omic2_train,
-                                                 para_tunning = para_tunning
+                                        response = response,
+                                        geno_omic_object = geno_omic2_train,
+                                        para_tunning = para_tunning
              )
 
          }
@@ -3978,10 +4925,10 @@ model_execute <- function(
          }
 
          res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = geno_omic2_train,
-                                                           eval_metrics = eval_metrics,
+                                                 pheno_object= pheno_clean,
+                                                 response = response,
+                                                  geno_omic_object = geno_omic2_train,
+                                                  eval_metrics = eval_metrics,
                                                    GS_model= GS_model
          )
 
@@ -4022,10 +4969,10 @@ model_execute <- function(
      if(GS_model=="K-NearestNeighbors"){
 
          res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                             response = response,
-                                             geno_omic_object = geno_omic3_train,
-                                             geno_omic_test_object = geno_omic3_test,
-                                             para_tunning = para_tunning
+                                    response = response,
+                                    geno_omic_object = geno_omic3_train,
+                                    geno_omic_test_object = geno_omic3_test,
+                                    para_tunning = para_tunning
          )
 
      }
@@ -4055,11 +5002,11 @@ model_execute <- function(
      }
 
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
+                                               pheno_object= pheno_clean,
+                                               response = response,
+                                               test_set = test_set_,
                                                geno_omic_object = geno_omic3_train,
-                                                       eval_metrics = eval_metrics,
+                                               eval_metrics = eval_metrics,
                                                GS_model= GS_model
      )
 
@@ -4128,10 +5075,10 @@ model_execute <- function(
          }
 
          res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
                                                    geno_omic_object = geno_omic3_train,
-                                                           eval_metrics = eval_metrics,
+                                                   eval_metrics = eval_metrics,
                                                    GS_model=GS_model
          )
 
@@ -4198,11 +5145,11 @@ model_execute <- function(
      }
 
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
+                                               pheno_object= pheno_clean,
+                                               response = response,
+                                               test_set = test_set_,
                                                geno_omic_object = omic1_omic2_train,
-                                                       eval_metrics = eval_metrics,
+                                               eval_metrics = eval_metrics,
                                                GS_model= GS_model
      )
 
@@ -4239,9 +5186,9 @@ model_execute <- function(
 
          if(GS_model=="K-NearestNeighbors"){
              res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = omic1_omic2_train,
-                                                 para_tunning = para_tunning
+                                        response = response,
+                                        geno_omic_object = omic1_omic2_train,
+                                        para_tunning = para_tunning
              )
 
          }
@@ -4268,10 +5215,10 @@ model_execute <- function(
          }
 
          res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
                                                    geno_omic_object = omic1_omic2_train,
-                                                           eval_metrics = eval_metrics,
+                                                   eval_metrics = eval_metrics,
                                                    GS_model= GS_model
          )
 
@@ -4342,12 +5289,12 @@ model_execute <- function(
      }
 
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = omic1_omic3_train,
-                                                       eval_metrics = eval_metrics,
-                                               GS_model= GS_model
+                                            pheno_object= pheno_clean,
+                                            response = response,
+                                            test_set = test_set_,
+                                            geno_omic_object = omic1_omic3_train,
+                                            eval_metrics = eval_metrics,
+                                            GS_model= GS_model
      )
 
      res_plot <- plot_acc_AI(mod=res_model_output,
@@ -4383,9 +5330,9 @@ model_execute <- function(
 
          if(GS_model=="K-NearestNeighbors"){
              res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = omic1_omic3_train,
-                                                 para_tunning = para_tunning
+                                        response = response,
+                                        geno_omic_object = omic1_omic3_train,
+                                        para_tunning = para_tunning
              )
 
          }
@@ -4412,10 +5359,10 @@ model_execute <- function(
          }
 
          res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
                                                    geno_omic_object = omic1_omic3_train,
-                                                           eval_metrics = eval_metrics,
+                                                   eval_metrics = eval_metrics,
                                                    GS_model = GS_model
          )
 
@@ -4452,10 +5399,10 @@ model_execute <- function(
 
      if(GS_model=="K-NearestNeighbors"){
          res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                             response = response,
-                                             geno_omic_object = omic2_omic3_train,
-                                             geno_omic_test_object = omic2_omic3_test,
-                                             para_tunning = para_tunning
+                                    response = response,
+                                    geno_omic_object = omic2_omic3_train,
+                                    geno_omic_test_object = omic2_omic3_test,
+                                    para_tunning = para_tunning
          )
 
      }
@@ -4483,11 +5430,11 @@ model_execute <- function(
 
      }
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
-                                               geno_omic_object = omic2_omic3_train,
-                                                       eval_metrics = eval_metrics,
+                                              pheno_object= pheno_clean,
+                                              response = response,
+                                              test_set = test_set_,
+                                              geno_omic_object = omic2_omic3_train,
+                                              eval_metrics = eval_metrics,
                                                GS_model = GS_model
      )
 
@@ -4525,9 +5472,9 @@ model_execute <- function(
 
          if(GS_model=="K-NearestNeighbors"){
              res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = omic2_omic3_train,
-                                                 para_tunning = para_tunning
+                                        response = response,
+                                        geno_omic_object = omic2_omic3_train,
+                                        para_tunning = para_tunning
              )
 
          }
@@ -4553,10 +5500,10 @@ model_execute <- function(
 
          }
          res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
                                                    geno_omic_object = omic2_omic3_train,
-                                                           eval_metrics = eval_metrics,
+                                                   eval_metrics = eval_metrics,
                                                    GS_model= GS_model
          )
 
@@ -4624,11 +5571,11 @@ model_execute <- function(
      }
 
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
+                                               pheno_object= pheno_clean,
+                                               response = response,
+                                               test_set = test_set_,
                                                geno_omic_object = geno_omic1_omic2_train,
-                                                       eval_metrics = eval_metrics,
+                                               eval_metrics = eval_metrics,
                                                GS_model= GS_model
      )
 
@@ -4694,10 +5641,10 @@ model_execute <- function(
 
          }
          res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = geno_omic1_omic2_train,
-                                                           eval_metrics = eval_metrics,
+                                                  pheno_object= pheno_clean,
+                                                  response = response,
+                                                  geno_omic_object = geno_omic1_omic2_train,
+                                                  eval_metrics = eval_metrics,
                                                    GS_model= GS_model
          )
 
@@ -4765,11 +5712,11 @@ model_execute <- function(
      }
 
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
+                                               pheno_object= pheno_clean,
+                                               response = response,
+                                               test_set = test_set_,
                                                geno_omic_object = geno_omic1_omic3_train,
-                                                       eval_metrics = eval_metrics,
+                                               eval_metrics = eval_metrics,
                                                GS_model = GS_model
      )
 
@@ -4833,11 +5780,11 @@ model_execute <- function(
 
          }
          res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
-                                                   geno_omic_object = geno_omic1_omic3_train,
-                                                           eval_metrics = eval_metrics,
-                                                   GS_model= GS_model
+                                                  pheno_object= pheno_clean,
+                                                  response = response,
+                                                  geno_omic_object = geno_omic1_omic3_train,
+                                                  eval_metrics = eval_metrics,
+                                                  GS_model= GS_model
          )
 
 
@@ -4905,11 +5852,11 @@ model_execute <- function(
      }
 
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
+                                               pheno_object= pheno_clean,
+                                               response = response,
+                                               test_set = test_set_,
                                                geno_omic_object = geno_omic2_omic3_train,
-                                                       eval_metrics = eval_metrics,
+                                               eval_metrics = eval_metrics,
                                                GS_model= GS_model
      )
 
@@ -4974,10 +5921,10 @@ model_execute <- function(
          }
 
          res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
                                                    geno_omic_object = geno_omic2_omic3_train,
-                                                           eval_metrics = eval_metrics,
+                                                   eval_metrics = eval_metrics,
                                                    GS_model= GS_model
          )
 
@@ -5047,11 +5994,11 @@ model_execute <- function(
      }
 
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
+                                               pheno_object= pheno_clean,
+                                               response = response,
+                                               test_set = test_set_,
                                                geno_omic_object = omic1_omic2_omic3_train,
-                                                       eval_metrics = eval_metrics,
+                                               eval_metrics = eval_metrics,
                                                GS_model= GS_model
      )
 
@@ -5116,10 +6063,10 @@ model_execute <- function(
          }
 
          res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
                                                    geno_omic_object = omic1_omic2_omic3_train,
-                                                           eval_metrics = eval_metrics,
+                                                   eval_metrics = eval_metrics,
                                                    GS_model= GS_model
          )
 
@@ -5188,11 +6135,11 @@ model_execute <- function(
      }
 
      res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                       pheno_object= pheno_clean,
-                                                       response = response,
-                                                       test_set = test_set_,
+                                               pheno_object= pheno_clean,
+                                               response = response,
+                                               test_set = test_set_,
                                                geno_omic_object = geno_omic1_omic2_omic3_train,
-                                                       eval_metrics = eval_metrics,
+                                               eval_metrics = eval_metrics,
                                                GS_model= GS_model
      )
 
@@ -5260,10 +6207,10 @@ model_execute <- function(
 
 
          res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                           pheno_object= pheno_clean,
-                                                           response = response,
+                                                   pheno_object= pheno_clean,
+                                                   response = response,
                                                    geno_omic_object = geno_omic1_omic2_omic3_train,
-                                                           eval_metrics = eval_metrics,
+                                                   eval_metrics = eval_metrics,
                                                    GS_model= GS_model
          )
 
@@ -5297,7 +6244,13 @@ model_execute <- function(
          names(output) <- c('model_results', 'summary_statistic')
      }
 
- } else {
+ } else if (GS_model=="GBLUP"){
+
+     output <- list(res_model_output)
+
+     names(output) <- c('model_results')
+
+} else {
 
      output <- list(res_model_output, res_summary_stat)
 
