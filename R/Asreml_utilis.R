@@ -930,7 +930,7 @@ asreml_utilis <- function(
         code.asr[4] <- 'na.action=list(x="include",y="include"),data=pheno_data)'
       } else {
         if(!is.null(weights)){
-          code.asr[4] <- 'na.action=list(x="include",y="include"), weights = weights, data=pheno_data)'
+          code.asr[4] <- 'na.action=list(x="include",y="include"), weights = weights, family = asr_gaussian(dispersion = 1), data=pheno_data)'
         }
 
         if(length(unique(response[trait]))<=10 & is.null(weights)){
@@ -938,11 +938,11 @@ asreml_utilis <- function(
         }
 
         if(length(unique(response[trait]))<=10 & !is.null(weights)){
-          code.asr[4] <- 'na.action=list(x="include",y="include"), weights = weights, family = asr_multinomial(),  data=pheno_data)'
+          code.asr[4] <- 'na.action=list(x="include",y="include"), weights = weights, family = asr_multinomial(dispersion = 1),  data=pheno_data)'
         }
 
         if(length(unique(response[trait]))==2 & !is.null(weights)){
-          code.asr[4] <- 'na.action=list(x="include",y="include"), weights = weights, family = asr_binomial(),  data=pheno_data)'
+          code.asr[4] <- 'na.action=list(x="include",y="include"), weights = weights, family = asr_binomial(dispersion = 1),  data=pheno_data)'
         }
 
         if(length(unique(response[trait]))==2 & is.null(weights)){
