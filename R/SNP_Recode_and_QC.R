@@ -3,7 +3,7 @@
 ##
 ## hmp to numeric (AA=1,Aa=0,aa=-1) | (AA=2,Aa=1,aa=0)
 ##
-##              Copyright (C) 2022 Sikiru
+##              Copyright (C) 2023 Sikiru
 ##
 ## ** Filename: SNP_QC_recodePipelineFinalize_GUD.R
 ##

@@ -2,7 +2,7 @@
 
 #' Title
 #'
-#' @param object
+#' @param pheno_data
 #' @param response
 #' @param weights
 #' @param ETA
@@ -15,7 +15,7 @@
 #'
 #' @examples
 #' @importFrom foreach %dopar%
-bayes_mod_execute <- function(object = NULL,
+bayes_mod_execute <- function(pheno_data = NULL,
                               response = NULL,
                               weights = NULL,
                               ETA = NULL,
@@ -79,7 +79,7 @@ bayes_mod_execute <- function(object = NULL,
 
   if(is.null(weights)){
     fm <- BGLR::BGLR(
-      y=object[, response[trait]],
+      y=pheno_data[, response[trait]],
       ETA = ETA,
       nIter = bayes_para$nIter,
       burnIn =  bayes_para$burnIn,
@@ -91,7 +91,7 @@ bayes_mod_execute <- function(object = NULL,
 
     if(!is.null(weights)){
       fm <- BGLR::BGLR(
-        y=object[, response[trait]],
+        y=pheno_data[, response[trait]],
         ETA=ETA,
         weights = weights,
         nIter= bayes_para$nIter,
@@ -141,7 +141,7 @@ bayes_mod_execute <- function(object = NULL,
 
     if(is.null(weights)){
       fm <- BGLR::BGLR(
-        y=object[, response],
+        y=pheno_data[, response],
         ETA = ETA,
         nIter = bayes_para$nIter,
         burnIn =  bayes_para$burnIn,
@@ -153,7 +153,7 @@ bayes_mod_execute <- function(object = NULL,
 
       if(!is.null(weights)){
         fm <- BGLR::BGLR(
-          y=object[, response],
+          y=pheno_data[, response],
           ETA=ETA,
           weights = weights,
           nIter= bayes_para$nIter,

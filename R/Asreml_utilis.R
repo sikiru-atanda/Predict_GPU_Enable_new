@@ -769,7 +769,7 @@ asreml_utilis <- function(
 
       }
       ######################################################################
-      #### When Variance-Covariance Structure is missing
+      #### When Variance-Covariance Structure is missing. Compound Symmetry
       ####################################################################
       if(is.null(VarCov_str) & (length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name])))){
 
@@ -807,9 +807,13 @@ asreml_utilis <- function(
 
             for (i in 1:length(G_list)){
 
-                random =stats::update(random, paste(paste("~ . +",paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))),
-                                                    "+", heter_groups))
+                # random =stats::update(random, paste(paste("~ . +",paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))),
+                #                                     "+", heter_groups))
 
+              random= stats::update(random,
+                                    paste(paste("~ . +", (paste(paste0("idv", paste0("(",heter_groups,")")),
+                                                                paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
+                                                                sep = ":"))), "+", heter_groups))
 
 
             }
@@ -822,7 +826,11 @@ asreml_utilis <- function(
 
             for (i in 1:length(G_list)){
 
-                random =stats::update(random, paste("~ . +",paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+                #random =stats::update(random, paste("~ . +",paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+
+              random= stats::update(random,
+                                    paste("~ . +",paste(paste0("idv", paste0("(",heter_groups,")")),
+                                                        paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")), sep = ":")))
 
 
             }
@@ -835,7 +843,11 @@ asreml_utilis <- function(
             if (exists('G_list')){Inter_Gen_pos_use = length(G_list)}
             for (i in 1:length(G_list)){
 
-                random =stats::update(random, paste("~ . +",paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+                #random =stats::update(random, paste("~ . +",paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+
+              random= stats::update(random,
+                                    paste("~ . +",paste(paste0("idv", paste0("(",heter_groups,")")),
+                                                        paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")), sep = ":")))
 
 
             }

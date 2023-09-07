@@ -1,22 +1,35 @@
 
-#' Title
+#' Title Extreme Gradient Boosting Machine Learning Genomic Selection Pipeline
+#' Hyper-parameter tunning  of the parameters is allowed if desired by user
+#' The parameters are:
+#' Iter_tune : number of boosting iterations
+#' learnining_rate_tune:  simply means how fast the model learns.
+#' Each tree added modifies the overall model.
+#' The magnitude of the modification is controlled by learning rate.
+#' The lower the learning rate, the slower the model learns.
+#' The advantage of slower learning rate is that the model becomes more robust
+#' and efficient.
 #'
-#' @param gen_name
-#' @param core
+#'
+#' @param gen_name column name containing individuals/genotypes
 #' @param message
-#' @param center
-#' @param xgb_paras_tunning
-#' @param learning_rate
-#' @param max_depth
-#' @param subsample
-#' @param booster
-#' @param iteration
-#' @param para_tunning
-#' @param pheno_object
-#' @param geno_omic_object
-#' @param geno_omic_test_object
-#' @param response
+#' @param center standardization of the x-variables
+#' @param xgb_paras_tunning parameter to for tunning
+#' @param learning_rate how slow/fast the model learn
+#' @param max_depth max_depth refers to the number of leaves of each tree
+#' @param subsample  This help to reduce the correlation between results from individual learners.
+#' @param booster  to determine if the model is for regression or classification problem
+#' @param iteration Number of iteration
+#' @param para_tunning  if user required parameter tunning
+#' @param pheno_object phenotypic object NA is allowed
+#' @param geno_omic_object multi-omic data, NA not allowed
+#' @param geno_omic_test_object multi-omic data for testing set if not present in geno_omic_object
+#' @param response  y variables/lables
 #' @param ...
+#' @param core number of ram for paralllel job
+#' @param resample_method_tune
+#' @param number_of_fold_tune
+#' @param N_feature_impo number of feature/ x variables to extract based on the importance/weight
 #'
 #' @return
 #' @export
@@ -28,7 +41,6 @@ AI_Xgb <- function(pheno_object=NULL,
                    geno_omic_test_object = NULL,
                    response=NULL,
                    gen_name=NULL,
-                   core = NULL,
                    message = TRUE,
                    center = TRUE,
                    para_tunning = FALSE,
@@ -36,11 +48,16 @@ AI_Xgb <- function(pheno_object=NULL,
                                         learning_rate_tune = NULL, # learning rate, low value means model is more robust to overfitting
                                         L2_tune = NULL, # L2 Regularization (Ridge Regression)
                                         L1_tune = NULL),
+                   resample_method_tune = "cv", # c("cv","boot")
+                   number_of_fold_tune = 5,
+
                    learning_rate = 0.001,
                    max_depth = 6,
                    subsample = 0.5,
                    booster = "gblinear",
                    iteration = 5000,
+                   N_feature_impo = 10,
+                   core = NULL,
                    ...
 
 ){
@@ -54,7 +71,7 @@ AI_Xgb <- function(pheno_object=NULL,
   #####################################################################
 
 
-# #### Initializing parallel
+# #### Initializing parallel for multiple response
 if(length(response)>1){
   if (is.null(core)){
     cl = parallel::detectCores()
@@ -80,6 +97,7 @@ if(length(response)>1){
   Univariate <- foreach::foreach(trait = 1:length(response),
                                  .errorhandling='pass') %dopar% {
 
+#### if user interested in tunning the parameters
   if(isTRUE(para_tunning)){
     xgb_grid = expand.grid(nrounds = para_tunning$Iter_tune , # number of boosting iterations
                            eta = para_tunning$learning_rate_tune, # learning rate, low value means model is more robust to overfitting
@@ -89,16 +107,15 @@ if(length(response)>1){
 
 
 
-    #here we do one better then a validation set, we use cross validation to
-    #expand the amount of info we have!
 
     # if(core){
     # cl <- parallel::makeCluster(core)
     # doParallel::registerDoParallel(cl)
     # }
 
-    xgb_trcontrol = caret::trainControl(method = "cv",
-                                        number = 5,
+    ### This function is used to specify the parameters for training using caret
+    xgb_trcontrol = caret::trainControl(method = resample_method_tune,
+                                        number = number_of_fold_tune,
                                         verboseIter = TRUE,
                                         returnData = FALSE,
                                         returnResamp = "all",
@@ -106,10 +123,14 @@ if(length(response)>1){
 
 
 
+## Here the user provide geno_omic_object as training set and
+## and geno_omic_test_object as testing set. Thus the hyperparameter tunning
+## is done with the geno_omic_object (training set)
 
     if(!is.null(geno_omic_object) & !is.null(geno_omic_test_object)) {
 
-
+##  By default, the train function chooses the model with the largest
+## performance value /or smallest, for mean squared error in regression models.
       xgb_fit = caret::train(x = geno_omic_object,
                              y = pheno_object[, response[trait]],
                              trControl = xgb_trcontrol,
@@ -117,23 +138,28 @@ if(length(response)>1){
                              method = "xgbLinear")
 
 
-
+## The train model based on the best hyperparameters is used for prediction
       xgb_preds <- stats::predict(xgb_fit,
                                   geno_omic_test_object,
                                   reshape = TRUE)
-
+## convert the predicted value to dataframe
       xgb_preds <- as.data.frame(xgb_preds)
 
       names(xgb_preds) = response[trait]
 
+## Extract the best hyperparamter values for META data purpose and
+## subsequent prediction exercise the will make use of the training data
       bestTune <- c(xgb_fit$bestTune, xgb_fit$method)
-
+## Extract feature/x variables based on the importance/weight using the
+## feature_impo_xgb function
       res_feature <- feature_impo_xgb(xgb_fit = xgb_fit,
-                                      X_train = geno_omic_object)
+                                      X_train = geno_omic_object,
+                                      N_feature_impo = N_feature_impo)
 
 
     } else {
 
+      ## when user provide only the training set
       if(!is.null(geno_omic_object) & is.null(geno_omic_test_object)) {
         geno_omic_object <- xgboost::xgb.DMatrix(data = geno_omic_object,
                                             label = pheno_object[, response[trait]])
@@ -246,9 +272,10 @@ if(length(response)>1){
 
   } ## End of when no need for tunning.
 
-
+### Model paramerts for META data
      model_para <- c(nrounds = xgb_fit$niter, xgb_fit$params)
 
+     ## Output
 output = list(model_para,
               xgb_preds,
               res_feature,

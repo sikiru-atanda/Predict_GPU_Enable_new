@@ -11,14 +11,49 @@
 #'
 grm_calculation <- function(
     geno_clean = NULL,
+    weight = NULL,
     method=c("VanRaden",
-             "Yang")
+             "Weighted_VanRaden",
+             "Yang",
+             "Epistasis")
 ){
 
   msg <- sprintf("==================================================\n")
 
+  ### iT important to check the name in the weight data is the match and the same
+  ## order in the geno_clean data
 
-  if(class(geno_clean)[1]!= "matrix") stop(print(paste(msg, 'object geno_clean must be matrix.')), call. = FALSE)
+ if(class(geno_clean)[1]!= "matrix") stop(print(paste(msg, 'object geno_clean must be matrix.')), call. = FALSE)
+
+  if(!is.null(weight)){
+
+    # Literature
+    # Weighting Strategies for Single-Step Genomic BLUP: An Iterative Approach
+    # for Accurate Calculation of GEBV and  GWAS
+
+    # D (weight) is a diagonal matrix of weights, where dii is the weight
+    # for SNP i. In regular GBLUP-based methods, D = I, which gives
+    # a weight of 1 to all SNP.
+
+
+   if(class(weight)[1]!= "matrix") stop(print(paste(msg, 'weight must be matrix.')), call. = FALSE)
+   ### It is possible when geno_clean was QC some snp did not meet the standard QC parameters
+   ## and were dropped.This will fit that deficit
+    ## This is lacking in AGHmatrix.
+   if(isFALSE(all(rownames(weight)%in%colnames(geno_clean)))){
+
+     ## This ensure that the order of the snp in geno_clean match that in the weight.
+     weight = weight[colnames(geno_clean)%in%rownames(weight),]
+
+     weight <- diag(x= weight[,1], nrow = nrow(weight))
+
+   }
+
+
+   ## This check if the snp name and that in the weight did not match or not the same order.
+   if (!identical(colnames(geno_clean), rownames(weight))) stop(print(paste(msg, 'Snp marker should be equivalent in both weight geno_data.')), call. = FALSE)
+ }
+  #if(class(geno_clean)[1]!= "matrix") stop(print(paste(msg, 'object geno_clean must be matrix.')), call. = FALSE)
 
   freq <- colMeans(geno_clean)/2
   if (any(is.na(geno_clean) | freq == 0 | freq == 1)) geno_clean= Remove_NA_Mono_SNP(geno_clean= geno_clean)
@@ -45,6 +80,26 @@ grm_calculation <- function(
     return(tcrossprod(geno_clean) / sum(2*freq*(1-freq)))
   }
 
+  Epistasis <- function(geno_clean, freq){
+    #freq <- colMeans(geno_clean) / 2
+
+    locusMat <- scale(geno_clean, center=T, scale=F)
+
+    G <- tcrossprod(geno_clean) / sum(2*freq*(1-freq))
+
+    GG <- G*G
+
+    return(GG)
+  }
+
+  ### Weighted_VanRaden method
+  Weighted_VanRaden <- function(geno_clean, freq, weight){
+    #freq <- colMeans(geno_clean) / 2
+
+    locusMat <- scale(geno_clean, center=T, scale=F)
+    return(((geno_clean %*% weight)%*% t(geno_clean))/sum(2*freq*(1-freq)))
+  }
+
   ### Yang method
   Yang <- function(geno_clean){
 
@@ -68,6 +123,9 @@ grm_calculation <- function(
   switch(method,
          "VanRaden" = {
            Ga <- VanRaden(geno_clean, freq)
+         },
+         "Weighted_VanRaden" = {
+           Ga <- Weighted_VanRaden(geno_clean, freq, weight)
          },
          "Yang" = {
            Ga <- Yang(geno_clean)

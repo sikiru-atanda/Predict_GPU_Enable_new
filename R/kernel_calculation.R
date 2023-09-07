@@ -1,6 +1,13 @@
 
 
 #' Title
+#' This function calculate the relationship for using different kernel methods
+#' M_matrix_clean is not expected with NA value
+#' The following kernel methods are available:
+#' Gaussian, Linear, Exponential, Poly2, Poly3, Poly4. The number at the end of poly
+#' means polynomial order 2, 3 and 4
+#'
+#' To DO: in the new version, option to impute missing data will be provided
 #'
 #' @param M_matrix_clean
 #' @param center
@@ -15,15 +22,19 @@
 kernel_calculation <- function(
     M_matrix_clean = NULL,
     center=TRUE,
+    theta = NULL,
     # method = c("Gaussian",
     #            "Linear",
     #            "Poly2",
     #            "Poly3",
     #            "Poly4"),
     method = NULL,
-    message = TRUE){
+    message = TRUE,
+    ...){
 
   msg <- sprintf("==================================================\n")
+
+  if(is.null(theta)) theta <- 1
 
   if(is.null(M_matrix_clean)){stop(print('object omics is missing'), call. = FALSE)}
 
@@ -35,22 +46,37 @@ kernel_calculation <- function(
     }
 
   if(isFALSE(center)){
-    if(message) message(paste(msg,"if data is not previously centered.It is recommend you center the data." ))
+    if(isTRUE(message)) message(paste(msg,"if data is not previously centered.It is recommend you center the data." ))
     }
 
-  if(center){
+  if(isTRUE(center)){
 
     M_matrix_clean = scale(x = M_matrix_clean,center = T,scale = F)
   }
-  Gaussian_kernel <- function(M_matrix_clean){
+  Gaussian_kernel <- function(M_matrix_clean, theta){
 
     dist<-as.matrix(stats::dist(M_matrix_clean))^2
 
-    GK<-exp(-dist/stats::median(dist))
+    #GK<-exp(-dist/stats::median(dist))
+
+     GK<-exp(-theta*dist/stats::median(dist))
+
+
+
+    return(GK)
+  }
+
+  Exponential_kernel <- function(M_matrix_clean, theta){
+
+
+    dist <- as.matrix(stats::dist(M_matrix_clean, method = "euclidian"))/sqrt(ncol(M_matrix_clean))
+
+
+    EK <- exp(-theta*dist)
 
     #GK<-exp(-h*dist/stats::median(dist))
 
-    return(GK)
+    return(EK)
   }
 
   Polynomial2_kernel = function(M_matrix_clean){
@@ -80,10 +106,13 @@ kernel_calculation <- function(
 
   switch(method,
          "Gaussian" = {
-           KRM <- Gaussian_kernel(M_matrix_clean)
+           KRM <- Gaussian_kernel(M_matrix_clean, theta)
          },
          "Linear" = {
            KRM <- Liner_kernel(M_matrix_clean)
+         },
+         "Exponential" = {
+           KRM <- Exponential_kernel(M_matrix_clean, theta)
          },
          "Poly2" = {
            KRM <- Polynomial2_kernel(M_matrix_clean)

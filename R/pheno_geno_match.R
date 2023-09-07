@@ -1,12 +1,20 @@
 
 #' Title
-#' This check for NA, match the grm/kernel and M_matrix to pheno_data
-#' It also order the M_matrix, grm/kernel to the GID in pheno_data
-#'  Ordering it not important in asreml but important in other machine.
-#'  NOTE ASRgenomics only works with grm/kernel not with M_matrix
-#' @param object_pheno
-#' @param object_geno
-#' @param gen_name
+#' This function perform the following task:
+#'
+#'1. This check for NA, match the grm/kernel and geno/omic (M_matrix) to pheno_data
+#'2. It also order the M_matrix, grm/kernel to the GID in pheno_data
+#'3. Ordering is not important in asreml but important in Baysiand and machine learning models.
+#'
+#'The output is a list with one or two element(s):
+#'1. the clean M-matrix or grm file that perfectly match with the phenotypic records
+#'2. test_set that might emmanate from the object_geno
+#'
+#'
+#'  NOTE FOR Giovanni ASRgenomics only works with grm/kernel not with M_matrix that was why it not used
+#' @param object_pheno clean phenotypic data
+#' @param object_geno clean snp/omic/grm/kernel data
+#' @param gen_name   column name of the genotypes in the phenotypic data
 #' @param message
 #' @param ...
 #'
@@ -28,61 +36,75 @@ pheno_geno_match <- function(object_pheno = NULL,
   ## have SNP/omic records or present in the grm/kernel matrix
   ## However, individuals with SNP, omic, grm/kernel matrix might not have
   ## phenotypic records such individual will be considered the testing set
-  ## this is not a problem with asreml but will not work for BGLR.
+  ## this is not a problem with asreml but will not work for Baysian and machine learning models.
   ## We can fix this problem by considering those individuals as test_data,
   ## which we already have provision for.
   #### But it good to let the user know if those individuals were actually a mistake
 
   if(isFALSE(all(ID_pheno%in%rownames(object_geno)))){
 
+    ### all Individuals in phenotypic record is expected to have genotypic record
+    ## If not stop.
+    ## Execption to that is if user provide coefficient of pedigree for such individuals
+    ## and construct H-matrix. This is not considered here for now. This will be implemented
+    ## in subsequent version
     stop(paste(msg, 'Not all individual with phenotypic records has genotypic/omic records.'))
 
 
-  } else if(isFALSE(all(rownames(object_geno)%in%ID_pheno))){
+  } else {
 
+  if(isFALSE(all(rownames(object_geno)%in%ID_pheno))){
+
+    if(isTRUE(message)){
       message(paste(msg, 'Not all individual with genotypic/omic records has phenotypic records.'))
-
+    }
+    ### Individuals with genotypic record but with no phenotypic record are assumed to  be
+    ## testing set
     test_set <- setdiff(rownames(object_geno), ID_pheno)
 
     ## if the object_geno is a grm/kernel matrix
+    ### First the colname must be equal rowname
     if(nrow(object_geno)==ncol(object_geno)){
       object_geno <- object_geno[c(ID_pheno, test_set),  c(ID_pheno, test_set)]
 
 
     } else {
 
-      ## if the object object_geno is a M_matrix data
+      ## if the object_geno is a M_matrix data
       if(nrow(object_geno)!=ncol(object_geno)){
         object_geno <- object_geno[c(ID_pheno, test_set),  ]
 
-        ### Conbined them togther. kee in mind object_geno_tst do not have
-        ## phenotypic record.
+    ### Combined them together. keep in mind test_set do not have phenotypic record.
         #### TO DO find way to have them as NA in BGLR or through error message if
         ## the engine if BGLR
 
       }
     }
 
-  } else {
+  }
 
-    if(isFALSE(all(ID_pheno%in%rownames(object_geno)))){
+  }
 
-      ## if the object_geno is a grm/kernel matrix
-      if(nrow(object_geno)==ncol(object_geno)){
-      object_geno <- object_geno[ID_pheno,  ID_pheno]
-
-      } else {
-
-        ## if the object object_geno is a M_matrix data
-        if(nrow(object_geno)!=ncol(object_geno)){
-          object_geno <- object_geno[ID_pheno,  ]
-
-        }
-      }
-
-    }
-
-    }
+  # else {
+  #
+  #   if(isFALSE(all(ID_pheno%in%rownames(object_geno)))){
+  #
+  #     ## if the object_geno is a grm/kernel matrix
+  #     if(nrow(object_geno)==ncol(object_geno)){
+  #     object_geno <- object_geno[ID_pheno,  ID_pheno]
+  #
+  #     } else {
+  #
+  #       ## if the object object_geno is a M_matrix data
+  #       if(nrow(object_geno)!=ncol(object_geno)){
+  #         object_geno <- object_geno[ID_pheno,  ]
+  #
+  #       }
+  #     }
+  #
+  #   }
+  #
+  #   }
 
 
   #### Declare it also as an object for final usage

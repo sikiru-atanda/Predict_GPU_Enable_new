@@ -13,11 +13,22 @@
 
 ## This function check if the following parameters are provided by the user,
 # if not assign a default value, but let the user be aware if it
+
+##Check
+# 1. Check if user provide number of iteration. If not default value is provided.
+#    More so, it check if the value provided by the user is too small, it alert the user
+#    on the implication and suggest optimal value.
+# 2. Check if user provide number of burning. If not default value is provided.
+#    More so, it check if the value provided by the user is too small, it alert the user
+#    on the implication and suggest optimal value.
+# 3. Check if user provide number of thinning. If not default value is provided.
+#    More so, it check if the value provided by the user is too small, it alert the user
+#    on the implication and suggest optimal value.
 #' Title
 #'
-#' @param nIter
-#' @param burnIn
-#' @param thin
+#' @param nIter the number of iteration for MCMC chain
+#' @param burnIn  the number of burning
+#' @param thin    the number of thinning
 #' @param message
 #'
 #' @return
@@ -36,20 +47,28 @@ bayes_parameter_check <- function(
 
   #if(is.null(nIter) || nIter< 16000){
   if(is.null(nIter) ){
-    if(message){
+    if(isTRUE(message)){
     message(paste(msg, "Number of iteration is missing. Default value of 16000 was assigned. \n Check if this appropriate for your data"))
     }
       nIter = 200
 
+  } else {
+    nIter< 16000
+    message(paste(msg, "Number of iteration is provided is less than 16000 which we consider optimal. \n Check if this appropriate for your data"))
   }
 
   #if(is.null(burnIn) || burnIn < 5000){
   if(is.null(burnIn)){
 
-    if(message){
-      message(paste(msg, "Number of burn-in is missing. Default value of 6000 was assigned. \n Check if this appropriate for your data"))
+    if(isTRUE(message)){
+      message(paste(msg, "Number of burn-in is missing. Default value of 1600 was assigned. \n Check if this appropriate for your data"))
     }
       burnIn = 30
+
+  } else {
+
+    nIter< 1600
+    message(paste(msg, "Number of burn-in provided is less than 1600 which we consider optimal. \n Check if this appropriate for your data"))
 
   }
 
@@ -82,11 +101,13 @@ bayes_parameter_check <- function(
 #'
 #' @examples
 
-### Adjust for fixed terms.
+### Adjust for fixed terms supply by the users. It is expected the user provide it
+## in formula with each term separated by +.
+## The output will be vector of each term
 #' Title
 #'
 #' @param fixed
-#' @param object
+#' @param pheno_data
 #' @param ...
 #'
 #' @return
@@ -95,21 +116,21 @@ bayes_parameter_check <- function(
 #' @examples
 fixed_terms <- function(
     fixed  = NULL,
-    object = NULL,
+    pheno_data = NULL,
     ...){
 
   fixed <- rand_fix_check(rand_fix_term = fixed,
-                           object= object)
+                           pheno_data= pheno_data)
 
   if(attr(fixed, "cleared")!="pass" & class(fixed)!="forumla") {
 
     msg <- sprintf("==================================================\n")
-    stop(print(paste(msg,paste(object, 'is not class formula.', sep = ""))), call. = FALSE)
+    stop(print(paste(msg,paste(pheno_data, 'is not class formula.', sep = ""))), call. = FALSE)
   }
   # msg <- sprintf("==================================================\n")
   # ### Check if the random term provided are present in the phenotypic data
   #
-  # if(!all(sapply(all.vars(fixed), function(x, object) x%in%names(object),  object))) {
+  # if(!all(sapply(all.vars(fixed), function(x, pheno_data) x%in%names(pheno_data),  pheno_data))) {
   #   stop(print(paste(msg,"All variables indicated in argument 'random' should be present in phenotypic data")), call. = FALSE)
   # }
 
@@ -127,7 +148,7 @@ fixed_terms <- function(
 #' Title
 #'
 #' @param random
-#' @param object
+#' @param pheno_data
 #' @param ..
 #'
 #' @return
@@ -135,13 +156,13 @@ fixed_terms <- function(
 #'
 #' @examples
 random_terms <- function(random = NULL,
-                         object = NULL,
+                         pheno_data = NULL,
                          ...){
 
   msg <- sprintf("==================================================\n")
 
   random <- rand_fix_check(rand_fix_term = random,
-                           object= object)
+                           pheno_data= pheno_data)
 
   if(attr(random, "cleared")!="pass" && class(random)!="forumla") {
 
@@ -150,7 +171,7 @@ random_terms <- function(random = NULL,
 
   # msg <- sprintf("==================================================\n")
   # ### Check if the random term provided are present in the phenotypic data
-  # if(!all(sapply(all.vars(random), function(x, object) x%in%names(object),  object))) {
+  # if(!all(sapply(all.vars(random), function(x, pheno_data) x%in%names(pheno_data),  pheno_data))) {
   #   stop(print(paste(msg,"All variables indicated in argument 'random' should be present in phenotypic data")), call. = FALSE)
   # }
   rand_term <- strsplit(as.character(random[2]), split = "[+]")[[1]]
@@ -223,24 +244,24 @@ random_term_model <- function(rand_terms = NULL,
                               GS_model = NULL,
                               gen_name = NULL,
                               rand_terms_model_bayesian = NULL,
-                              message = TRUE)
-{
+                              message = TRUE){
+
 
   msg <- sprintf("==================================================\n")
 
   #####
   #### Check for Interaction and and non-interaction term
   ## No interaction term
-  rand_terms_No_Inter = rand_terms[!grepl(":", rand_terms)]
+  rand_terms_No_Inter <-  rand_terms[!grepl(":", rand_terms)]
 
   ## Interaction term
-  Check_rand_Inter = rand_terms[grepl(":", rand_terms)]
+  Check_rand_Inter <-  rand_terms[grepl(":", rand_terms)]
 
   ## Start with the No interaction terms
   if(length(rand_terms_No_Inter)!=0){
     ## Check if gen_name is present and store the position
-    Gen_pos_mod=  match(gen_name, rand_terms)
-    if(length(Gen_pos_mod)==0){stop(print(paste(message(msg), paste(gen_name, "effect is missing"))), call. = FALSE)}
+    Gen_pos_mod =  match(gen_name, rand_terms)
+    if(length(Gen_pos_mod)==0){stop(print(paste(message(msg), paste(gen_name, "effect sik is missing"))), call. = FALSE)}
     if(length(Gen_pos_mod)>1){stop(print(paste(message(msg), paste(gen_name, "effect should not be greater than 1"))), call. = FALSE)}
     ## Extract other terms from the rand_terms_No_Inter  expect the gen_name
     rand_terms_No_Inter_No_Gen = rand_terms_No_Inter[!rand_terms_No_Inter%in%gen_name]
@@ -274,7 +295,7 @@ random_term_model <- function(rand_terms = NULL,
 
     }
 
-  }
+  } ## End
 
   ### Each random term will have a specific model for parameter estimate.
   ## It is expected the user will provide model for each random term,
@@ -283,7 +304,8 @@ random_term_model <- function(rand_terms = NULL,
 
   ### If user provide only the GS_model and random terms model is missing
   ### Especially when there is more than one random term
-  if(is.null(rand_terms_model_bayesian) && !is.null(GS_model)){
+
+  if(is.null(rand_terms_model_bayesian) & !is.null(GS_model)){
     #warning(paste(msg, "The model for ranom term(s) is missing. We fix it for you"))
 
     ## Check to see which GS_model(s) the user provide
@@ -344,88 +366,28 @@ random_term_model <- function(rand_terms = NULL,
 
     #}
 
-  } else {
-    ### If user provide only rand_terms_model_bayesian and GS_model is missing
-    ### Especially when there is more than one random term
-    if(!is.null(rand_terms_model_bayesian) && is.null(GS_model)){
-      # if(length(rand_terms_model_bayesian)!= length(rand_terms)){
-      #   warning(paste(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed"))
-      # }
-      ### This will be used only for the genetic effect assuming the user only provide that
-      if(length(rand_terms_model_bayesian)!= length(rand_terms)){
-        if(message){
-          warning(paste(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed"))
-        }
-        ### Check GS_model to be consistent with models present in the engine
-        mod_present_in_model_bayesian = rand_terms_model_bayesian[rand_terms_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS")]
-        if(length(mod_present_in_model_bayesian)==0){ stop(print(paste(msg,'Provided appropiate name for the Baysian model.')), call. = FALSE)
-
-        } else {
-
-          mod_len = length(rand_terms) - length(mod_present_in_model_bayesian)
-          rand_terms_model_bayesian = c(mod_present_in_GS_model,  rep("BRR",  mod_len))
-          #rand_mod_copy = rand_terms_model_bayesian
-
-        }
-
-        rand_terms_model_bayesian[Gen_pos_mod] <- GS_model[1]
-
-        ## For other terms in random effect aside gen_name
-        if(exists("NonNon_Gen_pos_mod")){
-
-          rand_terms_model_bayesian[Non_Gen_pos_mod] = "BRR"
-
-        } ## end
-
-        #### Random interaction terms
-        if(length(Check_rand_Inter)!=0){
-          ### For gen_name part of interaction
-          if(!is.na(Inter_Gen_pos_mod) | length(Inter_Gen_pos_mod)!=0){
-
-            ### This account for multi-kernel
-            rand_terms_model_bayesian[Inter_Gen_pos_mod] = "RKHS"
-
-
-          }
-
-          ### For Non gen_name part of interaction
-          if(length(Non_Gen_Inter_Test)!=0){
-
-            rand_terms_model_bayesian[Non_Gen_Inter_Test] = "BRR"
-
-          }
-
-        } ## End of random interaction terms
-
+  } else if (!is.null(rand_terms_model_bayesian) & is.null(GS_model)){
+    # if(length(rand_terms_model_bayesian)!= length(rand_terms)){
+    #   warning(paste(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed"))
+    # }
+    ### This will be used only for the genetic effect assuming the user only provide that
+    if(length(rand_terms_model_bayesian)!= length(rand_terms)){
+      if(isTRUE(message)){
+        warning(paste(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed"))
       }
-
-    }
-
-    ### If user provide GS_model and rand_terms_model_bayesian
-    if(!is.null(rand_terms_model_bayesian) && !is.null(GS_model)){
-      mod_present_in_GS_model = GS_model[GS_model%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS")]
-      if(length(mod_present_in_GS_model)==0){stop(print(paste(msg,'Provided appropiate name for the baysian model in GS_model.')), call. = FALSE)}
-
+      ### Check GS_model to be consistent with models present in the engine
       mod_present_in_model_bayesian = rand_terms_model_bayesian[rand_terms_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS")]
-      if(length(mod_present_in_model_bayesian)==0){ stop(print(paste(msg,'Provided appropiate name for the baysian model in rand_terms_model_bayesian.')), call. = FALSE)}
+      if(length(mod_present_in_model_bayesian)==0){
 
-      if(length(mod_present_in_GS_model)!=0 && length(mod_present_in_model_bayesian)!=0){
+        stop(print(paste(msg,'Provided appropiate name for the Baysian model.')), call. = FALSE)
 
-        rand_terms_model_bayesian  = c(GS_model, rand_terms_model_bayesian)
+      } else {
 
-        if(length(rand_terms_model_bayesian)!= length(rand_terms)){
+        mod_len = (length(rand_terms) - length(mod_present_in_model_bayesian))
+        rand_terms_model_bayesian = c(mod_present_in_GS_model,  rep("BRR",  mod_len))
+        #rand_mod_copy = rand_terms_model_bayesian
 
-          if(length(rand_terms_model_bayesian)>length(rand_terms)){
-            stop(print(paste(msg,'The number of model is greater than the random terms')), call. = FALSE)
-          }
-
-          mod_len = length(rand_terms) - length(rand_terms_model_bayesian)
-          rand_terms_model_bayesian = c(rand_terms_model_bayesian,  rep("BRR",  mod_len))
-
-        }
       }
-
-      ######
 
       rand_terms_model_bayesian[Gen_pos_mod] <- GS_model[1]
 
@@ -456,26 +418,83 @@ random_term_model <- function(rand_terms = NULL,
 
       } ## End of random interaction terms
 
-
     }
 
-    ### if user didn't specific any GS_model the default rrBLUP will be used
-    if(is.null(rand_terms_model_bayesian) && is.null(GS_model)){
-      rand_terms_model_bayesian = array(dim = length(rand_terms), "BRR")
-    }
+  }else {
+
+    if(!is.null(rand_terms_model_bayesian) & !is.null(GS_model)){
+
+      mod_present_in_GS_model <- GS_model[GS_model%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS")]
+      if(length(mod_present_in_GS_model)==0){
+        stop(print(paste(msg,'Provided appropiate name for the baysian model in GS_model.')), call. = FALSE)
+      }
+
+      mod_present_in_model_bayesian <- rand_terms_model_bayesian[rand_terms_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS")]
+      if(length(mod_present_in_model_bayesian)==0){
+        stop(print(paste(msg,'Provided appropiate name for the baysian model in rand_terms_model_bayesian.')), call. = FALSE)
+      }
+      ##
+      if(length(mod_present_in_GS_model)!=0 & length(mod_present_in_model_bayesian)!=0){
+
+        rand_terms_model_bayesian  = c(GS_model, rand_terms_model_bayesian)
+
+        if(length(rand_terms_model_bayesian)!= length(rand_terms)){
+
+          if(length(rand_terms_model_bayesian)>length(rand_terms)){
+            stop(print(paste(msg,'The number of model is greater than the random terms')), call. = FALSE)
+          }
+
+          mod_len = (length(rand_terms) - length(rand_terms_model_bayesian))
+          rand_terms_model_bayesian = c(rand_terms_model_bayesian,  rep("BRR",  mod_len))
+
+        }
+
+        rand_terms_model_bayesian[Gen_pos_mod] = GS_model[1]
+      }
+      ###
+      ###  rand_terms_model_bayesian[Gen_pos_mod] = GS_model[1]
+      ## For other terms in random effect aside gen_name
+      if(exists("NonNon_Gen_pos_mod")){
+
+        rand_terms_model_bayesian[Non_Gen_pos_mod] = "BRR"
+
+      } ## end
+
+      #### Random interaction terms
+      if(length(Check_rand_Inter)!=0){
+        ### For gen_name part of interaction
+        if(!is.na(Inter_Gen_pos_mod) | length(Inter_Gen_pos_mod)!=0){
+
+          ### This account for multi-kernel
+          rand_terms_model_bayesian[Inter_Gen_pos_mod] = "RKHS"
 
 
-  }
+        }
 
-  ###
-  # For Didier processing the first element of the vector will be used
-  # as pointer shiny production because that is the on that represent the model
-  # for genetic effect.
+        ### For Non gen_name part of interaction
+        if(length(Non_Gen_Inter_Test)!=0){
 
+          rand_terms_model_bayesian[Non_Gen_Inter_Test] = "BRR"
+
+        }
+
+      } ## End of random interaction terms
+
+
+
+    } ## Sik
+
+
+  } #ENd
+  ####
+
+
+
+
+  #} ## End else
   return(rand_terms_model_bayesian)
 
 }
-
 
 
 # ## Check the random term provided by the users and provide one in scenario where

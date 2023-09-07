@@ -1,7 +1,19 @@
 ### XGBoost Feature Importance
 
-feature_impo_xgb <- function(xgb_fit,
-                             X_train,
+#' Title
+#'
+#' @param xgb_fit trained model
+#' @param X_train genomic/omics data
+#' @param ...
+#' @param N_feature_impo number of feature/ x variables to extract based on the importance/weight
+#'
+#' @return
+#' @export
+#'
+#' @examples
+feature_impo_xgb <- function(xgb_fit = NULL,
+                             X_train = NULL,
+                             N_feature_impo = NULL,
                              ...){
 
 importance_matrix <- xgboost::xgb.importance(
@@ -14,9 +26,10 @@ names(importance_matrix) <- c("Feature", "Importance")
 
 #xgboost::xgb.plot.importance(importance_matrix)
 
-if(nrow(importance_matrix)>10){
 
-  (p <-   ggplot2::ggplot(importance_matrix[1:10, ],  ggplot2::aes(x=reorder(Feature, Importance),
+if(nrow(importance_matrix)>N_feature_impo){
+
+   ggplot2::ggplot(importance_matrix[1:N_feature_impo, ],  ggplot2::aes(x=reorder(Feature, Importance),
                                                          y=Importance,
                                                          color=as.factor(Feature)))+
      ggplot2::geom_point() +
@@ -29,12 +42,12 @@ if(nrow(importance_matrix)>10){
      ggplot2::xlab("VariableName") +
      ggplot2::coord_flip()
 
-  )
+
 
 
 } else {
 
-  (p <-    ggplot2::ggplot(importance_matrix,  ggplot2::aes(x=reorder(Feature, Importance),
+ ggplot2::ggplot(importance_matrix,  ggplot2::aes(x=reorder(Feature, Importance),
                                                   y=Importance,
                                                   color=as.factor(Feature))) +
 
@@ -48,7 +61,6 @@ if(nrow(importance_matrix)>10){
      ggplot2::xlab("VariableName") +
      ggplot2::coord_flip()
 
-  )
 
 }
 

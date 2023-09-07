@@ -9,6 +9,7 @@
 #' @param omic3_data
 #' @param ...
 #' @param gen_name
+#' @param GS_model
 #'
 #' @return
 #' @export
@@ -20,11 +21,14 @@ mod_output_bayes <- function(mod=NULL,
                              geno_data=NULL,
                              omic1_data=NULL,
                              omic2_data=NULL,
-                             omic3_data=NULL,...){
+                             omic3_data=NULL,
+                             GS_model = NULL,
+                             ...){
 
 # sik$ETA_element_name
 # TT = DT$output_files_names
 
+  if(GS_model =="BL") {GS_model = "lambda"}
 BIN = mod$output_files_names[grepl("bin", mod$output_files_names)]
 
 ### Extract Error variance
@@ -36,10 +40,14 @@ Var_E <- mean(scan(mod$output_files_names[grepl("varE.dat", mod$output_files_nam
 ### These lines of code exttract the genomic variance and the error term
 if(length(BIN)>1){
 
+  if(GS_model=="BRR"){
   varB_files <- mod$output_files_names[grepl("varB.dat", mod$output_files_names)]
-
+  } else {
+  varB_files <- mod$output_files_names[grepl(paste(GS_model,"dat", sep = "."), mod$output_files_names)]
+}
 
   if(length(BIN)==4){
+    if(GS_model== "BRR"){
     Var_U_1= mean(scan(varB_files[1],
                        what = numeric(),
                        sep = "\n"))
@@ -56,24 +64,63 @@ if(length(BIN)>1){
                        what = numeric(),
                        sep = "\n"))
 
+    } else {
+
+    Var_U_1= read.table(varB_files[1],
+                        skip = 1)
+    Var_U_1= mean(as.data.frame(tidyr::separate_rows(Var_U_1))[, 1])
+    ####
+
+    Var_U_2= read.table(varB_files[2],
+                        skip = 1)
+    Var_U_2= mean(as.data.frame(tidyr::separate_rows(Var_U_2))[, 1])
+
+    Var_U_3= read.table(varB_files[3],
+                        skip = 1)
+    Var_U_3= mean(as.data.frame(tidyr::separate_rows(Var_U_3))[, 1])
+
+    Var_U_4= read.table(varB_files[4],
+                        skip = 1)
+    Var_U_4= mean(as.data.frame(tidyr::separate_rows(Var_U_4))[, 1])
+
+    }
+
     genomic_h2 = (Var_U_1 + Var_U_2 + Var_U_3 + Var_U_4)/((Var_U_1 + Var_U_2 + Var_U_3 + Var_U_4)+Var_E)
 
     Var_U = Var_U_1 + Var_U_2 + Var_U_3 + Var_U_4
   }
 
   if(length(BIN)==3){
-    Var_U_1= mean(scan(varB_files[1],
-                       what = numeric(),
-                       sep = "\n"))
 
-    Var_U_2= mean(scan(varB_files[2],
-                       what = numeric(),
-                       sep = "\n"))
+    if(GS_model== "BRR"){
+      Var_U_1= mean(scan(varB_files[1],
+                         what = numeric(),
+                         sep = "\n"))
 
-    Var_U_3= mean(scan(varB_files[3],
-                       what = numeric(),
-                       sep = "\n"))
+      Var_U_2= mean(scan(varB_files[2],
+                         what = numeric(),
+                         sep = "\n"))
 
+      Var_U_3= mean(scan(varB_files[3],
+                         what = numeric(),
+                         sep = "\n"))
+
+
+    } else {
+    Var_U_1= read.table(varB_files[1],
+                        skip = 1)
+    Var_U_1= mean(as.data.frame(tidyr::separate_rows(Var_U_1))[, 1])
+    ####
+
+    Var_U_2= read.table(varB_files[2],
+                        skip = 1)
+    Var_U_2= mean(as.data.frame(tidyr::separate_rows(Var_U_2))[, 1])
+
+    Var_U_3= read.table(varB_files[3],
+                        skip = 1)
+    Var_U_3= mean(as.data.frame(tidyr::separate_rows(Var_U_3))[, 1])
+
+}
     genomic_h2 = (Var_U_1 + Var_U_2 + Var_U_3)/((Var_U_1 + Var_U_2 + Var_U_3)+Var_E)
 
     Var_U = Var_U_1 + Var_U_2 + Var_U_3
@@ -81,14 +128,28 @@ if(length(BIN)>1){
   }
 
   if(length(BIN)==2){
-    Var_U_1= mean(scan(varB_files[1],
-                       what = numeric(),
-                       sep = "\n"))
 
-    Var_U_2= mean(scan(varB_files[2],
-                       what = numeric(),
-                       sep = "\n"))
+    if(GS_model== "BRR"){
+      Var_U_1= mean(scan(varB_files[1],
+                         what = numeric(),
+                         sep = "\n"))
 
+      Var_U_2= mean(scan(varB_files[2],
+                         what = numeric(),
+                         sep = "\n"))
+
+    } else {
+
+    Var_U_1= read.table(varB_files[1],
+                        skip = 1)
+    Var_U_1= mean(as.data.frame(tidyr::separate_rows(Var_U_1))[, 1])
+    ####
+
+    Var_U_2= read.table(varB_files[2],
+                        skip = 1)
+    Var_U_2= mean(as.data.frame(tidyr::separate_rows(Var_U_2))[, 1])
+
+}
 
     genomic_h2 = (Var_U_1 + Var_U_2)/((Var_U_1 + Var_U_2)+Var_E)
 
@@ -97,10 +158,21 @@ if(length(BIN)>1){
 
 } else {
 
+  if(GS_model== "BRR"){
   Var_U= mean(scan(mod$output_files_names[grepl("varB.dat", mod$output_files_names)],
                    what = numeric(),
                    sep = "\n"))
 
+  ### The output for the variance was recently change in BGLR, this was fixed
+  ## accordingly.
+  ## It thus expedient to always crosscheck for any new update with the
+  ## dependency package
+} else {
+  Var_U= read.table(mod$output_files_names[grepl(paste(GS_model,"dat", sep = "."), mod$output_files_names)],
+                    skip = 1)
+  Var_U = mean(as.data.frame(tidyr::separate_rows(Var_U))[, 1])
+
+}
   Var_E <- mean(scan(mod$output_files_names[grepl("varE.dat", mod$output_files_names)],
                      what = numeric(),
                      sep = "\n"))
@@ -138,9 +210,25 @@ if(length(BIN)>1){
 
       GEBV$PEV <-PEV
 
-      var_u= mean(scan(varB_files[aa],
-                       what = numeric(),
-                       sep = "\n"))
+      # var_u= mean(scan(varB_files[aa],
+      #                  what = numeric(),
+      #                  sep = "\n"))
+
+      if(GS_model== "BRR"){
+        var_u= mean(scan(varB_files[aa],
+                         what = numeric(),
+                         sep = "\n"))
+
+        ### The output for the variance was recently change in BGLR, this was fixed
+        ## accordingly.
+        ## It thus expedient to always crosscheck for any new update with the
+        ## dependency package
+      } else {
+        var_u= read.table(varB_files[aa],
+                          skip = 1)
+        var_u = mean(as.data.frame(tidyr::separate_rows(var_u))[, 1])
+
+      }
       ##Estimate of reliability
       GEBV$reliability = 1 - PEV /var_u
     }
@@ -184,9 +272,21 @@ if(length(BIN)>1){
 
       omic2_EBV$PEV <- PEV
 
-      var_u= mean(scan(varB_files[aa],
-                       what = numeric(),
-                       sep = "\n"))
+      if(GS_model== "BRR"){
+        var_u= mean(scan(varB_files[aa],
+                         what = numeric(),
+                         sep = "\n"))
+
+        ### The output for the variance was recently change in BGLR, this was fixed
+        ## accordingly.
+        ## It thus expedient to always crosscheck for any new update with the
+        ## dependency package
+      } else {
+        var_u= read.table(varB_files[aa],
+                          skip = 1)
+        var_u = mean(as.data.frame(tidyr::separate_rows(var_u))[, 1])
+
+      }
 
       ##Estimate of reliabilities
       omic2_EBV$reliability = 1 - PEV / var_u
@@ -209,9 +309,21 @@ if(length(BIN)>1){
 
       omic3_EBV$PEV <-  PEV
 
-      var_u= mean(scan(varB_files[aa],
-                       what = numeric(),
-                       sep = "\n"))
+      if(GS_model== "BRR"){
+        var_u= mean(scan(varB_files[aa],
+                         what = numeric(),
+                         sep = "\n"))
+
+        ### The output for the variance was recently change in BGLR, this was fixed
+        ## accordingly.
+        ## It thus expedient to always crosscheck for any new update with the
+        ## dependency package
+      } else {
+        var_u= read.table(varB_files[aa],
+                          skip = 1)
+        var_u = mean(as.data.frame(tidyr::separate_rows(var_u))[, 1])
+
+      }
 
       ##Estimate of reliabilities
       omic3_EBV$reliability = 1 - PEV / var_u

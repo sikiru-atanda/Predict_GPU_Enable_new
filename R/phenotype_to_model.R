@@ -1,10 +1,27 @@
 #' Title
+#' Overall, this serve as gateway between phenotype-precheck function and readiness of
+#' the phenotypic data for model fitting
+#' The objective of this function is to do the following:
+#' 1. Check the output from phenotype-precheck function for pheno_data before declaring it for model fit.
+#'    NA is allowed for response variable with the assumption that those individuals are the testing set.
+#' 2. Check output from phenotype-precheck function for pheno_data_train and
+#'    check for NA. If NA present it will not be declare for model fit because
+#'    NA is not expected in training set. If all good it will be declared for model fit
+#' 3. Check the output from phenotype-precheck function for pheno_data_test before declaring it for model fit
+#'    NA is allowed for response variable here.
+#' 4. If pheno_data_train and pheno_data_test were present and pass through the pre-check process,
+#'    it will be processed that is.
+#'    1) it check that column name for both data match/the same
+#'    2) Combined the dataset for model fit and prediction.
+#'    It is assumed here that pheno_data is missing/not provided by the user.
+#' 5. The output will be pheno_data declared for model fit and test_set if pheno_data_test was provided.
 #'
-#' @param pheno_data
-#' @param pheno_data_train
-#' @param pheno_data_test
-#' @param response
-#' @param gen_name
+#' @param pheno_data phenotypic object NA is allowed
+#' @param pheno_data_train phenotypic object for the training set. NA is allowed.
+#' This is expected if pheno_data was not provided
+#' @param pheno_data_test phenotypic object for the testing set. NA is allowed
+#' @param response y variables/lables
+#' @param gen_name column name containing individuals/genotypes
 #' @param ...
 #'
 #' @return
@@ -12,22 +29,24 @@
 #'
 #' @examples
 
-phenotype_to_model <- function(
-    pheno_data = NULL,
-    pheno_data_train = NULL,
-    pheno_data_test = NULL,
-    #train_set = NULL,
-    #test_set = NULL,
-    response=NULL,
-    gen_name=NULL,
-    ...
-) {
+    phenotype_to_model <- function(
+        pheno_data = NULL,
+        pheno_data_train = NULL,
+        pheno_data_test = NULL,
+        #train_set = NULL,
+        #test_set = NULL,
+        response=NULL,
+        gen_name=NULL,
+        ...
+    ) {
 
-  msg <- sprintf("==================================================\n")
+      msg <- sprintf("==================================================\n")
 
 
   ## Check availability of pheno_datatypic data (training and testing set). This
   ## accommodate missing value with the assumption that testing will have NA
+  ## Check for NA is not test here for response variables because testing set might have NA
+  # thus, NA is expected in pheno_data.
 
   if (!is.null(pheno_data)){
 
@@ -35,7 +54,8 @@ phenotype_to_model <- function(
                                  gen_name = gen_name,
                                  response = response)
 
-    ### The result object has to pass the test attribute before it can be stored
+    ### The result object has to pass the test attribute before it can be stored/
+    ## pass through for the next step of check and declared good for model fit
     if(attr(pheno_data, "cleared")=="pass" && all(class(pheno_data)==c("data.frame", "phenotype"))) {
 
     # Assign appropriate class.
@@ -58,23 +78,25 @@ phenotype_to_model <- function(
 
     ### If pheno_data is missing, pheno_data traning should be available for traning and it is expected
     ## pheno_data testing is also available
-    ## However, pheno_data testing might be missing if the user objective for cross-validation
+    ## However, pheno_data testing might be missing if the user objective is for cross-validation
     ## In general, missing value is not expected in the pheno_data training.
     if (!is.null(pheno_data_train)){
 
-      pheno_data_train <- phenotype_precheck(pheno_data= pheno_data_train,
+      pheno_data_train_ <- phenotype_precheck(pheno_data= pheno_data_train,
                                    gen_name = gen_name,
                                    response = response)
 
-      if(attr(pheno_data_train, "cleared")!="pass" && all(class(pheno_data_train)!=c("data.frame", "phenotype"))) {
+      if(attr(pheno_data_train_, "cleared")!="pass" && all(class(pheno_data_train_)!=c("data.frame", "phenotype"))) {
 
         stop(paste(msg, 'pheno_data_train is not object phenotype'))
 
 
       }
 
-      if(anyNA(pheno_data_train)){ stop(paste(msg,"Missing value in not accepted in training set"))}
+      ## Though pass the pre-check test but NA is not expected in the pheno_data training.
+      if(anyNA(pheno_data_train_)){ stop(paste(msg,"Missing value in not accepted in training set"))}
 
+      rm(pheno_data_train)
     }
 
     ### pheno_data test can be present or absent. It is expected this will contain
@@ -82,28 +104,30 @@ phenotype_to_model <- function(
 
     if (!is.null(pheno_data_test)){
 
-      pheno_data_test <- phenotype_precheck(pheno_data= pheno_data_test,
+      pheno_data_test_ <- phenotype_precheck(pheno_data= pheno_data_test,
                                    gen_name = gen_name,
                                    response = response)
 
-      if(attr(pheno_data_test, "cleared")!="pass" && all(class(pheno_data_test)!=c("data.frame", "phenotype"))) {
+      if(attr(pheno_data_test_, "cleared")!="pass" && all(class(pheno_data_test_)!=c("data.frame", "phenotype"))) {
 
         stop(paste(msg, 'pheno_data_train is not object phenotype'))
       }
+
+      rm(pheno_data_test)
     }
 
     #### if both pheno_data_train and pheno_data_test are provided
 
-    if ((!is.null(pheno_data_train) & !is.null(pheno_data_test)) & is.null(pheno_data)){
+    if ((exists("pheno_data_train_") & exists("pheno_data_test_")) & is.null(pheno_data)){
 
-      if (!identical(colnames(pheno_data_train), colnames(pheno_data_test))){
+      if (!identical(colnames(pheno_data_train_), colnames(pheno_data_test_))){
         stop(print(paste(msg,'Columns name in the pheno_data_train not the same as pheno_data_test')), call. = FALSE)
 
       } else{
 
         pheno_data <- rbind(pheno_data_train, pheno_data_test)
 
-        test_set <- data.frame(name = as.character(unique(pheno_data_test[, gen_name])))
+        test_set <- data.frame(name = as.character(unique(pheno_data_test[, gen_name])), stringsAsFactors = FALSE)
         names(test_set) = gen_name
 
         ### The result object has to pass the test attribute before it can be stored
@@ -151,7 +175,7 @@ phenotype_to_model <- function(
   } else {
 
 
-    if (!is.null(pheno_data_train) & !is.null(pheno_data_test)){
+    if (exists("pheno_data_train_") & exists("pheno_data_test_")){
 
     output =  list(pheno_data, test_set)
 

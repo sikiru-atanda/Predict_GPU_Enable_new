@@ -1,6 +1,17 @@
 
 #' Title
 #'
+#'Overall, this serve as gateway between snp/marker-precheck function and readiness of
+#' the snp/marker data for model fitting#'
+#' The objective of this function is to do the following:
+#' 1. Check the output from geno-precheck function for geno_data before declaring it for model fit
+#' 2. If geno_data_train and geno_data_test were present and pass through the pre-check process,
+#'   These will processed be processed that is:
+#'    1) It check that column name (maker/snp) for both data match/the same
+#'    2) Combined the dataset for model fit and prediction.
+#'    It is assumed here that geno_data is missing/not provided by the user.
+#' 3. The output will be a matrix(geno_data) declared for model fit.
+#'
 #' @param geno_data
 #' @param train_geno_data
 #' @param test_geno_data
@@ -22,7 +33,7 @@ geno_to_model <- function(geno_data = NULL,
   msg <- sprintf("==================================================\n")
 
   if(!is.null(geno_data) & is.null(map_data)){
-    geno_object = geno_precheck(object = geno_data,
+    geno_object = geno_precheck(object_geno = geno_data,
                                 message = message)
 
     ### It has to pass test before it can be declared geno_object
@@ -48,12 +59,12 @@ geno_to_model <- function(geno_data = NULL,
   }else {
 
     if(!is.null(train_geno_data)){
-      train_geno_data = geno_precheck(object = train_geno_data,
+      train_geno_data = geno_precheck(object_geno = train_geno_data,
                                       message = message)
     }
 
     if(!is.null(test_geno_data)){
-      test_geno_data = geno_precheck(object = test_geno_data,
+      test_geno_data = geno_precheck(object_geno = test_geno_data,
                                      message = message)
 
     }
@@ -98,7 +109,7 @@ geno_to_model <- function(geno_data = NULL,
 
     } else if(!is.null(train_geno_data) & is.null(test_geno_data)){
 
-      if(message){
+      if(isTRUE(message)){
       message (paste(msg, 'Only train_geno_data is provided'))
       }
       ### It has to pass test before it can be declared geno_object
@@ -115,16 +126,14 @@ geno_to_model <- function(geno_data = NULL,
         rm(train_geno_data)
         ##############################################
 
-      } else {
-
-        geno_object = NULL
       }
+
 
     } else {
 
       if(is.null(train_geno_data) & !is.null(test_geno_data)){
 
-        if(message){
+        if(isTRUE(message)){
         message(paste(msg, 'Only test_geno_data is provided'))
         }
 
@@ -141,16 +150,14 @@ geno_to_model <- function(geno_data = NULL,
 
         rm(test_geno_data)
         ##############################################
-        } else {
-
-          geno_object = NULL
         }
 
       }
 
   }
 
-
+# NOTE: We can include META data for the check if we want but META data for hapmap is already available
+    ## Here is an instance where user provide snp/marker data directly
   }
 
 return(geno_object)

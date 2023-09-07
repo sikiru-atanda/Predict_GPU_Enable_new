@@ -1,10 +1,11 @@
 
 
 #' Title
+#' This function deal with fixed terms defined by the user and assign model to each fixed term
 #'
-#' @param fixed
-#' @param fixed_term_model_bayesian
-#' @param pheno_data
+#' @param fixed fixed terms defined by the user
+#' @param fixed_term_model_bayesian model for the fixed term and the default is FIXED
+#' @param pheno_data phenotypic data
 #'
 #' @return
 #' @export
@@ -17,14 +18,13 @@ ETA_compiler_fixed_term <- function(fixed = NULL,
                          ){
 
 
-  ### Initialize steps for compiling all terms (Random and Fixed)
-  ## Start with Fixed Term
-  ### Create empty list for ETA
+  ### Initialize steps for compiling the Fixed terms
+  ## Start with creating empty list for ETA compilation
 
   ETA = list()
 
   #if(!is.null(fixed)){
-    fixed_term_no_inter <- fixed_terms(fixed = fixed, object = pheno_data)
+    fixed_term_no_inter <- fixed_terms(fixed = fixed, pheno_data = pheno_data)
     fixed_model <- fixed_term_model(fixed_term_no_inter,
                                     fixed_term_model_bayesian)
     #### Fit Fixed terms in ETA
@@ -86,12 +86,14 @@ ETA_compiler_bayes <- function(
   msg <- sprintf("==================================================\n")
   ### Get the random terms. Here no interaction terms in the random effect
   rand_term_no_inter <- random_terms(random = random,
-                                     object = pheno_data)
+                                     pheno_data = pheno_data)
 
   ### Assign
   rand_model <- random_term_model(rand_terms = rand_term_no_inter,
+                                  gen_name = gen_name,
                                   rand_terms_model_bayesian = rand_term_model_bayesian,
-                                  GS_model = GS_model)
+                                  GS_model = GS_model,
+                                  message = message)
 
   if(!is.null(fixed)){
    ETA <-  ETA_compiler_fixed_term(fixed = fixed,
