@@ -49,6 +49,10 @@ pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR"), ])
 
 COP = as.matrix(COP)
 
+sik = asreml::asreml(fixed = Yield ~1 + Env,
+                     random = ~ GID:Env + vm(GID, G_inv),
+                     data = pheno)
+
 pheno$PH = pheno$Yield
 
 response = "Yield"
@@ -60,6 +64,45 @@ response = c("Yield","PH")
 random = ~GID
 fixed = NULL
 GS_model = "BRR"
+
+
+return(c(write.csv(Result, paste("OptimizedTRN", NTrn.Optmize, ".csv", sep = "_")),
+         write.csv(COR, paste("PredACC",NTrn.Optmize, Gmatrix.method, ".csv", sep = "_"))))
+
+
+
+Initapth = getwd()
+
+systime = Sys.Date()
+systime = gsub("-", "_", systime)
+pathout = paste(Initapth, paste("output", systime, sep = "_"), sep = "/")
+
+### create output folder within the working directory
+dir.create(pathout, showWarnings = FALSE)
+
+### set the working directory to the output folder
+setwd(pathout)
+
+### back to the working directory
+
+hash = "-"
+Nchar <- max(rapply(CORR_ALL, function(y) nchar(as.character(y)))) + 2
+MM = do.call(
+  rbind,
+  lapply(CORR_ALL, function(x) {
+    rbind(x, substr(paste(rep(hash, Nchar), collapse = ""), 1, Nchar))
+  }))
+
+MM = do.call(
+  rbind,
+  lapply(CORR_ALL, function(x) {
+    rbind(x, substr(paste(G_list[[1]], collapse = ""), 1, Nchar))
+  }))
+
+
+
+mylist2 = mylist[-which(sapply(mylist, is.null))]
+
 
 
 #fixed = ~Env
