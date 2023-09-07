@@ -27,6 +27,9 @@ ML_undefined_test_train <- function(object_pheno = NULL,
 
         object_pheno <- object_pheno[-Na_testing, ]
 
+      } else {
+
+        test_set = NULL
       }
 
 
@@ -38,7 +41,7 @@ ML_undefined_test_train <- function(object_pheno = NULL,
 
     }
 
-  if(exists("test_set")){
+  if(exists("test_set") & !is.null(test_set)){
 
   #if(!is.null(test_set) & exists("object_pheno")){
 

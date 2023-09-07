@@ -105,7 +105,7 @@ if(length(response)>1){
     # doParallel::registerDoParallel(cl)
     # }
 
-    AI_trcontrol = caret::trainControl(GS_model = "cv",
+    AI_trcontrol = caret::trainControl(method = "cv",
                                         number = 5,
                                         verboseIter = TRUE,
                                         returnData = FALSE,
@@ -152,7 +152,7 @@ if(length(response)>1){
                                      standardize = FALSE,
                                      lambda = lambda)
 
-        AI_fit=  glmnet::glmnet(x=Geno.data,
+        AI_fit=  glmnet::glmnet(x=geno_omic_object,
                                 y=pheno_object[, response[trait]],
                                 alpha = alpha,
                                 standardize = FALSE,
@@ -198,7 +198,7 @@ if(length(response)>1){
                                    standardize = FALSE,
                                    lambda = lambda)
 
-      AI_fit=  glmnet::glmnet(x=Geno.data,
+      AI_fit=  glmnet::glmnet(x=geno_omic_object,
                               y=pheno_object[, response[trait]],
                               alpha = alpha,
                               standardize = FALSE,
@@ -230,7 +230,7 @@ if(length(response)>1){
                                      standardize = FALSE,
                                      lambda = lambda)
 
-        AI_fit=  glmnet::glmnet(x=Geno.data,
+        AI_fit=  glmnet::glmnet(x=geno_omic_object,
                                 y=pheno_object[, response[trait]],
                                 alpha = alpha,
                                 standardize = FALSE,
@@ -354,7 +354,7 @@ Univariate = output
                                         standardize = FALSE,
                                         lambda = lambda)
 
-           AI_fit=  glmnet::glmnet(x=Geno.data,
+           AI_fit=  glmnet::glmnet(x=geno_omic_object,
                                    y=pheno_object[, response],
                                    alpha = alpha,
                                    standardize = FALSE,
@@ -400,7 +400,7 @@ Univariate = output
                                       standardize = FALSE,
                                       lambda = lambda)
 
-         AI_fit=  glmnet::glmnet(x=Geno.data,
+         AI_fit=  glmnet::glmnet(x=geno_omic_object,
                                  y=pheno_object[, response],
                                  alpha = alpha,
                                  standardize = FALSE,
@@ -432,7 +432,7 @@ Univariate = output
                                         standardize = FALSE,
                                         lambda = lambda)
 
-           AI_fit=  glmnet::glmnet(x=Geno.data,
+           AI_fit=  glmnet::glmnet(x=geno_omic_object,
                                    y=pheno_object[, response],
                                    alpha = alpha,
                                    standardize = FALSE,

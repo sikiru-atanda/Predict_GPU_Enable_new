@@ -181,7 +181,8 @@ if(length(response)>1){
         names(xgb_preds) = response[trait]
 
         res_feature <- feature_impo_xgb(xgb_fit = xgb_fit,
-                                        X_train = geno_omic_object)
+                                        X_train = geno_omic_object,
+                                        N_feature_impo = N_feature_impo)
 
       }
 
@@ -236,7 +237,8 @@ if(length(response)>1){
       names(xgb_preds) = response[trait]
 
       res_feature <- feature_impo_xgb(xgb_fit = xgb_fit,
-                                               X_train = geno_omic_object)
+                                      X_train = geno_omic_object,
+                                      N_feature_impo = N_feature_impo)
 
 
 
@@ -263,7 +265,8 @@ if(length(response)>1){
       names(xgb_preds) = response[trait]
 
       res_feature <- feature_impo_xgb(xgb_fit = xgb_fit,
-                                      X_train = geno_omic_object)
+                                      X_train = geno_omic_object,
+                                      N_feature_impo = N_feature_impo)
 
       }
 
@@ -354,7 +357,8 @@ xgb_grid = expand.grid(nrounds = xgb_paras_tunning$Iter_tune , # number of boost
    bestTune <- c(xgb_fit$bestTune, xgb_fit$method)
 
    res_feature <- feature_impo_xgb(xgb_fit = xgb_fit,
-                                   X_train = geno_omic_object)
+                                   X_train = geno_omic_object,
+                                   N_feature_impo = N_feature_impo)
 
 
     } else {
@@ -380,7 +384,8 @@ xgb_grid = expand.grid(nrounds = xgb_paras_tunning$Iter_tune , # number of boost
         names(xgb_preds) = response
 
         res_feature <- feature_impo_xgb(xgb_fit = xgb_fit,
-                                        X_train = geno_omic_object)
+                                        X_train = geno_omic_object,
+                                        N_feature_impo = N_feature_impo)
 
       }
 
@@ -435,7 +440,8 @@ xgb_grid = expand.grid(nrounds = xgb_paras_tunning$Iter_tune , # number of boost
       names(xgb_preds) = response
 
       res_feature <- feature_impo_xgb(xgb_fit = xgb_fit,
-                                      X_train = geno_omic_object)
+                                      X_train = geno_omic_object,
+                                      N_feature_impo = N_feature_impo)
 
 
 
@@ -462,7 +468,8 @@ xgb_grid = expand.grid(nrounds = xgb_paras_tunning$Iter_tune , # number of boost
         names(xgb_preds) <-  response
 
         res_feature <- feature_impo_xgb(xgb_fit = xgb_fit,
-                                        X_train = geno_omic_object)
+                                        X_train = geno_omic_object,
+                                        N_feature_impo = N_feature_impo)
 
       }
 
