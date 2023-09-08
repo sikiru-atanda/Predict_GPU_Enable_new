@@ -12,10 +12,11 @@
 #' 5. Check if the allele dosages is not in 0, 1, 2 and it not, we fix it
 #' 6. Check for monomorphic marker and remove it.
 #' 7. Check for NA and remove it.
-#' 8. Here META data is not generated because it for check not actually for QC.
-#' 8. Here MAF and Heterozygosity is not accounted for because it is expected that this'
-#'    is a clean data. If you need that please refere to marker_qc_recode function
-#' 9. The output is clean snp/marker data with NA and monomorphic removed if present.
+#' 8. It check for MAF and Heterozygosity '
+#' 9. Here metadata is not generated because it for check not actually for QC.
+#'    It is actually expected to be a clean data. If you need that please refer to marker_qc_recode function
+#' 10. The output is clean snp/marker data with NA,monomorphic, maf, heterozgous
+#'     removed user defined some threshould value. If not default values are used.
 #'    The output is assign attribute "pass" and declared class 'geno_data'
 #'
 #' @param object_geno snp/marker data. NA is allowed

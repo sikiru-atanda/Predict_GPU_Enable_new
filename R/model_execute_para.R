@@ -593,6 +593,8 @@ model_execute <- function(
 
         if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
 
+### The ETA_compiler_bayes compile the linear predictors and set parameters for the model.
+## Check the function for details.
    ETA  <-  ETA_compiler_bayes(
         fixed = fixed,
         random = random,
@@ -977,11 +979,11 @@ model_execute <- function(
                                                  thin = thin)
 
             mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
-                                                  response = response,
-                                                  weights = weights,
-                                                  ETA = ETA$ETA,
-                                                  bayes_para = bayes_para,
-                                                  verbose = FALSE
+                                      response = response,
+                                      weights = weights,
+                                      ETA = ETA$ETA,
+                                      bayes_para = bayes_para,
+                                      verbose = FALSE
                                                   )
 
             res_model_output <- mod_output_bayes(mod = mod,
@@ -1024,11 +1026,11 @@ model_execute <- function(
                                                  thin = thin)
 
             mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
-                                                  response = response,
-                                                  weights = weights,
-                                                  ETA = ETA$ETA,
-                                                  bayes_para = bayes_para,
-                                                  verbose = FALSE
+                                      response = response,
+                                      weights = weights,
+                                      ETA = ETA$ETA,
+                                      bayes_para = bayes_para,
+                                      verbose = FALSE
                                                   )
 
             res_model_output <- mod_output_bayes(mod = mod,
@@ -1071,11 +1073,11 @@ model_execute <- function(
                                                  thin = thin)
 
             mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
-                                                  response = response,
-                                                  weights = weights,
-                                                  ETA = ETA$ETA,
-                                                  bayes_para = bayes_para,
-                                                  verbose = FALSE
+                                      response = response,
+                                      weights = weights,
+                                      ETA = ETA$ETA,
+                                      bayes_para = bayes_para,
+                                      verbose = FALSE
                                                   )
 
             res_model_output <- mod_output_bayes(mod = mod,
@@ -1117,11 +1119,11 @@ model_execute <- function(
                                                  thin = thin)
 
             mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
-                                                  response = response,
-                                                  weights =weights,
-                                                  ETA = ETA$ETA,
-                                                  bayes_para = bayes_para,
-                                                  verbose = FALSE
+                                      response = response,
+                                      weights =weights,
+                                      ETA = ETA$ETA,
+                                      bayes_para = bayes_para,
+                                      verbose = FALSE
                                                   )
 
             res_model_output <- mod_output_bayes(mod = mod,
@@ -1165,11 +1167,11 @@ model_execute <- function(
                                                  thin = thin)
 
             mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
-                                                  response = response,
-                                                  weights = weights,
-                                                  ETA = ETA$ETA,
-                                                  bayes_para = bayes_para,
-                                                  verbose = FALSE
+                                      response = response,
+                                      weights = weights,
+                                      ETA = ETA$ETA,
+                                      bayes_para = bayes_para,
+                                      verbose = FALSE
                                                   )
 
             res_model_output <- mod_output_bayes(mod = mod,
@@ -1257,11 +1259,11 @@ model_execute <- function(
                                                  thin = thin)
 
             mod <-  bayes_mod_execute(pheno_data = pheno_data,
-                                                  response = response,
-                                                  weights = weights,
-                                                  ETA = ETA$ETA,
-                                                  bayes_para = bayes_para,
-                                                  verbose = FALSE
+                                      response = response,
+                                      weights = weights,
+                                      ETA = ETA$ETA,
+                                      bayes_para = bayes_para,
+                                      verbose = FALSE
                                                   )
 
             res_model_output <- mod_output_bayes(mod = mod,

@@ -1,6 +1,6 @@
 
 
-#' Title
+#'
 #' This function deal with fixed terms defined by the user and assign model to each fixed term
 #'
 #' @param fixed fixed terms defined by the user
@@ -46,18 +46,21 @@ ETA_compiler_fixed_term <- function(fixed = NULL,
 
 
 #' Title
+#' This function does this following:
+#' 1. Extract all the random terms from the formula
+#' 2. Compile all the random terms and set the model for each term
 #'
-#' @param fixed
-#' @param random
-#' @param GS_model
-#' @param fixed_term_model_bayesian
-#' @param rand_term_model_bayesian
-#' @param pheno_data
-#' @param geno_data
-#' @param omic1_data
-#' @param omic2_data
-#' @param omic3_data
-#' @param gen_name
+#' @param fixed fixed effect. it must be in formula separated by +
+#' @param random random effect, it must be formula separated by +
+#' @param GS_model model defined by user
+#' @param fixed_term_model_bayesian Model for fixed effect/term(s). default is FIXED
+#' @param rand_term_model_bayesian Model for all random term(s) defined by the user
+#' @param pheno_data phenotypic data. Dataframe or matrix is acceptable
+#' @param geno_data  snp/marker data. Dataframe or matrix is acceptable
+#' @param omic1_data omic data .Dataframe or matrix is acceptable
+#' @param omic2_data omic data .Dataframe or matrix is acceptable
+#' @param omic3_data omic data .Dataframe or matrix is acceptable
+#' @param gen_name   Column name containing the genotype or individuals in the phenotypic data
 #' @param ...
 #'
 #' @return
@@ -85,6 +88,7 @@ ETA_compiler_bayes <- function(
 
   msg <- sprintf("==================================================\n")
   ### Get the random terms. Here no interaction terms in the random effect
+  ## This function is present in the bayesians_preprocess.R check for details
   rand_term_no_inter <- random_terms(random = random,
                                      pheno_data = pheno_data)
 

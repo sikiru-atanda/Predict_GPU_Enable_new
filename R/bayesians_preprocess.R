@@ -12,7 +12,7 @@
 #' @examples
 
 ## This function check if the following parameters are provided by the user,
-# if not assign a default value, but let the user be aware if it
+# if not assign default values are provided,however the user is aware
 
 ##Check
 # 1. Check if user provide number of iteration. If not default value is provided.
@@ -106,8 +106,8 @@ bayes_parameter_check <- function(
 ## The output will be vector of each term
 #' Title
 #'
-#' @param fixed
-#' @param pheno_data
+#' @param fixed fixed effect, only formula is accepted
+#' @param pheno_data phenotypic data
 #' @param ...
 #'
 #' @return
@@ -119,6 +119,9 @@ fixed_terms <- function(
     pheno_data = NULL,
     ...){
 
+  ## Check details for the rand_fix_check.
+  ## In General it check all conditions for required for fixed and random terms
+  ## are fulfilled. It will have to pass through this check and ensure it pass the attribute
   fixed <- rand_fix_check(rand_fix_term = fixed,
                            pheno_data= pheno_data)
 
@@ -144,11 +147,10 @@ fixed_terms <- function(
 
 
 ## Adjust for the interaction terms. Here single environment was in mind.
-## Multiple environment will be build ontop of it
-#' Title
+##
 #'
-#' @param random
-#' @param pheno_data
+#' @param random random effect, it must be in formula
+#' @param pheno_data phenotypic data.
 #' @param ..
 #'
 #' @return
@@ -184,8 +186,8 @@ random_terms <- function(random = NULL,
 
 #' Title
 #'
-#' @param fixed_term
-#' @param fixed_term_model_bayesian
+#' @param fixed_term all the fixed term, which is an output from fixed_terms function
+#' @param fixed_term_model_bayesian default is FIXED
 #'
 #' @return
 #' @export
@@ -199,15 +201,15 @@ fixed_term_model <- function(fixed_term = NULL,
 
   msg <- sprintf("==================================================\n")
   if(is.null(fixed_term_model_bayesian)){
-    if(message){
+    if(isTRUE(message)){
     warning(paste(msg, "The model for fixed term(s) is missing. We fix it for you"))
 }
     fixed_term_model_bayesian = 'FIXED'
   } else{
 
     if(fixed_term_model_bayesian!='FIXED'){
-      if(message){
-      warning(paste(msg, "The model for fixed term(s) should be equal to fix. We fix it for you"))
+      if(isTRUE(message)){
+      warning(paste(msg, "The model for fixed term(s) should be equal to FIXED. We fix it for you"))
 }
     }
 
@@ -230,11 +232,12 @@ fixed_term_model <- function(fixed_term = NULL,
 # implications
 #' Title
 #'
-#' @param rand_terms
-#' @param GS_model
-#' @param gen_name
-#' @param rand_terms_model_bayesian
-#' @param message
+#' @param rand_terms all the random terms in the formula. This is an output from random_terms function
+#' @param GS_model model defined by the user. It is expected this will be for the genotype effect estimate
+#' @param gen_name Column name containing the individuals/genotype in the phenotypic data file
+#' @param rand_terms_model_bayesian model for all the random terms including the genotype effect.
+#'                                  the total number of the model must be equal the number of random term.
+#' @param message If the user want to print out the message/warning info or not
 #'
 #' @return
 #' @export
