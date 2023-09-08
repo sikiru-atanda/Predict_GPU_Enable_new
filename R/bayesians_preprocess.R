@@ -425,30 +425,40 @@ random_term_model <- function(rand_terms = NULL,
 
   }else {
 
+    ### When user provide provide both GS_model and rand_terms_model_bayesian
     if(!is.null(rand_terms_model_bayesian) & !is.null(GS_model)){
-
+ ### Check which GS_model the user supply, it has it to match the available models
       mod_present_in_GS_model <- GS_model[GS_model%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS")]
       if(length(mod_present_in_GS_model)==0){
         stop(print(paste(msg,'Provided appropiate name for the baysian model in GS_model.')), call. = FALSE)
       }
-
+      ### Check which rand_terms_model_bayesian the user supply, it has it to match the available models
       mod_present_in_model_bayesian <- rand_terms_model_bayesian[rand_terms_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS")]
       if(length(mod_present_in_model_bayesian)==0){
         stop(print(paste(msg,'Provided appropiate name for the baysian model in rand_terms_model_bayesian.')), call. = FALSE)
       }
+      ### Check if the models term define is greater than the random term
+      if(length(rand_terms_model_bayesian)>length(rand_terms)){
+        stop(print(paste(msg,'The number of model is greater than the random terms')), call. = FALSE)
+      }
       ##
       if(length(mod_present_in_GS_model)!=0 & length(mod_present_in_model_bayesian)!=0){
 
+        ## Combined all the models
         rand_terms_model_bayesian  = c(GS_model, rand_terms_model_bayesian)
 
         if(length(rand_terms_model_bayesian)!= length(rand_terms)){
 
           if(length(rand_terms_model_bayesian)>length(rand_terms)){
-            stop(print(paste(msg,'The number of model is greater than the random terms')), call. = FALSE)
-          }
+            #stop(print(paste(msg,'The number of model is greater than the random terms')), call. = FALSE)
+            rand_terms_model_bayesian = rand_terms_model_bayesian[length(rand_terms)]
+            }
 
+          if(length(rand_terms_model_bayesian)<length(rand_terms)){
           mod_len = (length(rand_terms) - length(rand_terms_model_bayesian))
           rand_terms_model_bayesian = c(rand_terms_model_bayesian,  rep("BRR",  mod_len))
+
+          }
 
         }
 
