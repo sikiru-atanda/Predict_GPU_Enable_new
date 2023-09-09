@@ -14,7 +14,7 @@
 ## * het = percentage of heterozyoug SNPs allowed (numberic)
 ## * maf = minor allele frequency (numeric)
 ## * call_rate = percentage of missing value permitted (numeric)
-## * recode = recoding format for the SNP which can be either Meth2_0 that is (AA=2,Aa=1,aa=0) or "Meth-1_1 that is (AA=1,Aa=0,aa=-1)
+## * recode = recoding format for the SNP which can be either Meth2_1_0 that is (AA=2,Aa=1,aa=0) or "Meth1_0_-1 that is (AA=1,Aa=0,aa=-1)
 ##
 ##
 ## ** Authors: Sikiru
@@ -87,8 +87,8 @@ marker_qc_recode <- function(hapmap = NULL,
                              maf=NULL,
                              call_rate=NULL,
                              ind_rate = NULL,
-                             recode = c("Meth2_0",
-                                        "Meth-1_1"),
+                             recode = c("Meth2_1_0",
+                                        "Meth1_0_-1"),
                              impute = NULL,
                              message = TRUE,
                              ...
@@ -100,7 +100,13 @@ marker_qc_recode <- function(hapmap = NULL,
   ## Not filtered
   #if(!is.null(hapmap) && !is.null(geno))#{
   ###############################
+  if(isFALSE(data.table::is.data.table(hapmap))){
+
+    hapmap <- data.table::as.data.table(hapmap)
+  }
   Xa = hapmap[, 12:ncol(hapmap)]
+
+  map = hapmap[, 1:11]
 
   Xa <- t(Xa)
 
@@ -145,7 +151,7 @@ marker_qc_recode <- function(hapmap = NULL,
   #Xa <- t(Xa)
 
   #rm(loc.list,  nL, lN)
-
+  total_mono = length(loc.list)
   rm(loc.list, lN)
 
   ### Remove markers with high missing value based on desired thresold
@@ -254,7 +260,7 @@ marker_qc_recode <- function(hapmap = NULL,
 
   if(!is.null(recode)) {
 
-    hapmap2numeric_Meth2_0 <- function(hapmap){
+    hapmap2numeric_Meth2_1_0 <- function(hapmap){
       hapmap.numeric <- apply(hapmap[, c(1, 2,12:ncol(hapmap)), with=FALSE], 1, function(x){
         x[which(x%in%c('R', 'Y', 'S', 'W', 'K', 'M'))] <- 1
         x[which(x%in%c(NA,"NA","N","NN","B","V","H","D",".","-"))] <- NA
@@ -292,7 +298,7 @@ marker_qc_recode <- function(hapmap = NULL,
       return(t(hapmap.numeric))
     }
 
-    if(recode== "Meth2_0"){
+    if(recode== "Meth2_1_0"){
       # Here major allele is 2, minor is 0 and hetero is 1
 
 
@@ -301,9 +307,9 @@ marker_qc_recode <- function(hapmap = NULL,
 
       #filter <- as.data.frame(filter)
 
-      filter <- hapmap2numeric_Meth2_0(filter)
+      filter <- hapmap2numeric_Meth2_1_0(filter)
     } else {
-      if(recode== "Meth-1_1"){
+      if(recode== "Meth1_0_-1"){
 
         filter <- hapmap2numeric_Meth1_1(filter)
       }
@@ -352,21 +358,60 @@ marker_qc_recode <- function(hapmap = NULL,
 
   #### Aggregate all the maker data
   total_number_genotype = n_ind
-  marker_callrate = call_rate
-  if(is.null(marker_callrate)) {marker_callrate  = 0}
-  ind_callrate = ind_rate
-  if(is.null(ind_rate)) {ind_callrate  = 0}
-  if(!exists("markers_callrate_removed")) {markers_callrate_removed  = 0}
-  if(!exists("ind_callrate_removed ")) {ind_callrate_removed  = 0}
-  heterozygosity = het
-  if(is.null(het)) {heterozygosity  = 0}
-  if(!exists("het_markers_removed ")) {het_markers_removed  = 0}
-  maf = maf
-  if(is.null(maf)) {maf  = 0}
-  if(!exists("maf_markers_removed")) {maf_markers_removed = 0}
+
+  if(is.null(call_rate)) {
+    marker_callrate  = 0
+  } else {
+    marker_callrate = call_rate
+
+    }
+
+  if(is.null(ind_rate)) {
+    ind_callrate  = 0
+  } else {
+    ind_callrate = ind_rate
+    }
+  if(!exists("markers_callrate_removed")) {
+    markers_callrate_removed  = 0
+  } else {
+    markers_callrate_removed  = markers_callrate_removed
+
+    }
+  if(!exists("ind_callrate_removed ")) {
+    ind_callrate_removed  = 0
+  } else {
+    ind_callrate_removed = ind_callrate_removed
+
+    }
+
+  if(is.null(het)) {
+    heterozygosity  = 0
+  } else {
+
+    heterozygosity = het
+  }
+  if(!exists("het_markers_removed ")) {
+    het_markers_removed  = 0
+  } else {
+    het_markers_removed  = het_markers_removed
+
+    }
+
+  if(is.null(maf)) {
+    maf  = 0
+  } else {
+    maf = maf
+    }
+  if(!exists("maf_markers_removed")) {
+    maf_markers_removed = 0
+  } else {
+    maf_markers_removed = maf_markers_removed
+    }
+
 
 
   output = list(filter,
+                map,
                 total_number_genotype,
                 marker_callrate,
                 markers_callrate_removed,
@@ -375,33 +420,63 @@ marker_qc_recode <- function(hapmap = NULL,
                 heterozygosity,
                 het_markers_removed,
                 maf,
-                maf_markers_removed
+                maf_markers_removed,
+                total_mono
   )
 
   if(!is.null(recode)){
-    names(output) <- c("marker_matrix",
+    output = list(filter,
+                  map,
+                  total_number_genotype,
+                  marker_callrate,
+                  markers_callrate_removed,
+                  ind_callrate,
+                  ind_callrate_removed,
+                  heterozygosity,
+                  het_markers_removed,
+                  maf,
+                  maf_markers_removed,
+                  total_mono
+    )
+
+    names(output) <- c("marker_matrix_recode",
+                       "map",
                        "total_number_genotype",
                        "marker_callrate",
-                       "markers_callrate_removed",
+                       "total_markers_removed",
                        "ind_callrate",
-                       "ind_callrate_removed",
+                       "total_genotypes_removed",
                        "heterozygosity",
-                       "het_markers_removed",
+                       "total_het_markers_removed",
                        "maf",
-                       "maf_markers_removed")
+                       "total_maf_markers_removed",
+                       "total_monomorphic_markers_removed")
 
   } else {
 
+    output = list(filter,
+                  total_number_genotype,
+                  marker_callrate,
+                  markers_callrate_removed,
+                  ind_callrate,
+                  ind_callrate_removed,
+                  heterozygosity,
+                  het_markers_removed,
+                  maf,
+                  maf_markers_removed,
+                  total_mono
+    )
     names(output) <- c("marker",
                        "total_number_genotype",
                        "marker_callrate",
-                       "markers_callrate_removed",
+                       "total_markers_removed",
                        "ind_callrate",
-                       "ind_callrate_removed",
+                       "total_genotypes_removed",
                        "heterozygosity",
-                       "het_markers_removed",
+                       "total_het_markers_removed",
                        "maf",
-                       "maf_markers_removed")
+                       "total_maf_markers_removed",
+                       "total_monomorphic_markers_removed")
 
 
   }

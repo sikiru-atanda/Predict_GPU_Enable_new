@@ -36,6 +36,8 @@ geno_to_model <- function(geno_data = NULL,
     geno_object = geno_precheck(object_geno = geno_data,
                                 message = message)
 
+    geno_object = geno_object[[1]]
+
     ### It has to pass test before it can be declared geno_object
     if(attr(geno_object, "cleared")=="pass" & all(class(geno_object)==c("matrix", "array", "geno_data"))){
 
@@ -61,11 +63,15 @@ geno_to_model <- function(geno_data = NULL,
     if(!is.null(train_geno_data)){
       train_geno_data = geno_precheck(object_geno = train_geno_data,
                                       message = message)
+
+      train_geno_data =  train_geno_data[[1]]
     }
 
     if(!is.null(test_geno_data)){
       test_geno_data = geno_precheck(object_geno = test_geno_data,
                                      message = message)
+
+      test_geno_data =  test_geno_data[[1]]
 
     }
 
@@ -156,7 +162,7 @@ geno_to_model <- function(geno_data = NULL,
 
   }
 
-# NOTE: We can include META data for the check if we want but META data for hapmap is already available
+# NOTE: We can include metadata is not yet included as part of the output but was generated
     ## Here is an instance where user provide snp/marker data directly
   }
 
