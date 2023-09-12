@@ -429,7 +429,7 @@ model_execute <- function(
 
      if(!is.null(gmatrix)){
 
-         gmatrix_checked <- grm_kernel_precheck(pheno_data= gmatrix,
+         gmatrix_checked <- grm_kernel_precheck(grm_kernel_data= gmatrix,
                                                 message= message,
                                                 bending = bending)
      }
@@ -437,7 +437,7 @@ model_execute <- function(
 
      if(!is.null(gkernel)){
 
-         gkernel_checked <- grm_kernel_precheck(pheno_data= gkernel,
+         gkernel_checked <- grm_kernel_precheck(grm_kernel_data= gkernel,
                                                 message= message,
                                                 bending = bending)
      }
@@ -445,14 +445,14 @@ model_execute <- function(
 
      if(!is.null(omic1_kernel)){
 
-         omic1_kernel_checked <- grm_kernel_precheck(pheno_data= omic1_kernel,
+         omic1_kernel_checked <- grm_kernel_precheck(grm_kernel_data= omic1_kernel,
                                                      message= message,
                                                      bending = bending)
      }
 
      if(!is.null(omic2_kernel)){
 
-         omic2_kernel_checked <- grm_kernel_precheck(pheno_data= omic2_kernel,
+         omic2_kernel_checked <- grm_kernel_precheck(grm_kernel_data= omic2_kernel,
                                                      message= message,
                                                      bending = bending)
      }
@@ -460,7 +460,7 @@ model_execute <- function(
 
      if(!is.null(omic3_kernel)){
 
-         omic3_kernel_checked <- grm_kernel_precheck(pheno_data= omic3_kernel,
+         omic3_kernel_checked <- grm_kernel_precheck(grm_kernel_data= omic3_kernel,
                                                      message= message,
                                                      bending = bending)
      }
