@@ -105,6 +105,8 @@ grm_calculation <- function(
 
     freq <- colMeans(geno_clean)/2
 
+    N_marker <- ncol(geno_clean)
+
     locusMat <- scale(x = geno_clean, center = T, scale = F)
     locusMat <- (1/N_marker)*(locusMat %*% (t(locusMat) * (1/(2*freq*(1-freq)))))
     locusMat[lower.tri(locusMat, diag = T)] <- 0
