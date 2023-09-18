@@ -189,6 +189,10 @@ model_execute <- function(
 
 
  #### Get the clean geno_data ready for model fit
+ ## The geno_to_model function depend on geno_precheck function. The expected
+ ## output is clean genomic data with no missing and all QC control is checked.
+ ## For details check geno_to_model and geno_precheck function description
+ ##
  #if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
  if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
      geno_clean <-  geno_to_model(geno_data = geno_data,
@@ -1433,7 +1437,6 @@ model_execute <- function(
                                     heter_groups = heter_groups,
                                     gen_name = gen_name,
                                     VarCov_str = VarCov_str,
-                                    heter_groups = heter_groups,
                                     heter_resid = heter_resid,
                                     pworkspace= pworkspace,
                                     workspace = workspace,
@@ -1467,7 +1470,6 @@ model_execute <- function(
                              heter_groups = heter_groups,
                              gen_name = gen_name,
                              VarCov_str = VarCov_str,
-                             heter_groups = heter_groups,
                              heter_resid = heter_resid,
                              pworkspace= pworkspace,
                              workspace = workspace,

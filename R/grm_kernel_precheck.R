@@ -11,26 +11,50 @@
 #' 3. It check for NA. If present the engine will stop further analysis.
 #'
 #'
+#'
 #' @param grm_kernel_data
-#' @param ...
+#' @param bending
+#' @param bend_value
+#' @param blending
+#' @param blending_value
+#' @param high_diag_cut_off
+#' @param low_diag_cut_off
+#' @param duplicate_cut_off
+#' @param optimize_diagonal
+#' @param optimize_duplicate
 #' @param message
-#'
-#' @return
-#' @export
-#'
-#' @examples
+#' @param ...
 grm_kernel_precheck <- function(grm_kernel_data= NULL,
-                                message= TRUE,
+                                pedigree_matrix = NULL,
                                 bending = TRUE,
+                                bend_value = 0.01,
+                                blending = FALSE,
+                                blending_value = 0.02,
+                                high_diag_cut_off = 1.2,
+                                low_diag_cut_off = 0.8,
+                                duplicate_cut_off = 0.95,
+                                optimize_diagonal = FALSE,
+                                optimize_duplicate = FALSE,
+                                message= TRUE,
                                 ...){
 
   msg <- sprintf("==================================================\n")
 
+  ## Check no NA is present in the matrix
 if (!is.null(grm_kernel_data)){
   if(isTRUE(anyNA(grm_kernel_data))){
     stop(print(paste(msg,'NA is not allowed in the grm or kernel matrix')), call. = FALSE)
-    }
-  ### Check if the Grm matrix is in class matrix if not convert to class matrix
+  }
+  ## Check rownames is provided
+  if (is.null(rownames(grm_kernel_data))){
+    stop(print(paste(msg,'Rownames containing individuals in the matrix is missing')), call. = FALSE)
+  }
+  ## Check colnames is provided
+  if (is.null(colnames(grm_kernel_data))){
+    stop(print(paste(msg,'Colnames containing individuals in the matrix is missing')), call. = FALSE)
+  }
+
+  ### Check if the matrix is in class matrix if not convert to class matrix
   if (!is.matrix(grm_kernel_data)) grm_kernel_data <- as.matrix(grm_kernel_data)
   ### Check if colname and rownames in grm/kernel matrix is the same
   if (!identical(colnames(grm_kernel_data), rownames(grm_kernel_data))) {stop(print(paste(msg,'colnames did not match rownames')), call. = FALSE)}
@@ -47,12 +71,12 @@ if (!is.null(grm_kernel_data)){
     grm_kernel_data <- Matrix::as.matrix(grm_kernel_data)
   }
 
-  if(isTRUE(bending)){
+  if(isTRUE(bending) & !is.null(bend_value)){
   if(isFALSE(matrixcalc::is.positive.definite(grm_kernel_data))){
 
     message(paste(msg,"Relationsip Matrix is not positive definite. We fix it"))
 
-    grm_kernel_data <- as.matrix(Matrix::nearPD(grm_kernel_data, posd.tol=1e-02, trace=FALSE)$mat)
+    grm_kernel_data <- as.matrix(Matrix::nearPD(grm_kernel_data, posd.tol= bend_value, trace=FALSE)$mat)
 
   }
 
@@ -66,7 +90,89 @@ if (!is.null(grm_kernel_data)){
 
   }
 
+  ### This is important to check even if the user defined blending as FALSE
+  if(isFALSE(blending)){
+
+  res = grm_kernel_diagnostic_check(grm_kernel_data = grm_kernel_data,
+                                    high_diag_cut_off = high_diag_cut_off,
+                                    low_diag_cut_off = low_diag_cut_off,
+                                    duplicate_cut_off = duplicate_cut_off,
+                                    optimize_diagonal = optimize_diagonal,
+                                    optimize_duplicate = optimize_duplicate
+  )
+
+    if("potential_off_diag_with_duplicate"%in%names(res)){
+      grm_kernel_data = res$clean_matrix
+      ncol_nrow = ncol(grm_kernel_data)
+      grm_kernel_data_ <- (1-blending_value)*grm_kernel_data + blending_value*diag(x=1, nrow=ncol_nrow , ncol=ncol_nrow )
+
+      ## Repeat the process to ascertain the matrix is stable with no duplicate
+      res = grm_kernel_diagnostic_check(grm_kernel_data = grm_kernel_data_,
+                                        high_diag_cut_off = high_diag_cut_off,
+                                        low_diag_cut_off = low_diag_cut_off,
+                                        duplicate_cut_off = duplicate_cut_off,
+                                        optimize_diagonal = optimize_diagonal,
+                                        optimize_duplicate = optimize_duplicate)
+
+      ## Check if the matrix is still unstable. Call the attention of the user to provide
+      ## another blending_value value.
+      if("potential_off_diag_with_duplicate"%in%names(res)){
+
+        message(paste(msg,"Matrix contain duplicate(s) which might be potential problem.\n \t Change the blending value eg. 0.05  etc."))
+        ncol_nrow = ncol(grm_kernel_data)
+        grm_kernel_data <- (1-blending_value)*grm_kernel_data_ + blending_value*diag(x=1, nrow=ncol_nrow , ncol=ncol_nrow )
+
+
+      } else {
+        if(isTRUE(message)){
+        message(paste(msg,"Matrix contain duplicate(s) which might be potential problem.\n \t We fix it by blending using an identity matrix."))
+        }
+      }
+
+
+      if(isTRUE(message)) {
+        message(paste(msg,"Matrix contain duplicate(s) which might be potential problem.\n \t We fix it by blending using an identity matrix."))
+
+      }
+
+
+    }
+
+  } else {
+ if(isTRUE(blending) & !is.null(blending_value)){
+    grm_kernel_data <- blending_stat(grm_kernel_data = grm_kernel_data,
+                                     pedigree_matrix = pedigree_matrix,
+                                     blending = blending,
+                                     blending_value = blending_value
+    )
+
+    ## Repeat the process to ascertain the matrix is stable with no duplicate
+    res = grm_kernel_diagnostic_check(grm_kernel_data = grm_kernel_data,
+                                      high_diag_cut_off = high_diag_cut_off,
+                                      low_diag_cut_off = low_diag_cut_off,
+                                      duplicate_cut_off = duplicate_cut_off,
+                                      optimize_diagonal = optimize_diagonal,
+                                      optimize_duplicate = optimize_duplicate)
+
+    ## Check if the matrix is still unstable. Call the attention of the user to provide
+    ## another blending_value value.
+    if("potential_off_diag_with_duplicate"%in%names(res)){
+
+      message(paste(msg,"Matrix contain duplicate(s) which might be potential problem.\n \t Change the blending value eg. 0.05  etc."))
+
+    }
+
+
+  }
+
 }
+
+}
+
+  if(exists("res")){
+  rm(res)
+
+  }
 
   #### Declare it also as an grm_kernel_data for final usage
   class(grm_kernel_data) <-c("matrix", "array", "krm_data")

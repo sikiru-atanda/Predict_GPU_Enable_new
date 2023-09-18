@@ -104,6 +104,7 @@ if(length(response)>1){
                              y = pheno_object[, response[trait]],
                              trControl = AI_trcontrol,
                              tuneGrid = AI_grid,
+                             scaled  = FALSE,
                              method = "svmLinear")
 
 
@@ -130,7 +131,8 @@ if(length(response)>1){
 
           AI_fit = kernlab::ksvm(x = geno_omic_object,
                                  y = pheno_object[, response[trait]],
-                                 C = c
+                                 C = c,
+                                 scaled = FALSE
                                     )
 
 
@@ -166,6 +168,7 @@ if(length(response)>1){
 
       AI_fit = kernlab::ksvm(x = geno_omic_object,
                              y = pheno_object[, response[trait]],
+                             scaled  = FALSE,
                              C = c
       )
 
@@ -188,6 +191,7 @@ if(length(response)>1){
 
         AI_fit = kernlab::ksvm(x = geno_omic_object,
                                y = pheno_object[, response[trait]],
+                               scaled  = FALSE,
                                C = c
         )
 
@@ -277,6 +281,7 @@ Univariate = output
                                y = pheno_object[, response],
                                trControl = AI_trcontrol,
                                tuneGrid = AI_grid,
+                               scaled  = FALSE,
                                method = "svmLinear")
 
 
@@ -303,6 +308,7 @@ Univariate = output
 
            AI_fit = kernlab::ksvm(x = geno_omic_object,
                                   y = pheno_object[, response],
+                                  scaled  = FALSE,
                                   C = c
            )
 
@@ -342,6 +348,7 @@ Univariate = output
 
          AI_fit = kernlab::ksvm(x = geno_omic_object,
                                 y = pheno_object[, response],
+                                scaled  = FALSE,
                                 C = c
          )
 
@@ -364,6 +371,7 @@ Univariate = output
 
            AI_fit = kernlab::ksvm(x = geno_omic_object,
                                   y = pheno_object[, response],
+                                  scaled  = FALSE,
                                   C = c
            )
 

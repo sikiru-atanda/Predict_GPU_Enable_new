@@ -76,14 +76,14 @@ grm_calculation <- function(
   VanRaden <- function(geno_clean, freq){
     #freq <- colMeans(geno_clean) / 2
 
-    locusMat <- scale(geno_clean, center=T, scale=F)
+    geno_clean <- scale(geno_clean, center=T, scale=F)
     return(tcrossprod(geno_clean) / sum(2*freq*(1-freq)))
   }
 
   Epistasis <- function(geno_clean, freq){
     #freq <- colMeans(geno_clean) / 2
 
-    locusMat <- scale(geno_clean, center=T, scale=F)
+    geno_clean <- scale(geno_clean, center=T, scale=F)
 
     G <- tcrossprod(geno_clean) / sum(2*freq*(1-freq))
 
@@ -96,24 +96,23 @@ grm_calculation <- function(
   Weighted_VanRaden <- function(geno_clean, freq, weight){
     #freq <- colMeans(geno_clean) / 2
 
-    locusMat <- scale(geno_clean, center=T, scale=F)
+    geno_clean <- scale(geno_clean, center=T, scale=F)
     return(((geno_clean %*% weight)%*% t(geno_clean))/sum(2*freq*(1-freq)))
   }
 
   ### Yang method
-  Yang <- function(geno_clean){
+  Yang <- function(geno){
 
-    freq <- colMeans(geno_clean)/2
+    freq <- colMeans(geno)/2
+    N_marker = ncol(geno)
+    N_Individuals = nrow(geno)
 
-    N_marker <- ncol(geno_clean)
-    N_Individuals <- nrow(geno_clean)
-
-    locusMat <- scale(x = geno_clean, center = T, scale = F)
+    locusMat <- scale(x = geno, center = T, scale = F)
     locusMat <- (1/N_marker)*(locusMat %*% (t(locusMat) * (1/(2*freq*(1-freq)))))
     locusMat[lower.tri(locusMat, diag = T)] <- 0
     locusMat <- locusMat + t(locusMat)
 
-    multiplier <- geno_clean^2 - t(t(geno_clean) * (1+2*freq)) + matrix(rep(2*freq^2, each=N_Individuals), ncol=N_marker)
+    multiplier <- geno^2 - t(t(geno) * (1+2*freq)) + matrix(rep(2*freq^2, each=N_Individuals), ncol=N_marker)
     diag(locusMat) <- 1+(1/N_marker)*colSums(t(multiplier) *  (1/(2*freq*(1-freq))))
 
     return(locusMat)

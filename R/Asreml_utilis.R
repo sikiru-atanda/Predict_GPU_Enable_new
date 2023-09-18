@@ -551,8 +551,8 @@ asreml_utilis <- function(
 
         #if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
 
-        #### When Interaction term was provided by the user
-        if(!is.null(Inter_Gen_pos)){
+        #### When user provide only the Interaction term was provided by the user
+        if(!is.null(Inter_Gen_pos) & is.null(Gen_pos)){
           if (length(Check_heter.grp.Rand)==0 & length(Check_heter.grp.Fixed)==0){
 
             ### if Inter_Gen_pos is greater than 1 (Multiple kernel) but Gen_pos is null
@@ -693,28 +693,28 @@ asreml_utilis <- function(
             }
           }
 
-          ### If user provide GID:Env
-          ### use this step to drop the orginal GID:Env
-          if(!is.null(Inter_Gen_pos) & length(Gen_pos)==0){
-            rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
-
-            rand_termCopy = gsub(" ", "", rand_termCopy)
-
-            #Inter_Gen_pos_copy = match(rand_term[Inter_Gen_pos], rand_termCopy)
-            if(!is.null(heter_groups)){
-              Inter_Gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
-              if(anyNA(Inter_Gen_pos_copy)){
-                Inter_Gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
-              }
-
-            }
-
-            random = stats::formula(stats::drop.terms(stats::terms(random),Inter_Gen_pos_copy, keep.response = F))
-
-          } ### End
+          # ### If user provide GID:Env
+          # ### use this step to drop the orginal GID:Env
+          # if(!is.null(Inter_Gen_pos) & length(Gen_pos)==0){
+          #   rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
+          #
+          #   rand_termCopy = gsub(" ", "", rand_termCopy)
+          #
+          #   #Inter_Gen_pos_copy = match(rand_term[Inter_Gen_pos], rand_termCopy)
+          #   if(!is.null(heter_groups)){
+          #     Inter_Gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
+          #     if(anyNA(Inter_Gen_pos_copy)){
+          #       Inter_Gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
+          #     }
+          #
+          #   }
+          #
+          #   random = stats::formula(stats::drop.terms(stats::terms(random),Inter_Gen_pos_copy, keep.response = F))
+          #
+          # } ### End
 
           ### If user provide GID, GID:Env
-          if(!is.null(Inter_Gen_pos) & !is.null(Gen_pos)){
+          #if(!is.null(Inter_Gen_pos) & is.null(Gen_pos)){
             ### use this step to drop the orginal GID and GID:Env
             rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
 
@@ -728,17 +728,213 @@ asreml_utilis <- function(
               }
 
             }
-            Gen_pos_copy = match(rand_term[Gen_pos], rand_termCopy)
+            #Gen_pos_copy = match(rand_term[Gen_pos], rand_termCopy)
 
-            random = stats::formula(stats::drop.terms(stats::terms(random), c(Gen_pos_copy,Inter_Gen_pos_copy), keep.response = F))
+            random = stats::formula(stats::drop.terms(stats::terms(random), Inter_Gen_pos_copy, keep.response = F))
+
+          #}
+
+          #}
+
+        }### End of when only Inter_Gen_pos are provided
+        ## That is user provide only GID:Env
+
+        #####
+        #### When Interaction term and Gen were provided by the user that is GID + GID:Env
+        if(!is.null(Inter_Gen_pos) & !is.null(Gen_pos)){
+          if (length(Check_heter.grp.Rand)==0 & length(Check_heter.grp.Fixed)==0){
+
+            ### if Inter_Gen_pos is greater than 1 (Multiple kernel) but Gen_pos is null
+            #if (length(Inter_Gen_pos)>1){
+
+            #if (exists('G_list')){ Inter_Gen_pos_use = length(G_list) }
+
+
+            for (i in 1:length(G_list)){
+
+              if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
+                #if(exists("G_inv") | exists("GK_inv")){
+                random= stats::update(random,
+                                      paste(paste(paste("~ . +", (paste(paste0(VarCov_str, paste0("(",heter_groups,")")),
+                                                                        paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
+                                                                        sep = ":"))), "+", heter_groups), "+",
+                                            paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+
+
+
+              }else{
+
+                if(isTRUE(grepl("fa", VarCov_str))) {
+                  N_fa = substr(VarCov_str, 3, 100)
+                  #if(exists("GK_inv") | exists("G_inv")){
+                  random= stats::update(random,
+                                        paste(paste(paste("~ . +", (paste(paste0("fa", paste0("(",paste0(heter_groups, ",", N_fa),")")),
+                                                                          paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
+                                                                          sep = ":"))), "+", heter_groups), "+",
+                                              paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+
+
+                }
+
+
+                if(isTRUE(grepl("rr", VarCov_str))) {
+                  N_rr = substr(VarCov_str, 3, 100)
+                  #if(exists("GK_inv") | exists("G_inv")){
+                  random= stats::update(random,
+                                        paste(paste(paste("~ . +", (paste(paste0("rr", paste0("(",paste0(heter_groups, ",", N_rr),")")),
+                                                                          paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
+                                                                          sep = ":"))), "+",  heter_groups), "+",
+                                              paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+
+                }
+
+              }
+
+
+            } ### End
+
+
+
+          } ### when Env is missing in both fixed and random terms
+
+
+          ## If user provide ENV in the fixed term and missing in the random term
+          if (length(Check_heter.grp.Rand)==0 & length(Check_heter.grp.Fixed)==1){
+
+
+            for (i in 1:length(G_list)){
+
+
+              if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
+                random =stats::update(random,
+                                      paste(paste("~ . +",paste(paste0(VarCov_str, paste0("(",heter_groups,")")),
+                                                                paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")), sep = ":")),"+",
+                                            paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+
+
+              } else{
+
+                if(isTRUE(grepl("fa", VarCov_str))) {
+                  N_fa = substr(VarCov_str, 3, 100)
+
+                  random =stats::update(random,
+                                        paste(paste("~ . +",paste(paste0("fa", paste0("(",paste0(heter_groups, ",", N_fa),")")),
+                                                                  paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")), sep = ":")),"+",
+                                              paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+
+
+
+                }
+
+
+                if(isTRUE(grepl("rr", VarCov_str))) {
+                  N_rr = substr(VarCov_str, 3, 100)
+
+                  random =stats::update(random,
+                                        paste(paste("~ . +",paste(paste0("rr", paste0("(",paste0(heter_groups, ",", N_rr),")")),
+                                                                  paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")), sep = ":")), "+",
+                                              paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+
+
+                }
+
+
+              }
+
+
+
+            } ### End
+
+
+          } ### End  If user provide ENV in the fixed term and missing in the random term
+
+          ## If user provide ENV in the random term and missing in the fixed term
+          if (length(Check_heter.grp.Rand)==1 & length(Check_heter.grp.Fixed)==0){
+
+
+            for (i in 1:length(G_list)){
+
+              if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
+
+                random=  stats::update(random,
+                                       paste(paste("~ . +",paste(paste0(VarCov_str, paste0("(",heter_groups,")")),
+                                                                 paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")), sep = ":")), "+",
+                                             paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+              } else{
+
+                if(isTRUE(grepl("fa", VarCov_str))) {
+                  N_fa = substr(VarCov_str, 3, 100)
+
+                  random= stats::update(random,
+                                        paste(paste("~ . +",paste(paste0("fa",paste0("(",paste0(heter_groups, ",", N_fa),")")),
+                                                                  paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")), sep = ":")), "+",
+                                              paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+
+
+                }
+
+
+                if(isTRUE(grepl("rr", VarCov_str))) {
+                  N_rr = substr(VarCov_str, 3, 100)
+
+                  random= stats::update(random,
+                                        paste(paste("~ . +",paste(paste0("rr",paste0("(",paste0(heter_groups, ",", N_rr),")")),
+                                                                  paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")), sep = ":")), "+",
+                                              paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
+
+
+                }
+              }
+
+
+            }
+          }
+
+          # ### If user provide GID:Env
+          # ### use this step to drop the orginal GID:Env
+          # if(!is.null(Inter_Gen_pos) & length(Gen_pos)==0){
+          #   rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
+          #
+          #   rand_termCopy = gsub(" ", "", rand_termCopy)
+          #
+          #   #Inter_Gen_pos_copy = match(rand_term[Inter_Gen_pos], rand_termCopy)
+          #   if(!is.null(heter_groups)){
+          #     Inter_Gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
+          #     if(anyNA(Inter_Gen_pos_copy)){
+          #       Inter_Gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
+          #     }
+          #
+          #   }
+          #
+          #   random = stats::formula(stats::drop.terms(stats::terms(random),Inter_Gen_pos_copy, keep.response = F))
+          #
+          # } ### End
+
+          ### If user provide GID, GID:Env
+          #if(!is.null(Inter_Gen_pos) & !is.null(Gen_pos)){
+          ### use this step to drop the orginal GID and GID:Env
+          rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
+
+          rand_termCopy = gsub(" ", "", rand_termCopy)
+
+          #Inter_Gen_pos_copy = match(rand_term[Inter_Gen_pos], rand_termCopy)
+          if(!is.null(heter_groups)){
+            Inter_Gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
+            if(anyNA(Inter_Gen_pos_copy)){
+              Inter_Gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
+            }
 
           }
+          Gen_pos_copy = match(rand_term[Gen_pos], rand_termCopy)
+
+          random = stats::formula(stats::drop.terms(stats::terms(random), c(Gen_pos_copy,Inter_Gen_pos_copy), keep.response = F))
+
+          #}
 
           #}
 
         }### End of when only Gen_pos and Inter_Gen_pos are provided
         ## That is user provide GID, GID:Env
-
 
       }
 

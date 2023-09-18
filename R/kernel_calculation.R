@@ -9,7 +9,7 @@
 #'
 #' To DO: in the new version, option to impute missing data will be provided
 #'
-#' @param M_matrix_clean
+#' @param M_matrix_clean snp or omics matrix data.
 #' @param center
 #' @param method
 #' @param message
@@ -36,11 +36,22 @@ kernel_calculation <- function(
 
   if(is.null(theta)) theta <- 1
 
-  if(is.null(M_matrix_clean)){stop(print('object omics is missing'), call. = FALSE)}
+  if(is.null(M_matrix_clean)){
 
-  if(all(class(M_matrix_clean)!= c("matrix", "array", "omic_matrix"))) {
-    stop(print('Data is not class matrix'), call. = FALSE)
+    stop(print(paste(msg,' object omics/M_matrix is missing. We fix it')), call. = FALSE)
+
+
+    }
+
+  # if(all(class(M_matrix_clean)!= c("matrix", "array", "omic_matrix"))) {
+  #   stop(print('Data is not class matrix'), call. = FALSE)
+  # }
+
+  if(class(M_matrix_clean)!= c("matrix")) {
+    M_matrix_clean = as.matrix(M_matrix_clean)
+    stop(print(paste(msg,' M_matrix is not class matrix. We fix it')), call. = FALSE)
   }
+
   if (any(is.na(M_matrix_clean))){
     stop(print(paste(msg,' Missing value is not expected.')), call. = FALSE)
     }

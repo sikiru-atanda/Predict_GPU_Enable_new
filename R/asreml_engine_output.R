@@ -32,8 +32,8 @@ asreml_mod_output <- function(
          gen_name = NULL,
          VarCov_str = NULL,
          heter_resid = NULL,
-         #pworkspace= 1e06,
-         workspace = 1e08,
+         pworkspace= 1e09,
+         #workspace = 1e08,
          maxit = 50,
          ...)
 {
@@ -276,13 +276,13 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 } #### End var_Covar
 
 ### Predicted Values
-pred_value <- asreml::predict.asreml(mod, classify=gen_name, sed=FALSE)$pvals
+pred_value <- asreml::predict.asreml(mod, classify=gen_name, sed=FALSE, pworkspace=  pworkspace)$pvals
 
 # if (is.null(heter_groups) & is.null(VarCov_str)){Inter_Gen_pos= NULL}
 # if(length(Gen_pos) == length(rand_term)){Inter_Gen_pos= NULL}
 if(!is.null(Inter_Gen_pos)){
 
-  pred_heter_groups <- asreml::predict.asreml(mod, classify= rand_term[[Inter_Gen_pos]], sed=FALSE)$pvals
+  pred_heter_groups <- asreml::predict.asreml(mod, classify= rand_term[[Inter_Gen_pos]], sed=FALSE, pworkspace=  pworkspace)$pvals
 
 }
 ### Results
