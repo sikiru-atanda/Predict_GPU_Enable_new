@@ -16,7 +16,7 @@
 #' @export
 #'
 #' @examples
-grm_kernel_diagnostic_check <- function(grm_kernel_data = NULL,
+grm_kernel_diagnostic_fix <- function(grm_kernel_data = NULL,
                               high_diag_cut_off = 1.2,
                               low_diag_cut_off = 0.8,
                               duplicate_cut_off = 0.95,

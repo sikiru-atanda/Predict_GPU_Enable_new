@@ -45,7 +45,7 @@ gen_name = "GID"
 
 pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR","F5I", "B5I"), ])
 
-pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR"), ])
+#pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR"), ])
 
 COP = as.matrix(COP)
 

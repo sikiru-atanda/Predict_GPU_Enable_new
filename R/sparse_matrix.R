@@ -27,8 +27,8 @@ res_sparse <- data.frame(Row = t(row(grm_kernel_data))[t(which)],
 res_sparse <- as.matrix(res_sparse)
 
 # # Add attributes.
-# attr(sparse_frame, "rowNames") <- rownames(grm_kernel_data)
-# attr(sparse_frame, "colNames") <- colnames(grm_kernel_data)
+attr(res_sparse, "rowNames") <- rownames(grm_kernel_data)
+attr(res_sparse, "colNames") <- colnames(grm_kernel_data)
 
 return(res_sparse)
 

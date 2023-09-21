@@ -77,6 +77,16 @@
 #' @param pworkspace allocate memory for predict function in asreml
 #' @param bending this is important when the relationship matrix is not positive definitive. It fix it for the user. it has be TRUE
 #' @param maxit number of iteration for asreml
+#' @param pedigree_matrix
+#' @param bend_value
+#' @param blending
+#' @param blending_value
+#' @param high_diag_cut_off
+#' @param low_diag_cut_off
+#' @param duplicate_cut_off
+#' @param rcn_cutoff
+#' @param optimize_diagonal
+#' @param optimize_duplicate
 #' @param ...
 #'
 #' @return
@@ -93,6 +103,7 @@ model_execute <- function(
     omic3_data = NULL,
     gmatrix= NULL,
     gkernel = NULL,
+    pedigree_matrix = NULL,
     omic1_kernel = NULL,
     omic2_kernel = NULL,
     omic3_kernel = NULL,
@@ -151,18 +162,30 @@ model_execute <- function(
     rand_term_model_bayesian = NULL,
     core = NULL,
     engine = NULL,
-    message = TRUE,
     center = TRUE,
     workspace = 1e08,
     pworkspace= 1e06,
     maxit = 50,
     bending = TRUE,
+    bend_value = 0.01,
+    blending = FALSE,
+    blending_value = 0.02,
+    high_diag_cut_off = 1.2,
+    low_diag_cut_off = 0.8,
+    duplicate_cut_off = 0.95,
+    rcn_cutoff = 1e-12,
+    optimize_diagonal = FALSE,
+    optimize_duplicate = FALSE,
+    message= TRUE,
     ...
 ) {
 
     msg <- sprintf("==================================================\n")
     ### Get clean pheno data for model fit
-
+### For any model fit, phenotypic data is compulsory.
+    if (is.null(pheno_data)){
+        stop(print(paste(msg,'phenotypic data is missing')), call. = FALSE)
+    }
 ### Check phenotype_to_model for details
  #    This serve as gateway between phenotype-precheck function and readiness of
  #    the phenotypic data for model fitting.
@@ -184,7 +207,8 @@ model_execute <- function(
  ## Check if the pheno_data in the pheno_clean is declared model fit
  if(attr(pheno_clean[[1]], "cleared")!="for_model_fit" && all(class(pheno_clean[[1]])!=c("data.frame", "phenotype"))) {
 
-    stop('pheno_data is not phenotype data')
+     stop(print(paste(msg,'pheno_data is not phenotype data')), call. = FALSE)
+
  }
 
 
@@ -434,39 +458,89 @@ model_execute <- function(
      if(!is.null(gmatrix)){
 
          gmatrix_checked <- grm_kernel_precheck(grm_kernel_data= gmatrix,
-                                                message= message,
-                                                bending = bending)
+                                                pedigree_matrix = pedigree_matrix,
+                                                bending = bending,
+                                                bend_value = bend_value,
+                                                blending = blending,
+                                                blending_value = blending_value,
+                                                high_diag_cut_off = high_diag_cut_off,
+                                                low_diag_cut_off = low_diag_cut_off,
+                                                duplicate_cut_off = duplicate_cut_off,
+                                                rcn_cutoff = rcn_cutoff,
+                                                optimize_diagonal = optimize_diagonal,
+                                                optimize_duplicate = optimize_duplicate,
+                                                message = message)
      }
 
 
      if(!is.null(gkernel)){
 
          gkernel_checked <- grm_kernel_precheck(grm_kernel_data= gkernel,
-                                                message= message,
-                                                bending = bending)
+                                                pedigree_matrix = pedigree_matrix,
+                                                bending = bending,
+                                                bend_value = bend_value,
+                                                blending = blending,
+                                                blending_value = blending_value,
+                                                high_diag_cut_off = high_diag_cut_off,
+                                                low_diag_cut_off = low_diag_cut_off,
+                                                duplicate_cut_off = duplicate_cut_off,
+                                                rcn_cutoff = rcn_cutoff,
+                                                optimize_diagonal = optimize_diagonal,
+                                                optimize_duplicate = optimize_duplicate,
+                                                message = message)
      }
 
 
      if(!is.null(omic1_kernel)){
 
          omic1_kernel_checked <- grm_kernel_precheck(grm_kernel_data= omic1_kernel,
-                                                     message= message,
-                                                     bending = bending)
+                                                     pedigree_matrix = pedigree_matrix,
+                                                     bending = bending,
+                                                     bend_value = bend_value,
+                                                     blending = blending,
+                                                     blending_value = blending_value,
+                                                     high_diag_cut_off = high_diag_cut_off,
+                                                     low_diag_cut_off = low_diag_cut_off,
+                                                     duplicate_cut_off = duplicate_cut_off,
+                                                     rcn_cutoff = rcn_cutoff,
+                                                     optimize_diagonal = optimize_diagonal,
+                                                     optimize_duplicate = optimize_duplicate,
+                                                     message = message)
      }
 
      if(!is.null(omic2_kernel)){
 
          omic2_kernel_checked <- grm_kernel_precheck(grm_kernel_data= omic2_kernel,
-                                                     message= message,
-                                                     bending = bending)
+                                                     pedigree_matrix = pedigree_matrix,
+                                                     bending = bending,
+                                                     bend_value = bend_value,
+                                                     blending = blending,
+                                                     blending_value = blending_value,
+                                                     high_diag_cut_off = high_diag_cut_off,
+                                                     low_diag_cut_off = low_diag_cut_off,
+                                                     duplicate_cut_off = duplicate_cut_off,
+                                                     rcn_cutoff = rcn_cutoff,
+                                                     optimize_diagonal = optimize_diagonal,
+                                                     optimize_duplicate = optimize_duplicate,
+                                                     message = message)
      }
 
 
      if(!is.null(omic3_kernel)){
 
          omic3_kernel_checked <- grm_kernel_precheck(grm_kernel_data= omic3_kernel,
-                                                     message= message,
-                                                     bending = bending)
+                                                     pedigree_matrix = pedigree_matrix,
+                                                     bending = bending,
+                                                     bend_value = bend_value,
+                                                     blending = blending,
+                                                     blending_value = blending_value,
+                                                     high_diag_cut_off = high_diag_cut_off,
+                                                     low_diag_cut_off = low_diag_cut_off,
+                                                     duplicate_cut_off = duplicate_cut_off,
+                                                     rcn_cutoff = rcn_cutoff,
+                                                     optimize_diagonal = optimize_diagonal,
+                                                     optimize_duplicate = optimize_duplicate,
+                                                     message = message)
      }
 ################################################################
  ##### Pheno to geno match
@@ -1428,7 +1502,8 @@ model_execute <- function(
                                      core = core,
                                      pworkspace= pworkspace,
                                      workspace = workspace,
-                                     maxit = maxit)
+                                     maxit = maxit,
+                                     engine = engine)
 
         res_model_output <- asreml_mod_output(
                                     mod_asreml = mod,
@@ -1461,7 +1536,8 @@ model_execute <- function(
                                              core = core,
                                              pworkspace= pworkspace,
                                              workspace = workspace,
-                                             maxit = maxit)
+                                             maxit = maxit,
+                                             engine = engine)
 
                          res_model_output <- asreml_mod_output(
                              mod_asreml = mod,
@@ -1557,7 +1633,8 @@ model_execute <- function(
                                    core = core,
                                    pworkspace= pworkspace,
                                    workspace = workspace,
-                                   maxit = maxit)
+                                   maxit = maxit,
+                                   engine = engine)
 
                res_model_output <- asreml_mod_output(
                    mod_asreml = mod,
@@ -1649,7 +1726,8 @@ model_execute <- function(
                                      core = core,
                                      pworkspace= pworkspace,
                                      workspace = workspace,
-                                     maxit = maxit)
+                                     maxit = maxit,
+                                     engine = engine)
 
                  res_model_output <- asreml_mod_output(
                      mod_asreml = mod,
@@ -1745,7 +1823,8 @@ model_execute <- function(
                                      core = core,
                                      pworkspace= pworkspace,
                                      workspace = workspace,
-                                     maxit = maxit)
+                                     maxit = maxit,
+                                     engine = engine)
 
                  res_model_output <- asreml_mod_output(
                      mod_asreml = mod,
@@ -1902,7 +1981,8 @@ model_execute <- function(
                                      core = core,
                                      pworkspace= pworkspace,
                                      workspace = workspace,
-                                     maxit = maxit)
+                                     maxit = maxit,
+                                     engine = engine)
 
                  res_model_output <- asreml_mod_output(
                      mod_asreml = mod,
@@ -1936,7 +2016,8 @@ model_execute <- function(
                                         weights = weights,
                                         core = core,
                                         workspace = workspace,
-                                        maxit = maxit)
+                                        maxit = maxit,
+                                        engine = engine)
 
                     res_model_output <- asreml_mod_output(
                         mod_asreml = mod,
@@ -2096,7 +2177,8 @@ model_execute <- function(
                                          core = core,
                                          pworkspace= pworkspace,
                                          workspace = workspace,
-                                         maxit = maxit)
+                                         maxit = maxit,
+                                         engine = engine)
 
                      res_model_output <- asreml_mod_output(
                          mod_asreml = mod,
@@ -2131,7 +2213,8 @@ model_execute <- function(
                                              core = core,
                                              pworkspace= pworkspace,
                                              workspace = workspace,
-                                             maxit = maxit)
+                                             maxit = maxit,
+                                             engine = engine)
 
                          res_model_output <- asreml_mod_output(
                              mod_asreml = mod,
@@ -2295,7 +2378,8 @@ model_execute <- function(
                                          core = core,
                                          pworkspace= pworkspace,
                                          workspace = workspace,
-                                         maxit = maxit)
+                                         maxit = maxit,
+                                         engine = engine)
 
                      res_model_output <- asreml_mod_output(
                          mod_asreml = mod,
@@ -2329,7 +2413,8 @@ model_execute <- function(
                                              weights = weights,
                                              core = core,
                                              workspace = workspace,
-                                             maxit = maxit)
+                                             maxit = maxit,
+                                             engine = engine)
 
                          res_model_output <- asreml_mod_output(
                              mod_asreml = mod,
@@ -2430,7 +2515,8 @@ model_execute <- function(
                                      core = core,
                                      pworkspace= pworkspace,
                                      workspace = workspace,
-                                     maxit = maxit)
+                                     maxit = maxit,
+                                     engine = engine)
 
                  res_model_output <- asreml_mod_output(
                      mod_asreml = mod,
@@ -2533,7 +2619,8 @@ model_execute <- function(
                                      core = core,
                                      pworkspace= pworkspace,
                                      workspace = workspace,
-                                     maxit = maxit)
+                                     maxit = maxit,
+                                     engine = engine)
 
                  res_model_output <- asreml_mod_output(
                      mod_asreml = mod,
@@ -2635,7 +2722,8 @@ model_execute <- function(
                                      core = core,
                                      pworkspace= pworkspace,
                                      workspace = workspace,
-                                     maxit = maxit)
+                                     maxit = maxit,
+                                     engine = engine)
 
                  res_model_output <- asreml_mod_output(
                      mod_asreml = mod,
@@ -2802,7 +2890,8 @@ model_execute <- function(
                                          core = core,
                                          pworkspace= pworkspace,
                                          workspace = workspace,
-                                         maxit = maxit)
+                                         maxit = maxit,
+                                         engine = engine)
 
                      res_model_output <- asreml_mod_output(
                          mod_asreml = mod,
@@ -2839,7 +2928,8 @@ model_execute <- function(
                                              core = core,
                                              pworkspace= pworkspace,
                                              workspace = workspace,
-                                             maxit = maxit)
+                                             maxit = maxit,
+                                             engine = engine)
 
                          res_model_output <- asreml_mod_output(
                              mod_asreml = mod,
@@ -3007,7 +3097,8 @@ model_execute <- function(
                                      core = core,
                                      pworkspace= pworkspace,
                                      workspace = workspace,
-                                     maxit = maxit)
+                                     maxit = maxit,
+                                     engine = engine)
 
                  res_model_output <- asreml_mod_output(
                      mod_asreml = mod,
@@ -3044,7 +3135,8 @@ model_execute <- function(
                                          core = core,
                                          pworkspace= pworkspace,
                                          workspace = workspace,
-                                         maxit = maxit)
+                                         maxit = maxit,
+                                         engine = engine)
 
                      res_model_output <- asreml_mod_output(
                          mod_asreml = mod,
@@ -3217,7 +3309,8 @@ model_execute <- function(
                                          core = core,
                                          pworkspace= pworkspace,
                                          workspace = workspace,
-                                         maxit = maxit)
+                                         maxit = maxit,
+                                         engine = engine)
 
                      res_model_output <- asreml_mod_output(
                          mod_asreml = mod,
@@ -3254,7 +3347,8 @@ model_execute <- function(
                                              core = core,
                                              pworkspace= pworkspace,
                                              workspace = workspace,
-                                             maxit = maxit)
+                                             maxit = maxit,
+                                             engine = engine)
 
                          res_model_output <- asreml_mod_output(
                              mod_asreml = mod,
@@ -3362,7 +3456,8 @@ model_execute <- function(
                                      core = core,
                                      pworkspace= pworkspace,
                                      workspace = workspace,
-                                     maxit = maxit)
+                                     maxit = maxit,
+                                     engine = engine)
 
                  res_model_output <- asreml_mod_output(
                      mod_asreml = mod,
@@ -3539,7 +3634,8 @@ model_execute <- function(
                                          core = core,
                                          pworkspace= pworkspace,
                                          workspace = workspace,
-                                         maxit = maxit)
+                                         maxit = maxit,
+                                         engine = engine)
 
                      res_model_output <- asreml_mod_output(
                          mod_asreml = mod,
@@ -3578,7 +3674,8 @@ model_execute <- function(
                                              core = core,
                                              pworkspace= pworkspace,
                                              workspace = workspace,
-                                             maxit = maxit)
+                                             maxit = maxit,
+                                             engine = engine)
 
                          res_model_output <- asreml_mod_output(
                              mod_asreml = mod,

@@ -28,6 +28,7 @@ asreml_herit_varCov <-  function(
 
 ){
 
+  msg <- sprintf("==================================================\n")
 
   vc <- asreml::summary.asreml(model)$varcomp
 
@@ -77,21 +78,21 @@ asreml_herit_varCov <-  function(
     # stop(print(paste(paste("variance component for", as.character(Heter.Grp[VAR_check_Pos]), collapse = " and "),
     #                    "are unstable, refit the model")), call. = FALSE)
 
-    stop(print(paste(paste("variance component for", as.character(rownames(VAR_check)[VAR_check_Pos]), collapse = ","),
-                     "are unstable, refit the model")), call. = FALSE)
+    stop(print(paste(msg, paste(paste("variance component for", as.character(rownames(VAR_check)[VAR_check_Pos]), collapse = ","),
+                     "are unstable, refit the model"))), call. = FALSE)
   } else {
 
     if(length(VAR_check_Pos)==1) {
 
-      stop(print(paste("variance component for", as.character(rownames(VAR_check)[VAR_check_Pos]), collapse = " "),
-                 " is unstable, refix the model"), call. = FALSE)
+      stop(print(paste(msg,paste("variance component for", as.character(rownames(VAR_check)[VAR_check_Pos]), collapse = " "),
+                 " is unstable, refix the model")), call. = FALSE)
 
     }
 
   }
 
   if (any(is.na(vc$std.error))) {
-    stop(print("Some variance component are non estimatable. Refix the model"), call. = FALSE)
+    stop(print(paste(msg, "Some variance component are non estimatable. Refix the model")), call. = FALSE)
   }
 
   #################################################################
@@ -602,6 +603,16 @@ asreml_herit_varCov <-  function(
                  varG_per_omics = varG_per_omics,
                  Residual_Var = VarE)
 
+   names(Result) <-  c("Covariance1",
+                       "Covariance2",
+                       "Correlation1",
+                       "Correlation2",
+                       "Heritability",
+                       "Total_genetic_var",
+                       "varG_per_omics",
+                       "Residual_Var")
+
+
    } else if (exists("G") & (exists("omic1") & exists("omic2"))){
 
      if(exists("omic1")){
@@ -626,6 +637,17 @@ asreml_herit_varCov <-  function(
                    Total_genetic_var = Total_varG,
                    varG_per_omics = varG_per_omics,
                    Residual_Var = VarE)
+
+        names(Result) <- c("Covariance1",
+                           "Covariance2",
+                           "Covariance3",
+                           "Correlation1",
+                           "Correlation2",
+                           "Correlation3",
+                           "Heritability",
+                           "Total_genetic_var",
+                           "varG_per_omics",
+                           "Residual_Var")
 
 
    } else if (exists("G") & (exists("omic1") & exists("omic3"))){
@@ -653,6 +675,16 @@ asreml_herit_varCov <-  function(
                    varG_per_omics = varG_per_omics,
                    Residual_Var = VarE)
 
+     names(Result) <- c("Covariance1",
+                       "Covariance2",
+                       "Covariance3",
+                       "Correlation1",
+                       "Correlation2",
+                       "Correlation3",
+                       "Heritability",
+                       "Total_genetic_var",
+                       "varG_per_omics",
+                       "Residual_Var")
 
    } else if (exists("G") & (exists("omic2") & exists("omic3"))){
 
@@ -679,6 +711,16 @@ asreml_herit_varCov <-  function(
                    varG_per_omics = varG_per_omics,
                    Residual_Var = VarE)
 
+     names(Result) <- c("Covariance1",
+                        "Covariance2",
+                        "Covariance3",
+                        "Correlation1",
+                        "Correlation2",
+                        "Correlation3",
+                        "Heritability",
+                        "Total_genetic_var",
+                        "varG_per_omics",
+                        "Residual_Var")
 
    } else if (exists("omic2") & exists("omic3")){
 
@@ -706,6 +748,15 @@ asreml_herit_varCov <-  function(
                    varG_per_omics = varG_per_omics,
                    Residual_Var = VarE)
 
+     names(Result) <- c("Covariance1",
+                        "Covariance2",
+                        "Correlation1",
+                        "Correlation2",
+                        "Heritability",
+                        "Total_genetic_var",
+                        "varG_per_omics",
+                        "Residual_Var")
+
 
    } else if ((exists("omic1") & exists("omic2"))){
 
@@ -729,6 +780,15 @@ asreml_herit_varCov <-  function(
                    Total_genetic_var = Total_varG,
                    varG_per_omics = varG_per_omics,
                    Residual_Var = VarE)
+
+     names(Result) <- c("Covariance1",
+                        "Covariance2",
+                        "Correlation1",
+                        "Correlation2",
+                        "Heritability",
+                        "Total_genetic_var",
+                        "varG_per_omics",
+                        "Residual_Var")
 
 
    } else if ((exists("omic1") & exists("omic3"))){
@@ -754,6 +814,14 @@ asreml_herit_varCov <-  function(
                    varG_per_omics = varG_per_omics,
                    Residual_Var = VarE)
 
+names(Result) <-  c("Covariance1",
+                    "Covariance2",
+                    "Correlation1",
+                    "Correlation2",
+                    "Heritability",
+                    "Total_genetic_var",
+                    "varG_per_omics",
+                    "Residual_Var")
 
    } else if (exists("omic3") & (exists("omic1") & exists("omic2"))){
 
@@ -785,6 +853,17 @@ asreml_herit_varCov <-  function(
                    Total_genetic_var = Total_varG,
                    varG_per_omics = varG_per_omics,
                    Residual_Var = VarE)
+
+  names(Result) <- c("Covariance1",
+                   "Covariance2",
+                   "Covariance3",
+                   "Correlation1",
+                   "Correlation2",
+                   "Correlation3",
+                   "Heritability",
+                   "Total_genetic_var",
+                   "varG_per_omics",
+                   "Residual_Var")
 
 
    } else {
@@ -823,7 +902,18 @@ asreml_herit_varCov <-  function(
                      varG_per_omics = varG_per_omics,
                      Residual_Var = VarE)
 
-
+  names(Result) <- c("Covariance1",
+                    "Covariance2",
+                    "Covariance3",
+                    "Covariance4",
+                    "Correlation1",
+                    "Correlation2",
+                    "Correlation3",
+                    "Correlation4",
+                    "Heritability",
+                    "Total_genetic_var",
+                    "varG_per_omics",
+                    "Residual_Var")
      }
 
    }
@@ -841,6 +931,12 @@ asreml_herit_varCov <-  function(
                    Heritability = H,
                    Total_genetic_var = Total_varG,
                    Residual_Var = VarE)
+
+  names(Result) <- c("Covariance",
+                   "Correlation",
+                   "Heritability",
+                   "Total_genetic_var",
+                   "Residual_Var")
 
 
    }

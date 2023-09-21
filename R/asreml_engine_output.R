@@ -32,11 +32,14 @@ asreml_mod_output <- function(
          gen_name = NULL,
          VarCov_str = NULL,
          heter_resid = NULL,
-         pworkspace= 1e09,
+         pworkspace= 1e15,
          #workspace = 1e08,
          maxit = 50,
-         ...)
+         ...
+         )
 {
+
+  msg <- sprintf("==================================================\n")
 
   if (!is.null(gkernel)){
     gmatrix = gkernel
@@ -66,6 +69,8 @@ if (!is.null(heter_groups)){
 #ENV_Ids = as.character(unique(pheno_data[, heter_groups]))
 #### Extract Breeding values/genetic effect estimate for all omics
 BV_All = vector(mode = 'list', length = length(G_list))
+
+names(BV_All) <- unlist(G_list)
 
 ##
 for (b in 1:length(G_list)) {
@@ -128,7 +133,8 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
   } else {
 
-    stop(print('No interaction term'), call. = FALSE)
+    stop(print(paste(msg, "No interaction term")), call. = FALSE)
+
     # if(is.null(Inter_Gen_pos)){
     # for (bb in 1:length(G_list)) {
     #
@@ -175,7 +181,7 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
     if(length(VA)< length(Heter.Grp)){
 
-      print(paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive"))
+      message(paste(msg,paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive.")))
     } else{
 
       if(length(VA) == length(Heter.Grp)){
@@ -204,7 +210,7 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
     for (bb in 1:length(G_list)){
       BV_All[[bb]] <- as.data.frame(BV_All[[bb]])
       BV_All[[bb]][, gen_name] <- as.character(stringr::str_split_fixed(rownames(BV_All[[bb]]), "\\)_", 3)[,2])
-
+      rownames( BV_All[[bb]]) = NULL
       BV_All[[bb]] =  BV_All[[bb]][, c(4, 1:2)]
       colnames(BV_All[[bb]])[1:2] <- c(gen_name, "BLUP")
     }
@@ -214,15 +220,19 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
     VAR_check_Pos <- which(vc$bound=="?" | vc$bound=="S")
     if(length(VAR_check_Pos)>1) {
 
-      stop(print( paste(paste("variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" and" ),
-                        " is unstable, refix the model")), call. = FALSE)
+      stop(print(paste(msg, paste(paste("variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" and" ),
+                        " is unstable, refix the model"))), call. = FALSE)
+
+
 
     } else {
 
       if(length(VAR_check_Pos)==1) {
 
-        stop(print(paste(paste("variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" " ),
-                         " is unstable, refix the model")), call. = FALSE)
+        stop(print(paste(msg, paste(paste("variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" " ),
+                         " is unstable, refix the model"))), call. = FALSE)
+
+
 
       }
 
@@ -275,43 +285,140 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
 } #### End var_Covar
 
-### Predicted Values
-pred_value <- asreml::predict.asreml(mod, classify=gen_name, sed=FALSE, pworkspace=  pworkspace)$pvals
+## when variance_covariance structure is not defined by the user and CS is used
+### For variance structure extraction
+if(is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
+
+  for (bb in 1:length(G_list)) {
+
+    BV_All[[bb]] <- as.data.frame(BV_All[[bb]])
+
+    BV_All[[bb]][, gen_name] <- as.character(stringr::str_split_fixed(rownames(BV_All[[bb]]), "\\)_", 3)[,2])
+
+    rownames( BV_All[[bb]]) = NULL
+  }
+
+
+
+  #################################
+  if(!is.null(Inter_Gen_pos)){
+    for (bb in 1:length(G_list)) {
+
+      BV_All[[bb]] <- BV_All[[bb]][, c(4, 1:2)]
+
+      BV_All[[bb]][, heter_groups] <- rep(Heter.Grp, each=length(unique(BV_All[[bb]][, gen_name])))
+
+      BV_All[[bb]] <- BV_All[[bb]][, c(1, 4, 2:3)]
+
+      colnames(BV_All[[bb]])[1:3] <- c(gen_name, heter_groups, "BLUP")
+
+      BV_All[[bb]][, "PEV"] <-  BV_All[[bb]][, "std.error"]^2
+
+    }
+
+  } else {
+
+    stop(print(paste(msg, 'No interaction term')), call. = FALSE)
+
+  }
+
+  #######################################
+
+  Res = asreml_herit_CSM(model= mod,
+                         heter_groups= heter_groups,
+                         heter_resid= heter_resid,
+                         G_list = G_list,
+                         Inter_Gen_pos = Inter_Gen_pos,
+                         Gen_pos = Gen_pos)
+
+
+  VE <-  Res$Residual_Var
+  H <- Res$Heritability
+  varG_matrix = Res$varG_per_omics
+  #VA = Res$Genetic_Var
+  Heter.Grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
+
+  for (bb in 1:length(G_list)){
+
+    if(length(G_list)>1){
+      VA = Res$varG_per_omics[bb, ]
+
+    } else {
+      if(length(G_list)==1){
+
+        VA = Res$Total_genetic_var[1, ]
+      }
+
+    }
+
+    if(length(VA)< length(Heter.Grp)){
+
+      print(paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive"))
+    } else{
+
+      if(length(VA) == length(Heter.Grp)){
+
+        BV_All[[bb]][, "Reliability"] = NA
+        #BV$Reliability = NA
+        for (i in 1:length(VA)) {
+
+          BV_All[[bb]][, "Reliability"] <- ifelse(BV_All[[bb]][, heter_groups]%in% Heter.Grp[i],
+                                                  round(1 - BV_All[[bb]][, "PEV"]/VA[i],6), BV_All[[bb]][, "Reliability"])
+
+        }
+      } else {
+
+        stop(print(paste(msg, 'Genetic variance is missing')), call. = FALSE)
+
+      }
+
+
+    }
+
+  }
+
+
+} ## End CS
+
+
+### Predicted Values
+pred_value <- asreml::predict.asreml(mod, classify=gen_name, sed=FALSE)$pvals
+gc()
 # if (is.null(heter_groups) & is.null(VarCov_str)){Inter_Gen_pos= NULL}
 # if(length(Gen_pos) == length(rand_term)){Inter_Gen_pos= NULL}
 if(!is.null(Inter_Gen_pos)){
 
-  pred_heter_groups <- asreml::predict.asreml(mod, classify= rand_term[[Inter_Gen_pos]], sed=FALSE, pworkspace=  pworkspace)$pvals
+  pred_heter_groups <- asreml::predict.asreml(mod, classify= rand_term[[Inter_Gen_pos]], sed=FALSE)$pvals
 
 }
 ### Results
 ############################# Coffient cal
 
 ### Unlist each breeding value for multi-omics
-if(length(G_list)>1){
-  for (b in 1:length(G_list)) {
-
-    assign(paste("ebv", G_list[[b]], sep = "_"),  BV_All[[b]])
-
-  }
-
-} else {
-  if(length(G_list)==1){
-    BV_All = BV_All[[1]]
-  }
-
-}
+# if(length(G_list)>1){
+#   for (b in 1:length(G_list)) {
+#
+#     assign(paste("ebv", G_list[[b]], sep = "_"),  BV_All[[b]])
+#
+#   }
+#
+# } else {
+#   if(length(G_list)==1){
+#     BV_All = BV_All[[1]]
+#   }
+#
+# }
 
   ### To get things setup assign the element of
   ## G_list to global enviornment
 
-  for (va in 1:length(G_list)) {
-
-    assign(G_list[[va]], G_list[[va]])
-
-
-  }
+  # for (va in 1:length(G_list)) {
+  #
+  #   assign(G_list[[va]], G_list[[va]])
+  #
+  #
+  # }
 ### Initialize step to calculate coefficient for each omics
 
 if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
@@ -354,158 +461,262 @@ if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
   #}
 if(length(G_list)>1){
 
-  if(exists("G") & exists("omic1")){
+  if(length(intersect(c("G", "omic1"),unlist(G_list)))==length(G_list)){
+  #if(exists("G") & exists("omic1")){
 
-    ebv1 = ebv_G
-    ebv2 = ebv_omic1
+    #ebv1 = ebv_G
+    #ebv2 = ebv_omic1
 
     #### Check for the Generalized and unique Inverse
-    coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*ebv_G$BLUP
+    for (n in 1:length(G_list)) {
+
+    if("G"==names(BV_All)[n]){
+    coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*BV_All[[n]]$BLUP
     coeffRaw_G <- colMeans(coeffRaw_G)
+    }
     ##
-    coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*ebv_omic1$BLUP
+      if("omic1"==names(BV_All)[n]){
+    coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*BV_All[[n]]$BLUP
     coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
+      }
+}
 
+  } else if(length(intersect(c("G", "omic2"),unlist(G_list)))==length(G_list)){
 
-  } else if(exists("G") & exists("omic2")){
-
-    ebv1 = ebv_G
-    ebv2 = ebv_omic2
+    #ebv1 = ebv_G
+    #ebv2 = ebv_omic2
     ###
-    coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*ebv_G$BLUP
-    coeffRaw_G <- colMeans(coeffRaw_G)
+    #### Check for the Generalized and unique Inverse
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*BV_All[[n]]$BLUP
+        coeffRaw_G <- colMeans(coeffRaw_G)
+      }
+      ##
+      if("omic2"==names(BV_All)[n]){
+        coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
+      }
+    }
+
+
+  } else if(length(intersect(c("G", "omic3"),unlist(G_list)))==length(G_list)){
+
+    #ebv1 = ebv_G
+    #ebv2 = ebv_omic3
     ##
-    coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*ebv_omic2$BLUP
-    coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
+    #### Check for the Generalized and unique Inverse
+    for (n in 1:length(G_list)) {
 
+      if("G"==names(BV_All)[n]){
+        coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*BV_All[[n]]$BLUP
+        coeffRaw_G <- colMeans(coeffRaw_G)
+      }
+      ##
+      if("omic3"==names(BV_All)[n]){
+        coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
+      }
+    }
 
-  } else if(exists("G") & exists("omic3")){
+  } else if(length(intersect(c("omic1", "omic2"),unlist(G_list)))==length(G_list)){
 
-    ebv1 = ebv_G
-    ebv2 = ebv_omic3
+    #ebv1 = ebv_omic1
+    #ebv2 = ebv_omic2
     ##
-    coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*ebv_G$BLUP
-    coeffRaw_G <- colMeans(coeffRaw_G)
+    #### Check for the Generalized and unique Inverse
+    for (n in 1:length(G_list)) {
+
+      if("omic1"==names(BV_All)[n]){
+        coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
+      }
+      ##
+      if("omic2"==names(BV_All)[n]){
+        coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
+      }
+    }
+
+  } else if(length(intersect(c("omic1", "omic3"),unlist(G_list)))==length(G_list)){
+
+    #ebv1 = ebv_omic1
+    #ebv2 = ebv_omic3
     ##
-    coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*ebv_omic3$BLUP
-    coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
+    for (n in 1:length(G_list)) {
 
-  } else if(exists("omic1") & exists("omic2")){
+      if("omic1"==names(BV_All)[n]){
+        coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
+      }
+      ##
+      if("omic3"==names(BV_All)[n]){
+        coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
+      }
+    }
 
-    ebv1 = ebv_omic1
-    ebv2 = ebv_omic2
+
+  } else if(length(intersect(c("omic2", "omic3"),unlist(G_list)))==length(G_list)){
+
+    #ebv1 = ebv_omic2
+    #ebv2 = ebv_omic3
+
+    for (n in 1:length(G_list)) {
+
+      if("omic2"==names(BV_All)[n]){
+        coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
+      }
+      ##
+      if("omic3"==names(BV_All)[n]){
+        coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic2_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
+      }
+    }
+
+  } else if(length(intersect(c("G","omic1", "omic2"),unlist(G_list)))==length(G_list)){
+
+    #ebv1 = ebv_G
+    #ebv2 = ebv_omic1
+    #ebv3 = ebv_omic2
+
+
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*BV_All[[n]]$BLUP
+        coeffRaw_G <- colMeans(coeffRaw_G)
+      }
+
+      if("omic1"==names(BV_All)[n]){
+        coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
+      }
+      ##
+      if("omic2"==names(BV_All)[n]){
+        coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
+      }
+    }
     ##
-    coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*ebv_omic1$BLUP
-    coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
-    ##
-    coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*ebv_omic2$BLUP
-    coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
 
-  } else if(exists("omic1") & exists("omic3")){
+  } else if(length(intersect(c("G","omic1", "omic3"),unlist(G_list)))==length(G_list)){
 
-    ebv1 = ebv_omic1
-    ebv2 = ebv_omic3
-    ##
-    coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*ebv_omic1$BLUP
-    coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
-    ##
-    coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*ebv_omic3$BLUP
-    coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
-
-
-  } else if(exists("omic2") & exists("omic3")){
-
-    ebv1 = ebv_omic2
-    ebv2 = ebv_omic3
-
-    coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*ebv_omic2$BLUP
-    coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
-    ##
-    coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*ebv_omic3$BLUP
-    coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
-
-  } else if(exists("G") & (exists("omic1") & exists("omic2"))){
-
-    ebv1 = ebv_G
-    ebv2 = ebv_omic1
-    ebv3 = ebv_omic2
-
-    coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*ebv_G$BLUP
-    coeffRaw_G <- colMeans(coeffRaw_G)
-    ##
-    coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*ebv_omic1$BLUP
-    coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
+    # ebv1 = ebv_G
+    # ebv2 = ebv_omic1
+    # ebv3 = ebv_omic3
     ###
-    coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*ebv_omic2$BLUP
-    coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
-    ##
+    for (n in 1:length(G_list)) {
 
-  } else if(exists("G") & (exists("omic1") & exists("omic3"))){
+      if("G"==names(BV_All)[n]){
+        coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*BV_All[[n]]$BLUP
+        coeffRaw_G <- colMeans(coeffRaw_G)
+      }
 
-    ebv1 = ebv_G
-    ebv2 = ebv_omic1
-    ebv3 = ebv_omic3
+      if("omic1"==names(BV_All)[n]){
+        coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
+      }
+      ##
+      if("omic3"==names(BV_All)[n]){
+        coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
+      }
+    }
+
+  } else if(length(intersect(c("G","omic2", "omic3"),unlist(G_list)))==length(G_list)){
+
+    # ebv1 = ebv_G
+    # ebv2 = ebv_omic2
+    # ebv3 = ebv_omic3
+
     ###
-    coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*ebv_G$BLUP
-    coeffRaw_G <- colMeans(coeffRaw_G)
-    ##
-    coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*ebv_omic1$BLUP
-    coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*BV_All[[n]]$BLUP
+        coeffRaw_G <- colMeans(coeffRaw_G)
+      }
+
+      ##
+      if("omic2"==names(BV_All)[n]){
+        coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
+      }
+      ##
+
+      if("omic3"==names(BV_All)[n]){
+        coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
+      }
+    }
+
+
+  } else if(length(intersect(c("omic1","omic2", "omic3"),unlist(G_list)))==length(G_list)){
+
+    # ebv1 = ebv_omic1
+    # ebv2 = ebv_omic2
+    # ebv3 = ebv_omic3
+
     ###
-    coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*ebv_omic3$BLUP
-    coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
+    for (n in 1:length(G_list)) {
 
-  } else if(exists("G") & (exists("omic2") & exists("omic3"))){
+      if("omic1"==names(BV_All)[n]){
+        coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
+      }
 
-    ebv1 = ebv_G
-    ebv2 = ebv_omic2
-    ebv3 = ebv_omic3
+      ##
+      if("omic2"==names(BV_All)[n]){
+        coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
+      }
+      ##
 
-    ###
-    coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*ebv_G$BLUP
-    coeffRaw_G <- colMeans(coeffRaw_G)
-    ##
-    coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*ebv_omic2$BLUP
-    coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
-    ###
-    coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*ebv_omic3$BLUP
-    coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
-
-  } else if(exists("omic1") & (exists("omic2") & exists("omic3"))){
-
-    ebv1 = ebv_omic1
-    ebv2 = ebv_omic2
-    ebv3 = ebv_omic3
-
-    coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*ebv_omic1$BLUP
-    coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
-    ##
-    coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*ebv_omic2$BLUP
-    coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
-    ###
-    coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*ebv_omic3$BLUP
-    coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
+      if("omic3"==names(BV_All)[n]){
+        coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*BV_All[[n]]$BLUP
+        coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
+      }
+    }
 
   } else {
 
-    if((exists("G") & exists("omic1")) & (exists("omic2") & exists("omic3"))){
+    if(length(intersect(c("G","omic1", "omic2", "omic3"),unlist(G_list)))==length(G_list)){
 
-      ebv1 = ebv_G
-      ebv2 = ebv_omic1
-      ebv3 = ebv_omic2
-      ebv4 = ebv_omic3
+      # ebv1 = ebv_G
+      # ebv2 = ebv_omic1
+      # ebv3 = ebv_omic2
+      # ebv4 = ebv_omic3
 
-      coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*ebv_G$BLUP
-      coeffRaw_G <- colMeans(coeffRaw_G)
       ###
-      coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*ebv_omic1$BLUP
-      coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
-      ##
-      coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*ebv_omic2$BLUP
-      coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
-      ###
-      coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*ebv_omic3$BLUP
-      coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
+      for (n in 1:length(G_list)) {
+
+        if("G"==names(BV_All)[n]){
+          coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*BV_All[[n]]$BLUP
+          coeffRaw_G <- colMeans(coeffRaw_G)
+        }
+
+
+        if("omic1"==names(BV_All)[n]){
+          coeffRaw_omic1 = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*BV_All[[n]]$BLUP
+          coeffRaw_omic1 <- colMeans(coeffRaw_omic1)
+        }
+
+        ##
+        if("omic2"==names(BV_All)[n]){
+          coeffRaw_omic2 = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*BV_All[[n]]$BLUP
+          coeffRaw_omic2 <- colMeans(coeffRaw_omic2)
+        }
+        ##
+
+        if("omic3"==names(BV_All)[n]){
+          coeffRaw_omic3 = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*BV_All[[n]]$BLUP
+          coeffRaw_omic3 <- colMeans(coeffRaw_omic3)
+        }
+      }
 
     }
 
@@ -516,24 +727,24 @@ if(length(G_list)>1){
   if(!is.null(gmatrix)){
 
 
-    coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*BV_All$BLUP
+    coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*BV_All[[1]]$BLUP
 
   } else if(!is.null(gkernel)){
 
 
-    coeffRaw_G = solve(t(gkernel)*gkernel)*t(gkernel)*BV_All$BLUP
+    coeffRaw_G = solve(t(gkernel)*gkernel)*t(gkernel)*BV_All[[1]]$BLUP
 
   } else if(!is.null(omic1_kernel)){
 
-    coeffRaw_G = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*BV_All$BLUP
+    coeffRaw_G = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*BV_All[[1]]$BLUP
 
   } else if(!is.null(omic2_kernel)){
 
-    coeffRaw_G = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*BV_All$BLUP
+    coeffRaw_G = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*BV_All[[1]]$BLUP
 
   } else if(!is.null(omic3_kernel)){
 
-    coeffRaw_G = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*BV_All$BLUP
+    coeffRaw_G = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*BV_All[[1]]$BLUP
   }
 
 }
@@ -548,7 +759,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
     Result = list(call=str.mod,
                   mod=mod,
-                  EBV=BV_All,
+                  EBV=BV_All[[1]]$BLUP,
                   pred_value =pred_value,
                   pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_G,
@@ -563,7 +774,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
     Result = list(call=str.mod,
                   mod=mod,
-                  EBV = BV_All,
+                  EBV = BV_All[[1]]$BLUP,
                   pred_value =pred_value,
                   pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_omic1,
@@ -578,7 +789,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
     Result = list(call = str.mod,
                   mod = mod,
-                  EBV = BV_All,
+                  EBV = BV_All[[1]]$BLUP,
                   pred_value =pred_value,
                   pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_omic2,
@@ -594,7 +805,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
     Result = list(call=str.mod,
                   mod=mod,
-                  EBV=BV_All,
+                  EBV=BV_All[[1]]$BLUP,
                   pred_value =pred_value,
                   pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_omic3,
@@ -607,6 +818,18 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   COV=Res$Covariance)
 
   } else if (!is.null(gmatrix) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        ebv_G = BV_All[[n]]$BLUP
+      }
+
+      if("omic1"==names(BV_All)[n]){
+        ebv_omic1 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -627,7 +850,21 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   CORR2= Res$Correlation2,
                   COV2=Res$Covariance2)
 
+    rm(ebv_G, ebv_omic1)
+
   } else if (!is.null(gmatrix) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        ebv_G = BV_All[[n]]$BLUP
+      }
+
+      if("omic2"==names(BV_All)[n]){
+        ebv_omic2 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -648,7 +885,21 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   CORR2= Res$Correlation2,
                   COV2=Res$Covariance2)
 
+    rm(ebv_G, ebv_omic2)
+
   } else if (!is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        ebv_G = BV_All[[n]]$BLUP
+      }
+
+      if("omic3"==names(BV_All)[n]){
+        ebv_omic3 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -669,7 +920,24 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   CORR2= Res$Correlation2,
                   COV2=Res$Covariance2)
 
+    rm(ebv_G, ebv_omic3)
   } else if (!is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        ebv_G = BV_All[[n]]$BLUP
+      }
+
+      if("omic1"==names(BV_All)[n]){
+        ebv_omic1 = BV_All[[n]]$BLUP
+      }
+
+      if("omic2"==names(BV_All)[n]){
+        ebv_omic2 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -694,7 +962,25 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   CORR3= Res$Correlation3,
                   COV3=Res$Covariance3)
 
+    rm(ebv_G, ebv_omic1, ebv_omic2)
+
   } else if (!is.null(gmatrix) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        ebv_G = BV_All[[n]]$BLUP
+      }
+
+      if("omic1"==names(BV_All)[n]){
+        ebv_omic1 = BV_All[[n]]$BLUP
+      }
+
+      if("omic3"==names(BV_All)[n]){
+        ebv_omic3 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -719,7 +1005,25 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   CORR3= Res$Correlation3,
                   COV3=Res$Covariance3)
 
+    rm(ebv_G, ebv_omic1, ebv_omic3)
+
   } else if (!is.null(gmatrix) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        ebv_G = BV_All[[n]]$BLUP
+      }
+
+      if("omic2"==names(BV_All)[n]){
+        ebv_omic2 = BV_All[[n]]$BLUP
+      }
+
+      if("omic3"==names(BV_All)[n]){
+        ebv_omic3 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -744,8 +1048,21 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   CORR3= Res$Correlation3,
                   COV3=Res$Covariance3)
 
+    rm(ebv_G, ebv_omic2, ebv_omic3)
+
   } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
+    for (n in 1:length(G_list)) {
+
+      if("omic1"==names(BV_All)[n]){
+        ebv_omic1 = BV_All[[n]]$BLUP
+      }
+
+      if("omic2"==names(BV_All)[n]){
+        ebv_omic2 = BV_All[[n]]$BLUP
+      }
+
+    }
     Result = list(call=str.mod,
                   mod=mod,
                   EBV_1 =  ebv_omic1,
@@ -765,8 +1082,20 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   CORR2= Res$Correlation2,
                   COV2=Res$Covariance2)
 
-
+rm(ebv_omic1, ebv_omic2)
   } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("omic1"==names(BV_All)[n]){
+        ebv_omic1 = BV_All[[n]]$BLUP
+      }
+
+      if("omic3"==names(BV_All)[n]){
+        ebv_omic3 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -787,8 +1116,21 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   CORR2= Res$Correlation2,
                   COV2=Res$Covariance2)
 
+rm(ebv_omic1, ebv_omic3)
 
   } else if (is.null(gmatrix) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("omic2"==names(BV_All)[n]){
+        ebv_omic2 = BV_All[[n]]$BLUP
+      }
+
+      if("omic3"==names(BV_All)[n]){
+        ebv_omic3 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -809,7 +1151,25 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   CORR2= Res$Correlation2,
                   COV2=Res$Covariance2)
 
+    rm(ebv_omic2, ebv_omic3)
+
   } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("omic1"==names(BV_All)[n]){
+        ebv_omic1 = BV_All[[n]]$BLUP
+      }
+
+      if("omic2"==names(BV_All)[n]){
+        ebv_omic2 = BV_All[[n]]$BLUP
+      }
+
+      if("omic3"==names(BV_All)[n]){
+        ebv_omic3 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -834,9 +1194,30 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   CORR3= Res$Correlation3,
                   COV3=Res$Covariance3)
 
+    rm(ebv_omic1, ebv_omic2, ebv_omic3)
   } else {
 
     if (!is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+      for (n in 1:length(G_list)) {
+
+        if("G"==names(BV_All)[n]){
+          ebv_G = BV_All[[n]]$BLUP
+        }
+
+        if("omic1"==names(BV_All)[n]){
+          ebv_omic1 = BV_All[[n]]$BLUP
+        }
+
+        if("omic2"==names(BV_All)[n]){
+          ebv_omic2 = BV_All[[n]]$BLUP
+        }
+
+        if("omic3"==names(BV_All)[n]){
+          ebv_omic3 = BV_All[[n]]$BLUP
+        }
+
+      }
 
       Result = list(call=str.mod,
                     mod=mod,
@@ -865,6 +1246,8 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     CORR4= Res$Correlation4,
                     COV4=Res$Covariance4)
 
+      rm(ebv_G, ebv_omic1, ebv_omic2, ebv_omic3)
+
     }
   }
 } else if (is.null(VarCov_str) & length(Inter_Gen_pos)==0){
@@ -873,7 +1256,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
     Result = list(call=str.mod,
                   mod=mod,
-                  EBV=BV_All,
+                  EBV= BV_All[[1]]$BLUP,
                   pred_value =pred_value,
                   #pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_G,
@@ -886,7 +1269,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
     Result = list(call=str.mod,
                   mod=mod,
-                  EBV = BV_All,
+                  EBV = BV_All[[1]]$BLUP,
                   pred_value =pred_value,
                   #pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_omic1,
@@ -899,7 +1282,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
     Result = list(call = str.mod,
                   mod = mod,
-                  EBV = BV_All,
+                  EBV = BV_All[[1]]$BLUP,
                   pred_value =pred_value,
                   #pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_omic2,
@@ -913,7 +1296,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
     Result = list(call=str.mod,
                   mod=mod,
-                  EBV=BV_All,
+                  EBV=BV_All[[1]]$BLUP,
                   pred_value =pred_value,
                   #pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_omic3,
@@ -924,6 +1307,18 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   Ve = VE)
 
   } else if (!is.null(gmatrix) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        ebv_G = BV_All[[n]]$BLUP
+      }
+
+      if("omic1"==names(BV_All)[n]){
+        ebv_omic1 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -939,7 +1334,21 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   Va = varG_matrix,
                   Ve = VE)
 
+    rm(ebv_G, ebv_omic1)
+
   } else if (!is.null(gmatrix) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        ebv_G = BV_All[[n]]$BLUP
+      }
+
+      if("omic2"==names(BV_All)[n]){
+        ebv_omic2 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -955,7 +1364,21 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   Va = varG_matrix,
                   Ve = VE)
 
+    rm(ebv_G, ebv_omic2)
+
   } else if (!is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        ebv_G = BV_All[[n]]$BLUP
+      }
+
+      if("omic3"==names(BV_All)[n]){
+        ebv_omic3 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -971,7 +1394,25 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   Va = varG_matrix,
                   Ve = VE)
 
+    rm(ebv_G, ebv_omic3)
+
   } else if (!is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        ebv_G = BV_All[[n]]$BLUP
+      }
+
+      if("omic1"==names(BV_All)[n]){
+        ebv_omic1 = BV_All[[n]]$BLUP
+      }
+
+      if("omic2"==names(BV_All)[n]){
+        ebv_omic2 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -989,7 +1430,25 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   Va = varG_matrix,
                   Ve = VE)
 
+    rm(ebv_G, ebv_omic1, ebv_omic2)
+
   } else if (!is.null(gmatrix) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        ebv_G = BV_All[[n]]$BLUP
+      }
+
+      if("omic1"==names(BV_All)[n]){
+        ebv_omic1 = BV_All[[n]]$BLUP
+      }
+
+      if("omic3"==names(BV_All)[n]){
+        ebv_omic3 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -1007,7 +1466,25 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   Va = varG_matrix,
                   Ve = VE)
 
+    rm(ebv_G, ebv_omic1, ebv_omic3)
+
   } else if (!is.null(gmatrix) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("G"==names(BV_All)[n]){
+        ebv_G = BV_All[[n]]$BLUP
+      }
+
+      if("omic2"==names(BV_All)[n]){
+        ebv_omic2 = BV_All[[n]]$BLUP
+      }
+
+      if("omic3"==names(BV_All)[n]){
+        ebv_omic3 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -1025,7 +1502,21 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   Va = varG_matrix,
                   Ve = VE)
 
+    rm(ebv_G, ebv_omic2, ebv_omic3)
+
   } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("omic1"==names(BV_All)[n]){
+        ebv_omic1 = BV_All[[n]]$BLUP
+      }
+
+      if("omic2"==names(BV_All)[n]){
+        ebv_omic2 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -1041,8 +1532,21 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   Va = varG_matrix,
                   Ve = VE)
 
+    rm(ebv_omic1, ebv_omic2)
 
   } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("omic1"==names(BV_All)[n]){
+        ebv_omic1 = BV_All[[n]]$BLUP
+      }
+
+      if("omic3"==names(BV_All)[n]){
+        ebv_omic3 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -1058,8 +1562,21 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   Va = varG_matrix,
                   Ve = VE)
 
+rm(ebv_omic1, ebv_omic3)
 
   } else if (is.null(gmatrix) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("omic2"==names(BV_All)[n]){
+        ebv_omic2 = BV_All[[n]]$BLUP
+      }
+
+      if("omic3"==names(BV_All)[n]){
+        ebv_omic3 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -1075,7 +1592,25 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   Va = varG_matrix,
                   Ve = VE)
 
+    rm(ebv_omic2, ebv_omic3)
+
   } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+    for (n in 1:length(G_list)) {
+
+      if("omic1"==names(BV_All)[n]){
+        ebv_omic1 = BV_All[[n]]$BLUP
+      }
+
+      if("omic2"==names(BV_All)[n]){
+        ebv_omic2 = BV_All[[n]]$BLUP
+      }
+
+      if("omic3"==names(BV_All)[n]){
+        ebv_omic3 = BV_All[[n]]$BLUP
+      }
+
+    }
 
     Result = list(call=str.mod,
                   mod=mod,
@@ -1093,9 +1628,31 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   Va = varG_matrix,
                   Ve = VE)
 
+    rm(ebv_omic1, ebv_omic2, ebv_omic3)
+
   } else {
 
     if (!is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+      for (n in 1:length(G_list)) {
+
+        if("G"==names(BV_All)[n]){
+          ebv_G = BV_All[[n]]$BLUP
+        }
+
+        if("omic1"==names(BV_All)[n]){
+          ebv_omic1 = BV_All[[n]]$BLUP
+        }
+
+        if("omic2"==names(BV_All)[n]){
+          ebv_omic2 = BV_All[[n]]$BLUP
+        }
+
+        if("omic3"==names(BV_All)[n]){
+          ebv_omic3 = BV_All[[n]]$BLUP
+        }
+
+      }
 
       Result = list(call=str.mod,
                     mod=mod,
@@ -1115,6 +1672,8 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     Va = varG_matrix,
                     Ve = VE)
 
+      rm(ebv_G, ebv_omic1, ebv_omic2, ebv_omic3)
+
     }
   }
     # Result = list(call=str.mod,
@@ -1131,13 +1690,13 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
   } else{
 
   #if (is.null(VarCov_str) & length(rand_inter_Pos)!=0){
-  if (is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
+  if ((is.null(VarCov_str) & length(Inter_Gen_pos)!=0) | (is.null(VarCov_str) & length(Inter_Gen_pos)==0)){
 
     if(!is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV=BV_All,
+                    EBV=BV_All[[1]]$BLUP,
                     pred_value =pred_value,
                     pred_heter_groups = pred_heter_groups,
                     coefficients = coeffRaw_G,
@@ -1150,7 +1709,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV = BV_All,
+                    EBV = BV_All[[1]]$BLUP,
                     pred_value =pred_value,
                     pred_heter_groups = pred_heter_groups,
                     coefficients = coeffRaw_omic1,
@@ -1163,7 +1722,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
       Result = list(call = str.mod,
                     mod = mod,
-                    EBV = BV_All,
+                    EBV = BV_All[[1]]$BLUP,
                     pred_value =pred_value,
                     pred_heter_groups = pred_heter_groups,
                     coefficients = coeffRaw_omic2,
@@ -1177,7 +1736,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV=BV_All,
+                    EBV=BV_All[[1]]$BLUP,
                     pred_value =pred_value,
                     pred_heter_groups = pred_heter_groups,
                     coefficients = coeffRaw_omic3,
@@ -1188,6 +1747,20 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     Ve = VE)
 
     } else if (!is.null(gmatrix) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+      for (n in 1:length(G_list)) {
+
+        if("G"==names(BV_All)[n]){
+          ebv_G = BV_All[[n]]$BLUP
+        }
+
+        if("omic1"==names(BV_All)[n]){
+          ebv_omic1 = BV_All[[n]]$BLUP
+        }
+
+
+      }
+
 
       Result = list(call=str.mod,
                     mod=mod,
@@ -1202,8 +1775,21 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     H2 =H,
                     Va = varG_matrix,
                     Ve = VE)
-
+rm(ebv_G, ebv_omic1)
     } else if (!is.null(gmatrix) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+      for (n in 1:length(G_list)) {
+
+        if("G"==names(BV_All)[n]){
+          ebv_G = BV_All[[n]]$BLUP
+        }
+
+        if("omic2"==names(BV_All)[n]){
+          ebv_omic2 = BV_All[[n]]$BLUP
+        }
+
+
+      }
 
       Result = list(call=str.mod,
                     mod=mod,
@@ -1218,8 +1804,22 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     H2 =H,
                     Va = varG_matrix,
                     Ve = VE)
+      rm(ebv_G, ebv_omic2)
 
     } else if (!is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+      for (n in 1:length(G_list)) {
+
+        if("G"==names(BV_All)[n]){
+          ebv_G = BV_All[[n]]$BLUP
+        }
+
+        if("omic3"==names(BV_All)[n]){
+          ebv_omic3 = BV_All[[n]]$BLUP
+        }
+
+
+      }
 
       Result = list(call=str.mod,
                     mod=mod,
@@ -1235,7 +1835,25 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     Va = varG_matrix,
                     Ve = VE)
 
+      rm(ebv_G, ebv_omic3)
+
     } else if (!is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+      for (n in 1:length(G_list)) {
+
+        if("G"==names(BV_All)[n]){
+          ebv_G = BV_All[[n]]$BLUP
+        }
+
+        if("omic1"==names(BV_All)[n]){
+          ebv_omic1 = BV_All[[n]]$BLUP
+        }
+
+        if("omic2"==names(BV_All)[n]){
+          ebv_omic2 = BV_All[[n]]$BLUP
+        }
+
+      }
 
       Result = list(call=str.mod,
                     mod=mod,
@@ -1252,8 +1870,24 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     H2 =H,
                     Va = varG_matrix,
                     Ve = VE)
-
+rm(ebv_G, ebv_omic1, ebv_omic2)
     } else if (!is.null(gmatrix) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+      for (n in 1:length(G_list)) {
+
+        if("G"==names(BV_All)[n]){
+          ebv_G = BV_All[[n]]$BLUP
+        }
+
+        if("omic1"==names(BV_All)[n]){
+          ebv_omic1 = BV_All[[n]]$BLUP
+        }
+
+        if("omic3"==names(BV_All)[n]){
+          ebv_omic3 = BV_All[[n]]$BLUP
+        }
+
+      }
 
       Result = list(call=str.mod,
                     mod=mod,
@@ -1271,8 +1905,25 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     Va = varG_matrix,
                     Ve = VE)
 
+      rm(ebv_G, ebv_omic1, ebv_omic3)
+
     } else if (!is.null(gmatrix) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
+      for (n in 1:length(G_list)) {
+
+        if("G"==names(BV_All)[n]){
+          ebv_G = BV_All[[n]]$BLUP
+        }
+
+        if("omic2"==names(BV_All)[n]){
+          ebv_omic2 = BV_All[[n]]$BLUP
+        }
+
+        if("omic3"==names(BV_All)[n]){
+          ebv_omic3 = BV_All[[n]]$BLUP
+        }
+
+      }
       Result = list(call=str.mod,
                     mod=mod,
                     EBV_1 = ebv_G,
@@ -1288,8 +1939,21 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     H2 =H,
                     Va = varG_matrix,
                     Ve = VE)
+rm(ebv_G, ebv_omic2, ebv_omic3)
 
     } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+      for (n in 1:length(G_list)) {
+
+        if("omic1"==names(BV_All)[n]){
+          ebv_omic1 = BV_All[[n]]$BLUP
+        }
+
+        if("omic2"==names(BV_All)[n]){
+          ebv_omic2 = BV_All[[n]]$BLUP
+        }
+
+      }
 
       Result = list(call=str.mod,
                     mod=mod,
@@ -1305,8 +1969,20 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     Va = varG_matrix,
                     Ve = VE)
 
-
+rm(ebv_omic1, ebv_omic2)
     } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+
+      for (n in 1:length(G_list)) {
+
+        if("omic1"==names(BV_All)[n]){
+          ebv_omic1 = BV_All[[n]]$BLUP
+        }
+
+        if("omic3"==names(BV_All)[n]){
+          ebv_omic3 = BV_All[[n]]$BLUP
+        }
+
+      }
 
       Result = list(call=str.mod,
                     mod=mod,
@@ -1322,8 +1998,21 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     Va = varG_matrix,
                     Ve = VE)
 
+      rm(ebv_omic1, ebv_omic3)
 
     } else if (is.null(gmatrix) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+      for (n in 1:length(G_list)) {
+
+        if("omic2"==names(BV_All)[n]){
+          ebv_omic2 = BV_All[[n]]$BLUP
+        }
+
+        if("omic3"==names(BV_All)[n]){
+          ebv_omic3 = BV_All[[n]]$BLUP
+        }
+
+      }
 
       Result = list(call=str.mod,
                     mod=mod,
@@ -1339,7 +2028,26 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     Va = varG_matrix,
                     Ve = VE)
 
+      rm(ebv_omic2, ebv_omic3)
+
     } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+      for (n in 1:length(G_list)) {
+
+        if("omic1"==names(BV_All)[n]){
+          ebv_omic1 = BV_All[[n]]$BLUP
+        }
+
+
+        if("omic2"==names(BV_All)[n]){
+          ebv_omic2 = BV_All[[n]]$BLUP
+        }
+
+        if("omic3"==names(BV_All)[n]){
+          ebv_omic3 = BV_All[[n]]$BLUP
+        }
+
+      }
 
       Result = list(call=str.mod,
                     mod=mod,
@@ -1357,9 +2065,33 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                     Va = varG_matrix,
                     Ve = VE)
 
+      rm(ebv_omic1, ebv_omic2, ebv_omic3)
+
     } else {
 
       if (!is.null(gmatrix) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+
+        for (n in 1:length(G_list)) {
+
+          if("G"==names(BV_All)[n]){
+            ebv_G = BV_All[[n]]$BLUP
+          }
+
+          if("omic1"==names(BV_All)[n]){
+            ebv_omic1 = BV_All[[n]]$BLUP
+          }
+
+
+          if("omic2"==names(BV_All)[n]){
+            ebv_omic2 = BV_All[[n]]$BLUP
+          }
+
+          if("omic3"==names(BV_All)[n]){
+            ebv_omic3 = BV_All[[n]]$BLUP
+          }
+
+        }
+
 
         Result = list(call=str.mod,
                       mod=mod,
@@ -1378,6 +2110,8 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                       H2 =H,
                       Va = varG_matrix,
                       Ve = VE)
+
+        rm(ebv_G, ebv_omic1, ebv_omic2, ebv_omic3)
 
       }
     }

@@ -23,6 +23,8 @@
 #' @param optimize_diagonal
 #' @param optimize_duplicate
 #' @param message
+#' @param pedigree_matrix
+#' @param rcn_cutoff  #the reciprocal conditional number of the inverse
 #' @param ...
 grm_kernel_precheck <- function(grm_kernel_data= NULL,
                                 pedigree_matrix = NULL,
@@ -33,6 +35,7 @@ grm_kernel_precheck <- function(grm_kernel_data= NULL,
                                 high_diag_cut_off = 1.2,
                                 low_diag_cut_off = 0.8,
                                 duplicate_cut_off = 0.95,
+                                rcn_cutoff = 1e-12,
                                 optimize_diagonal = FALSE,
                                 optimize_duplicate = FALSE,
                                 message= TRUE,
@@ -84,8 +87,9 @@ if (!is.null(grm_kernel_data)){
 
     if(isFALSE(matrixcalc::is.positive.definite(grm_kernel_data))){
 
-      message(paste(msg,"Relationsip Matrix is not positive definite. Set bending = TRUE to fix it"))
-
+      grm_kernel_data <- as.matrix(Matrix::nearPD(grm_kernel_data, posd.tol= bend_value, trace=FALSE)$mat)
+      #message(paste(msg,"Relationsip Matrix is not positive definite. Set bending = TRUE to fix it"))
+      message(paste(msg,"Relationsip Matrix is not positive definite.\n \t We fix it by bending to make the matrix stable"))
     }
 
   }
@@ -93,7 +97,7 @@ if (!is.null(grm_kernel_data)){
   ### This is important to check even if the user defined blending as FALSE
   if(isFALSE(blending)){
 
-  res = grm_kernel_diagnostic_check(grm_kernel_data = grm_kernel_data,
+  res = grm_kernel_diagnostic_fix(grm_kernel_data = grm_kernel_data,
                                     high_diag_cut_off = high_diag_cut_off,
                                     low_diag_cut_off = low_diag_cut_off,
                                     duplicate_cut_off = duplicate_cut_off,
@@ -101,24 +105,30 @@ if (!is.null(grm_kernel_data)){
                                     optimize_duplicate = optimize_duplicate
   )
 
-    if("potential_off_diag_with_duplicate"%in%names(res)){
+### Also implore the reciprocal conditional number as metric to decide
+  ## ill-conditioned/unstable matrix
+  rcn <- rcond(res$clean_matrix)
+    #if("potential_off_diag_with_duplicate"%in%names(res)){
+    if("potential_off_diag_with_duplicate"%in%names(res) | rcn < rcn_cutoff){
       grm_kernel_data = res$clean_matrix
       ncol_nrow = ncol(grm_kernel_data)
       grm_kernel_data_ <- (1-blending_value)*grm_kernel_data + blending_value*diag(x=1, nrow=ncol_nrow , ncol=ncol_nrow )
 
       ## Repeat the process to ascertain the matrix is stable with no duplicate
-      res = grm_kernel_diagnostic_check(grm_kernel_data = grm_kernel_data_,
+      res = grm_kernel_diagnostic_fix(grm_kernel_data = grm_kernel_data_,
                                         high_diag_cut_off = high_diag_cut_off,
                                         low_diag_cut_off = low_diag_cut_off,
                                         duplicate_cut_off = duplicate_cut_off,
                                         optimize_diagonal = optimize_diagonal,
                                         optimize_duplicate = optimize_duplicate)
 
+      rcn <- rcond(grm_kernel_data_)
+
       ## Check if the matrix is still unstable. Call the attention of the user to provide
       ## another blending_value value.
-      if("potential_off_diag_with_duplicate"%in%names(res)){
-
-        message(paste(msg,"Matrix contain duplicate(s) which might be potential problem.\n \t Change the blending value eg. 0.05  etc."))
+      if("potential_off_diag_with_duplicate"%in%names(res) | rcn < rcn_cutoff){
+        #if("potential_off_diag_with_duplicate"%in%names(res)){
+        message(paste(msg,"Matrix contain duplicate(s) or still ill-conditioned which might be potential problem.\n \t Change the blending value eg. 0.05  etc."))
         ncol_nrow = ncol(grm_kernel_data)
         grm_kernel_data <- (1-blending_value)*grm_kernel_data_ + blending_value*diag(x=1, nrow=ncol_nrow , ncol=ncol_nrow )
 
@@ -127,12 +137,6 @@ if (!is.null(grm_kernel_data)){
         if(isTRUE(message)){
         message(paste(msg,"Matrix contain duplicate(s) which might be potential problem.\n \t We fix it by blending using an identity matrix."))
         }
-      }
-
-
-      if(isTRUE(message)) {
-        message(paste(msg,"Matrix contain duplicate(s) which might be potential problem.\n \t We fix it by blending using an identity matrix."))
-
       }
 
 
@@ -147,7 +151,7 @@ if (!is.null(grm_kernel_data)){
     )
 
     ## Repeat the process to ascertain the matrix is stable with no duplicate
-    res = grm_kernel_diagnostic_check(grm_kernel_data = grm_kernel_data,
+    res = grm_kernel_diagnostic_fix(grm_kernel_data = grm_kernel_data,
                                       high_diag_cut_off = high_diag_cut_off,
                                       low_diag_cut_off = low_diag_cut_off,
                                       duplicate_cut_off = duplicate_cut_off,
