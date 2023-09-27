@@ -521,6 +521,7 @@ asreml_utilis <- function(
           warning(paste(msg, "The number of", heter_groups, " is", NN,  "consider using factor analytic model"), immediate. = TRUE, call. =FALSE)
         }
 
+        ### This check if heterogeneous group/environment/location is present in the fixed term
         if (!is.null(fixed_term)){
           Check_heter.grp.Fixed  = match(heter_groups, fixed_term)
           if(anyNA(Check_heter.grp.Fixed)) {Check_heter.grp.Fixed = NULL}
@@ -543,20 +544,56 @@ asreml_utilis <- function(
         if(!is.null(Inter_Gen_pos)){
           if (length(Check_heter.grp.Rand)==0 & length(Check_heter.grp.Fixed)==0){
 
-            ### if Inter_Gen_pos is greater than 1 (Multiple kernel) but Gen_pos is null
-            #if (length(Inter_Gen_pos)>1){
+            #### Add the environment to the fixed term by default if not provided by the user
+            ## Providing it in fixed term allow for optimal model fit compared to the random term
 
-            #if (exists('G_list')){ Inter_Gen_pos_use = length(G_list) }
+            # Adding fixed factors
+            if (!is.null(fixed_term)) {
+
+
+              ### Update the fixed term if not null
+              fixed =  stats::update(fixed,
+                                     paste("~ . +", heter_groups))
+
+              fixed_term <- strsplit(as.character(fixed[2]), split = "[+]")[[1]]
+
+
+              for (v in 1:length(all.vars(fixed))) {
+                code.asr[1] <- paste(code.asr[1], all.vars(fixed)[v], sep='+')
+              }
+
+
+
+            } else {
+
+              #fixed = heter_groups
+
+              fixed_term <- heter_groups
+
+              code.asr[1] <- paste(code.asr[1], fixed_term, sep='+')
+
+            }
+
+
 
 
             for (i in 1:length(G_list)){
 
                 if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
                   #if(exists("G_inv") | exists("GK_inv")){
-                  random= stats::update(random,
-                                        paste(paste("~ . +", (paste(paste0(VarCov_str, paste0("(",heter_groups,")")),
-                                                                    paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
-                                                                    sep = ":"))), "+", heter_groups))
+                  # ### This add the environment to the random term even when when Env is missing in both fixed and random terms
+                  # random= stats::update(random,
+                  #                       paste(paste("~ . +", (paste(paste0(VarCov_str, paste0("(",heter_groups,")")),
+                  #                                                   paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
+                  #                                                   sep = ":"))), "+", heter_groups))
+
+
+                  ### This add the environment to the fixed term when interaction term was only provided
+                  ## by the user. That is Env is missing in both fixed and random terms
+                  random = stats::update(random,
+                                        paste("~ . +", (paste(paste0(VarCov_str, paste0("(",heter_groups,")")),
+                                                              paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
+                                                              sep = ":"))))
 
 
 
@@ -565,10 +602,15 @@ asreml_utilis <- function(
                   if(isTRUE(grepl("fa", VarCov_str))) {
                     N_fa = substr(VarCov_str, 3, 100)
                     #if(exists("GK_inv") | exists("G_inv")){
-                    random= stats::update(random,
-                                          paste(paste("~ . +", (paste(paste0("fa", paste0("(",paste0(heter_groups, ",", N_fa),")")),
-                                                                      paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
-                                                                      sep = ":"))), "+", heter_groups))
+                    # random= stats::update(random,
+                    #                       paste(paste("~ . +", (paste(paste0("fa", paste0("(",paste0(heter_groups, ",", N_fa),")")),
+                    #                                                   paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
+                    #                                                   sep = ":"))), "+", heter_groups))
+
+                    random=  stats::update(random,
+                                  paste("~ . +", (paste(paste0("fa", paste0("(",paste0(heter_groups, ",", N_fa),")")),
+                                                        paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
+                                                        sep = ":"))))
 
 
                   }
@@ -577,10 +619,15 @@ asreml_utilis <- function(
                   if(isTRUE(grepl("rr", VarCov_str))) {
                     N_rr = substr(VarCov_str, 3, 100)
                     #if(exists("GK_inv") | exists("G_inv")){
+                    # random= stats::update(random,
+                    #                       paste(paste("~ . +", (paste(paste0("rr", paste0("(",paste0(heter_groups, ",", N_rr),")")),
+                    #                                                   paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
+                    #                                                   sep = ":"))), "+", heter_groups))
+
                     random= stats::update(random,
-                                          paste(paste("~ . +", (paste(paste0("rr", paste0("(",paste0(heter_groups, ",", N_rr),")")),
-                                                                      paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
-                                                                      sep = ":"))), "+", heter_groups))
+                                          paste("~ . +", (paste(paste0("rr", paste0("(",paste0(heter_groups, ",", N_rr),")")),
+                                                                paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
+                                                                sep = ":"))))
 
 
                   }
@@ -780,19 +827,47 @@ asreml_utilis <- function(
         if(!is.null(Inter_Gen_pos)){
           if (length(Check_heter.grp.Rand)==0 & length(Check_heter.grp.Fixed)==0){
 
-            ### if Inter_Gen_pos is greater than 1 (Multiple kernel) but Gen_pos is null
-            #if (length(Inter_Gen_pos)>1){
+            #### Add the environment to the fixed term by default if not provided by the user
+            ## Providing it in fixed term allow for optimal model fit compared to the random term
+
+            # Adding fixed factors
+            if (!is.null(fixed_term )) {
+
+              ### Update the fixed term if not null
+              fixed =  stats::update(fixed,
+                                     paste("~ . +", heter_groups))
+
+              fixed_term <- strsplit(as.character(fixed[2]), split = "[+]")[[1]]
+
+
+              for (v in 1:length(all.vars(fixed))) {
+                code.asr[1] <- paste(code.asr[1], all.vars(fixed)[v], sep='+')
+              }
+
+            } else {
+
+              fixed_term <- heter_groups
+
+              code.asr[1] <- paste(code.asr[1], fixed_term, sep='+')
+
+            }
+
+            ###
 
             for (i in 1:length(G_list)){
 
                 # random =stats::update(random, paste(paste("~ . +",paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))),
                 #                                     "+", heter_groups))
 
-              random= stats::update(random,
-                                    paste(paste("~ . +", (paste(paste0("idv", paste0("(",heter_groups,")")),
-                                                                paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
-                                                                sep = ":"))), "+", heter_groups))
+              # random= stats::update(random,
+              #                       paste(paste("~ . +", (paste(paste0("idv", paste0("(",heter_groups,")")),
+              #                                                   paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
+              #                                                   sep = ":"))), "+", heter_groups))
 
+              random= stats::update(random,
+                                    paste("~ . +", (paste(paste0("idv", paste0("(",heter_groups,")")),
+                                                          paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
+                                                          sep = ":"))))
 
             }
 

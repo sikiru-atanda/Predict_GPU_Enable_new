@@ -163,6 +163,7 @@ model_execute <- function(
     core = NULL,
     engine = NULL,
     center = TRUE,
+    scaled = TRUE,
     workspace = 1e08,
     pworkspace= 1e06,
     maxit = 50,

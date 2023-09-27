@@ -181,7 +181,9 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
     if(length(VA)< length(Heter.Grp)){
 
-      message(paste(msg,paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive.")))
+      message(paste( insight::print_color("WARNINGS\n", "blue"),
+                     insight::print_color(paste(msg,paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive.")), "blue")))
+      #message(paste(msg,paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive.")))
     } else{
 
       if(length(VA) == length(Heter.Grp)){
@@ -220,7 +222,12 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
     VAR_check_Pos <- which(vc$bound=="?" | vc$bound=="S")
     if(length(VAR_check_Pos)>1) {
 
-      stop(print(paste(msg, paste(paste("variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" and" ),
+
+      # stop(message(paste( insight::print_color("STOP\n", "red"),
+      #                insight::print_color(paste(msg, paste(paste("variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" and" ),
+      #                                                      " is unstable, refix the model")), "red"))), call. = FALSE)
+      #
+       stop(print(paste(msg, paste(paste("variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" and" ),
                         " is unstable, refix the model"))), call. = FALSE)
 
 
@@ -384,6 +391,14 @@ if(is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
 ### Predicted Values
 pred_value <- asreml::predict.asreml(mod, classify=gen_name, sed=FALSE)$pvals
+
+if(var(pred_value$predicted.value)==0){
+  ### Check if the the across
+
+  message(paste( insight::print_color("WARNING\n", "blue"),
+                 insight::print_color(paste(msg, paste(paste('The average prediction across', heter_groups), paste('is a constant value.\n \t Check the model to change', heter_groups), 'to fixed term ')), "blue")))
+
+}
 gc()
 # if (is.null(heter_groups) & is.null(VarCov_str)){Inter_Gen_pos= NULL}
 # if(length(Gen_pos) == length(rand_term)){Inter_Gen_pos= NULL}

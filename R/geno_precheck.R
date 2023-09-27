@@ -64,11 +64,14 @@ geno_precheck <- function(object_geno = NULL,
 
     # Check row and column names in object_geno.
     if(is.null(rownames(object_geno))){
-      stop("Individual names not assigned to rows of \'object_geno'.")
+
+      stop(print(paste(msg, "Individual names not assigned to rows of \'object_geno'.")), call. = FALSE)
+
     }
 
     if(is.null(colnames(object_geno))){
-      stop("Marker names not assigned to columns of \'object_geno'.")
+      stop(print(paste(msg, "Marker names not assigned to columns of \'object_geno'.")), call. = FALSE)
+
     }
 
     ## Check if allele dosage are in 0, 1, 2 format

@@ -25,11 +25,11 @@
 #' @param geno_omic_object multi-omic data, NA not allowed
 #' @param geno_omic_test_object multi-omic data for testing set if not present in geno_omic_object
 #' @param response  y variables/lables
-#' @param ...
 #' @param core number of ram for paralllel job
 #' @param resample_method_tune
 #' @param number_of_fold_tune
 #' @param N_feature_impo number of feature/ x variables to extract based on the importance/weight
+#' @param ...
 #'
 #' @return
 #' @export
@@ -50,7 +50,6 @@ AI_Xgb <- function(pheno_object=NULL,
                                         L1_tune = NULL),
                    resample_method_tune = "cv", # c("cv","boot")
                    number_of_fold_tune = 5,
-
                    learning_rate = 0.001,
                    max_depth = 6,
                    subsample = 0.5,
