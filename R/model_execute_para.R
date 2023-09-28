@@ -663,12 +663,15 @@ model_execute <- function(
     #    ((!is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL")))))){
 
  #### These models only works with one environment/location
- if(length(pheno_clean[[1]][,gen_name])==length(unique(pheno_clean[[1]][,gen_name]))){
+# if(length(pheno_clean[[1]][,gen_name])==length(unique(pheno_clean[[1]][,gen_name]))){
 
  if((isTRUE(GS_model== "BRR" | GS_model== "BayesA"|  GS_model== "BayesB"| GS_model== "BayesC" | GS_model== "BL") & is.null(rand_term_model_bayesian)) |
     (is.null(GS_model) & length(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))!=0) |
     (!is.null(GS_model) & length(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))!=0)){
 
+     if(length(pheno_clean[[1]][,gen_name])>length(unique(pheno_clean[[1]][,gen_name]))){
+         stop(message(paste(msg, paste(GS_model, 'only works for single location/enviroment.'))), call. = FALSE)
+     }
 
         if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
 
@@ -1362,7 +1365,7 @@ model_execute <- function(
         }
 
  }
-} ## End of  Bayes A, B, C, BRR, BL
+#} ## End of  Bayes A, B, C, BRR, BL
 
  ##########################################################################
  #########################################################################
@@ -1384,6 +1387,10 @@ model_execute <- function(
     (is.null(GS_model) & length(rand_term_model_bayesian%in%c("RKHS", "BRR"))!=0) |
     (!is.null(GS_model) & length(rand_term_model_bayesian%in%c("RKHS", "BRR"))!=0)){
 
+     if(!exists('gkernel_model_ready') | !exists('gmatrix_model_ready') | !exists('omic1_kernel_model_ready') | !exists('omic2_kernel_model_ready') | !exists('omic3_kernel_model_ready')){
+
+         stop(print(paste(msg, "Genomic relationship/kernel matrix is required.")), call. = FALSE)
+     }
 
      if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
 
@@ -3733,10 +3740,13 @@ model_execute <- function(
  # } else {
 
  #### These models only works with one environment/location
- if(length(pheno_clean[[1]][,gen_name])==length(unique(pheno_clean[[1]][,gen_name]))){
+ #if(length(pheno_clean[[1]][,gen_name])==length(unique(pheno_clean[[1]][,gen_name]))){
 
  if(isTRUE(GS_model== "Xgboost" | GS_model== "RandomForest" | GS_model== "PartialLeastSquare" | GS_model== "SupportVectorMachine" | GS_model== "K-NearestNeighbors" | GS_model=="Lasso" | GS_model=="Ridge_Regression"))   {
 
+     if(length(pheno_clean[[1]][,gen_name])>length(unique(pheno_clean[[1]][,gen_name]))){
+         stop(print(paste(msg, paste(GS_model, 'only works for single location/enviroment.'))), call. = FALSE)
+     }
 
  pheno_clean <- ML_undefined_test_train(object_pheno = pheno_clean,
                                         response = response)
@@ -6402,7 +6412,7 @@ model_execute <- function(
 
 }  ### End machine learning
 
- }
+# }
 
  ### if user provide only
 
