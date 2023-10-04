@@ -64,6 +64,11 @@ phenotype_precheck<- function(pheno_data = NULL,
                                  "in the pheno_data did not match with your data.\n\t\t Please check and use apppropriatly"))), call. = FALSE)
 
     }
+
+      if(var(pheno_data[, response], na.rm = TRUE)==0){
+        stop(print(paste(msg,paste(response, "variable has zero variance.\n\t This trait cannot be used for prediction model.\n\t\t Check the raw data and model that generate the BLUEs."))), call. = FALSE)
+
+      }
     ### Check to ensure no NA in the column GID/name
     if (anyNA(pheno_data[, gen_name]) || any(pheno_data[, gen_name]==-999)){
 
