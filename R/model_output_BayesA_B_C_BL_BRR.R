@@ -28,7 +28,9 @@ mod_output_bayes <- function(mod=NULL,
 # sik$ETA_element_name
 # TT = DT$output_files_names
 
-  if(GS_model =="BL") {GS_model = "lambda"}
+  if(GS_model =="BL") {
+    GS_model = "lambda"
+    }
 BIN = mod$output_files_names[grepl("bin", mod$output_files_names)]
 
 ### Extract Error variance

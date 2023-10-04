@@ -663,15 +663,15 @@ model_execute <- function(
     #    ((!is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL")))))){
 
  #### These models only works with one environment/location
-# if(length(pheno_clean[[1]][,gen_name])==length(unique(pheno_clean[[1]][,gen_name]))){
+ if(length(pheno_clean[[1]][,gen_name])==length(unique(pheno_clean[[1]][,gen_name]))){
 
  if((isTRUE(GS_model== "BRR" | GS_model== "BayesA"|  GS_model== "BayesB"| GS_model== "BayesC" | GS_model== "BL") & is.null(rand_term_model_bayesian)) |
     (is.null(GS_model) & length(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))!=0) |
     (!is.null(GS_model) & length(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))!=0)){
 
-     if(length(pheno_clean[[1]][,gen_name])>length(unique(pheno_clean[[1]][,gen_name]))){
-         stop(message(paste(msg, paste(GS_model, 'only works for single location/enviroment.'))), call. = FALSE)
-     }
+     # if(length(pheno_clean[[1]][,gen_name])>length(unique(pheno_clean[[1]][,gen_name]))){
+     #     stop(message(paste(msg, paste(GS_model, 'only works for single location/enviroment.'))), call. = FALSE)
+     # }
 
         if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
 
@@ -1365,7 +1365,7 @@ model_execute <- function(
         }
 
  }
-#} ## End of  Bayes A, B, C, BRR, BL
+} ## End of  Bayes A, B, C, BRR, BL
 
  ##########################################################################
  #########################################################################
@@ -1383,14 +1383,26 @@ model_execute <- function(
  # if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "BRR")) & is.null(rand_term_model_bayesian)) |
  #    ((is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%c("RKHS", "BRR")))) |
  #    ((!is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%c("RKHS", "BRR"))))){
- if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "BRR") | isTRUE(GS_model== "GBLUP")) & is.null(rand_term_model_bayesian)) |
-    (is.null(GS_model) & length(rand_term_model_bayesian%in%c("RKHS", "BRR"))!=0) |
+
+ ## NOTE
+ ## BRR is chaneg to G-BRR
+ ## This is to make distinction between BRR for marker matrix and GBLUP
+# if(!exists('gkernel_model_ready') | !exists('gmatrix_model_ready') | !exists('omic1_kernel_model_ready') | !exists('omic2_kernel_model_ready') | !exists('omic3_kernel_model_ready')){
+ if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "G-BRR") | isTRUE(GS_model== "GBLUP")) & is.null(rand_term_model_bayesian)) |
+ #if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "GBLUP")) & is.null(rand_term_model_bayesian)) |
+     (is.null(GS_model) & length(rand_term_model_bayesian%in%c("RKHS", "BRR"))!=0) |
     (!is.null(GS_model) & length(rand_term_model_bayesian%in%c("RKHS", "BRR"))!=0)){
 
-     if(!exists('gkernel_model_ready') | !exists('gmatrix_model_ready') | !exists('omic1_kernel_model_ready') | !exists('omic2_kernel_model_ready') | !exists('omic3_kernel_model_ready')){
+     ## This is to make distinction between BRR for marker matrix and GBLUP
+     if(GS_model== "G-BRR"){
+         GS_model = "BRR"
 
-         stop(print(paste(msg, "Genomic relationship/kernel matrix is required.")), call. = FALSE)
      }
+     ##
+     # if(!exists('gkernel_model_ready') | !exists('gmatrix_model_ready') | !exists('omic1_kernel_model_ready') | !exists('omic2_kernel_model_ready') | !exists('omic3_kernel_model_ready')){
+     #
+     #     stop(print(paste(msg, "Genomic relationship/kernel matrix is required.")), call. = FALSE)
+     # }
 
      if(((exists('gkernel_model_ready') | exists('gmatrix_model_ready')) & (!exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
 
@@ -3712,7 +3724,7 @@ model_execute <- function(
 
      }
 
-
+#}
  } #### END GBLUP_RKHS, GBLUP_BRR and GBLUP (asreml)
 
  ######################################################
