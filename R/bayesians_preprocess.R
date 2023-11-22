@@ -48,36 +48,46 @@ bayes_parameter_check <- function(
   #if(is.null(nIter) || nIter< 16000){
   if(is.null(nIter) ){
     if(isTRUE(message)){
-    message(paste(msg, "Number of iteration is missing. Default value of 16000 was assigned. \n Check if this appropriate for your data"))
+
+      message(insight::print_color(paste(msg,paste("Number of iteration is missing. Default value of 26000 was assigned. \n Check if this appropriate for your data.")), "blue"))
+
     }
-      nIter = 200
+      nIter <- 200 # 26000
 
   } else {
     nIter< 16000
-    message(paste(msg, "Number of iteration is provided is less than 16000 which we consider optimal. \n Check if this appropriate for your data"))
+    message(paste( insight::print_color("WARNINGS\n", "red"),
+                   insight::print_color(paste(msg,paste("Number of iteration is provided is less than 16000 which we consider optimal. \n Check if this appropriate for your data.")), "red")))
+
   }
 
   #if(is.null(burnIn) || burnIn < 5000){
   if(is.null(burnIn)){
 
     if(isTRUE(message)){
-      message(paste(msg, "Number of burn-in is missing. Default value of 1600 was assigned. \n Check if this appropriate for your data"))
+
+      message(insight::print_color(paste(msg,paste("Number of burn-in is missing. Default value of 1600 was assigned. \n Check if this appropriate for your data.")), "blue"))
+
     }
-      burnIn = 30
+      burnIn <- 50 # 5000
 
   } else {
 
-    nIter< 1600
-    message(paste(msg, "Number of burn-in provided is less than 1600 which we consider optimal. \n Check if this appropriate for your data"))
+    burnIn< 1600
+    message(paste( insight::print_color("WARNINGS\n", "red"),
+                   insight::print_color(paste(msg,paste("Number of burn-in provided is less than 1600 which we consider optimal. \n Check if this appropriate for your data.")), "red")))
+
 
   }
 
   #if(is.null(thin) || thin<10){
   if(is.null(thin)){
     if(message){
-    message(paste(msg, "Number of thining is missing. Default value of 10 was assigned. \n Check if this appropriate for your data"))
+
+      message(insight::print_color(paste(msg,paste("Number of thining is missing. Default value of 10 was assigned. \n Check if this appropriate for your data.")), "blue"))
+
     }
-      thin = 5
+      thin <- 1 # 10
 
   }
 

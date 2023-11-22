@@ -306,7 +306,7 @@ Univariate = output
        # doParallel::registerDoParallel(cl)
        # }
 
-       AI_trcontrol = caret::trainControl(GS_model = "cv",
+       AI_trcontrol = caret::trainControl(method = "cv",
                                           number = 5,
                                           verboseIter = TRUE,
                                           returnData = FALSE,

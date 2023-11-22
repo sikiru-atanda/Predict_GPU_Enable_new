@@ -52,23 +52,29 @@ rm(geno_omic_object)
 
   #cat(' Min (Traning set)', response, '= ', min(mod$y,na.rm=TRUE),'\n')
   #cat(' Min', paste0(paste0("(",response),')'), '= ', min(mod$y,na.rm=TRUE),'\n')
-  trn_min <- paste(paste('Min', '= '), round(min(pheno_object[, response],na.rm=TRUE), 3), sep = "")
+  #trn_min <- paste(paste('Min', '= '), round(min(pheno_object[, response],na.rm=TRUE), 3), sep = "")
   #cat(' Max (Traning set)',response, '= ', max(mod$y,na.rm=TRUE),'\n')
   #cat(' Max', paste0(paste0("(",response),')'), '= ', max(mod$y,na.rm=TRUE),'\n')
-  trn_max <- paste(paste('Max', '= '), round(max(pheno_object[, response],na.rm=TRUE), 3), sep = "")
+  #trn_max <- paste(paste('Max', '= '), round(max(pheno_object[, response],na.rm=TRUE), 3), sep = "")
   #cat(' Variance of phenotypes (TRN)=', round(var(mod$y,na.rm=TRUE),4),'\n')
-  var_trn <- paste('Variance of phenotypes =', round(var(pheno_object[, response],na.rm=TRUE),3))
-  Res_trn <- paste('Residual variance=',round(var(pheno_object[, response] - yhat[,1]),3))
+  #var_trn <- paste('Variance of phenotypes =', round(var(pheno_object[, response],na.rm=TRUE),3))
+  #Res_trn <- paste('Residual variance=',round(var(pheno_object[, response] - yhat[,1]),3))
+
+  trn_min <- round(min(pheno_object[, response],na.rm=TRUE), 3)
+  trn_max <- round(max(pheno_object[, response],na.rm=TRUE), 3)
+  var_trn <- round(var(pheno_object[, response],na.rm=TRUE),3)
+  Res_trn <- round(var(pheno_object[, response] - yhat[,1]),3)
 
   #n<-length(mod$model$y)
 
   if(!is.null(test_set))
   {
 
+  ## Number of Traning
+    n_trn <- n_pheno
 
-    n_trn <- paste('Number of Traning =',n_pheno)
-
-    n_tst <- paste('Number of Testing =',nrow(test_set))
+    ## Number of Testing
+    n_tst <- nrow(test_set)
 
     #pred_acc <-  paste('Prediction Accuarcy =',round(cor(pheno_object[, response],yhat[,1]),3))
 
@@ -82,9 +88,9 @@ rm(geno_omic_object)
 
   }else{
 
-    n_trn <- paste('Number of Traning =', n_pheno)
+    n_trn <-  n_pheno
 
-    n_tst <- paste('Number of Testing =',0)
+    n_tst <- 0
 
     #pred_acc <- paste('Prediction Accu of Training =',round(cor(pheno_object[, response],yhat[, 1]),3))
 
@@ -99,13 +105,16 @@ rm(geno_omic_object)
   }
 
 
+
+
   Stat_Res = as.data.frame(t(data.frame(Min = trn_min,
                                         Max = trn_max,
-                                        Variance = var_trn,
-                                        Residual = Res_trn,
-                                        n_features = nfeatures,
-                                        n_trn = n_trn,
-                                        n_tst = n_tst
+                                        Phenotype_Variance = var_trn,
+                                        Residual_Variance = Res_trn,
+                                        Number_TrainingSet = n_trn,
+                                        Number_TestingSet = n_tst,
+                                        Number_Predictors = nfeatures,
+                                        GS_model = GS_model
                                         )))
   Stat_Res$stat = rownames( Stat_Res)
   Stat_Res =  Stat_Res[, c(2,1)]

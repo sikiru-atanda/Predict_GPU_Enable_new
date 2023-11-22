@@ -48,7 +48,8 @@ pheno_geno_match <- function(object_pheno = NULL,
     ## Execption to that is if user provide coefficient of pedigree for such individuals
     ## and construct H-matrix. This is not considered here for now. This will be implemented
     ## in subsequent version
-    stop(paste(msg, 'Not all individual with phenotypic records has genotypic/omic records.'))
+    #stop(paste(msg, 'Not all individual with phenotypic records has genotypic/omic records.'))
+    stop(print(paste(msg,'Not all individual with phenotypic records has genotypic/omic records.')), call. = FALSE)
 
 
   } else {
@@ -56,7 +57,8 @@ pheno_geno_match <- function(object_pheno = NULL,
   if(isFALSE(all(rownames(object_geno)%in%ID_pheno))){
 
     if(isTRUE(message)){
-      message(paste(msg, 'Not all individual with genotypic/omic records has phenotypic records.'))
+      message(insight::print_color(paste(msg,paste('Not all individual with genotypic/omic records has phenotypic records.')), "blue"))
+
     }
     ### Individuals with genotypic record but with no phenotypic record are assumed to  be
     ## testing set
@@ -82,6 +84,13 @@ pheno_geno_match <- function(object_pheno = NULL,
     }
 
   }
+
+    ##
+    if(isTRUE(all(rownames(object_geno)%in%ID_pheno))){
+
+      object_geno <- object_geno[ID_pheno,  ]
+
+    }
 
   }
 

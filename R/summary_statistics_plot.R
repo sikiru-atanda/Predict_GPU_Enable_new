@@ -21,19 +21,25 @@ summary_statistics_bayes <- function(mod=NULL,
   Eval_met <- matrix(NA, nrow = length(eval_metrics), ncol = 1)
 
   rownames(Eval_met) <- eval_metrics
-  n_pheno <-paste('Number of phenotypes=', (sum(!is.na(mod$model$y))))
+
   #Res <-  cat(tmp,'\n')
 
-
+  #n_pheno <-paste('Number of phenotypes=', (sum(!is.na(mod$model$y))))
   #cat(' Min (Traning set)', response, '= ', min(mod$y,na.rm=TRUE),'\n')
   #cat(' Min', paste0(paste0("(",response),')'), '= ', min(mod$y,na.rm=TRUE),'\n')
-  trn_min <- paste(paste('Min', '= '), round(min(mod$model$y,na.rm=TRUE), 3), sep = "")
+  #trn_min <- paste(paste('Min', '= '), round(min(mod$model$y,na.rm=TRUE), 3), sep = "")
   #cat(' Max (Traning set)',response, '= ', max(mod$y,na.rm=TRUE),'\n')
   #cat(' Max', paste0(paste0("(",response),')'), '= ', max(mod$y,na.rm=TRUE),'\n')
-  trn_max <- paste(paste('Max', '= '), round(max(mod$model$y,na.rm=TRUE), 3), sep = "")
+  #trn_max <- paste(paste('Max', '= '), round(max(mod$model$y,na.rm=TRUE), 3), sep = "")
   #cat(' Variance of phenotypes (TRN)=', round(var(mod$y,na.rm=TRUE),4),'\n')
-  var_trn <- paste('Variance of phenotypes =', round(var(mod$model$y,na.rm=TRUE),3))
-  Res_trn <- paste('Residual variance=',round(mod$model$varE,3))
+  # var_trn <- paste('Variance of phenotypes =', round(var(mod$model$y,na.rm=TRUE),3))
+  # Res_trn <- paste('Residual variance=',round(mod$model$varE,3))
+
+  n_pheno <- sum(!is.na(mod$model$y))
+  trn_min <-  round(min(mod$model$y,na.rm=TRUE), 3)
+  trn_max <- round(max(mod$model$y,na.rm=TRUE), 3)
+  var_trn <- round(var(mod$model$y,na.rm=TRUE),3)
+  Res_trn <- round(mod$model$varE,3)
 
   n<-length(mod$model$y)
 
@@ -41,9 +47,13 @@ summary_statistics_bayes <- function(mod=NULL,
   {
     tst <- which(is.na(mod$model$y))
 
-    n_trn <- paste('Number of Traning =',n-length(tst))
+    n_trn <- n-length(tst)
 
-    n_tst <- paste('Number of Testing =',length(tst))
+    n_tst <- length(tst)
+
+    # n_trn <- paste('Number of Traning =',n-length(tst))
+    #
+    # n_tst <- paste('Number of Testing =',length(tst))
 
     #pred_acc <-  paste('Prediction Accuarcy =',round(cor(mod$model$y[-tst],mod$model$yHat[-tst]),3))
 
@@ -57,9 +67,13 @@ summary_statistics_bayes <- function(mod=NULL,
 
   }else{
 
-    n_trn <- paste('Number of Traning =',n)
+    n_trn <- n
 
-    n_tst <- paste('Number of Testing =',0)
+    n_tst <- 0
+
+    # n_trn <- paste('Number of Traning =',n)
+    #
+    # n_tst <- paste('Number of Testing =',0)
 
     #pred_acc <- paste('Prediction Accu of Training =',round(cor(mod$model$y,mod$model$yHat),3))
 
@@ -72,7 +86,9 @@ summary_statistics_bayes <- function(mod=NULL,
     }
   }
 
-  model = data.frame()
+  #model = data.frame()
+
+  model = c()
 
   for(k in 1:length(mod$model$ETA))
   {
@@ -80,14 +96,16 @@ summary_statistics_bayes <- function(mod=NULL,
         if(!is.null(mod$model$ETA[[k]]$model)){
           #cat(" Coefficientes in ETA[",k,"] (",names(mod$ETA)[k],") modeled as in ", mod$ETA[[k]]$model,"\n")
 
-           model <- rbind(model, mod$model$ETA[[k]]$model)
+           #model <- rbind(model, mod$model$ETA[[k]]$model)
+           model <- cbind(model, mod$model$ETA[[k]]$model)
 
         }
 
 
   }
 
-  colnames(model) = "model_for_Linear_predictors"
+  #colnames(model) = "model_for_Linear_predictors"
+
   # output <- list(Min = trn_min, Max = trn_max, Variance = var_trn,
   #                Residual = Res_trn, n_trn = n_trn, n_tst = n_tst,
   #                pred_acc = pred_acc, model_type = model)
@@ -96,21 +114,24 @@ summary_statistics_bayes <- function(mod=NULL,
   #                     "Residual", "n_trn", "n_tst",
   #                     "pred_acc", "model_type")
 
-  Stat_Res = as.data.frame(t(data.frame(Min = trn_min, Max = trn_max,
-                                        Variance = var_trn,
-                                        Residual = Res_trn,
-                                        n_trn = n_trn,
-                                        n_tst = n_tst,
-                                        model_type = "model_for_Linear_predictors"
+  Stat_Res = as.data.frame(t(data.frame(Min = trn_min,
+                                        Max = trn_max,
+                                        Phenotype_Variance = var_trn,
+                                        Residual_Variance = Res_trn,
+                                        Number_TrainingSet = n_trn,
+                                        Number_TestingSet = n_tst
+                                        #GS_model = model
   )))
   Stat_Res$stat = rownames( Stat_Res)
   Stat_Res =  Stat_Res[, c(2,1)]
   names(Stat_Res)[2] <- "summary"
+  rownames(Stat_Res) <- NULL
 #####
   Eval_met = data.frame(Eval_met)
   Eval_met$stat = rownames(Eval_met)
   Eval_met =  Eval_met[, c(2,1)]
   names(Eval_met)[2] <- "summary"
+  rownames(Eval_met) <- NULL
 ####
   Stat_Res = rbind(Stat_Res, Eval_met)
 

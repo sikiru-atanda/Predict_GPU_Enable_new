@@ -22,6 +22,10 @@
 #' @param test_omic3_data same as test_omic1_data
 #' @param train_set Dataframe with column name of the individual in the training set. This is useful maining
 #' for purpose of cross-validation exercise.
+#' @param omics_data_label  lable/name of the omics data
+#' @param omics_kernel_label  lable/name for the omics_kernel if any
+#' @param train_omics_label
+#' @param test_omics_label
 #' @param test_set Dataframe with column name of the individual in the testing set. Not required
 #' if pheno_data contain individuals (testing set) with no phenotypic record as NA.
 #' @param gmatrix_method two methods are currently available to calculate the genomic relationship matrix
@@ -88,33 +92,39 @@
 #' @param optimize_diagonal
 #' @param optimize_duplicate
 #' @param ...
+
+#' @param scaled
 #'
 #' @return
 #' @export
 #'
 #' @examples
 model_execute <- function(
-    pheno_data=NULL,
+    pheno_data = NULL,
     pheno_data_train = NULL,
     pheno_data_test = NULL,
     geno_data = NULL,
     omic1_data = NULL,
     omic2_data = NULL,
     omic3_data = NULL,
+    omics_data_label = list(omic1_data = NULL, omic2_data = NULL, omic3_data = NULL),
     gmatrix= NULL,
     gkernel = NULL,
     pedigree_matrix = NULL,
     omic1_kernel = NULL,
     omic2_kernel = NULL,
     omic3_kernel = NULL,
+    omics_kernel_label = list(omic1_kernel = NULL, omic2_kernel = NULL, omic3_kernel = NULL),
     train_geno_data = NULL,
     train_omic1_data = NULL,
     train_omic2_data = NULL,
     train_omic3_data = NULL,
+    train_omics_label = list(train_omic1_data = NULL, train_omic2_data = NULL, train_omic3_data = NULL),
     test_geno_data = NULL,
     test_omic1_data = NULL,
     test_omic2_data = NULL,
     test_omic3_data = NULL,
+    test_omics_label = list(test_omic1_data = NULL, test_omic2_data = NULL, test_omic3_data = NULL),
     coefficient_1 = NULL,
     coefficient_2 = NULL,
     coefficient_3 = NULL,
@@ -141,7 +151,7 @@ model_execute <- function(
                  "BayesA",
                  "BayesB",
                  "BayesC",
-                 "BayesL",
+                 "BL",
                  "Xgboost",
                  "RandomForest",
                  "PartialLeastSquare",
@@ -695,12 +705,12 @@ model_execute <- function(
                                         thin = thin)
 
     mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
-                                          response = response,
-                                          weights = weights,
-                                          ETA = ETA$ETA,
-                                          bayes_para = bayes_para,
-                                          verbose = FALSE
-                                          #files_key = "files_key"
+                              response = response,
+                              weights = weights,
+                              ETA = ETA$ETA,
+                              bayes_para = bayes_para,
+                              verbose = FALSE
+                              #files_key = "files_key"
                                           )
 
     res_model_output <- mod_output_bayes(mod = mod,
@@ -710,9 +720,11 @@ model_execute <- function(
                                          omic1_data = NULL,
                                          omic2_data = NULL,
                                          omic3_data = NULL,
+                                         omics_data_label = omics_data_label,
+                                         bayes_para = bayes_para,
                                          GS_model = GS_model)
 
-    res_summary_stat <- summary_statistics_bayes(mod = mod)
+    res_summary_stat <- summary_statistics_bayes(mod = mod, eval_metrics = eval_metrics)
 
    res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -754,10 +766,13 @@ model_execute <- function(
                                                  omic1_data = omic1_model_ready,
                                                  omic2_data = NULL,
                                                  omic3_data = NULL,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -799,10 +814,13 @@ model_execute <- function(
                                                  omic1_data = NULL,
                                                  omic2_data = omic2_model_ready,
                                                  omic3_data = NULL,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -846,10 +864,13 @@ model_execute <- function(
                                                  omic1_data = NULL,
                                                  omic2_data = NULL,
                                                  omic3_data = omic3_model_ready,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -892,10 +913,13 @@ model_execute <- function(
                                                  omic1_data = omic1_model_ready,
                                                  omic2_data = NULL,
                                                  omic3_data = NULL,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -938,10 +962,13 @@ model_execute <- function(
                                                  omic1_data = NULL,
                                                  omic2_data = omic2_model_ready,
                                                  omic3_data = NULL,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -983,10 +1010,13 @@ model_execute <- function(
                                                  omic1_data = NULL,
                                                  omic2_data = NULL,
                                                  omic3_data = omic3_model_ready,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -1029,10 +1059,13 @@ model_execute <- function(
                                                  omic1_data = omic1_model_ready,
                                                  omic2_data = omic2_model_ready,
                                                  omic3_data = NULL,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -1075,10 +1108,13 @@ model_execute <- function(
                                                  omic1_data = omic1_model_ready,
                                                  omic2_data = NULL,
                                                  omic3_data = omic3_model_ready,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -1122,10 +1158,13 @@ model_execute <- function(
                                                  omic1_data = NULL,
                                                  omic2_data = omic2_model_ready,
                                                  omic3_data = omic3_model_ready,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -1169,10 +1208,13 @@ model_execute <- function(
                                                  omic1_data = omic1_model_ready,
                                                  omic2_data = omic2_model_ready,
                                                  omic3_data = NULL,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -1215,10 +1257,13 @@ model_execute <- function(
                                                  omic1_data = omic1_model_ready,
                                                  omic2_data = NULL,
                                                  omic3_data = omic3_model_ready,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -1263,10 +1308,13 @@ model_execute <- function(
                                                  omic1_data = NULL,
                                                  omic2_data = omic2_model_ready,
                                                  omic3_data = omic3_model_ready,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -1308,10 +1356,13 @@ model_execute <- function(
                                                  omic1_data = omic1_model_ready,
                                                  omic2_data = omic2_model_ready,
                                                  omic3_data = omic3_model_ready,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
 
             res_plot <-  plot_acc(mod = mod, response = response)
@@ -1355,10 +1406,13 @@ model_execute <- function(
                                                  omic1_data = omic1_model_ready,
                                                  omic2_data = omic2_model_ready,
                                                  omic3_data = omic3_model_ready,
+                                                 omics_data_label = omics_data_label,
+                                                 bayes_para = bayes_para,
                                                  GS_model = GS_model
             )
 
-            res_summary_stat <- summary_statistics_bayes(mod = mod)
+            res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                         eval_metrics = eval_metrics)
 
             res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -1499,7 +1553,8 @@ model_execute <- function(
 
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                      eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -1631,7 +1686,8 @@ model_execute <- function(
                                                        heter_groups  = heter_groups
              )
          }
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                      eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -1724,7 +1780,8 @@ model_execute <- function(
              )
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                      eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -1821,7 +1878,8 @@ model_execute <- function(
              )
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                      eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -1978,7 +2036,8 @@ model_execute <- function(
 
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                      eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -2174,7 +2233,8 @@ model_execute <- function(
 
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                      eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -2374,7 +2434,7 @@ model_execute <- function(
 
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod, eval_metrics = eval_metrics)
 
 
          res_plot <-  plot_acc(mod = mod, response = response)
@@ -2511,7 +2571,7 @@ model_execute <- function(
 
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod, eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -2616,7 +2676,8 @@ model_execute <- function(
          }
 
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod,
+                                                      eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -2719,7 +2780,7 @@ model_execute <- function(
 
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod, eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -2885,7 +2946,7 @@ model_execute <- function(
 
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod, eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -3093,7 +3154,7 @@ model_execute <- function(
 
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod, eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -3305,7 +3366,7 @@ model_execute <- function(
 
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod, eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -3452,7 +3513,7 @@ model_execute <- function(
 
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod, eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 
@@ -3629,7 +3690,7 @@ model_execute <- function(
 
          }
 
-         res_summary_stat <- summary_statistics_bayes(mod = mod)
+         res_summary_stat <- summary_statistics_bayes(mod = mod, eval_metrics = eval_metrics)
 
          res_plot <-  plot_acc(mod = mod, response = response)
 

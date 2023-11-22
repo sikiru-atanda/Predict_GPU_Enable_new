@@ -43,9 +43,9 @@ load('WheatPhenoGeno.Rdata')
 
 gen_name = "GID"
 
-pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR","F5I", "B5I"), ])
+#pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR","F5I", "B5I"), ])
 
-#pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR"), ])
+pheno = droplevels(pheno.data[pheno.data$Env%in%c("B2IR"), ])
 
 COP = as.matrix(COP)
 
@@ -70,12 +70,18 @@ return(c(write.csv(Result, paste("OptimizedTRN", NTrn.Optmize, ".csv", sep = "_"
          write.csv(COR, paste("PredACC",NTrn.Optmize, Gmatrix.method, ".csv", sep = "_"))))
 
 
-
+## https://www.r-bloggers.com/2021/05/working-with-files-and-folders-in-r-ultimate-guide/
+## Get the existing working directory
 Initapth = getwd()
-
+## Get system time
 systime = Sys.Date()
 systime = gsub("-", "_", systime)
-pathout = paste(Initapth, paste("output", systime, sep = "_"), sep = "/")
+## Create path
+pathout = paste(Initapth, paste("Results", systime, sep = "_"), sep = "/")
+## Create alternative path if the previous one already exist. Though not likely
+pathout2 = paste(Initapth, paste("Results2", systime, sep = "_"), sep = "/")
+
+ifelse(!dir.exists(pathout), dir.create(pathout), dir.create(pathout2))
 
 ### create output folder within the working directory
 dir.create(pathout, showWarnings = FALSE)

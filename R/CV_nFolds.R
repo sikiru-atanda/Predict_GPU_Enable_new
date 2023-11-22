@@ -158,9 +158,13 @@ CV_nfolds <- function(
         #         call. = FALSE)
 
 
-        folds = sample(1:nFolds, size = length(y), replace = T)
+        #folds = sample(1:nFolds, size = length(y), replace = T)
 
-        Rep_FoldCV[[r]] <-  folds
+        len_y <- length(y)
+        folds_generated <- rep(1:nFolds, length.out = len_y)
+        folds <- sample(folds_generated, len_y)
+
+        Rep_FoldCV[[r]] <- folds
 
         names(Rep_FoldCV)[r] <- paste(paste(paste("Rep", r, sep = ""),
                                             paste(nFolds, 'Fold', sep = ""), sep="_"),
