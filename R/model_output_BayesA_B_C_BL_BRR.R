@@ -32,6 +32,8 @@ mod_output_bayes <- function(mod=NULL,
 
   msg <- sprintf("==================================================\n")
   ### Check if the user provide lable/name for the omics data
+
+  if(typeof(omics_data_label)=='list'){
   if(!all(sapply(omics_data_label, function(x){ is.null(x)}))!=FALSE){
 
     label = which(sapply(omics_data_label, function(x) !is.null(x)))
@@ -40,6 +42,19 @@ mod_output_bayes <- function(mod=NULL,
 
   } else {
     print_lable = NULL
+  }
+
+  }else {
+    if(typeof(omics_data_label)=="character"){
+
+      print_lable = omics_data_label
+
+    }
+
+    if(is.null(omics_data_label)){
+      print_lable = NULL
+
+    }
   }
 
 # sik$ETA_element_name
@@ -1020,17 +1035,18 @@ names(Res) <- c(
               mu = mod$model$mu)
 
   ###
-  names(Res) <- c(
-    "Coefficients",
-    "Omic_estimated_breeding_value",
-    "Predicted_value",
-    #"Genomic_variance",
-    #"Residual_error",
-    #"Genomic_heritability",
-    "Variance_components",
-    "M_matrix_model_ready",
-    "Intercept"
-  )
+  # names(Res) <- c(
+  #   "Coefficients",
+  #   "Omic_estimated_breeding_value",
+  #   "Predicted_value",
+  #   #"Genomic_variance",
+  #   #"Residual_error",
+  #   #"Genomic_heritability",
+  #   "Variance_components",
+  #   "M_matrix_model_ready",
+  #   "Intercept"
+  # )
+
 
   ## Add attribute/ name to the list
 
@@ -1039,31 +1055,31 @@ names(Res) <- c(
     print_lable = unlist(print_lable)
 
 
-  if(length(print_lable)==1){
-  names(Res) <- c(
-             "Coefficients",
-             paste(print_lable, "estimated_breeding_value", sep="_"),
-             "Predicted_value",
-             "Variance_components",
-             #paste(print_lable, "variance", sep="_"),
-             #"Residual_error",
-             #paste(print_lable, "heritability", sep="_"),
-             "M_matrix_model_ready",
-             "Intercept")
+    if(length(print_lable)==1){
 
-  } else {
-    if(length(print_lable)>1){
-      message(insight::print_color(paste(msg,paste("More than one Omics lable were provided. Default name was applied.")), "blue"))
+      rownames(Res$Variance_components)[1] <- paste(print_lable, "variance", sep="_")
+      names(Res) <- c(
+        "Coefficients",
+        paste(print_lable, "estimated_breeding_value", sep="_"),
+        "Predicted_value",
+        "Variance_components",
+        #paste(print_lable, "variance", sep="_"),
+        #"Residual_error",
+        #paste(print_lable, "heritability", sep="_"),
+        "M_matrix_model_ready",
+        "Intercept")
+
+    } else {
+
+      if(length(print_lable)>1){
+        message(insight::print_color(paste(msg,paste("More than one Omics lable were provided. Default name was applied.")), "blue"))
+      }
+
     }
 
-
-
-  }
-
   } else {
 
-      message(insight::print_color(paste(msg,paste("Omics lable was not provided. Default name was applied.")), "blue"))
-
+    message(insight::print_color(paste(msg,paste("Omics lable was not provided. Default name was applied.")), "blue"))
 
   }
 
@@ -1089,17 +1105,17 @@ names(Res) <- c(
              mu = mod$model$mu
              )
   ##
-  names(Res) <- c(
-    "Coefficients",
-    "Omic_estimated_breeding_value",
-    "Predicted_value",
-    "Variance_components",
-    #"Genomic_variance",
-    #"Residual_error",
-    #"Genomic_heritability",
-    "M_matrix_model_ready",
-    "Intercept"
-  )
+  # names(Res) <- c(
+  #   "Coefficients",
+  #   "Omic_estimated_breeding_value",
+  #   "Predicted_value",
+  #   "Variance_components",
+  #   #"Genomic_variance",
+  #   #"Residual_error",
+  #   #"Genomic_heritability",
+  #   "M_matrix_model_ready",
+  #   "Intercept"
+  # )
 
 
   ## Add attribute/ name to the list
@@ -1111,7 +1127,7 @@ names(Res) <- c(
 
     if(length(print_lable)==1){
 
-      rownames(Variance_components)[1] <- paste(print_lable, "variance", sep="_")
+      rownames(Res$Variance_components)[1] <- paste(print_lable, "variance", sep="_")
       names(Res) <- c(
         "Coefficients",
         paste(print_lable, "estimated_breeding_value", sep="_"),
@@ -1158,17 +1174,17 @@ names(Res) <- c(
              omic3_data,
              mu = mod$model$mu)
 ###
-  names(Res) <- c(
-    "Coefficients",
-    "Omic_estimated_breeding_value",
-    "Predicted_value",
-    "Variance_components",
-    #"Genomic_variance",
-    #"Residual_error",
-    #"Genomic_heritability",
-    "M_matrix_model_ready",
-    "Intercept"
-  )
+  # names(Res) <- c(
+  #   "Coefficients",
+  #   "Omic_estimated_breeding_value",
+  #   "Predicted_value",
+  #   "Variance_components",
+  #   #"Genomic_variance",
+  #   #"Residual_error",
+  #   #"Genomic_heritability",
+  #   "M_matrix_model_ready",
+  #   "Intercept"
+  # )
 
 
   if(!is.null(print_lable)){
@@ -1177,7 +1193,7 @@ names(Res) <- c(
 
 
     if(length(print_lable)==1){
-      rownames(Variance_components)[1] <- paste(print_lable, "variance", sep="_")
+      rownames(Res$Variance_components)[1] <- paste(print_lable, "variance", sep="_")
       names(Res) <- c(
         "Coefficients",
         paste(print_lable, "estimated_breeding_value", sep="_"),
@@ -1286,7 +1302,7 @@ names(Res) <- c(
 
 
     if(length(print_lable)==1){
-      rownames(Variance_components)[1:2] = c('Genomic_variance', paste(print_lable, "variance", sep="_"))
+      rownames(Res$Variance_components)[1:2] = c('Genomic_variance', paste(print_lable, "variance", sep="_"))
       ######
       names(Res$Coefficients) = c("Geno_coefficient",  paste(print_lable, "coefficient", sep="_"))
       names(Res$Estimated_breeding_value) = c("Genomic_estimated_BV",  paste(print_lable, "estimated_BV", sep="_"))
@@ -1316,7 +1332,7 @@ names(Res) <- c(
   g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_gen$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic2$Posterior
   PEV <- apply(g_omic_ebv, 1, var)
 
-  sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
+  sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value[, 1],
                         EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
                         stringsAsFactors = FALSE)
 
@@ -1395,7 +1411,7 @@ names(Res) <- c(
 
 
     if(length(print_lable)==1){
-      rownames(Variance_components)[1:2] = c('Genomic_variance', paste(print_lable, "variance", sep="_"))
+      rownames(Res$Variance_components)[1:2] = c('Genomic_variance', paste(print_lable, "variance", sep="_"))
       names(Res$Coefficients) = c("Geno_coefficient",  paste(print_lable, "coefficient", sep="_"))
       names(Res$Estimated_breeding_value) = c("Genomic_estimated_BV",  paste(print_lable, "estimated_BV", sep="_"))
       #names(Res$Genetic_variance) = c("Genomic_variance",  paste(print_lable, "variance", sep="_"))
@@ -1421,7 +1437,7 @@ names(Res) <- c(
   g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_gen$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic3$Posterior
   PEV <- apply(g_omic_ebv, 1, var)
 
-  sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
+  sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value[, 1],
                         EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                         stringsAsFactors = FALSE)
 
@@ -1501,7 +1517,7 @@ names(Res) <- c(
 
 
     if(length(print_lable)==1){
-      rownames(Variance_components)[1:2] = c('Genomic_variance', paste(print_lable, "variance", sep="_"))
+      rownames(Res$Variance_components)[1:2] = c('Genomic_variance', paste(print_lable, "variance", sep="_"))
       names(Res$Coefficients) = c("Geno_coefficient",  paste(print_lable, "coefficient", sep="_"))
       names(Res$Estimated_breeding_value) = c("Genomic_estimated_BV",  paste(print_lable, "estimated_BV", sep="_"))
       #names(Res$Genetic_variance) = c("Genomic_variance",  paste(print_lable, "variance", sep="_"))
@@ -1606,13 +1622,13 @@ names(Res) <- c(
 
 
     if(length(print_lable)==2){
-      rownames(Variance_components)[1:2] = c(paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
+      rownames(Res$Variance_components)[1:2] = c(paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
       names(Res$Coefficients) = c(paste(print_lable[1], "coefficient", sep="_"),  paste(print_lable[2], "coefficient", sep="_"))
       names(Res$Estimated_breeding_value) = c(paste(print_lable[1], "Estimated_BV", sep="_"),  paste(print_lable[2], "Estimated_BV", sep="_"))
-      names(Res$Genetic_variance) = c(paste(print_lable[1], "variance", sep="_"),  paste(print_lable[2], "variance", sep="_"))
+      #names(Res$Genetic_variance) = c(paste(print_lable[1], "variance", sep="_"),  paste(print_lable[2], "variance", sep="_"))
       names(Res$M_matrix_model_ready) = c(paste(print_lable[1], "model_ready", sep="_"),  paste(print_lable[2], "model_ready", sep="_"))
     }else {
-      if(length(print_lable)>2){
+      if(length(print_lable)>2 | length(print_lable)<2){
         message(insight::print_color(paste(msg,paste("More than two Omics lable were provided. Default name was applied.")), "blue"))
       }
 
@@ -1710,13 +1726,13 @@ names(Res) <- c(
 
 
     if(length(print_lable)==2){
-      rownames(Variance_components)[1:2] = c(paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
+      rownames(Res$Variance_components)[1:2] = c(paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
       names(Res$Coefficients) = c(paste(print_lable[1], "coefficient", sep="_"),  paste(print_lable[2], "coefficient", sep="_"))
       names(Res$Estimated_breeding_value) = c(paste(print_lable[1], "Estimated_BV", sep="_"),  paste(print_lable[2], "Estimated_BV", sep="_"))
       #names(Res$Genetic_variance) = c(paste(print_lable[1], "variance", sep="_"),  paste(print_lable[2], "variance", sep="_"))
       names(Res$M_matrix_model_ready) = c(paste(print_lable[1], "model_ready", sep="_"),  paste(print_lable[2], "model_ready", sep="_"))
     } else {
-      if(length(print_lable)>2){
+      if(length(print_lable)>2 | length(print_lable)<2){
         message(insight::print_color(paste(msg,paste("More than two Omic lables were provided. Default name was applied.")), "blue"))
       }
 
@@ -1813,14 +1829,14 @@ names(Res) <- c(
 
 
     if(length(print_lable)==2){
-      rownames(Variance_components)[1:2] = c(paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
+      rownames(Res$Variance_components)[1:2] = c(paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
       names(Res$Coefficients) = c(paste(print_lable[1], "coefficient", sep="_"),  paste(print_lable[2], "coefficient", sep="_"))
       names(Res$Estimated_breeding_value) = c(paste(print_lable[1], "Estimated_BV", sep="_"),  paste(print_lable[2], "Estimated_BV", sep="_"))
-      names(Res$Genetic_variance) = c(paste(print_lable[1], "variance", sep="_"),  paste(print_lable[2], "variance", sep="_"))
+      #names(Res$Genetic_variance) = c(paste(print_lable[1], "variance", sep="_"),  paste(print_lable[2], "variance", sep="_"))
       names(Res$M_matrix_model_ready) = c(paste(print_lable[1], "model_ready", sep="_"),  paste(print_lable[2], "model_ready", sep="_"))
     } else {
 
-      if(length(print_lable)>2){
+      if(length(print_lable)>2 | length(print_lable)<2){
         message(insight::print_color(paste(msg,paste("More than two Omics lable were provided. Default name was applied.")), "blue"))
       }
 
@@ -1926,14 +1942,14 @@ Res <-list(
 
 
     if(length(print_lable)==2){
-      rownames(Variance_components)[1:2] = c('Genomic_variance', paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
+      rownames(Res$Variance_components)[1:3] = c('Genomic_variance', paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
       names(Res$Coefficients) = c("Geno_coefficient", paste(print_lable[1], "coefficient", sep="_"), paste(print_lable[2], "coefficient", sep="_"))
       names(Res$Estimated_breeding_value) = c("Genomic_estimated_BV",  paste(print_lable[1], "estimated_BV", sep="_"), paste(print_lable[2], "estimated_BV", sep="_"))
       #names(Res$Genetic_variance) = c("Genomic_variance",  paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
       names(Res$M_matrix_model_ready) = c("Geno_model_ready", paste(print_lable[1], "model_ready", sep="_"), paste(print_lable[2], "model_ready", sep="_"))
     } else {
 
-      if(length(print_lable)>2){
+      if(length(print_lable)>2 | length(print_lable)<2){
         message(insight::print_color(paste(msg,paste("More than three Omic lables were provided. Default name was applied.")), "blue"))
       }
 
@@ -2041,14 +2057,14 @@ Res <-list(
 
 
     if(length(print_lable)==2){
-      rownames(Variance_components)[1:2] = c('Genomic_variance', paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
+      rownames(Res$Variance_components)[1:3] = c('Genomic_variance', paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
       names(Res$Coefficients) = c("Geno_coefficient", paste(print_lable[1], "coefficient", sep="_"), paste(print_lable[2], "coefficient", sep="_"))
       names(Res$Estimated_breeding_value) = c("Genomic_estimated_BV", paste(print_lable[1], "estimated_BV", sep="_"), paste(print_lable[2], "estimated_BV", sep="_"))
       #names(Res$Genetic_variance) = c("Genomic_variance", paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
       names(Res$M_matrix_model_ready) = c("Geno_model_ready",  paste(print_lable[2], "model_ready", sep="_"), paste(print_lable[3], "model_ready", sep="_"))
     } else {
 
-      if(length(print_lable)>2){
+      if(length(print_lable)>2 | length(print_lable)<2){
         message(insight::print_color(paste(msg,paste("More than three Omic lables were provided. Default name was applied.")), "blue"))
       }
     }
@@ -2153,14 +2169,14 @@ Res <-list(
 
 
     if(length(print_lable)==2){
-      rownames(Variance_components)[1:2] = c('Genomic_variance', paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
+      rownames(Res$Variance_components)[1:3] = c('Genomic_variance', paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
       names(Res$Coefficients) = c("Geno_coefficient", paste(print_lable[1], "coefficient", sep="_"), paste(print_lable[2], "coefficient", sep="_"))
       names(Res$Estimated_breeding_value) = c("Genomic_estimated_BV", paste(print_lable[1], "estimated_BV", sep="_"), paste(print_lable[2], "estimated_BV", sep="_"))
       #names(Res$Genetic_variance) = c("Genomic_variance", paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"))
       names(Res$M_matrix_model_ready) = c("Geno_model_ready",  paste(print_lable[2], "model_ready", sep="_"), paste(print_lable[3], "model_ready", sep="_"))
     } else {
 
-      if(length(print_lable)>2){
+      if(length(print_lable)>2 | length(print_lable)<2){
         message(insight::print_color(paste(msg,paste("More than three Omic lables were provided. Default name was applied.")), "blue"))
       }
 
@@ -2266,14 +2282,14 @@ Res <-list(
 
 
     if(length(print_lable)==3){
-      rownames(Variance_components)[1:3] = c(paste(print_lable[1], "variance", sep="_"),  paste(print_lable[2], "variance", sep="_"), paste(print_lable[3], "variance", sep="_"))
+      rownames(Res$Variance_components)[1:3] = c(paste(print_lable[1], "variance", sep="_"),  paste(print_lable[2], "variance", sep="_"), paste(print_lable[3], "variance", sep="_"))
       names(Res$Coefficients) = c(paste(print_lable[1], "coefficient", sep="_"), paste(print_lable[2], "coefficient", sep="_"), paste(print_lable[3], "coefficient", sep="_"))
       names(Res$Estimated_breeding_value) = c(paste(print_lable[1], "estimated_BV", sep="_"),  paste(print_lable[2], "estimated_BV", sep="_"), paste(print_lable[3], "estimated_BV", sep="_"))
       #names(Res$Genetic_variance) = c(paste(print_lable[1], "variance", sep="_"),  paste(print_lable[2], "variance", sep="_"), paste(print_lable[3], "variance", sep="_"))
       names(Res$M_matrix_model_ready) = c(paste(print_lable[1], "model_ready", sep="_"),  paste(print_lable[2], "model_ready", sep="_"), paste(print_lable[3], "model_ready", sep="_"))
     } else {
 
-      if(length(print_lable)>3){
+      if(length(print_lable)>3 | length(print_lable)<3){
         message(insight::print_color(paste(msg,paste("More than three Omic lables were provided. Default name was applied.")), "blue"))
       }
 
@@ -2388,15 +2404,15 @@ Res <-list(
 
 
       if(length(print_lable)==3){
-        rownames(Variance_components)[1:4] = c("Genomic_variance", paste(print_lable[1], "variance", sep="_"),  paste(print_lable[2], "variance", sep="_"), paste(print_lable[3], "variance", sep="_"))
-        names(Res$Coefficients) = c("Geno_coefficient", paste(print_lable[1], "coefficient", sep="_"), paste(print_lable[2], "coefficient", sep="_"), paste(print_lable[2], "coefficient", sep="_"), paste(print_lable[3], "coefficient", sep="_"))
+        rownames(Res$Variance_components)[1:4] = c("Genomic_variance", paste(print_lable[1], "variance", sep="_"),  paste(print_lable[2], "variance", sep="_"), paste(print_lable[3], "variance", sep="_"))
+        names(Res$Coefficients) = c("Geno_coefficient", paste(print_lable[1], "coefficient", sep="_"), paste(print_lable[2], "coefficient", sep="_"), paste(print_lable[3], "coefficient", sep="_"))
         names(Res$Estimated_breeding_value) = c("Genomic_estimated_BV", paste(print_lable[1], "estimated_BV", sep="_"), paste(print_lable[2], "estimated_BV", sep="_"), paste(print_lable[3], "estimated_BV", sep="_"))
-        names(Res$Genetic_variance) = c("Genomic_variance", paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"), paste(print_lable[3], "variance", sep="_"))
+        #names(Res$Genetic_variance) = c("Genomic_variance", paste(print_lable[1], "variance", sep="_"), paste(print_lable[2], "variance", sep="_"), paste(print_lable[3], "variance", sep="_"))
         names(Res$M_matrix_model_ready) = c("Geno_model_ready",  paste(print_lable[1], "model_ready", sep="_"), paste(print_lable[2], "model_ready", sep="_"), paste(print_lable[3], "model_ready", sep="_"))
       } else {
 
-        if(length(print_lable)>3){
-          message(insight::print_color(paste(msg,paste("More than four Omic lables were provided. Default name was applied.")), "blue"))
+        if(length(print_lable)>3 | length(print_lable)<3){
+          message(insight::print_color(paste(msg,paste("More than three Omic lables were provided. Default name was applied.")), "blue"))
         }
 
       }

@@ -91,9 +91,77 @@
 #' @param rcn_cutoff
 #' @param optimize_diagonal
 #' @param optimize_duplicate
-#' @param ...
-
 #' @param scaled
+#' @param pheno_data
+#' @param pheno_data_train
+#' @param pheno_data_test
+#' @param geno_data
+#' @param omic1_data
+#' @param omic2_data
+#' @param omic3_data
+#' @param omics_data_label
+#' @param gmatrix
+#' @param gkernel
+#' @param pedigree_matrix
+#' @param omic1_kernel
+#' @param omic2_kernel
+#' @param omic3_kernel
+#' @param omics_kernel_label
+#' @param train_geno_data
+#' @param train_omic1_data
+#' @param train_omic2_data
+#' @param train_omic3_data
+#' @param train_omics_label
+#' @param test_geno_data
+#' @param test_omic1_data
+#' @param test_omic2_data
+#' @param test_omic3_data
+#' @param test_omics_label
+#' @param coefficient_1
+#' @param coefficient_2
+#' @param coefficient_3
+#' @param coefficient_4
+#' @param train_set
+#' @param test_set
+#' @param gmatrix_method
+#' @param kernel_method
+#' @param response
+#' @param gen_name
+#' @param cova
+#' @param fixed
+#' @param random
+#' @param heter_resid
+#' @param heter_groups
+#' @param VarCov_str
+#' @param weights
+#' @param nIter
+#' @param burnIn
+#' @param thin
+#' @param GS_model
+#' @param eval_metrics
+#' @param para_tunning
+#' @param fixed_term_model_bayesian
+#' @param rand_term_model_bayesian
+#' @param core
+#' @param engine
+#' @param center
+#' @param workspace
+#' @param pworkspace
+#' @param maxit
+#' @param bending
+#' @param bend_value
+#' @param blending
+#' @param blending_value
+#' @param high_diag_cut_off
+#' @param low_diag_cut_off
+#' @param duplicate_cut_off
+#' @param rcn_cutoff
+#' @param optimize_diagonal
+#' @param optimize_duplicate
+#' @param message
+#' @param system_database this dictate if the output will be created in a folder or as list
+#'                         the default is FALSE. Thus output will be folder.
+#' @param ...
 #'
 #' @return
 #' @export
@@ -107,24 +175,32 @@ model_execute <- function(
     omic1_data = NULL,
     omic2_data = NULL,
     omic3_data = NULL,
-    omics_data_label = list(omic1_data = NULL, omic2_data = NULL, omic3_data = NULL),
+    omics_data_label = list(omic1_data = NULL,
+                            omic2_data = NULL,
+                            omic3_data = NULL),
     gmatrix= NULL,
     gkernel = NULL,
     pedigree_matrix = NULL,
     omic1_kernel = NULL,
     omic2_kernel = NULL,
     omic3_kernel = NULL,
-    omics_kernel_label = list(omic1_kernel = NULL, omic2_kernel = NULL, omic3_kernel = NULL),
+    omics_kernel_label = list(omic1_kernel = NULL,
+                              omic2_kernel = NULL,
+                              omic3_kernel = NULL),
     train_geno_data = NULL,
     train_omic1_data = NULL,
     train_omic2_data = NULL,
     train_omic3_data = NULL,
-    train_omics_label = list(train_omic1_data = NULL, train_omic2_data = NULL, train_omic3_data = NULL),
+    train_omics_label = list(train_omic1_data = NULL,
+                             train_omic2_data = NULL,
+                             train_omic3_data = NULL),
     test_geno_data = NULL,
     test_omic1_data = NULL,
     test_omic2_data = NULL,
     test_omic3_data = NULL,
-    test_omics_label = list(test_omic1_data = NULL, test_omic2_data = NULL, test_omic3_data = NULL),
+    test_omics_label = list(test_omic1_data = NULL,
+                            test_omic2_data = NULL,
+                            test_omic3_data = NULL),
     coefficient_1 = NULL,
     coefficient_2 = NULL,
     coefficient_3 = NULL,
@@ -188,6 +264,7 @@ model_execute <- function(
     optimize_diagonal = FALSE,
     optimize_duplicate = FALSE,
     message= TRUE,
+    system_database = FALSE,
     ...
 ) {
 
@@ -6488,6 +6565,16 @@ model_execute <- function(
 # }
 
  ### if user provide only
+#### NOTE
+
+ ## Return was added not at the end because the output format will be different
+ ## when user is not using database compared when using database.
+
+ # And if return is not the last statement of the function,
+ # it will prematurely end the function bringing the control to the place
+ # from which it was called. Thus, the Maindir was added to the return to return
+ # to main working directory thus every single run has it separate output
+ # even if the raw data are from the same working directory.
 
  #if(GS_model)
  if (GS_model=="Xgboost"){
@@ -6503,11 +6590,182 @@ model_execute <- function(
          names(output) <- c('model_results', 'summary_statistic')
      }
 
+     return(output)
+
  } else if (GS_model=="GBLUP"){
 
      output <- list(res_model_output)
 
      names(output) <- c('model_results')
+
+     return(output)
+
+ } else if(GS_model== "BRR" | GS_model== "BayesA"|  GS_model== "BayesB"| GS_model== "BayesC" | GS_model== "BL"){
+     ########
+     if(system_database==FALSE){
+
+         # mainDir = getwd()
+         # systime = Sys.Date()
+         # systime = gsub("-", "_", systime)
+         # ## Create path
+         # pathout = paste(mainDir, paste("output", systime, sep = "_"), sep = "/")
+         # ## Create alternative path if the previous one already exist. Though not likely
+         # pathout2 = paste(mainDir, paste("output2", systime, sep = "_"), sep = "/")
+         #
+         # ifelse(!dir.exists(pathout), dir.create(pathout, showWarnings = FALSE),
+         #        dir.create(pathout2, showWarnings = FALSE))
+
+         mainDir <- getwd()
+         systime = as.character(Sys.time())
+         systime = gsub(" ", "", systime)
+         ### Create key to remove all reduant files from the wkdir
+         #files_key = strsplit(files_key, "\\.")[[1]][2]
+         systime = strsplit(systime, "\\.")[[1]][1]
+         systime = gsub("-", "", systime)
+         systime= gsub(":", "_", systime)
+
+         subDir <- paste("output", systime, sep = "_")
+         subDir2 <- paste("outputNew", systime, sep = "_")
+         ####
+
+
+         if (dir.exists(file.path(mainDir, subDir))){
+             setwd(file.path(mainDir, subDir))
+         } else {
+             dir.create(file.path(mainDir, subDir))
+             setwd(file.path(mainDir, subDir))
+
+         }
+
+         pathout = getwd()
+         # ### create output folder within the working directory
+         # dir.create(pathout, showWarnings = FALSE)
+
+         ### set the working directory to the output folder
+         #setwd(pathout)
+
+         ## Check if the res_model_output has output as list.
+         ## If TRUE this line of codes identified it and process it for
+         ## the output folder separately for easy access by the user
+         if(any(unlist(sapply(res_model_output, function(x) class(x)=='list')))==TRUE){
+         label_index <- which(sapply(res_model_output, function(x) class(x)=='list'))
+
+         label_index <- as.double(label_index)
+
+         } else {
+
+             label_index <- NULL
+         }
+
+         names_res <- names(res_model_output)
+
+         names_index = grep("estimated_breeding_value", names_res, ignore.case = TRUE)
+
+
+
+         #label_index <- as.double(label_index[-length(label_index)])
+
+         if(!is.null(label_index)){
+
+            return(c(write.csv(res_model_output$Predicted_value, paste("Predicted_value", "csv", sep = "."), row.names = FALSE),
+               write.csv(res_model_output$Total_estimated_breeding_value, paste("Total_estimated_breeding_value", "csv", sep = "."), row.names = FALSE),
+               write.csv(res_model_output$Variance_components, paste("Variance_components", "csv", sep = ".")),
+               write.csv(res_summary_stat$Statics_summary, paste("summary_statistic", "csv", sep = "."), row.names = FALSE),
+               for (i in 1:length(label_index)) {
+                   ###
+                   if(names(res_model_output[label_index[i]])=="M_matrix_model_ready"){
+                       file_names = paste0(names(res_model_output[[label_index[i]]]), ".txt") }
+                   ###
+
+                   ###
+                   if(names(res_model_output[label_index[i]])=="M_matrix_model_ready"){
+                       for (k in 1:length(names(res_model_output[[label_index[i]]]))) {
+                           write.csv(res_model_output[[i]][k], paste(names(res_model_output[[label_index[i]]][k]), "txt", sep = "."), row.names = FALSE)
+                       }
+                   } else {
+
+                       for (k in 1:length(res_model_output[[i]])) {
+
+                           write.csv(res_model_output[[i]][k], paste(names(res_model_output[[i]][k]), "csv", sep = "."), row.names = FALSE)
+                       }
+
+                   }
+
+                   ##
+                   if(names(res_model_output[label_index[i]])=="M_matrix_model_ready"){
+                       # Read the 2 CSV file names from working directory
+                       # Zip_Files <- list.files(path = getwd(), pattern = ".txt$")
+                       #
+                       # zip(zipfile = "TestZip", files = Zip_Files, flags = " a -tzip",
+                       #     zip = "C:\\Program Files\\7-Zip\\7Z")
+
+                       #zip(file.path(pathout, "zipped_files.zip"), files = file.path(pathout, file_names))
+
+                       if(length(grep("Geno", file_names, ignore.case = TRUE))!=0 & length(grep("Omic", file_names, ignore.case = TRUE))!=0){
+                           ## # flags="-q" silence the output message. check what appropriate in Mac
+                           zip(file.path(pathout, "Geno_Omics_Clean_data.zip"), files = file_names, flags="-q")
+
+                       } else if (length(grep("Geno", file_names, ignore.case = TRUE))!=0){
+
+                           zip(file.path(pathout, "Geno_Clean_data.zip"), files = file_names, flags="-q")
+                       } else if(length(grep("Omic", file_names, ignore.case = TRUE))!=0) {
+                           zip(file.path(pathout, "Omics_Clean_data.zip"), files = file_names, flags="-q")
+                       } else {
+                           if (length(grep("Omic", file_names, ignore.case = TRUE))==0){
+                               zip(file.path(pathout, "X_variables_Clean_data.zip"), files = file_names, flags="-q")
+
+                           }
+
+                       }
+
+                       #zip(file.path(pathout, "zipped_files.zip"), files = file_names)
+
+                       unlink(file_names)
+                   }
+                   ##
+
+               }
+               ,
+               setwd(mainDir)
+
+             )
+
+)
+
+
+
+         } else {
+          return(  c(write.csv(res_model_output$Predicted_value, paste("Predicted_value", "csv", sep = "."), row.names = FALSE),
+               write.csv(res_model_output$Total_estimated_breeding_value, paste("Total_estimated_breeding_value", "csv", sep = "."), row.names = FALSE),
+               write.csv(res_model_output$Variance_components, paste("Variance_components", "csv", sep = ".")),
+               write.csv(res_model_output$Coefficients, paste("Coefficients", "csv", sep = "."), row.names = FALSE),
+               write.csv(res_model_output[names_index], paste(names_res[names_index], "csv", sep = "."), row.names = FALSE),
+               write.csv(res_summary_stat$Statics_summary, paste("summary_statistic", "csv", sep = "."), row.names = FALSE),
+               setwd(mainDir)
+
+          )
+
+
+
+
+             )
+
+
+
+         }
+
+     }else{
+
+         output <- list(res_model_output, res_summary_stat)
+
+         names(output) <- c('model_results', 'summary_statistic')
+
+         return(output)
+
+
+     }
+
+
 
 } else {
 
@@ -6515,8 +6773,11 @@ model_execute <- function(
 
      names(output) <- c('model_results', 'summary_statistic')
 
+     return(output)
+     setwd(mainDir)
+
  }
 
- return(output)
+ #return(output)
 
 } ## end of function
