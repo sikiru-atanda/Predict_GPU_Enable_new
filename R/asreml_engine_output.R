@@ -20,7 +20,7 @@
 #' @export
 #'
 #' @examples
-asreml_mod_output <- function(
+asreml_mod_outputOLD <- function(
          mod_asreml = NULL,
          pheno_data = NULL,
          gkernel=NULL,
@@ -49,17 +49,36 @@ asreml_mod_output <- function(
   ### if every variance component is stable the update will not run
   ## by default in asreml so it safe to keep it
   mod = asreml::update.asreml(mod)
-  str.mod = mod_asreml$str.mod
+  str_mod = mod_asreml$str_mod
   Gen_pos = mod_asreml$Gen_pos
   Inter_Gen_pos = mod_asreml$Inter_Gen_pos
   G_list = mod_asreml$G_list
   rand_term = mod_asreml$rand_term
+#############################
+  if(!is.null(gmatrix)){
+    gid_name <- rownames(gmatrix)
+    g_retain <-  gmatrix ## To store back in the database for reuse
+  } else if (!is.null(gkernel)){
+    gid_name <- rownames(gkernel)
+    g_retain <-  gkernel ## To store back in the database for reuse
+  } else if (!is.null(omic1_kernel)){
+    gid_name <- rownames(omic1_kernel)
+  } else if (!is.null(omic2_kernel)){
+    gid_name <- rownames(omic2_kernel)
+  } else {
+    if (!is.null(omic3_kernel)){
+      gid_name <- rownames(omic3_kernel)
+    }
+  }
 
+  #########################
   ### Set up parameter for predict function
   # asreml::asreml.options(trace=FALSE, workspace=workspace,
   #                        pworkspace = pworkspace, maxit = maxit)
 
   BLUP <- summary(mod, coef=TRUE)$coef.random
+
+  colnames(BLUP)[colnames(BLUP)%in%"std.error"] <- "Std_error"
 
 #Heter.Grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
 
@@ -127,7 +146,8 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
     colnames(BV_All[[bb]])[1:3] <- c(gen_name, heter_groups, "BLUP")
 
-    BV_All[[bb]][, "PEV"] <-  BV_All[[bb]][, "std.error"]^2
+    BV_All[[bb]][, "PEV"] <-  BV_All[[bb]][, "Std_error"]^2
+
 
   }
 
@@ -154,12 +174,12 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
   #######################################
 
   Res= asreml_herit_varCov(model= mod,
-                   heter_groups= heter_groups,
-                   VarCov_str= VarCov_str,
-                   heter_resid= heter_resid,
-                   G_list = G_list,
-                   Inter_Gen_pos = Inter_Gen_pos,
-                   Gen_pos = Gen_pos)
+                           heter_groups= heter_groups,
+                           VarCov_str= VarCov_str,
+                           heter_resid= heter_resid,
+                           G_list = G_list,
+                           Inter_Gen_pos = Inter_Gen_pos,
+                           Gen_pos = Gen_pos)
 
 
 
@@ -265,7 +285,7 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
     #BV_All$PEV <- BV_All$std.error^2
     for (bb in 1:length(G_list)){
 
-      BV_All[[bb]][, "PEV"] <- BV_All[[bb]][, "std.error"]^2
+      BV_All[[bb]][, "PEV"] <- BV_All[[bb]][, "Std_error"]^2
 
       BV_All[[bb]][, "Reliability"] <- round(1 - BV_All[[bb]][, "PEV"]/as.double((VarG_All[bb])),6)
 
@@ -320,7 +340,8 @@ if(is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
       colnames(BV_All[[bb]])[1:3] <- c(gen_name, heter_groups, "BLUP")
 
-      BV_All[[bb]][, "PEV"] <-  BV_All[[bb]][, "std.error"]^2
+      BV_All[[bb]][, "PEV"] <-  BV_All[[bb]][, "Std_error"]^2
+
 
     }
 
@@ -391,13 +412,19 @@ if(is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
 ### Predicted Values
 pred_value <- asreml::predict.asreml(mod, classify=gen_name, sed=FALSE)$pvals
+pred_value = pred_value[, -ncol(pred_value)] ### Remove status
+colnames(pred_value)[colnames(pred_value)%in%c("predicted.value", "std.error")] <- c("Predicted_value", "Std_error")
+pred_value[, "PEV"] <-  pred_value[, "Std_error"]^2
 
-if(var(pred_value$predicted.value)==0){
+pred_value[, "Reliability"] <-  NA
+
+if(!is.null(heter_groups)){
+if(var(pred_value$Predicted_value)==0){
   ### Check if the the across
-
   message(paste( insight::print_color("WARNING\n", "blue"),
                  insight::print_color(paste(msg, paste(paste('The average prediction across', heter_groups), paste('is a constant value.\n \t Check the model to change', heter_groups), 'to fixed term ')), "blue")))
 
+  }
 }
 gc()
 # if (is.null(heter_groups) & is.null(VarCov_str)){Inter_Gen_pos= NULL}
@@ -405,8 +432,12 @@ gc()
 if(!is.null(Inter_Gen_pos)){
 
   pred_heter_groups <- asreml::predict.asreml(mod, classify= rand_term[[Inter_Gen_pos]], sed=FALSE)$pvals
+  pred_heter_groups =  pred_heter_groups[, -ncol(pred_heter_groups)] ### Remove status
+  colnames(pred_heter_groups)[colnames(pred_heter_groups)%in%c("predicted.value", "std.error")] <- c("Predicted_value", "Std_error")
+  pred_heter_groups[, "PEV"] <-  pred_heter_groups[, "Std_error"]^2
+  pred_heter_groups[, "Reliability"] <- NA
 
-}
+  }
 ### Results
 ############################# Coffient cal
 
@@ -743,23 +774,28 @@ if(length(G_list)>1){
 
 
     coeffRaw_G = solve(t(gmatrix)*gmatrix)*t(gmatrix)*BV_All[[1]]$BLUP
+    coeffRaw_G <- colMeans(coeffRaw_G)
 
   } else if(!is.null(gkernel)){
 
 
     coeffRaw_G = solve(t(gkernel)*gkernel)*t(gkernel)*BV_All[[1]]$BLUP
+    coeffRaw_G <- colMeans(coeffRaw_G)
 
   } else if(!is.null(omic1_kernel)){
 
     coeffRaw_G = solve(t(omic1_kernel)*omic1_kernel)*t(omic1_kernel)*BV_All[[1]]$BLUP
+    coeffRaw_G <- colMeans(coeffRaw_G)
 
   } else if(!is.null(omic2_kernel)){
 
     coeffRaw_G = solve(t(omic2_kernel)*omic2_kernel)*t(omic2_kernel)*BV_All[[1]]$BLUP
+    coeffRaw_G <- colMeans(coeffRaw_G)
 
   } else if(!is.null(omic3_kernel)){
 
     coeffRaw_G = solve(t(omic3_kernel)*omic3_kernel)*t(omic3_kernel)*BV_All[[1]]$BLUP
+    coeffRaw_G <- colMeans(coeffRaw_G)
   }
 
 }
@@ -772,9 +808,15 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
   ####
   if(!is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
-    Result = list(call=str.mod,
+#     pred_value[, "Reliability"] <-   round(1 - pred_value[, "PEV"]/Res$Total_genetic_var,6)
+#     pred_value[, "Reliability"] = ifelse( pred_value[, "Reliability"]<0, "Alias",  pred_value[, "Reliability"])
+# ####
+#     pred_heter_groups[, "Reliability"] <-   round(1 - pred_heter_groups[, "PEV"]/Res$Total_genetic_var,6)
+#     pred_heter_groups[, "Reliability"] = ifelse(pred_heter_groups[, "Reliability"]<0, "Alias",  pred_heter_groups[, "Reliability"])
+
+    Result = list(call=str_mod,
                   mod=mod,
-                  EBV=BV_All[[1]]$BLUP,
+                  EBV = BV_All[[1]],
                   pred_value =pred_value,
                   pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_G,
@@ -787,9 +829,9 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   COV=Res$Covariance)
   } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
-                  EBV = BV_All[[1]]$BLUP,
+                  EBV = BV_All[[1]],
                   pred_value =pred_value,
                   pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_omic1,
@@ -802,9 +844,9 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
                   COV=Res$Covariance)
   } else if (is.null(gmatrix)  & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
-    Result = list(call = str.mod,
+    Result = list(call = str_mod,
                   mod = mod,
-                  EBV = BV_All[[1]]$BLUP,
+                  EBV = BV_All[[1]],
                   pred_value =pred_value,
                   pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_omic2,
@@ -818,9 +860,9 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
   } else if (is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
-                  EBV=BV_All[[1]]$BLUP,
+                  EBV=BV_All[[1]],
                   pred_value =pred_value,
                   pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_omic3,
@@ -837,16 +879,19 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
     for (n in 1:length(G_list)) {
 
       if("G"==names(BV_All)[n]){
-        ebv_G = BV_All[[n]]$BLUP
+        ebv_G = BV_All[[n]]
       }
 
       if("omic1"==names(BV_All)[n]){
-        ebv_omic1 = BV_All[[n]]$BLUP
+        ebv_omic1 = BV_All[[n]]
       }
 
     }
 
-    Result = list(call=str.mod,
+    #pred_value[, "Reliability"] <- round(1 - pred_value[, "PEV"]/VA[i],6)
+
+
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_G,
                   EBV_2 =  ebv_omic1,
@@ -872,16 +917,16 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
     for (n in 1:length(G_list)) {
 
       if("G"==names(BV_All)[n]){
-        ebv_G = BV_All[[n]]$BLUP
+        ebv_G = BV_All[[n]]
       }
 
       if("omic2"==names(BV_All)[n]){
-        ebv_omic2 = BV_All[[n]]$BLUP
+        ebv_omic2 = BV_All[[n]]
       }
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_G,
                   EBV_2 =  ebv_omic2,
@@ -916,7 +961,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_G,
                   EBV_2 =  ebv_omic3,
@@ -954,7 +999,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_G,
                   EBV_2 =  ebv_omic1,
@@ -997,7 +1042,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_G,
                   EBV_2 =  ebv_omic1,
@@ -1040,7 +1085,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_G,
                   EBV_2 =  ebv_omic2,
@@ -1078,7 +1123,7 @@ if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
       }
 
     }
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 =  ebv_omic1,
                   EBV_2 = ebv_omic2,
@@ -1112,7 +1157,7 @@ rm(ebv_omic1, ebv_omic2)
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 =  ebv_omic1,
                   EBV_2 = ebv_omic3,
@@ -1147,7 +1192,7 @@ rm(ebv_omic1, ebv_omic3)
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 =  ebv_omic2,
                   EBV_2 = ebv_omic3,
@@ -1186,7 +1231,7 @@ rm(ebv_omic1, ebv_omic3)
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_omic1,
                   EBV_2 =  ebv_omic2,
@@ -1234,7 +1279,7 @@ rm(ebv_omic1, ebv_omic3)
 
       }
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV_1 = ebv_G,
                     EBV_2 =  ebv_omic1,
@@ -1269,9 +1314,9 @@ rm(ebv_omic1, ebv_omic3)
 
   if(!is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
-                  EBV= BV_All[[1]]$BLUP,
+                  EBV= BV_All[[1]],
                   pred_value =pred_value,
                   #pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_G,
@@ -1282,9 +1327,9 @@ rm(ebv_omic1, ebv_omic3)
                   Ve = VE)
   } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
-                  EBV = BV_All[[1]]$BLUP,
+                  EBV = BV_All[[1]],
                   pred_value =pred_value,
                   #pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_omic1,
@@ -1295,9 +1340,9 @@ rm(ebv_omic1, ebv_omic3)
                   Ve = VE)
   } else if (is.null(gmatrix) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
-    Result = list(call = str.mod,
+    Result = list(call = str_mod,
                   mod = mod,
-                  EBV = BV_All[[1]]$BLUP,
+                  EBV = BV_All[[1]],
                   pred_value =pred_value,
                   #pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_omic2,
@@ -1309,9 +1354,9 @@ rm(ebv_omic1, ebv_omic3)
 
   } else if (is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
-                  EBV=BV_All[[1]]$BLUP,
+                  EBV=BV_All[[1]],
                   pred_value =pred_value,
                   #pred_heter_groups = pred_heter_groups,
                   coefficients = coeffRaw_omic3,
@@ -1326,16 +1371,19 @@ rm(ebv_omic1, ebv_omic3)
     for (n in 1:length(G_list)) {
 
       if("G"==names(BV_All)[n]){
-        ebv_G = BV_All[[n]]$BLUP
+        ebv_G = BV_All[[n]]
       }
 
       if("omic1"==names(BV_All)[n]){
-        ebv_omic1 = BV_All[[n]]$BLUP
+        ebv_omic1 = BV_All[[n]]
       }
 
     }
 
-    Result = list(call=str.mod,
+    pred_value[, "Reliability"] <- round(1 - pred_value[, "PEV"]/sum(varG_matrix),6)
+    pred_value[, "Reliability"] <- ifelse(pred_value[, "Reliability"]<0, "Alias",  pred_value[, "Reliability"])
+
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_G,
                   EBV_2 =  ebv_omic1,
@@ -1356,16 +1404,16 @@ rm(ebv_omic1, ebv_omic3)
     for (n in 1:length(G_list)) {
 
       if("G"==names(BV_All)[n]){
-        ebv_G = BV_All[[n]]$BLUP
+        ebv_G = BV_All[[n]]
       }
 
       if("omic2"==names(BV_All)[n]){
-        ebv_omic2 = BV_All[[n]]$BLUP
+        ebv_omic2 = BV_All[[n]]
       }
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_G,
                   EBV_2 =  ebv_omic2,
@@ -1395,7 +1443,7 @@ rm(ebv_omic1, ebv_omic3)
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_G,
                   EBV_2 =  ebv_omic3,
@@ -1429,7 +1477,7 @@ rm(ebv_omic1, ebv_omic3)
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_G,
                   EBV_2 =  ebv_omic1,
@@ -1465,7 +1513,7 @@ rm(ebv_omic1, ebv_omic3)
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_G,
                   EBV_2 =  ebv_omic1,
@@ -1501,7 +1549,7 @@ rm(ebv_omic1, ebv_omic3)
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_G,
                   EBV_2 =  ebv_omic2,
@@ -1533,7 +1581,7 @@ rm(ebv_omic1, ebv_omic3)
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 =  ebv_omic1,
                   EBV_2 = ebv_omic2,
@@ -1563,7 +1611,7 @@ rm(ebv_omic1, ebv_omic3)
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 =  ebv_omic1,
                   EBV_2 = ebv_omic3,
@@ -1593,7 +1641,7 @@ rm(ebv_omic1, ebv_omic3)
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 =  ebv_omic2,
                   EBV_2 = ebv_omic3,
@@ -1627,7 +1675,7 @@ rm(ebv_omic1, ebv_omic3)
 
     }
 
-    Result = list(call=str.mod,
+    Result = list(call=str_mod,
                   mod=mod,
                   EBV_1 = ebv_omic1,
                   EBV_2 =  ebv_omic2,
@@ -1669,7 +1717,7 @@ rm(ebv_omic1, ebv_omic3)
 
       }
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV_1 = ebv_G,
                     EBV_2 =  ebv_omic1,
@@ -1691,7 +1739,7 @@ rm(ebv_omic1, ebv_omic3)
 
     }
   }
-    # Result = list(call=str.mod,
+    # Result = list(call=str_mod,
     #               mod=mod,
     #               ebv=BV_All,
     #               pred_value =pred_value,
@@ -1709,7 +1757,7 @@ rm(ebv_omic1, ebv_omic3)
 
     if(!is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV=BV_All[[1]]$BLUP,
                     pred_value =pred_value,
@@ -1722,7 +1770,7 @@ rm(ebv_omic1, ebv_omic3)
                     Ve = VE)
     } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV = BV_All[[1]]$BLUP,
                     pred_value =pred_value,
@@ -1735,7 +1783,7 @@ rm(ebv_omic1, ebv_omic3)
                     Ve = VE)
     } else if (is.null(gmatrix) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
-      Result = list(call = str.mod,
+      Result = list(call = str_mod,
                     mod = mod,
                     EBV = BV_All[[1]]$BLUP,
                     pred_value =pred_value,
@@ -1749,7 +1797,7 @@ rm(ebv_omic1, ebv_omic3)
 
     } else if (is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV=BV_All[[1]]$BLUP,
                     pred_value =pred_value,
@@ -1777,7 +1825,7 @@ rm(ebv_omic1, ebv_omic3)
       }
 
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV_1 = ebv_G,
                     EBV_2 =  ebv_omic1,
@@ -1806,7 +1854,7 @@ rm(ebv_G, ebv_omic1)
 
       }
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV_1 = ebv_G,
                     EBV_2 =  ebv_omic2,
@@ -1836,7 +1884,7 @@ rm(ebv_G, ebv_omic1)
 
       }
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV_1 = ebv_G,
                     EBV_2 =  ebv_omic3,
@@ -1870,7 +1918,7 @@ rm(ebv_G, ebv_omic1)
 
       }
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV_1 = ebv_G,
                     EBV_2 =  ebv_omic1,
@@ -1904,7 +1952,7 @@ rm(ebv_G, ebv_omic1, ebv_omic2)
 
       }
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV_1 = ebv_G,
                     EBV_2 =  ebv_omic1,
@@ -1939,7 +1987,7 @@ rm(ebv_G, ebv_omic1, ebv_omic2)
         }
 
       }
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV_1 = ebv_G,
                     EBV_2 =  ebv_omic2,
@@ -1970,7 +2018,7 @@ rm(ebv_G, ebv_omic2, ebv_omic3)
 
       }
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV_1 =  ebv_omic1,
                     EBV_2 = ebv_omic2,
@@ -1999,7 +2047,7 @@ rm(ebv_omic1, ebv_omic2)
 
       }
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV_1 =  ebv_omic1,
                     EBV_2 = ebv_omic3,
@@ -2029,7 +2077,7 @@ rm(ebv_omic1, ebv_omic2)
 
       }
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV_1 =  ebv_omic2,
                     EBV_2 = ebv_omic3,
@@ -2064,7 +2112,7 @@ rm(ebv_omic1, ebv_omic2)
 
       }
 
-      Result = list(call=str.mod,
+      Result = list(call=str_mod,
                     mod=mod,
                     EBV_1 = ebv_omic1,
                     EBV_2 =  ebv_omic2,
@@ -2108,7 +2156,7 @@ rm(ebv_omic1, ebv_omic2)
         }
 
 
-        Result = list(call=str.mod,
+        Result = list(call=str_mod,
                       mod=mod,
                       EBV_1 = ebv_G,
                       EBV_2 =  ebv_omic1,
@@ -2130,7 +2178,7 @@ rm(ebv_omic1, ebv_omic2)
 
       }
     }
-    # Result = list(call=str.mod,
+    # Result = list(call=str_mod,
     #               mod=mod,
     #               ebv=BV_All,
     #               pred_value =pred_value,
@@ -2147,5 +2195,11 @@ rm(ebv_omic1, ebv_omic2)
 
 } ## Result Ends
 
+if(exists("G_inv")) rm(G_inv)
+if(exists("omic1_inv")) rm(omic1_inv)
+if(exists("omic2_inv")) rm(omic2_inv)
+if(exists("omic3_inv")) rm(omic3_inv)
+
 return(Result)
+
 }

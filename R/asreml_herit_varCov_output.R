@@ -16,7 +16,7 @@
 #' @examples
 #'
 
-asreml_herit_varCov <-  function(
+asreml_herit_varCovraw <-  function(
     model = NULL,
     heter_groups = NULL,
     VarCov_str= NULL,

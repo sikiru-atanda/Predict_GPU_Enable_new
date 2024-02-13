@@ -18,9 +18,12 @@ summary_statistics_bayes <- function(mod=NULL,
                                                       "Mean_Absolute_Percent_Error"),
                                      ...){
 
+  if(!is.null(eval_metrics)){
   Eval_met <- matrix(NA, nrow = length(eval_metrics), ncol = 1)
 
   rownames(Eval_met) <- eval_metrics
+
+  }
 
   #Res <-  cat(tmp,'\n')
 
@@ -43,8 +46,7 @@ summary_statistics_bayes <- function(mod=NULL,
 
   n<-length(mod$model$y)
 
-  if(any(is.na(mod$model$y)))
-  {
+  if(any(is.na(mod$model$y))){
     tst <- which(is.na(mod$model$y))
 
     n_trn <- n-length(tst)
@@ -57,11 +59,14 @@ summary_statistics_bayes <- function(mod=NULL,
 
     #pred_acc <-  paste('Prediction Accuarcy =',round(cor(mod$model$y[-tst],mod$model$yHat[-tst]),3))
 
+    if(!is.null(eval_metrics)){
     for (i in 1:length(eval_metrics)){
 
       Eval_met[i, ] <- evaluation_metrics(y_observed = mod$model$y[tst],
                                           y_predicted = mod$model$yHat[tst],
                                           eval_metrics = eval_metrics[i])
+
+    }
 
     }
 
@@ -77,18 +82,22 @@ summary_statistics_bayes <- function(mod=NULL,
 
     #pred_acc <- paste('Prediction Accu of Training =',round(cor(mod$model$y,mod$model$yHat),3))
 
+    if(!is.null(eval_metrics)){
     for (i in 1:length(eval_metrics)){
 
       Eval_met[i, ] <- evaluation_metrics(y_observed = mod$model$y,
                                           y_predicted = mod$model$yHat,
                                           eval_metrics = eval_metrics[i])
 
+     }
+
     }
+
   }
 
   #model = data.frame()
 
-  model = c()
+  model <- c()
 
   for(k in 1:length(mod$model$ETA))
   {
@@ -122,18 +131,25 @@ summary_statistics_bayes <- function(mod=NULL,
                                         Number_TestingSet = n_tst
                                         #GS_model = model
   )))
-  Stat_Res$stat = rownames( Stat_Res)
-  Stat_Res =  Stat_Res[, c(2,1)]
+  Stat_Res$stat <- rownames( Stat_Res)
+  Stat_Res <- Stat_Res[, c(2,1)]
   names(Stat_Res)[2] <- "summary"
   rownames(Stat_Res) <- NULL
 #####
-  Eval_met = data.frame(Eval_met)
-  Eval_met$stat = rownames(Eval_met)
-  Eval_met =  Eval_met[, c(2,1)]
+  if(!is.null(eval_metrics)){
+  Eval_met <- data.frame(Eval_met)
+  Eval_met$stat <- rownames(Eval_met)
+  Eval_met <- Eval_met[, c(2,1)]
   names(Eval_met)[2] <- "summary"
   rownames(Eval_met) <- NULL
+
+  ### This is specific where the pheno_data has missing value but no test_value for the
+  ## validation exercise. proper validation exercise should be done with validation fxn
+  Eval_met <- Eval_met[complete.cases(Eval_met), ]
 ####
-  Stat_Res = rbind(Stat_Res, Eval_met)
+  Stat_Res <- rbind(Stat_Res, Eval_met)
+
+  }
 
   output <-  list(Stat_Res)
 

@@ -25,8 +25,9 @@
 #'
 #' @examples
 phenotype_precheck<- function(pheno_data = NULL,
-                               gen_name = NULL,
-                               response = NULL,
+                              gen_name = NULL,
+                              response = NULL,
+                              heter_groups = NULL,
                                ...)
   {
 
@@ -38,7 +39,7 @@ phenotype_precheck<- function(pheno_data = NULL,
     if (!inherits(pheno_data, what = 'data.frame')) {
       #stop(print(paste(msg,"'pheno_data' must be of class 'data.frame'")), call. = FALSE)
 
-      stop(print(paste(msg,"'pheno_data' is not 'data.frame' type. We fix it.")), call. = FALSE)
+      message(print(paste(msg,"'pheno_data' is not 'data.frame' type. We fix it.")))
       pheno_data <- as.data.frame(pheno_data)
     }
 
@@ -56,6 +57,16 @@ phenotype_precheck<- function(pheno_data = NULL,
       if(sum(colnames(pheno_data)%in%response)<length(response)) {
         stop(print(paste(msg,paste(paste("The specified ",  response),
                                    " did not match with your data.\n\t\t Please check and use apppropriatly"))), call. = FALSE)
+
+      }
+
+      #### This is very much imp especially for BGLR
+      if(!is.null(heter_groups)) {
+        if(heter_groups%in%colnames(pheno_data))
+        stop(print(paste(msg,paste(paste("The specified ",  heter_groups),
+                                   " did not match with your data.\n\t\t Please check and use apppropriatly"))), call. = FALSE)
+
+        pheno_data = pheno_data[order(pheno_data[, heter_groups]), ]
 
       }
 
@@ -84,7 +95,7 @@ phenotype_precheck<- function(pheno_data = NULL,
       }
 
       # Assign appropriate class.
-      class(pheno_data) <- c("data.frame", "phenotype")
+      #class(pheno_data) <- c("data.frame", "phenotype")
 
       attr(pheno_data, "cleared") <- "pass"
 

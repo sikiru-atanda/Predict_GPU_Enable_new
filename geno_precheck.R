@@ -33,13 +33,13 @@
 #' @export
 #'
 #' @examples
-geno_precheck <- function(object_geno = NULL,
-                          maf = 0.05,
-                          freqHet = 0.2,
-                          call_rate = 0.5,
-                          impute = TRUE,
-                          qc_filtering = TRUE,
-                          message = TRUE,
+geno_precheckOLDD <- function(object_geno = NULL,
+                            maf = 0.05,
+                            freqHet = 0.3,
+                            call_rate = 0.5,
+                            impute = TRUE,
+                            qc_filtering = TRUE,
+                            message = TRUE,
                           ...) {
 
 
@@ -56,7 +56,8 @@ geno_precheck <- function(object_geno = NULL,
 
     if(class(object_geno)[[1]]!="matrix"){
       if(isTRUE(message)){
-      message(paste(msg,"The data is not class matrix: we fix it." ))
+        message(insight::print_color(paste(msg,paste("The data is not class matrix: we fix it.")), "blue"))
+      #message(paste(msg,"The data is not class matrix: we fix it." ))
       }
 
       object_geno <- as.matrix(object_geno)
@@ -64,6 +65,7 @@ geno_precheck <- function(object_geno = NULL,
 
     # Check row and column names in object_geno.
     if(is.null(rownames(object_geno))){
+
 
       stop(print(paste(msg, "Individual names not assigned to rows of \'object_geno'.")), call. = FALSE)
 
@@ -74,12 +76,14 @@ geno_precheck <- function(object_geno = NULL,
 
     }
 
-    ## Check if allele dosage are in 0, 1, 2 format
+    ## Check if allele dosage are in not 0, 1, 2 format
     check_geno <- which(object_geno== -1)
 
     if(length(check_geno!=0)){
       if(isTRUE(message)){
-      message(paste(msg,'The allele dosages is not in 0, 1, 2. we fix it for you'))
+        message(insight::print_color(paste(msg,paste('The allele dosages is not in 0, 1, 2. we fix it for you.')), "blue"))
+
+      #message(paste(msg,'The allele dosages is not in 0, 1, 2. we fix it for you'))
       }#c(-1, 0, 1) + 1
       #[1] 0 1 2
       object_geno <- apply(object_geno, 2, function(x) x+1)}
@@ -92,9 +96,13 @@ geno_precheck <- function(object_geno = NULL,
 
     rm(check_geno)
     ### Check and remove monomorhpic markers
-    if(message){
-      message("\nMonomorphic check.  \n")
+    if(isTRUE(message)){
+      message(insight::print_color(paste(msg,paste("\nMonomorphic check.  \n")), "blue"))
+
+      #message("\nMonomorphic check.  \n")
     }
+
+    Nsnp = ncol(object_geno)
     nL = ncol(object_geno)
     object_geno <- Remove_NA_Mono_SNP(object_geno)
     total_mono = nL - ncol(object_geno)
@@ -149,7 +157,9 @@ geno_precheck <- function(object_geno = NULL,
     MAF=ifelse(phat<0.5,phat,1-phat) ##
 
     if(isTRUE(message)){
-    message("\nMinor allele frequency check (MAF).  \n")
+    #message("\nMinor allele frequency check (MAF).  \n")
+      message(insight::print_color(paste(msg,paste("\nMinor allele frequency check (MAF).  \n")), "blue"))
+
     }
 
     if(length(which(MAF<maf))!=0){
@@ -162,21 +172,24 @@ geno_precheck <- function(object_geno = NULL,
 
     if(maf==0.05){
       if(isTRUE(message)){
-        message(paste(msg,"if higher or lower MAF threshold value is desired provide one"))
+        message(insight::print_color(paste(msg,paste("if higher or lower MAF threshold value is desired provide one.")), "blue"))
+        #message(paste(msg,"if higher or lower MAF threshold value is desired provide one"))
       }
     }
 
     if(isTRUE(message)){
       #message(paste(msg,(paste(paste('Total loci below MAF ', paste("threshold", maf)), sep = ': \t',ncol(object_geno) - length(which(MAF<maf))))))
       #message(paste(msg,(paste(paste('Total loci below MAF ', paste("threshold", maf)), sep = ': \t',length(which(MAF<maf))))))
-      message(paste(msg,(paste(paste('Total loci below MAF ', paste("threshold", maf)), sep = ': \t', maf_markers_removed))))
+      #message(paste(msg,(paste(paste('Total loci below MAF ', paste("threshold", maf)), sep = ': \t', maf_markers_removed))))
+      message(insight::print_color(paste(msg,(paste(paste('Total loci below MAF ', paste("threshold", maf)), sep = ': \t', maf_markers_removed))), "blue"))
     }
 
     #dim(object_geno)
     } else {
       if(isTRUE(message)){
 
-        message(paste(msg, paste("\tNo loci with MAF below",paste("threshold =", maf), sep = " ")))
+        message(insight::print_color(paste(msg,paste("\tNo loci with MAF below",paste("threshold =", maf), sep = " ")), "blue"))
+
       #cat("\tNo loci with minor allele frequency below", paste("threshold =", maf),"\n")
       }
     }
@@ -196,7 +209,8 @@ geno_precheck <- function(object_geno = NULL,
     het_markers_removed = N_int - ncol(object_geno)
 
     if(isTRUE(message)){
-      message(paste(msg,(paste(paste('Total loci above heterozygosity', paste("threshold", freqHet)), sep = ': \t', het_markers_removed))))
+      message(insight::print_color(paste(msg,(paste(paste('Total loci above heterozygosity', paste("threshold", freqHet)), sep = ': \t', het_markers_removed))), "blue"))
+
     }
 
     }
@@ -221,8 +235,10 @@ geno_precheck <- function(object_geno = NULL,
 
         if(isTRUE(message)){
           #message(paste(msg,(paste(paste('Total loci below MAF ', paste("threshold", maf)), sep = ': \t',ncol(object_geno) - length(which(MAF<maf))))))
-          message(paste(msg,(paste(paste('Total loci above user defined call rate ', paste("threshold", call_rate)), sep = ': \t',markers_callrate_removed))))
-        }
+          #message(paste(msg,(paste(paste('Total loci above user defined call rate ', paste("threshold", call_rate)), sep = ': \t',markers_callrate_removed))))
+          message(insight::print_color(paste(msg,(paste(paste('Total loci above user defined call rate ', paste("threshold", call_rate)), sep = ': \t',markers_callrate_removed))), "blue"))
+
+          }
 
       }
 
@@ -257,8 +273,10 @@ geno_precheck <- function(object_geno = NULL,
         #object_geno = object_geno[ , colSums(is.na(object_geno))==0]
 
         if(isTRUE(message)){
-          message("A total of ", length(Na_col.omit),
-                  " SNP (s)/ marker (s) were removed from due to missing value")
+
+          message(insight::print_color(paste(msg,paste("A total of ", length(Na_col.omit),
+                                                       " SNP (s)/ marker (s) were removed from due to missing value.")), "blue"))
+
 
         }
 
@@ -317,28 +335,38 @@ geno_precheck <- function(object_geno = NULL,
     total_maf_markers_removed = maf_markers_removed
   }
   nsnp = ncol(object_geno)
-  output = list(object_geno,
-                total_number_genotype,
-                call_rate,
-                total_markers_removed,
-                heterozygosity,
-                total_het_markers_removed,
-                maf,
-                total_maf_markers_removed,
-                total_mono,
-                nsnp)
+  # output = list(object_geno,
+  #               total_number_genotype,
+  #               call_rate,
+  #               total_markers_removed,
+  #               heterozygosity,
+  #               total_het_markers_removed,
+  #               maf,
+  #               total_maf_markers_removed,
+  #               total_mono,
+  #               nsnp)
 
+  stat_res = as.data.frame(t(data.frame(total_number_genotype = total_number_genotype,
+                                        call_rate = call_rate,
+                                        total_markers_removed = total_markers_removed,
+                                        heterozygosity = heterozygosity,
+                                        total_het_markers_removed = total_het_markers_removed,
+                                        minor_allele_freq = maf,
+                                        total_maf_markers_removed = total_maf_markers_removed,
+                                        total_monomorphic_markers = total_mono,
+                                        total_number_of_makers_beforeQC = Nsnp,
+                                        total_number_of_makers_afterQC = nsnp)))
 
+  stat_res$qc_metrics_and_summary = rownames(stat_res)
+  stat_res =  stat_res[, c(2,1)]
+  names(stat_res)[2] <- "value"
+  rownames(stat_res) <- NULL
+
+output <- list(object_geno,
+               stat_res)
   names(output) <- c("marker_matrix",
-                    "total_number_genotype",
-                    "call_rate",
-                    "total_markers_removed",
-                    "heterozygosity",
-                    "total_het_markers_removed",
-                    "maf",
-                    "total_maf_markers_removed",
-                    "total_monomorphic_markers_removed",
-                    "total_number_of_marker_after_qc_filtering"
+                    "qC_metrics_and_summary"
+
 
   )
 

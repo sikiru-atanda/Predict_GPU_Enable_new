@@ -25,6 +25,8 @@
 pheno_geno_match <- function(object_pheno = NULL,
                              object_geno = NULL,
                              gen_name = NULL,
+                             test_set = NULL,
+                             train_set = NULL,
                              message = TRUE,
                              ...){
 
@@ -64,6 +66,63 @@ pheno_geno_match <- function(object_pheno = NULL,
     ## testing set
     test_set <- setdiff(rownames(object_geno), ID_pheno)
 
+    if(!is.null(test_set)){
+      if(is.data.frame(test_set) | is.matrix(test_set)){
+
+        ## To be sure the user it not providing duplicate ID
+        test_set <-  unique(test_set[, 1])
+        #stop(message(paste(msg,"The testing set should be a dataframe with a column named similar to the gen_name provided to represent the genotypes.")), call. = FALSE)
+      }else {
+        ### It can be character vector or integer vector except list
+        if(!is.list(test_set)){
+          test_set <-  unique(test_set)
+
+        } else {
+          if(is.list(test_set)){
+            stop(message(paste(msg,'The testing set cannot be a list. Should be either dataframe, matrix or a vector.')), call. = FALSE)
+          }
+
+        }
+
+      }
+    } else {
+
+      if(!is.null(train_set) & exists(ID_pheno)){
+        if(is.data.frame(train_set) | is.matrix(train_set)){
+
+          ## To be sure the user it not providing duplicate ID
+          train_set <-  unique(train_set[, 1])
+          test_set = setdiff(ID_pheno, train_set)
+          ## If length of the test_set is zero remove it.
+          if(length(test_set)==0) rm(test_set)
+          message(insight::print_color(paste(msg,paste('No test_set available.')), "red"))
+
+          #stop(message(paste(msg,'The training set should be a dataframe with a column named similar to the gen_name provided to represent the genotypes.')), call. = FALSE)
+        }else {
+
+          ### It can be character vector or integer vector except list
+          if(!is.list(train_set)){
+
+            ### This is to be use the user if not presenting duplicate ID
+            train_set <-  unique(train_set)
+            test_set = setdiff(ID_pheno, train_set)
+            ## If length of the test_set is zero remove it.
+            if(length(test_set)==0) {rm(test_set)
+            message(insight::print_color(paste(msg,paste('No test_set available.')), "red"))
+            }
+
+          } else{
+            if(is.list(train_set)){
+            stop(message(paste(msg,'The training set cannot be a list. Should be either dataframe, matrix or a vector.')), call. = FALSE)
+            }
+          }
+
+        }
+      }
+    }
+
+
+
     ## if the object_geno is a grm/kernel matrix
     ### First the colname must be equal rowname
     if(nrow(object_geno)==ncol(object_geno)){
@@ -83,16 +142,33 @@ pheno_geno_match <- function(object_pheno = NULL,
       }
     }
 
-  }
+  } else{
 
     ##
     if(isTRUE(all(rownames(object_geno)%in%ID_pheno))){
 
-      object_geno <- object_geno[ID_pheno,  ]
+      if(nrow(object_geno)==ncol(object_geno)){
+        object_geno <- object_geno[ID_pheno, ID_pheno]
+
+
+      } else {
+
+        ## if the object_geno is a M_matrix data
+        if(nrow(object_geno)!=ncol(object_geno)){
+          object_geno <- object_geno[ID_pheno,   ]
+
+          ### Combined them together. keep in mind test_set do not have phenotypic record.
+          #### TO DO find way to have them as NA in BGLR or through error message if
+          ## the engine if BGLR
+
+        }
+      }
 
     }
 
   }
+
+}
 
   # else {
   #
@@ -117,7 +193,7 @@ pheno_geno_match <- function(object_pheno = NULL,
 
 
   #### Declare it also as an object for final usage
-  class(object_geno) <-c("matrix", "array", "predictor_clean")
+  #class(object_geno) <-c("matrix", "array", "predictor_clean")
 
   attr(object_geno, "cleared") <- "model_ready_use"
 

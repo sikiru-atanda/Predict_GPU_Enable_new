@@ -55,10 +55,12 @@ bayes_parameter_check <- function(
       nIter <- 200 # 26000
 
   } else {
-    nIter< 16000
+
+    if(nIter< 16000){
     message(paste( insight::print_color("WARNINGS\n", "red"),
                    insight::print_color(paste(msg,paste("Number of iteration is provided is less than 16000 which we consider optimal. \n Check if this appropriate for your data.")), "red")))
 
+    }
   }
 
   #if(is.null(burnIn) || burnIn < 5000){
@@ -73,10 +75,11 @@ bayes_parameter_check <- function(
 
   } else {
 
-    burnIn< 1600
+    if(burnIn< 1600){
     message(paste( insight::print_color("WARNINGS\n", "red"),
                    insight::print_color(paste(msg,paste("Number of burn-in provided is less than 1600 which we consider optimal. \n Check if this appropriate for your data.")), "red")))
 
+    }
 
   }
 

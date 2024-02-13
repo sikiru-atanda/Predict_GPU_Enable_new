@@ -12,6 +12,7 @@
 #' @examples
 sparse_matrix <-  function(
     grm_kernel_data = NULL,
+    inverse = NULL,
     drop_zero= TRUE){
 
 if(isTRUE(drop_zero)) {
@@ -27,6 +28,8 @@ res_sparse <- data.frame(Row = t(row(grm_kernel_data))[t(which)],
 res_sparse <- as.matrix(res_sparse)
 
 # # Add attributes.
+## This attribute will not work if grm_kernel_data did not have
+## rowNames and ColNames as attributes
 attr(res_sparse, "rowNames") <- rownames(grm_kernel_data)
 attr(res_sparse, "colNames") <- colnames(grm_kernel_data)
 

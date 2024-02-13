@@ -46,7 +46,7 @@ ETA_compiler_bayes_GBLUP <- function(
   msg <- sprintf("==================================================\n")
   ### Get the random terms. Both no interaction and interaction terms if present in the random terms
   rand_terms <- random_terms(random = random,
-                                     object = pheno_data)
+                             object = pheno_data)
 
   ### Assign
   rand_model <- random_term_model(rand_terms = rand_terms,

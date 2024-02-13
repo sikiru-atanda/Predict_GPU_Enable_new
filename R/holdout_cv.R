@@ -8,6 +8,7 @@
 #' @param response
 #' @param method
 #' @param ...
+#' @param message
 #'
 #' @return
 #' @export

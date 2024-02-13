@@ -43,7 +43,7 @@ omic_precheck <- function(object = NULL,
 
     #if (any(is.na(object))) {stop(print(paste(msg,'object contains Missing value')), call. = FALSE)}
 
-    class(object) <-c("matrix", "array", "omic_matrix")
+    #class(object) <-c("matrix", "array", "omic_matrix")
 
     attr(object, "cleared") <- "pass"
 

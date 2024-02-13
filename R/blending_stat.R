@@ -13,7 +13,7 @@
 #' @export
 #'
 #' @examples
-blending_stat <- function(grm_kernel_data = NULL,
+blending_statOLD <- function(grm_kernel_data = NULL,
          pedigree_matrix = NULL,
          blending = TRUE,
          blending_value = 0.02

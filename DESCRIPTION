@@ -27,6 +27,8 @@ Imports:
     insight,
     keras,
     kernlab,
+    magrittr,
+    MASS,
     Matrix,
     matrixcalc,
     parallel,
@@ -35,6 +37,8 @@ Imports:
     stats,
     stringr,
     tensorflow,
+    tibble,
     tidyr,
     utils,
     xgboost
+RoxygenNote: 7.3.0

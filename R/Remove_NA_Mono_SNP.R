@@ -28,10 +28,12 @@ Remove_NA_Mono_SNP <- function(geno = NULL,
 
   msg <- sprintf("==================================================\n")
 
-  if(message){
-  message(paste(msg,(paste('Number of Individuals', sep = ': ',N_Individuals))))
+  if(isTRUE(message)){
 
-  message(paste(msg,(paste('Number of markers', sep = ': ', nL))))
+    message(insight::print_color(paste(msg,(paste('Number of Individuals', sep = ': ',N_Individuals))), "blue"))
+  #message(paste(msg,(paste('Number of Individuals', sep = ': ',N_Individuals))))
+    message(insight::print_color(paste(msg,(paste('Number of markers', sep = ': ', nL))), "blue"))
+  #message(paste(msg,(paste('Number of markers', sep = ': ', nL))))
   }
 
   matrix <- as.matrix(geno)
@@ -78,19 +80,22 @@ Remove_NA_Mono_SNP <- function(geno = NULL,
 
   if(length(loc.list.Mono)!=0){
 
-    if(message){
-    message(paste(msg,("Removing monomorphic loci\n")))
+    if(isTRUE(message)){
+      message(insight::print_color(paste(msg,paste("Removing monomorphic loci\n")), "blue"))
+    #message(paste(msg,("Removing monomorphic loci\n")))
     }
 
     # Remove loci flagged for deletion
     geno <- geno[,!colnames(geno)%in%loc.list.Mono]
-    if(message){
-    message(paste(msg,(paste('Number of monomorphic loci removed', sep = ': \t',length(loc.list.Mono)))))
+    if(isTRUE(message)){
+      message(insight::print_color(paste(msg,(paste('Number of monomorphic loci removed', sep = ': \t',length(loc.list.Mono)))), "blue"))
+    #message(paste(msg,(paste('Number of monomorphic loci removed', sep = ': \t',length(loc.list.Mono)))))
 }
   } else {
 
-    if(message){
-    message(paste(msg,("No monomorphic loci to remove\n")))
+    if(isTRUE(message)){
+      message(insight::print_color(paste(msg,paste("No monomorphic loci to remove\n")), "blue"))
+    #message(paste(msg,("No monomorphic loci to remove\n")))
     }
 
   }

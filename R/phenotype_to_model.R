@@ -23,22 +23,24 @@
 #' @param response y variables/lables
 #' @param gen_name column name containing individuals/genotypes
 #' @param ...
+#' @param train_set
+#' @param test_set
 #'
 #' @return
 #' @export
 #'
 #' @examples
 
-    phenotype_to_model <- function(
-        pheno_data = NULL,
-        pheno_data_train = NULL,
-        pheno_data_test = NULL,
-        #train_set = NULL,
-        #test_set = NULL,
-        response=NULL,
-        gen_name=NULL,
-        ...
-    ) {
+phenotype_to_model <- function(
+                              pheno_data = NULL,
+                              pheno_data_train = NULL,
+                              pheno_data_test = NULL,
+                              train_set = NULL,
+                              test_set = NULL,
+                              response=NULL,
+                              gen_name=NULL,
+                              ...
+                          ) {
 
       msg <- sprintf("==================================================\n")
 
@@ -48,18 +50,84 @@
   ## Check for NA is not test here for response variables because testing set might have NA
   # thus, NA is expected in pheno_data.
 
-  if (!is.null(pheno_data)){
+  if ((!is.null(pheno_data) & (is.null(pheno_data_train) & is.null(pheno_data_test)))){
 
     pheno_data <- phenotype_precheck(pheno_data= pheno_data,
-                                 gen_name = gen_name,
-                                 response = response)
+                                     gen_name = gen_name,
+                                      response = response)
+
+    if(!is.null(test_set)){
+
+      if(is.data.frame(test_set) | is.matrix(test_set)){
+
+       test_set = test_set[, 1]
+
+
+      } else if (!is.list(test_set)){
+
+        test_set = test_set
+
+      } else {
+        if(is.list(test_set)){
+        stop(message(paste(msg,'The testing set cannot be a list. Should be either dataframe, matrix or a vector.')), call. = FALSE)
+
+        }
+
+      }
+
+      if(length(test_set)>length(unique(as.character(pheno_data[, gen_name])))){
+        stop(message(paste(msg, "The testing set size should be less than the unique genotypes in the pheno_data.")), call. = FALSE)
+      }
+
+      pheno_data[, response] <- ifelse(pheno_data[, gen_name]%in%test_set, NA,
+                                       pheno_data[, response])
+
+      test_set_ = test_set
+
+      rm(test_set)
+
+    } else{
+
+      if(!is.null(train_set)){
+        if(is.data.frame(train_set) | is.matrix(train_set)){
+          train_set = train_set[, 1]
+
+        } else if (!is.list(train_set)){
+
+          train_set = train_set
+        } else {
+          if(is.list(train_set)){
+
+            stop(message(paste(msg,'The training set cannot be a list. Should be either dataframe, matrix or a vector.')), call. = FALSE)
+          }
+
+          }
+
+        pheno_data[, response] <- ifelse(!pheno_data[, gen_name]%in%train_set, NA,
+                                         pheno_data[, response])
+
+        test_set_ <- data.frame(name = as.character(unique(pheno[!pheno_data[, gen_name]%in%train_set, gen_name])), stringsAsFactors = FALSE)
+        names(test_set) = gen_name
+
+        if(nrow(test_set_)==0){
+
+          rm(test_set_)
+
+          message(paste( insight::print_color("WARNINGS\n", "blue"),
+                         insight::print_color(paste(msg,paste("The training set size is the same size as the unique genotypes in the pheno_data.")), "blue")))
+
+        }
+
+      }
+
+      }
 
     ### The result object has to pass the test attribute before it can be stored/
     ## pass through for the next step of check and declared good for model fit
-    if(attr(pheno_data, "cleared")=="pass" && all(class(pheno_data)==c("data.frame", "phenotype"))) {
+    if(attr(pheno_data, "cleared")=="pass") {
 
     # Assign appropriate class.
-    class(pheno_data) <- c("data.frame", "phenotype")
+    #class(pheno_data) <- c("data.frame", "phenotype")
 
     attr(pheno_data, "cleared") <- "for_model_fit"
 
@@ -83,18 +151,23 @@
     if (!is.null(pheno_data_train)){
 
       pheno_data_train_ <- phenotype_precheck(pheno_data= pheno_data_train,
-                                   gen_name = gen_name,
-                                   response = response)
+                                               gen_name = gen_name,
+                                               response = response)
 
-      if(attr(pheno_data_train_, "cleared")!="pass" && all(class(pheno_data_train_)!=c("data.frame", "phenotype"))) {
+      if(attr(pheno_data_train_, "cleared")!="pass") {
 
-        stop(paste(msg, 'pheno_data_train is not object phenotype'))
+        stop(message(paste(msg, 'pheno_data_train is not object phenotype.')), call. = FALSE)
+
 
 
       }
 
       ## Though pass the pre-check test but NA is not expected in the pheno_data training.
-      if(anyNA(pheno_data_train_)){ stop(paste(msg,"Missing value in not accepted in training set"))}
+      if(anyNA(pheno_data_train_)){
+
+        stop(message(paste(msg, "Missing value in not accepted in training set.")), call. = FALSE)
+
+        }
 
       rm(pheno_data_train)
     }
@@ -105,12 +178,13 @@
     if (!is.null(pheno_data_test)){
 
       pheno_data_test_ <- phenotype_precheck(pheno_data= pheno_data_test,
-                                   gen_name = gen_name,
-                                   response = response)
+                                             gen_name = gen_name,
+                                             response = response)
 
-      if(attr(pheno_data_test_, "cleared")!="pass" && all(class(pheno_data_test_)!=c("data.frame", "phenotype"))) {
+      #if(attr(pheno_data_test_, "cleared")!="pass" && all(class(pheno_data_test_)!=c("data.frame", "phenotype"))) {
+      if(attr(pheno_data_test_, "cleared")!="pass") {
+        stop(print(paste(msg, 'pheno_data_train is not object phenotype.')), call. = FALSE)
 
-        stop(paste(msg, 'pheno_data_train is not object phenotype'))
       }
 
       rm(pheno_data_test)
@@ -121,19 +195,19 @@
     if ((exists("pheno_data_train_") & exists("pheno_data_test_")) & is.null(pheno_data)){
 
       if (!identical(colnames(pheno_data_train_), colnames(pheno_data_test_))){
-        stop(print(paste(msg,'Columns name in the pheno_data_train not the same as pheno_data_test')), call. = FALSE)
+        stop(message(paste(msg,'Columns name in the pheno_data_train not the same as pheno_data_test.')), call. = FALSE)
 
       } else{
 
         pheno_data <- rbind(pheno_data_train, pheno_data_test)
 
-        test_set <- data.frame(name = as.character(unique(pheno_data_test[, gen_name])), stringsAsFactors = FALSE)
+        test_set_ <- data.frame(name = as.character(unique(pheno_data_test[, gen_name])), stringsAsFactors = FALSE)
         names(test_set) = gen_name
 
         ### The result object has to pass the test attribute before it can be stored
 
           # Assign appropriate class.
-          class(pheno_data) <- c("data.frame", "phenotype")
+          #class(pheno_data) <- c("data.frame", "phenotype")
 
           attr(pheno_data, "cleared") <- "for_model_fit"
 
@@ -151,11 +225,11 @@
 
   #if(!is.null(pheno_data) & (!is.null(test_set) && !is.null(train_set))){
 
-  if(!is.null(pheno_data) & exists('test_set')){
+  if(!is.null(pheno_data) & exists('test_set_')){
 
-    if(!is.null(test_set)){
+    if(!is.null(test_set_)){
 
-    output =  list(pheno_data, test_set)
+    output =  list(pheno_data, test_set_)
 
 
     names(output) <- c("pheno_data", "test_set")
@@ -177,7 +251,7 @@
 
     if (exists("pheno_data_train_") & exists("pheno_data_test_")){
 
-    output =  list(pheno_data, test_set)
+    output =  list(pheno_data, test_set_)
 
     names(output) <- c("pheno_data", "test_set")
 
