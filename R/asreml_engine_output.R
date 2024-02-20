@@ -7,7 +7,7 @@
 #' @param pheno_data
 #' @param heter_groups
 #' @param gen_name
-#' @param VarCov_str
+#' @param var_cov_str
 #' @param heter_resid
 #' @param gkernel
 #' @param gmatrix
@@ -30,7 +30,7 @@ asreml_mod_outputOLD <- function(
          omic3_kernel=NULL,
          heter_groups = NULL,
          gen_name = NULL,
-         VarCov_str = NULL,
+         var_cov_str = NULL,
          heter_resid = NULL,
          pworkspace= 1e15,
          #workspace = 1e08,
@@ -50,8 +50,8 @@ asreml_mod_outputOLD <- function(
   ## by default in asreml so it safe to keep it
   mod = asreml::update.asreml(mod)
   str_mod = mod_asreml$str_mod
-  Gen_pos = mod_asreml$Gen_pos
-  Inter_Gen_pos = mod_asreml$Inter_Gen_pos
+  gen_pos = mod_asreml$gen_pos
+  inter_gen_pos = mod_asreml$inter_gen_pos
   G_list = mod_asreml$G_list
   rand_term = mod_asreml$rand_term
 #############################
@@ -80,10 +80,10 @@ asreml_mod_outputOLD <- function(
 
   colnames(BLUP)[colnames(BLUP)%in%"std.error"] <- "Std_error"
 
-#Heter.Grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
+#heter_grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
 
 if (!is.null(heter_groups)){
-  Heter.Grp <- as.character(unique(pheno_data[, heter_groups]))
+  heter_grp <- as.character(unique(pheno_data[, heter_groups]))
 }
 #ENV_Ids = as.character(unique(pheno_data[, heter_groups]))
 #### Extract Breeding values/genetic effect estimate for all omics
@@ -100,11 +100,11 @@ for (b in 1:length(G_list)) {
 }
 
 ### For variance structure extraction
-if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
+if(!is.null(var_cov_str) & !is.null(inter_gen_pos)){
 
-  if(isTRUE(grepl("fa", VarCov_str))){
+  if(isTRUE(grepl("fa", var_cov_str))){
     ## Extract the number of factors
-    #N_fa = substr(VarCov_str, 3, 100)
+    #N_fa = substr(var_cov_str, 3, 100)
 
     for (bb in 1:length(G_list)) {
       BV_All[[bb]] <- BV_All[[bb]][!rownames(BV_All[[bb]])%in%rownames(BV_All[[bb]][grep('Comp',rownames(BV_All[[bb]])),]), ]
@@ -117,7 +117,7 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
   } else {
 
-    if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv") {
+    if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv") {
 
 
       for (bb in 1:length(G_list)) {
@@ -135,12 +135,12 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
   } ## End
 
   #################################
-  if(!is.null(Inter_Gen_pos)){
+  if(!is.null(inter_gen_pos)){
   for (bb in 1:length(G_list)) {
 
     BV_All[[bb]] <- BV_All[[bb]][, c(4, 1:2)]
 
-    BV_All[[bb]][, heter_groups] <- rep(Heter.Grp, each=length(unique(BV_All[[bb]][, gen_name])))
+    BV_All[[bb]][, heter_groups] <- rep(heter_grp, each=length(unique(BV_All[[bb]][, gen_name])))
 
     BV_All[[bb]] <- BV_All[[bb]][, c(1, 4, 2:3)]
 
@@ -155,7 +155,7 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
     stop(print(paste(msg, "No interaction term")), call. = FALSE)
 
-    # if(is.null(Inter_Gen_pos)){
+    # if(is.null(inter_gen_pos)){
     # for (bb in 1:length(G_list)) {
     #
     #   BV_All[[bb]] <- BV_All[[bb]][, c(4, 1:2)]
@@ -175,16 +175,16 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
   Res= asreml_herit_varCov(model= mod,
                            heter_groups= heter_groups,
-                           VarCov_str= VarCov_str,
+                           var_cov_str= var_cov_str,
                            heter_resid= heter_resid,
                            G_list = G_list,
-                           Inter_Gen_pos = Inter_Gen_pos,
-                           Gen_pos = Gen_pos)
+                           inter_gen_pos = inter_gen_pos,
+                           gen_pos = gen_pos)
 
 
 
   #VA = Res$Genetic_Var
-  Heter.Grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
+  heter_grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
 
   for (bb in 1:length(G_list)){
 
@@ -199,20 +199,20 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
     }
 
-    if(length(VA)< length(Heter.Grp)){
+    if(length(VA)< length(heter_grp)){
 
       message(paste( insight::print_color("WARNINGS\n", "blue"),
                      insight::print_color(paste(msg,paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive.")), "blue")))
       #message(paste(msg,paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive.")))
     } else{
 
-      if(length(VA) == length(Heter.Grp)){
+      if(length(VA) == length(heter_grp)){
 
         BV_All[[bb]][, "Reliability"] = NA
         #BV$Reliability = NA
         for (i in 1:length(VA)) {
 
-          BV_All[[bb]][, "Reliability"] <- ifelse(BV_All[[bb]][, heter_groups]%in% Heter.Grp[i],
+          BV_All[[bb]][, "Reliability"] <- ifelse(BV_All[[bb]][, heter_groups]%in% heter_grp[i],
                                                   round(1 - BV_All[[bb]][, "PEV"]/VA[i],6), BV_All[[bb]][, "Reliability"])
 
         }
@@ -226,7 +226,7 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
 } else {
   ## Problem
-  if(is.null(VarCov_str) & is.null(Inter_Gen_pos)){
+  if(is.null(var_cov_str) & is.null(inter_gen_pos)){
 
 
     for (bb in 1:length(G_list)){
@@ -314,7 +314,7 @@ if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
 ## when variance_covariance structure is not defined by the user and CS is used
 ### For variance structure extraction
-if(is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
+if(is.null(var_cov_str) & !is.null(inter_gen_pos)){
 
 
   for (bb in 1:length(G_list)) {
@@ -329,12 +329,12 @@ if(is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
 
   #################################
-  if(!is.null(Inter_Gen_pos)){
+  if(!is.null(inter_gen_pos)){
     for (bb in 1:length(G_list)) {
 
       BV_All[[bb]] <- BV_All[[bb]][, c(4, 1:2)]
 
-      BV_All[[bb]][, heter_groups] <- rep(Heter.Grp, each=length(unique(BV_All[[bb]][, gen_name])))
+      BV_All[[bb]][, heter_groups] <- rep(heter_grp, each=length(unique(BV_All[[bb]][, gen_name])))
 
       BV_All[[bb]] <- BV_All[[bb]][, c(1, 4, 2:3)]
 
@@ -357,15 +357,15 @@ if(is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
                          heter_groups= heter_groups,
                          heter_resid= heter_resid,
                          G_list = G_list,
-                         Inter_Gen_pos = Inter_Gen_pos,
-                         Gen_pos = Gen_pos)
+                         inter_gen_pos = inter_gen_pos,
+                         gen_pos = gen_pos)
 
 
   VE <-  Res$Residual_Var
   H <- Res$Heritability
   varG_matrix = Res$varG_per_omics
   #VA = Res$Genetic_Var
-  Heter.Grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
+  heter_grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
 
   for (bb in 1:length(G_list)){
 
@@ -380,18 +380,18 @@ if(is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
 
     }
 
-    if(length(VA)< length(Heter.Grp)){
+    if(length(VA)< length(heter_grp)){
 
       print(paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive"))
     } else{
 
-      if(length(VA) == length(Heter.Grp)){
+      if(length(VA) == length(heter_grp)){
 
         BV_All[[bb]][, "Reliability"] = NA
         #BV$Reliability = NA
         for (i in 1:length(VA)) {
 
-          BV_All[[bb]][, "Reliability"] <- ifelse(BV_All[[bb]][, heter_groups]%in% Heter.Grp[i],
+          BV_All[[bb]][, "Reliability"] <- ifelse(BV_All[[bb]][, heter_groups]%in% heter_grp[i],
                                                   round(1 - BV_All[[bb]][, "PEV"]/VA[i],6), BV_All[[bb]][, "Reliability"])
 
         }
@@ -427,11 +427,11 @@ if(var(pred_value$Predicted_value)==0){
   }
 }
 gc()
-# if (is.null(heter_groups) & is.null(VarCov_str)){Inter_Gen_pos= NULL}
-# if(length(Gen_pos) == length(rand_term)){Inter_Gen_pos= NULL}
-if(!is.null(Inter_Gen_pos)){
+# if (is.null(heter_groups) & is.null(var_cov_str)){inter_gen_pos= NULL}
+# if(length(gen_pos) == length(rand_term)){inter_gen_pos= NULL}
+if(!is.null(inter_gen_pos)){
 
-  pred_heter_groups <- asreml::predict.asreml(mod, classify= rand_term[[Inter_Gen_pos]], sed=FALSE)$pvals
+  pred_heter_groups <- asreml::predict.asreml(mod, classify= rand_term[[inter_gen_pos]], sed=FALSE)$pvals
   pred_heter_groups =  pred_heter_groups[, -ncol(pred_heter_groups)] ### Remove status
   colnames(pred_heter_groups)[colnames(pred_heter_groups)%in%c("predicted.value", "std.error")] <- c("Predicted_value", "Std_error")
   pred_heter_groups[, "PEV"] <-  pred_heter_groups[, "Std_error"]^2
@@ -804,7 +804,7 @@ if(length(G_list)>1){
 
 ##### End
 
-if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
+if (!is.null(var_cov_str) & length(inter_gen_pos)!=0){
   ####
   if(!is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
@@ -1310,7 +1310,7 @@ rm(ebv_omic1, ebv_omic3)
 
     }
   }
-} else if (is.null(VarCov_str) & length(Inter_Gen_pos)==0){
+} else if (is.null(var_cov_str) & length(inter_gen_pos)==0){
 
   if(!is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
@@ -1752,8 +1752,8 @@ rm(ebv_omic1, ebv_omic3)
 
   } else{
 
-  #if (is.null(VarCov_str) & length(rand_inter_Pos)!=0){
-  if ((is.null(VarCov_str) & length(Inter_Gen_pos)!=0) | (is.null(VarCov_str) & length(Inter_Gen_pos)==0)){
+  #if (is.null(var_cov_str) & length(rand_inter_Pos)!=0){
+  if ((is.null(var_cov_str) & length(inter_gen_pos)!=0) | (is.null(var_cov_str) & length(inter_gen_pos)==0)){
 
     if(!is.null(gmatrix) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
@@ -2194,11 +2194,6 @@ rm(ebv_omic1, ebv_omic2)
   }
 
 } ## Result Ends
-
-if(exists("G_inv")) rm(G_inv)
-if(exists("omic1_inv")) rm(omic1_inv)
-if(exists("omic2_inv")) rm(omic2_inv)
-if(exists("omic3_inv")) rm(omic3_inv)
 
 return(Result)
 

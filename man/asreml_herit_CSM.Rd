@@ -9,8 +9,8 @@ asreml_herit_CSM(
   heter_groups = NULL,
   heter_resid = FALSE,
   G_list = NULL,
-  Inter_Gen_pos = NULL,
-  Gen_pos = NULL,
+  inter_gen_pos = NULL,
+  gen_pos = NULL,
   ...
 )
 }

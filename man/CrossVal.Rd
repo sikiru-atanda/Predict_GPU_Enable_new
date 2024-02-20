@@ -36,7 +36,7 @@ CrossVal(
   random = NULL,
   heter_resid = FALSE,
   heter_groups = NULL,
-  varcov_str = NULL,
+  var_cov_str = NULL,
   weights = NULL,
   nIter = NULL,
   burnIn = NULL,

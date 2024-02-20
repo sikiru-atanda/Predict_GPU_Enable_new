@@ -6,11 +6,12 @@
 \usage{
 geno_precheck(
   object_geno = NULL,
-  maf = 0.05,
-  freqHet = 0.3,
-  call_rate = 0.5,
-  impute = TRUE,
   qc_filtering = TRUE,
+  maf_threshold = 0.05,
+  het_threshold = 0.2,
+  ind_call_rate_threshold = 0.9,
+  snp_call_rate_threshold = 0.9,
+  impute = TRUE,
   message = TRUE,
   ...
 )

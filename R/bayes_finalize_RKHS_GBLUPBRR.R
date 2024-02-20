@@ -68,10 +68,10 @@ bayes_para <-  bayes_parameter_check(nIter = nIter,
                                      burnIn = burnIn,
                                      thin = thin)
 
-mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
+mod <-  bayes_mod_execute(pheno_data = ETA[["pheno_data"]],
                           response = response,
                           weights = weights,
-                          ETA = ETA$ETA,
+                          ETA = ETA[["ETA"]],
                           bayes_para = bayes_para
 )
 
@@ -85,7 +85,7 @@ mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
                                               omic2_kernel = omic2_kernel,
                                               omic3_kernel = omic3_kernel,
                                               gen_name = gen_name,
-                                              pheno_data = ETA$pheno_data,
+                                              pheno_data = ETA[["pheno_data"]],
                                               heter_groups  = heter_groups,
                                               omics_kernel_label = omics_kernel_label,
                                               bayes_para = bayes_para
@@ -102,7 +102,7 @@ mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
                                                   omic2_kernel = omic2_kernel,
                                                   omic3_kernel = omic3_kernel,
                                                   gen_name = gen_name,
-                                                  pheno_data = ETA$pheno_data,
+                                                  pheno_data = ETA[["pheno_data"]],
                                                   heter_groups  = heter_groups,
                                                   omics_kernel_label = omics_kernel_label,
                                                   bayes_para = bayes_para
@@ -110,7 +110,8 @@ mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
 
   }
 
-output = list(res_model_output, mod)
+output <-  list(bayes_result = res_model_output,
+              bayes_model = mod)
 
 return(output)
 

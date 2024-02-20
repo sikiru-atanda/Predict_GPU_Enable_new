@@ -4,7 +4,13 @@
 \alias{phenotype_precheck}
 \title{Title}
 \usage{
-phenotype_precheck(pheno_data = NULL, gen_name = NULL, response = NULL, ...)
+phenotype_precheck(
+  pheno_data = NULL,
+  gen_name = NULL,
+  response = NULL,
+  heter_groups = NULL,
+  ...
+)
 }
 \arguments{
 \item{...}{}

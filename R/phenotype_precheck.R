@@ -1,105 +1,74 @@
-
 #' Title
-#'
-#' This function address the following objectives:
-#' 1. Check if the phenotypic data file contain records
-#' 2. check if the phenotypic data is in data.frame and if not we fit it for the user
-#' 3. Check if the gen_name and response names provided by the user match the column
-#'    names in the phenotypic data
-#' 4. Check that the gen_name did not has NA as part of the genotypes ID
-#' 5. Check that the response variable is numeric if not convert it to numeric
-#' 7. Check for NA is not test here for response variables because testing set might have NA
-#'    thus, NA is expected.
-#' 6. If all these checks were fulfilled assign class(pheno_data) <- c("data.frame", "phenotype")
-#' and define attribute as attr(pheno_data, "cleared") <- "pass"
-#'
-#' 7. This output will be input for phenotype_to_model function
 #'
 #' @param pheno_data
 #' @param gen_name
 #' @param response
+#' @param heter_groups
 #' @param ...
 #'
 #' @return
 #' @export
 #'
 #' @examples
-phenotype_precheck<- function(pheno_data = NULL,
-                              gen_name = NULL,
-                              response = NULL,
-                              heter_groups = NULL,
-                               ...)
-  {
+phenotype_precheck <- function(pheno_data = NULL,
+                               gen_name = NULL,
+                               response = NULL,
+                               heter_groups = NULL,
+                               ...) {
 
-      msg <- sprintf("==================================================\n")
-    if(nrow(pheno_data)==0) { stop(print(paste(msg, 'No pheno_data records provided.')), call. = FALSE)
+  msg <- "==================================================\n"
 
+  if (nrow(pheno_data) == 0) {
+    stop(print(paste(msg, 'No pheno_data records provided.')), call. = FALSE)
+  }
+
+  if (!inherits(pheno_data, 'data.frame')) {
+    message(print(paste(msg, "'pheno_data' is not of class 'data.frame'. Converting it to a data frame.")))
+    pheno_data <- as.data.frame(pheno_data)
+  }
+
+
+# check if all the response variables are present in the phenotypi --------
+
+  if (sum(response%in%colnames(pheno_data)) < length(response)) {
+    stop(print(paste(msg, paste("The specified response variable(s) '", paste(response, collapse = "', '"), "' did not match with your data. Please check and use appropriately."))), call. = FALSE)
+  }
+
+  if (!is.null(heter_groups)) {
+    if(heter_groups %in% colnames(pheno_data)){
+    pheno_data <- pheno_data[order(pheno_data[, heter_groups]), ]
+
+    } else {
+      stop(print(paste(msg, paste("The specified heterogeneity groups '", heter_groups, "' did not match with your data. Please check and use appropriately."))), call. = FALSE)
     }
+  }
 
-    if (!inherits(pheno_data, what = 'data.frame')) {
-      #stop(print(paste(msg,"'pheno_data' must be of class 'data.frame'")), call. = FALSE)
+# Check if user defined GID/Name match the column name --------------------
 
-      message(print(paste(msg,"'pheno_data' is not 'data.frame' type. We fix it.")))
-      pheno_data <- as.data.frame(pheno_data)
-    }
+  if (!gen_name %in% colnames(pheno_data)) {
+    stop(print(paste(msg, paste("The specified column '", gen_name, "' in the pheno_data did not match with your data. Please check and use appropriately."))), call. = FALSE)
+  }
 
-      # if (!data.table::is.data.table(pheno_data)){
-      #   pheno_data <- data.table::as.data.table(pheno_data)
-      # }
+# Check for NA in the name/GID --------------------------------------------
 
-      # if (!is.data.frame(pheno_data)){
-      #    pheno_data <- as.data.frame(pheno_data)
-      #  }
-
-      ### Check the provided response name correspond to the name in the data file
-
-      #if(!response%in%colnames(pheno_data)){
-      if(sum(colnames(pheno_data)%in%response)<length(response)) {
-        stop(print(paste(msg,paste(paste("The specified ",  response),
-                                   " did not match with your data.\n\t\t Please check and use apppropriatly"))), call. = FALSE)
-
-      }
-
-      #### This is very much imp especially for BGLR
-      if(!is.null(heter_groups)) {
-        if(heter_groups%in%colnames(pheno_data))
-        stop(print(paste(msg,paste(paste("The specified ",  heter_groups),
-                                   " did not match with your data.\n\t\t Please check and use apppropriatly"))), call. = FALSE)
-
-        pheno_data = pheno_data[order(pheno_data[, heter_groups]), ]
-
-      }
-
-    if(!gen_name%in%colnames(pheno_data)){
-      stop(print(paste(msg,paste(paste("The specified column",  gen_name),
-                                 "in the pheno_data did not match with your data.\n\t\t Please check and use apppropriatly"))), call. = FALSE)
-
-    }
-
-      if(var(pheno_data[, response], na.rm = TRUE)==0){
-        stop(print(paste(msg,paste(response, "variable has zero variance.\n\t This trait cannot be used for prediction model.\n\t\t Check the raw data and model that generate the BLUEs."))), call. = FALSE)
-
-      }
-    ### Check to ensure no NA in the column GID/name
-    if (anyNA(pheno_data[, gen_name]) || any(pheno_data[, gen_name]==-999)){
-
-      stop(print(paste(msg,paste(paste('column',  gen_name),
-                                 'should not have NA/missing'))), call. = FALSE)
-    }
-
-      if(!all(sapply(response, function(x, pheno_data) is.numeric(pheno_data[,x]),  pheno_data))) {
-        pheno_data[, response] <-
-          lapply(pheno_data[, response, drop = FALSE],
-                 function(x) as.double(as.character(x)))
-
-      }
-
-      # Assign appropriate class.
-      #class(pheno_data) <- c("data.frame", "phenotype")
-
-      attr(pheno_data, "cleared") <- "pass"
+  if (anyNA(pheno_data[, gen_name]) || any(pheno_data[, gen_name] == -999)) {
+    stop(print(paste(msg, paste("Column '", gen_name, "' should not have NA/missing values."))), call. = FALSE)
+  }
 
 
-    return(pheno_data)
+# Check if the response variable if double/numeric if not convert  --------
+  if (!all(sapply(response, function(x, pheno_data) is.numeric(pheno_data[, x]), pheno_data))) {
+    pheno_data[, response] <- lapply(pheno_data[, response, drop = FALSE], function(x) as.double(as.character(x)))
+  }
 
+# check for the variance of the user defined trait or traits --------------
+  if (any(sapply(response, function(x) var(pheno_data[, x], na.rm = TRUE) == 0))) {
+    zero_variance_vars <- response[sapply(response, function(x) var(pheno_data[, x], na.rm = TRUE) == 0)]
+    stop(print(paste(msg, paste(zero_variance_vars, "variable(s) have zero variance. These traits cannot be used for prediction model. Check the raw data and model that generate the BLUEs."))), call. = FALSE)
+  }
+
+
+  attr(pheno_data, "cleared") <- "pass"
+
+  return(pheno_data)
 }

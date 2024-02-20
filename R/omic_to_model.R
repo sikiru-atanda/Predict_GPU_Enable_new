@@ -1,4 +1,3 @@
-
 #' Title
 #'
 #' @param omic_data
@@ -14,162 +13,83 @@
 omic_to_model <- function(omic_data = NULL,
                           train_omic_data = NULL,
                           test_omic_data = NULL,
-                          message= TRUE,
-                          ...){
+                          message = TRUE,
+                          ...) {
 
   msg <- sprintf("==================================================\n")
 
-  if(!is.null(omic_data)){
-    omic_object = omic_precheck(object = omic_data,
-                                message = message)
+  # Check if omic_data is provided
+  if (!is.null(omic_data)) {
+    omic_object <- omic_precheck(object = omic_data, message = message)
 
-    if(attr(omic_object, "cleared")=="pass" & all(class(omic_object)==c("matrix", "array"))){
-
-      omic_object = omic_object
-      ##############################################
-
-    } else {
-
-      stop(print(paste(msg,'Data is not class Omic_matrix')), call. = FALSE)
-      #omic_object = NULL
+    # Check if omic_object passed the checks and is of the correct class
+    if (attr(omic_object, "cleared") != "pass" || !inherits(omic_object, c("matrix", "array"))) {
+      stop(print(paste(msg, 'Data is not of class Omic_matrix')), call. = FALSE)
     }
-
-    ### It has to pass test before it can be declared omic_object
-    # if(attr(omic_object, "cleared")!="pass" & all(class(omic_object)!=c("matrix", "array", "omic_matrix"))){
-    #
-    #   omic_object <- omic_object
-    #
-    #   ### This step might look redundant, but is not
-    #   #### Declare it also as an object for final usage
-    #   class(omic_object) <-c("matrix", "array", "omic_matrix")
-    #
-    #   attr(omic_object, "cleared") <- "for_model_fit"
-    #   ##############################################
-    #
-    # } else {
-    #
-    #   stop(print(paste(msg,'Data is not class Omic_matrix')), call. = FALSE)
-    #   #omic_object = NULL
-    # }
 
   } else {
-
-    if(!is.null(train_omic_data)){
-      train_omic_data = omic_precheck(object = train_omic_data,
-                                      message = message)
+    # Check if train_omic_data is provided
+    if (!is.null(train_omic_data)) {
+      train_omic_data <- omic_precheck(object = train_omic_data, message = message)
     }
 
-    if(!is.null(test_omic_data)){
-      test_omic_data = omic_precheck(object = test_omic_data,
-                                     message = message)
-
+    # Check if test_omic_data is provided
+    if (!is.null(test_omic_data)) {
+      test_omic_data <- omic_precheck(object = test_omic_data, message = message)
     }
 
-
-    ### Both test_omic_data and train_omic_data has to pass through the filter
-    ## test before they will be merge
-    # if(attr(test_omic_data, "cleared")!="pass" & class(test_omic_data)!=c("matrix", "array", "omic_data")) {
-    #
-    #   msg <- sprintf("==================================================\n")
-    #   stop(print(paste(msg,'Test_omic_data is not class formula.')), call. = FALSE)
-    # }
-
-
-    if(!is.null(train_omic_data) && !is.null(test_omic_data)){
-
-      ## Both test_omic_data and train_omic_data has to pass through the filter
-      ## test before they will be merge
-      if((attr(test_omic_data, "cleared")=="pass" & all(class(test_omic_data)==c("matrix", "array"))) & (attr(train_omic_data, "cleared")!="pass" & all(class(train_omic_data)!=c("matrix", "array")))){
-
-        if (!identical(colnames(train_omic_data), colnames(test_omic_data))) {
-
-          stop(print(paste(msg,'Data is not class Omic_matrix.')), call. = FALSE)
-
-        } else {
-
-          omic_object <- rbind(train_omic_data, test_omic_data)
-
-          ### This step might look redundant, but is not
-          #### Declare it also as an object for final usage
-          # class(omic_object) <-c("matrix", "array", "omic_matrix")
-          #
-          # attr(omic_object, "cleared") <- "for_model_fit"
-          ##############################################
-
-        }
-
-      } else{
-
-        stop(print(paste(msg,'Data is not object Omic_matrix')), call. = FALSE)
-        #omic_object <- NULL
-
+    # Check if both train_omic_data and test_omic_data passed the checks and have matching columns
+    if (!is.null(train_omic_data) && !is.null(test_omic_data)) {
+        if(attr(train_omic_data, "cleared") == "pass" &&
+        attr(test_omic_data, "cleared") == "pass"){
+      if(identical(colnames(train_omic_data), colnames(test_omic_data))){
+        omic_object <- rbind(train_omic_data, test_omic_data)
+      } else {
+        stop(print(paste(msg,'Colnames for train_omic_data and test_omic_data did not match.')), call. = FALSE)
       }
 
-    } else if(!is.null(train_omic_data) & is.null(test_omic_data)){
+        } else {
+          stop(print(paste(msg,'Data is not object Omic_matrix')), call. = FALSE)
+        }
+          # Remove train_omic_data and test_omic_data from memory
+      rm(train_omic_data, test_omic_data)
 
-      message (paste(msg, 'Only train_omic_data is provided'))
-      ### It has to pass test before it can be declared omic_object
-      if(attr(train_omic_data, "cleared")=="pass" & all(class(train_omic_data)==c("matrix", "array"))){
+    } else if (!is.null(train_omic_data) && is.null(test_omic_data)) {
+      # Check if only train_omic_data is provided
+      message(paste(msg, 'Only train_omic_data is provided'))
 
+      # Check if train_omic_data passed the checks
+      if (attr(train_omic_data, "cleared") == "pass" && inherits(train_omic_data, c("matrix", "array"))) {
         omic_object <- train_omic_data
 
-        ### This step might look redundant, but is not
-        #### Declare it also as an object for final usage
-        # class(omic_object) <-c("matrix", "array", "omic_matrix")
-        #
-        # attr(omic_object, "cleared") <- "for_model_fit"
-        #
-        # rm(train_omic_data)
-        ##############################################
-
+        # Remove train_omic_data from memory
+        rm(train_omic_data)
       } else {
-
-        stop(print(paste(msg,'Data is not class Omic_matrix4')), call. = FALSE)
-
-        #omic_object = NULL
+        stop(print(paste(msg, 'Data is not of class Omic_matrix')), call. = FALSE)
       }
-
-    } else {
-
-      if(is.null(train_omic_data) & !is.null(test_omic_data)){
-        if(message){
+    } else if (is.null(train_omic_data) && !is.null(test_omic_data)) {
+      # Check if only test_omic_data is provided
+      if (message) {
         message(paste(msg, 'Only test_omic_data is provided'))
-}
-        ### It has to pass test before it can be declared omic_object
-        if(attr(test_omic_data, "cleared")=="pass" & all(class(test_omic_data)==c("matrix", "array"))){
-
-          omic_object <- test_omic_data
-
-          # ### This step might look redundant, but is not
-          # #### Declare it also as an object for final usage
-          # class(omic_object) <-c("matrix", "array", "omic_matrix")
-          #
-          # attr(omic_object, "cleared") <- "for_model_fit"
-
-          rm(test_omic_data)
-          ##############################################
-        } else {
-          stop(print(paste(msg,'Data is not class Omic_matrix')), call. = FALSE)
-          #omic_object = NULL
-        }
-
       }
 
+      # Check if test_omic_data passed the checks
+      if (attr(test_omic_data, "cleared") == "pass" && inherits(test_omic_data, c("matrix", "array"))) {
+        omic_object <- test_omic_data
+
+        # Remove test_omic_data from memory
+        rm(test_omic_data)
+      } else {
+        stop(print(paste(msg, 'Data is not of class Omic_matrix')), call. = FALSE)
+      }
+    } else {
+      # None of the omic data is provided
+      stop(print(paste(msg, 'No omic data provided')), call. = FALSE)
     }
-
-
   }
 
-    ### This step might look redundant, but is not
-    #### Declare it also as an object for final usage
-    #class(omic_object) <-c("matrix", "array", "omic_matrix")
-
-    attr(omic_object, "cleared") <- "for_model_fit"
-    ##############################################
-
+  # Set attribute to indicate readiness for model fit
+  attr(omic_object, "cleared") <- "for_model_fit"
 
   return(omic_object)
-
-
 }
-

@@ -138,7 +138,7 @@ fixed_terms <- function(
   fixed <- rand_fix_check(rand_fix_term = fixed,
                            pheno_data= pheno_data)
 
-  if(attr(fixed, "cleared")!="pass" & class(fixed)!="forumla") {
+  if(attr(fixed, "cleared")!="pass" & !inherits(fixed, "formula")) {
 
     msg <- sprintf("==================================================\n")
     stop(print(paste(msg,paste(pheno_data, 'is not class formula.', sep = ""))), call. = FALSE)
@@ -179,7 +179,7 @@ random_terms <- function(random = NULL,
   random <- rand_fix_check(rand_fix_term = random,
                            pheno_data= pheno_data)
 
-  if(attr(random, "cleared")!="pass" && class(random)!="forumla") {
+  if(attr(random, "cleared")!="pass" && !inherits(random, "formula")) {
 
     stop(print(paste(msg,paste('the random term', 'is not formular.', sep = ""))), call. = FALSE)
   }
@@ -268,46 +268,46 @@ random_term_model <- function(rand_terms = NULL,
   #####
   #### Check for Interaction and and non-interaction term
   ## No interaction term
-  rand_terms_No_Inter <-  rand_terms[!grepl(":", rand_terms)]
+  rand_terms_no_inter <-  rand_terms[!grepl(":", rand_terms)]
 
   ## Interaction term
-  Check_rand_Inter <-  rand_terms[grepl(":", rand_terms)]
+  check_rand_inter <-  rand_terms[grepl(":", rand_terms)]
 
   ## Start with the No interaction terms
-  if(length(rand_terms_No_Inter)!=0){
+  if(length(rand_terms_no_inter)!=0){
     ## Check if gen_name is present and store the position
-    Gen_pos_mod =  match(gen_name, rand_terms)
-    if(length(Gen_pos_mod)==0){stop(print(paste(message(msg), paste(gen_name, "effect sik is missing"))), call. = FALSE)}
-    if(length(Gen_pos_mod)>1){stop(print(paste(message(msg), paste(gen_name, "effect should not be greater than 1"))), call. = FALSE)}
-    ## Extract other terms from the rand_terms_No_Inter  expect the gen_name
-    rand_terms_No_Inter_No_Gen = rand_terms_No_Inter[!rand_terms_No_Inter%in%gen_name]
+    gen_pos_mod =  match(gen_name, rand_terms)
+    if(length(gen_pos_mod)==0){stop(print(paste(message(msg), paste(gen_name, "effect sik is missing"))), call. = FALSE)}
+    if(length(gen_pos_mod)>1){stop(print(paste(message(msg), paste(gen_name, "effect should not be greater than 1"))), call. = FALSE)}
+    ## Extract other terms from the rand_terms_no_inter  expect the gen_name
+    rand_terms_no_inter_no_gen = rand_terms_no_inter[!rand_terms_no_inter%in%gen_name]
     ## Get the position of other terms (No interaction) in the random that is not gen_name
-    Non_Gen_pos_mod = match(rand_terms_No_Inter_No_Gen, rand_terms)
+    non_gen_pos_mod = match(rand_terms_no_inter_no_gen, rand_terms)
 
   }
 
   ######## Initialize step For model adjustment for the random term with interaction
 
-  if(length(Check_rand_Inter)!=0){
+  if(length(check_rand_inter)!=0){
 
-    TestPresentofGeno = grep(gen_name, Check_rand_Inter, value = TRUE)
+    test_present_of_geno = grep(gen_name, check_rand_inter, value = TRUE)
 
-    if(length(TestPresentofGeno)!=0 | !is.na(TestPresentofGeno)){
+    if(length(test_present_of_geno)!=0 | !is.na(test_present_of_geno)){
 
-      Inter_Gen_pos_mod = match(TestPresentofGeno, rand_terms)
+      inter_gen_pos_mod = match(test_present_of_geno, rand_terms)
 
-      Non_Gen_Inter_Test =  Check_rand_Inter[!Check_rand_Inter%in%TestPresentofGeno]
+      non_gen_inter_test =  check_rand_inter[!check_rand_inter%in%test_present_of_geno]
 
     } else {
 
-      Non_Gen_Inter_Test = NULL
+      non_gen_inter_test = NULL
 
-      Inter_Gen_pos_mod = NULL
+      inter_gen_pos_mod = NULL
     }
 
-    if(!is.null(Non_Gen_Inter_Test)){
+    if(!is.null(non_gen_inter_test)){
 
-      Inter_Non_Gen_pos_mod = match(Non_Gen_Inter_Test, rand_terms)
+      inter_non_gen_pos_mod = match(non_gen_inter_test, rand_terms)
 
     }
 
@@ -345,30 +345,30 @@ random_term_model <- function(rand_terms = NULL,
         mod_len = length(rand_terms) - length(mod_present_in_GS_model)
 
         rand_terms_model_bayesian = c(mod_present_in_GS_model,  rep("BRR",  mod_len))
-        rand_terms_model_bayesian[Gen_pos_mod] <- GS_model[1]
+        rand_terms_model_bayesian[gen_pos_mod] <- GS_model[1]
 
         ## For other terms in random effect aside gen_name
-        if(exists("NonNon_Gen_pos_mod")){
+        if(exists("Nonnon_gen_pos_mod")){
 
-          rand_terms_model_bayesian[Non_Gen_pos_mod] = "BRR"
+          rand_terms_model_bayesian[non_gen_pos_mod] = "BRR"
 
         } ## end
 
         #### Random interaction terms
-        if(length(Check_rand_Inter)!=0){
+        if(length(check_rand_inter)!=0){
           ### For gen_name part of interaction
-          if(!is.na(Inter_Gen_pos_mod) | length(Inter_Gen_pos_mod)!=0){
+          if(!is.na(inter_gen_pos_mod) | length(inter_gen_pos_mod)!=0){
 
             ### This account for multi-kernel
-            rand_terms_model_bayesian[Inter_Gen_pos_mod] = "RKHS"
+            rand_terms_model_bayesian[inter_gen_pos_mod] = "RKHS"
 
 
           }
 
           ### For Non gen_name part of interaction
-          if(length(Non_Gen_Inter_Test)!=0){
+          if(length(non_gen_inter_test)!=0){
 
-            rand_terms_model_bayesian[Non_Gen_Inter_Test] = "BRR"
+            rand_terms_model_bayesian[non_gen_inter_test] = "BRR"
 
           }
 
@@ -405,30 +405,30 @@ random_term_model <- function(rand_terms = NULL,
 
       }
 
-      rand_terms_model_bayesian[Gen_pos_mod] <- GS_model[1]
+      rand_terms_model_bayesian[gen_pos_mod] <- GS_model[1]
 
       ## For other terms in random effect aside gen_name
-      if(exists("NonNon_Gen_pos_mod")){
+      if(exists("Nonnon_gen_pos_mod")){
 
-        rand_terms_model_bayesian[Non_Gen_pos_mod] = "BRR"
+        rand_terms_model_bayesian[non_gen_pos_mod] = "BRR"
 
       } ## end
 
       #### Random interaction terms
-      if(length(Check_rand_Inter)!=0){
+      if(length(check_rand_inter)!=0){
         ### For gen_name part of interaction
-        if(!is.na(Inter_Gen_pos_mod) | length(Inter_Gen_pos_mod)!=0){
+        if(!is.na(inter_gen_pos_mod) | length(inter_gen_pos_mod)!=0){
 
           ### This account for multi-kernel
-          rand_terms_model_bayesian[Inter_Gen_pos_mod] = "RKHS"
+          rand_terms_model_bayesian[inter_gen_pos_mod] = "RKHS"
 
 
         }
 
         ### For Non gen_name part of interaction
-        if(length(Non_Gen_Inter_Test)!=0){
+        if(length(non_gen_inter_test)!=0){
 
-          rand_terms_model_bayesian[Non_Gen_Inter_Test] = "BRR"
+          rand_terms_model_bayesian[non_gen_inter_test] = "BRR"
 
         }
 
@@ -475,32 +475,32 @@ random_term_model <- function(rand_terms = NULL,
 
         }
 
-        rand_terms_model_bayesian[Gen_pos_mod] = GS_model[1]
+        rand_terms_model_bayesian[gen_pos_mod] = GS_model[1]
       }
       ###
-      ###  rand_terms_model_bayesian[Gen_pos_mod] = GS_model[1]
+      ###  rand_terms_model_bayesian[gen_pos_mod] = GS_model[1]
       ## For other terms in random effect aside gen_name
-      if(exists("NonNon_Gen_pos_mod")){
+      if(exists("Nonnon_gen_pos_mod")){
 
-        rand_terms_model_bayesian[Non_Gen_pos_mod] = "BRR"
+        rand_terms_model_bayesian[non_gen_pos_mod] = "BRR"
 
       } ## end
 
       #### Random interaction terms
-      if(length(Check_rand_Inter)!=0){
+      if(length(check_rand_inter)!=0){
         ### For gen_name part of interaction
-        if(!is.na(Inter_Gen_pos_mod) | length(Inter_Gen_pos_mod)!=0){
+        if(!is.na(inter_gen_pos_mod) | length(inter_gen_pos_mod)!=0){
 
           ### This account for multi-kernel
-          rand_terms_model_bayesian[Inter_Gen_pos_mod] = "RKHS"
+          rand_terms_model_bayesian[inter_gen_pos_mod] = "RKHS"
 
 
         }
 
         ### For Non gen_name part of interaction
-        if(length(Non_Gen_Inter_Test)!=0){
+        if(length(non_gen_inter_test)!=0){
 
-          rand_terms_model_bayesian[Non_Gen_Inter_Test] = "BRR"
+          rand_terms_model_bayesian[non_gen_inter_test] = "BRR"
 
         }
 

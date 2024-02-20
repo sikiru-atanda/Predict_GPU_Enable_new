@@ -62,7 +62,6 @@
 #' @param kernel_method kernel methods to calculate relationship matrix for the
 #' different omics. Currently available are Gaussian kernel, exponential kernel
 #' Polynomia kernel (order 2, 3, 4) and linear
-#' @param center if X-variables should be standardized
 #' @param omic1_kernel  relationship matrix using different kernel methods
 #' @param omic2_kernel  relationship matrix using different kernel methods
 #' @param omic3_kernel  relationship matrix using different kernel methods
@@ -75,7 +74,7 @@
 #' @param coefficient_4
 #' @param eval_metrics
 #' @param para_tunning
-#' @param VarCov_str user defined variance-covariance structure
+#' @param var_cov_str user defined variance-covariance structure
 #' @param engine if user has asreml
 #' @param workspace allocate memory for asreml model fit
 #' @param pworkspace allocate memory for predict function in asreml
@@ -91,7 +90,6 @@
 #' @param rcn_cutoff
 #' @param optimize_diagonal
 #' @param optimize_duplicate
-#' @param scaled
 #' @param pheno_data
 #' @param pheno_data_train
 #' @param pheno_data_test
@@ -132,7 +130,7 @@
 #' @param random
 #' @param heter_resid
 #' @param heter_groups
-#' @param VarCov_str
+#' @param var_cov_str
 #' @param weights
 #' @param nIter
 #' @param burnIn
@@ -144,7 +142,6 @@
 #' @param rand_term_model_bayesian
 #' @param core
 #' @param engine
-#' @param center
 #' @param workspace
 #' @param pworkspace
 #' @param maxit
@@ -162,6 +159,32 @@
 #' @param system_database this dictate if the output will be created in a folder or as list
 #'                         the default is FALSE. Thus output will be folder.
 #' @param ...
+#' @param scale
+#' @param inverse
+#' @param epsilon
+#' @param vcf_file_name
+#' @param vcf_file_path
+#' @param vcf_file
+#' @param hapmap_file_name
+#' @param hapmap_file_path
+#' @param hapmap
+#' @param maf_threshold
+#' @param het_threshold
+#' @param ind_call_rate_threshold
+#' @param snp_call_rate_threshold
+#' @param impute
+#' @param recode_format
+#' @param out_put_map
+#' @param map_data
+#' @param qc_filtering
+#' @param xgb_paras_tunning
+#' @param rf_paras_tunning
+#' @param pls_paras_tunning
+#' @param svm_paras_tunning
+#' @param knn_paras_tunning
+#' @param lasso_paras_tunning
+#' @param rr_paras_tunning
+#' @param dpl_paras_tunning
 #'
 #' @return
 #' @export
@@ -228,7 +251,7 @@ model_execute <- function(
     random=NULL,
     heter_resid=FALSE,
     heter_groups=NULL,
-    VarCov_str = NULL,
+    var_cov_str = NULL,
     weights =NULL,
     nIter=NULL,
     burnIn=NULL,
@@ -261,8 +284,8 @@ model_execute <- function(
     rand_term_model_bayesian = NULL,
     core = NULL,
     engine = NULL,
-    center = TRUE,
-    scaled = TRUE,
+    scale = TRUE,
+    #scaled = TRUE,
     workspace = 1e08,
     pworkspace= 1e06,
     maxit = 50,
@@ -276,6 +299,8 @@ model_execute <- function(
     low_diag_cut_off = 0.8,
     duplicate_cut_off = 0.95,
     rcn_cutoff = 1e-12,
+    optimize_diagonal = FALSE,
+    optimize_duplicate = FALSE,
     vcf_file_name = NULL,
     vcf_file_path = NULL,
     vcf_file = NULL,
@@ -291,24 +316,80 @@ model_execute <- function(
     out_put_map = FALSE,
     map_data = NULL,
     qc_filtering = TRUE,
-    optimize_diagonal = FALSE,
-    optimize_duplicate = FALSE,
     message= TRUE,
     system_database = FALSE,
+    xgb_paras_tunning = NULL,
+    rf_paras_tunning = NULL,
+    pls_paras_tunning = NULL,
+    svm_paras_tunning = NULL,
+    knn_paras_tunning = NULL,
+    lasso_paras_tunning = NULL,
+    rr_paras_tunning = NULL,
+    dpl_paras_tunning = NULL,
+    AI_cv_nfolds = 5,
     ...
 ) {
 
+#browser()
     msg <- sprintf("==================================================\n")
-    ### Get clean pheno data for model fit
-### For any model fit, phenotypic data is compulsory.
+
+    # Define available models and variance structures
+    var_cov_str_available <- c("us",
+                               "corgh",
+                               "corgv",
+                               "corh",
+                               "corv",
+                               "fa",
+                               "rr")
+    AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare", "SupportVectorMachine", "K-NearestNeighbors", "Lasso", "Ridge_Regression", "deep_learning_model")
+    bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
+    bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
+
+    # Check for mandatory phenotypic data
     if (is.null(pheno_data)){
-        stop(print(paste(msg,'phenotypic data is missing')), call. = FALSE)
+      stop(paste(msg, "Phenotypic data is missing."), call. = FALSE)
     }
 
-    if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name])) & is.null(heter_groups)){
-        stop(message(paste(msg,'Your phenotypic data has multi-environment structure\n but colume name containing the environment/location is missing.\n\t Provide it in heter_groups.')), call. = FALSE)
+    # Check for ASReml requirement for GBLUP
+    if (GS_model == "GBLUP" && engine != "asreml") {
+      stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
+    }
+
+    # Check for multi-environment structure and required inputs for GBLUP
+    if (length(pheno_data[,gen_name]) > length(unique(pheno_data[,gen_name])) & is.null(heter_groups)){
+      stop(paste(msg, "Your phenotypic data has a multi-environment structure, but the column containing the environment/location is missing. Provide it in heter_groups."), call. = FALSE)
+
+      # Check for required inputs for multi-environment GBLUP
+      # if ((GS_model %in% c("GBLUP_BRR", "RKHS")) &&
+      #     ((is.null(gmatrix) || is.null(gkernel) || is.null(omic1_kernel) || is.null(omic2_kernel) || is.null(omic3_kernel)) ||
+      #      ((is.null(geno_data) || is.null(omic1_data) || is.null(omic2_data) || is.null(omic3_data)) &&
+      #       (is.null(gmatrix_method) || is.null(kernel_method))))) {
+      #   stop(paste(msg, "To fit a Bayesian multi-environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
+      # }
 
     }
+
+    # Check for single environment GBLUP and Bayesian models
+    # if (length(pheno_data[,gen_name]) == length(unique(pheno_data[,gen_name]))){
+    #
+    #   # Check for required inputs for Bayesian or ASReml single environment GBLUP models
+    #   if ((GS_model %in% c(bayes_gblup_valid_models, "GBLUP")) &&
+    #       ((is.null(gmatrix) || is.null(gkernel) || is.null(omic1_kernel) || is.null(omic2_kernel) || is.null(omic3_kernel)) ||
+    #        (is.null(geno_data) || is.null(omic1_data) || is.null(omic2_data) || is.null(omic3_data)) &&
+    #        (is.null(gmatrix_method) || is.null(kernel_method)))) {
+    #     stop(paste(msg, "To fit a Bayesian or ASReml single environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
+    #   }
+    #
+    #
+    #   # Check for required inputs for Bayesian models
+    #   if ((GS_model %in% bayes_valid_models) &&
+    #       (is.null(geno_data) || is.null(omic1_data) || is.null(omic2_data) || is.null(omic3_data))) {
+    #     stop(paste(msg, "To fit a Bayesian model, provide genomic or omics data."), call. = FALSE)
+    #   }
+    #
+    # }
+
+    ##
 ### Check phenotype_to_model for details
  #    This serve as gateway between phenotype-precheck function and readiness of
  #    the phenotypic data for model fitting.
@@ -321,6 +402,7 @@ model_execute <- function(
                                    response = response,
                                    gen_name = gen_name)
 
+ #if(length(pheno_clean)==0) stop("pheno is null")
 ## pheno_clean is a list that can have one or two elements
  ## One element if only pheno_data is provided
  ## Two elements if pheno_data/pheno_training and pheno_data_testing was provided as input.
@@ -328,7 +410,7 @@ model_execute <- function(
 
  ## Check if the pheno_data in the pheno_clean is declared model fit
  #if(attr(pheno_clean[[1]], "cleared")!="for_model_fit" && all(class(pheno_clean[[1]])!=c("data.frame"))) {
- if(attr(pheno_clean[[1]], "cleared")!="for_model_fit") {
+ if(attr(pheno_clean[["pheno_clean_data"]], "cleared")!="for_model_fit") {
      stop(print(paste(msg,'pheno_data is not phenotype data')), call. = FALSE)
 
  }
@@ -340,460 +422,193 @@ model_execute <- function(
  ## For details check geno_to_model and geno_precheck function description
  ##
  #if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
+
+
+ # Process genomic data
  if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
-     geno_clean <-  geno_to_model(geno_data = geno_data,
-                                 train_geno_data = train_geno_data,
-                                 test_geno_data = test_geno_data,
-                                 maf_threshold = maf_threshold,
-                                 het_threshold = het_threshold,
-                                 ind_call_rate_threshold = ind_call_rate_threshold,
-                                 snp_call_rate_threshold = snp_call_rate_threshold,
-                                 impute = impute,
-                                 map_data = map_data,
-                                 qc_filtering = qc_filtering,
-                                 message = message)
-
-     qc_metrics_and_summary_stat = geno_clean[[2]]
-     geno_clean = geno_clean[[1]]
-
-     #if(attr(geno_clean[[1]], "cleared")!="for_model_fit" && all(class(geno_clean[[1]])!=c("matrix", "array", "geno_data"))) {
-     if(attr(geno_clean, "cleared")!="for_model_fit" && all(class(geno_clean)!=c("matrix", "array"))) {
-         stop(print(paste(msg,'Data is not fit for model')), call. = FALSE)
-
-     }
-
-     ## The final check is matching the pheno_clean with geno_clean if both exist.
-     ## It is assumed both has to be present to build model unless the user is only
-     ## interested in calculating GRM or others
-     ## geno_clean and pheno_clean check to ensure they are in the same order.
-     ## This is important for Baysiand and Machine learning. Not necessary for asreml
-     ## The output is list with geno_data in the same order as the pheno_clean
-     ## test_set if provided in the geno_clean data.
-
-     #### Aside getting the geno data ready for model fit.
-     ## It also allow user to use it for calculation of  genomic relationship matrix
-     ### To pass this pheno_data for genomic relationship matrix calculation the user has to provide/supply
-     ## method to calculate the matrix available in grm_calculation or kernel_calculation function
-     ##
-
-     if(((exists("geno_clean") & exists("pheno_clean"))) & (is.null(gmatrix_method) & is.null(kernel_method))){
-     geno_pheno_match = pheno_geno_match(object_pheno = pheno_clean$pheno_data,
-                                        object_geno = geno_clean,
-                                        gen_name = gen_name,
-                                        test_set = test_set,
-                                        train_set = train_set,
-                                        message = message)
-
-
-         if(length(geno_pheno_match)>1){
-         geno_model_ready <- geno_pheno_match[[1]]
-         test_set <- geno_pheno_match[[2]]
-         } else {
-        geno_model_ready <- geno_pheno_match[[1]]
-
-         }
-
-     rm(geno_pheno_match, geno_clean)
-     }
-
-     #### To calculate the gkernel only geno_clean is acceptable
-     if ((exists("geno_clean") & !is.null(kernel_method))) {
-         gkernel <- kernel_calculation(M_matrix_clean = geno_clean,
-                                     center=center,
-                                     method = kernel_method,
-                                     message = message )
-
-         rm(geno_clean)
-     }
-
-     #### To calculate the gmatrix only geno_clean is acceptable
-     if (exists("geno_clean") & !is.null(gmatrix_method)) {
-        gmatrix <- grm_calculation(
-        geno_clean = geno_clean,
-        method=gmatrix_method)
-
-        rm(geno_clean)
-     }
-
-
- }
-
-
-
-
- # if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
- #    print('ok')
- # }
-
-
-######
-
- #### Get the clean omic1_data ready for model fit or calculation of relationship matrix
- ### To pass this pheno_data for relationship matrix calculation the user has to provide/supply
- ## method to calculate the matrix available in kernel_calculation function
- ##
- #if(isFALSE(((!is.null(omic1_data) & is.null(train_omic1_data)) & is.null(test_omic1_data)))){
-
- if(isFALSE(((is.null(omic1_data) & is.null(train_omic1_data)) & is.null(test_omic1_data)))){
-
-     #print('ok')
-     omic1_clean <-  omic_to_model(omic_data = omic1_data,
-                                   train_omic_data = train_omic1_data,
-                                   test_omic_data = test_omic1_data,
+     geno_res <- process_geno_data(geno_data = geno_data,
+                                   train_geno_data = train_geno_data,
+                                   test_geno_data = test_geno_data,
+                                   test_set = test_set,
+                                   pheno_clean_list = pheno_clean,
+                                   train_set = train_set,
+                                   gen_name = gen_name,
+                                   kernel_method = kernel_method,
+                                   gmatrix_method = gmatrix_method,
+                                   scale = scale,
+                                   map_data = map_data,
+                                   maf_threshold = maf_threshold,
+                                   het_threshold = het_threshold,
+                                   ind_call_rate_threshold = ind_call_rate_threshold,
+                                   snp_call_rate_threshold = snp_call_rate_threshold,
+                                   impute = impute,
+                                   qc_filtering = qc_filtering,
                                    message = message)
 
-     if(attr(omic1_clean, "cleared")!="for_model_fit" && all(class(omic1_clean)!=c("matrix", "array"))) {
+ } else {
+     geno_res <-  list()
+ }
 
-         stop(print(paste(msg,'Data is not fit for model')), call. = FALSE)
+ #if(length(geno_res)==0) { stop("geno_res is empty")}
+ # Process omic1 data
+ omic1_res <- process_omic_data(omic_data = omic1_data,
+                                train_omic_data = train_omic1_data,
+                                test_omic_data = test_omic1_data,
+                                kernel_method = kernel_method,
+                                pheno_clean_list = pheno_clean,
+                                gen_name = gen_name,
+                                test_set = test_set,
+                                train_set = train_set,
+                                message = message)
 
+ # Process omic2 data
+ omic2_res <- process_omic_data(omic_data = omic2_data,
+                                train_omic_data = train_omic2_data,
+                                test_omic_data = test_omic2_data,
+                                kernel_method = kernel_method,
+                                pheno_clean_list = pheno_clean,
+                                gen_name = gen_name,
+                                test_set = test_set,
+                                train_set = train_set,
+                                message = message)
+
+ # Process omic3 data
+ omic3_res <- process_omic_data(omic_data = omic3_data,
+                                train_omic_data = train_omic3_data,
+                                test_omic_data = test_omic3_data,
+                                kernel_method = kernel_method,
+                                pheno_clean_list = pheno_clean,
+                                gen_name = gen_name,
+                                test_set = test_set,
+                                train_set = train_set,
+                                message = message)
+ #################
+ geno_omic_model_ready_list <- list()
+ gmatrix_kernel_model_ready_list <- list()
+
+ if (length(geno_res)!=0 && all(c("gmatrix", "geno_model_ready") %in% names(geno_res))) {
+   gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- geno_res[["gmatrix"]]
+   geno_omic_model_ready_list[["geno_model_ready"]] <- geno_res[["geno_model_ready"]]
+ } else if (length(geno_res)!=0 && "geno_model_ready" %in% names(geno_res)) {
+   geno_omic_model_ready_list[["geno_model_ready"]] <- geno_res[["geno_model_ready"]]
+ } else if(!is.null(gmatrix)){
+   gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- gmatrix
+  } else {
+   if (!is.null(gkernel)) {
+     gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- gkernel
+   }
+ }
+
+ ####
+ if (length(omic1_res)!=0 && all(c("kernel", "omic_model_ready")%in%names(omic1_res))) {
+   gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] <- omic1_res[["kernel"]]
+   geno_omic_model_ready_list[["omic1_model_ready"]] <- omic1_res[["omic_model_ready"]]
+ } else if(length(omic1_res)!=0 && "omic_model_ready"%in%names(omic1_res)){
+   geno_omic_model_ready_list[["omic1_model_ready"]] <- omic1_res[["omic_model_ready"]]
+ } else if(length(omic1_res)!=0 && "kernel"%in%names(omic1_res)){
+       gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] <- omic1_res[["kernel"]]
+
+ } else {
+   if (!is.null(omic1_kernel)) {
+     gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] <- omic1_kernel
+   }
+ }
+
+ if (length(omic2_res)!=0 && all(c("kernel", "omic_model_ready")%in%names(omic2_res))) {
+   gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] <- omic2_res[["kernel"]]
+   geno_omic_model_ready_list[["omic2_model_ready"]] <- omic2_res[["omic_model_ready"]]
+ } else if(length(omic2_res)!=0 && "omic_model_ready"%in%names(omic2_res)){
+   geno_omic_model_ready_list[["omic2_model_ready"]] <- omic2_res[["omic_model_ready"]]
+ } else if(length(omic2_res)!=0 && "kernel"%in%names(omic2_res)){
+       gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] <- omic2_res[["kernel"]]
+ } else {
+   if (!is.null(omic2_kernel)) {
+     gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] <- omic2_kernel
+   }
+ }
+
+
+ if (length(omic3_res)!=0 && all(c("kernel", "omic_model_ready")%in%names(omic3_res))) {
+   gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] <- omic3_res[["kernel"]]
+   geno_omic_model_ready_list[["omic3_model_ready"]] <- omic3_res[["omic_model_ready"]]
+ } else if(length(omic3_res)!=0 && "omic_model_ready"%in%names(omic3_res)){
+   geno_omic_model_ready_list[["omic3_model_ready"]] <- omic3_res[["omic_model_ready"]]
+ } else if(length(omic3_res)!=0 && "kernel"%in%names(omic3_res)){
+     gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] <- omic3_res[["kernel"]]
+ } else {
+   if (!is.null(omic3_kernel)) {
+     gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] <- omic3_kernel
+   }
+ }
+
+ # Define a list of kernel variables
+ kernel_vars <- c("gmatrix_model_ready",
+                  "omic1_kernel_model_ready",
+                  "omic2_kernel_model_ready",
+                  "omic3_kernel_model_ready")
+
+
+ # Define a list to store results
+ #results_kernel_list <- list()
+
+ # Iterate over each kernel variable
+ for (kernel_var in kernel_vars) {
+     #checked_var <- paste0(kernel_var, "_checked")
+     gmatrix_kernel_model_ready_list[[kernel_var]]
+     # Check if the kernel variable exists
+     if (!is.null(gmatrix_kernel_model_ready_list[[kernel_var]])) {
+         # Pre-check the kernel data
+         #results_kernel_list[[kernel_var]] <- grm_kernel_precheck(
+       gmatrix_kernel_model_ready_list[[kernel_var]] <- grm_kernel_precheck(
+             grm_kernel_data = gmatrix_kernel_model_ready_list[[kernel_var]],
+             pedigree_matrix = pedigree_matrix,
+             bending = bending,
+             bend_value = bend_value,
+             blending = blending,
+             blending_value = blending_value,
+             high_diag_cut_off = high_diag_cut_off,
+             low_diag_cut_off = low_diag_cut_off,
+             duplicate_cut_off = duplicate_cut_off,
+             rcn_cutoff = rcn_cutoff,
+             optimize_diagonal = optimize_diagonal,
+             optimize_duplicate = optimize_duplicate,
+             message = message
+         )
+
+         # Remove the intermediate kernel variable
+         #rm(list = kernel_var)
      }
+ }
+ #gmatrix_kernel_model_ready_list <-  results_kernel_list
+ #rm(results_kernel_list)
+ # Iterate over each checked kernel variable for pheno-geno match
+ if(length(gmatrix_kernel_model_ready_list)!=0){
+ for (checked_kernel_var_name in names(gmatrix_kernel_model_ready_list)) {
+     # Check if the checked kernel variable exists
+     if (!is.null(gmatrix_kernel_model_ready_list[[checked_kernel_var_name]])) {
+         # Perform pheno-geno match
+         match_result <- pheno_geno_match(
+             object_pheno = pheno_clean[["pheno_clean_data"]],
+             object_geno = gmatrix_kernel_model_ready_list[[checked_kernel_var_name]],
+             gen_name = gen_name,
+             test_set = test_set,
+             train_set = train_set,
+             message = message
+         )
 
-     if((exists('omic1_clean') & exists("pheno_clean")) & (is.null(gmatrix_method) & is.null(kernel_method))){
-         omic1_pheno_match = pheno_geno_match(object_pheno = pheno_clean$pheno_data,
-                                              object_geno = omic1_clean,
-                                              gen_name = gen_name,
-                                              test_set = test_set,
-                                              train_set = train_set,
-                                              message = message)
-
-
-         if(length(omic1_pheno_match)>1){
-             omic1_model_ready <- omic1_pheno_match[[1]]
-             test_set <- omic1_pheno_match[[2]]
-         } else {
-
-        omic1_model_ready <- omic1_pheno_match[[1]]
+         # Assign model-ready variable and update test_set if necessary
+         #results_list[[paste0(sub("_checked$", "", checked_kernel_var_name), "_model_ready")]] <- match_result[[1]]
+         #model_ready_name <- paste0(checked_kernel_var_name, "_model_ready")
+         gmatrix_kernel_model_ready_list[[checked_kernel_var_name]] <- match_result[[1]]
+         if (length(match_result) > 1) {
+             test_set <- match_result[[2]]
          }
-
-         rm(omic1_pheno_match, omic1_clean)
      }
-
-     #### To calculate the omic1_kernel only omic1_clean is acceptable
-     if (exists("omic1_clean") & !is.null(kernel_method)) {
-         omic1_kernel <-  kernel_calculation(
-                                             M_matrix_clean = omic1_clean,
-                                             center=center,
-                                             method = kernel_method,
-                                             message = message )
-
-         rm(omic1_clean)
-     }
-
-     }
-#########
-
- #### Get the clean omic2_data ready for model fit
- ### Similar condition as omic1_data applies.
- if(isFALSE(((is.null(omic2_data) & is.null(train_omic2_data)) & is.null(test_omic2_data)))){
-
-     omic2_clean <-  omic_to_model(omic_data = omic2_data,
-                                   train_omic_data = train_omic2_data,
-                                   test_omic_data = test_omic2_data,
-                                   message = message)
-
-     if(attr(omic2_clean, "cleared")!="for_model_fit" && all(class(omic2_clean)!=c("matrix", "array"))) {
-
-         stop(print(paste(msg,'Data is not fit for model')), call. = FALSE)
-
-     }
-
-
-     if((exists('omic2_clean') & exists("pheno_clean")) & (is.null(gmatrix_method) | is.null(kernel_method))){
-         omic2_pheno_match = pheno_geno_match(object_pheno = pheno_clean$pheno_data,
-                                              object_geno = omic2_clean,
-                                              gen_name = gen_name,
-                                              test_set = test_set,
-                                              train_set = train_set,
-                                              message = message)
-
-
-         if(length(omic2_pheno_match)>1){
-             omic2_model_ready <- omic2_pheno_match[[1]]
-             test_set <- omic2_pheno_match[[2]]
-         }else {
-
-             omic2_model_ready <- omic2_pheno_match[[1]]
-         }
-
-         rm(omic2_pheno_match, omic2_clean)
-     }
-
-     #### To calculate the omic2_kernel only omic2_clean is acceptable
-     if (exists("omic2_clean") & !is.null(kernel_method)) {
-         omic2_kernel <-  kernel_calculation(
-                                             M_matrix_clean = omic2_clean,
-                                             center=center,
-                                             method = kernel_method,
-                                             message = message )
-
-         rm(omic2_clean)
-     }
-
- }
- #########
-
- #### Get the clean omic3_data ready for model fit
- if(isFALSE(((is.null(omic3_data) & is.null(train_omic3_data)) & is.null(test_omic3_data)))){
-
-     omic3_clean <-  omic_to_model(omic_data = omic3_data,
-                                   train_omic_data = train_omic3_data,
-                                   test_omic_data = test_omic3_data,
-                                   message = message)
-
-     if(attr(omic3_clean, "cleared")!="for_model_fit" && all(class(omic3_clean)!=c("matrix", "array"))) {
-
-         stop(print(paste(msg,'Data is not fit for model')), call. = FALSE)
-
-     }
-
-
-     if((exists('omic3_clean') & exists("pheno_clean")) & (is.null(gmatrix_method) & is.null(kernel_method))){
-         omic3_pheno_match = pheno_geno_match(object_pheno = pheno_clean$pheno_data,
-                                              object_geno = omic3_clean,
-                                              gen_name = gen_name,
-                                              test_set = test_set,
-                                              train_set = train_set,
-                                              message = message)
-
-
-         if(length(omic3_pheno_match)>1){
-             omic3_model_ready <- omic3_pheno_match[[1]]
-             test_set <- omic3_pheno_match[[2]]
-         } else {
-
-             omic3_model_ready <- omic3_pheno_match[[1]]
-         }
-
-         rm(omic3_pheno_match, omic3_clean)
-     }
-
-     #### To calculate the omic3_kernel only omic3_clean is acceptable
-     if (exists("omic3_clean") & !is.null(kernel_method)) {
-         omic3_kernel <-  kernel_calculation(
-                                             M_matrix_clean = omic3_clean,
-                                             center=center,
-                                             method = kernel_method,
-                                             message = message )
-
-         rm(omic3_clean)
-     }
-
- }
-###################################################################################
- # Pre-Check for grm/kernel matrix if calculated from the marker/omic data
- # or provided by the user.  It has to pass through this pre-check before going
- # to conditioning effect such as bend. This is important for stability of the matrix
- # during matrix inverse.
- # While it is very important and we strongly suggest user to use
- # we allow the user the opportunity to decide to use it or not.
- ##
- ## Checks
- #' #######
- #' 1. It check if the matrix is square matrix/symmetry, if not we fix it for the user
- #' 2. It check if the matrix is positive definite, if not we fix it.
- #' 3. It check for NA. If present the engine will stop further analysis.
-######################################################################################3
-
-     if(!is.null(gmatrix)){
-
-         gmatrix_checked <- grm_kernel_precheck(grm_kernel_data= gmatrix,
-                                                pedigree_matrix = pedigree_matrix,
-                                                bending = bending,
-                                                bend_value = bend_value,
-                                                blending = blending,
-                                                blending_value = blending_value,
-                                                high_diag_cut_off = high_diag_cut_off,
-                                                low_diag_cut_off = low_diag_cut_off,
-                                                duplicate_cut_off = duplicate_cut_off,
-                                                rcn_cutoff = rcn_cutoff,
-                                                optimize_diagonal = optimize_diagonal,
-                                                optimize_duplicate = optimize_duplicate,
-                                                message = message)
-     }
-
-
-     if(!is.null(gkernel)){
-
-         gkernel_checked <- grm_kernel_precheck(grm_kernel_data= gkernel,
-                                                pedigree_matrix = pedigree_matrix,
-                                                bending = bending,
-                                                bend_value = bend_value,
-                                                blending = blending,
-                                                blending_value = blending_value,
-                                                high_diag_cut_off = high_diag_cut_off,
-                                                low_diag_cut_off = low_diag_cut_off,
-                                                duplicate_cut_off = duplicate_cut_off,
-                                                rcn_cutoff = rcn_cutoff,
-                                                optimize_diagonal = optimize_diagonal,
-                                                optimize_duplicate = optimize_duplicate,
-                                                message = message)
-     }
-
-
-     if(!is.null(omic1_kernel)){
-
-         omic1_kernel_checked <- grm_kernel_precheck(grm_kernel_data= omic1_kernel,
-                                                     pedigree_matrix = pedigree_matrix,
-                                                     bending = bending,
-                                                     bend_value = bend_value,
-                                                     blending = blending,
-                                                     blending_value = blending_value,
-                                                     high_diag_cut_off = high_diag_cut_off,
-                                                     low_diag_cut_off = low_diag_cut_off,
-                                                     duplicate_cut_off = duplicate_cut_off,
-                                                     rcn_cutoff = rcn_cutoff,
-                                                     optimize_diagonal = optimize_diagonal,
-                                                     optimize_duplicate = optimize_duplicate,
-                                                     message = message)
-     }
-
-     if(!is.null(omic2_kernel)){
-
-         omic2_kernel_checked <- grm_kernel_precheck(grm_kernel_data= omic2_kernel,
-                                                     pedigree_matrix = pedigree_matrix,
-                                                     bending = bending,
-                                                     bend_value = bend_value,
-                                                     blending = blending,
-                                                     blending_value = blending_value,
-                                                     high_diag_cut_off = high_diag_cut_off,
-                                                     low_diag_cut_off = low_diag_cut_off,
-                                                     duplicate_cut_off = duplicate_cut_off,
-                                                     rcn_cutoff = rcn_cutoff,
-                                                     optimize_diagonal = optimize_diagonal,
-                                                     optimize_duplicate = optimize_duplicate,
-                                                     message = message)
-     }
-
-
-     if(!is.null(omic3_kernel)){
-
-         omic3_kernel_checked <- grm_kernel_precheck(grm_kernel_data= omic3_kernel,
-                                                     pedigree_matrix = pedigree_matrix,
-                                                     bending = bending,
-                                                     bend_value = bend_value,
-                                                     blending = blending,
-                                                     blending_value = blending_value,
-                                                     high_diag_cut_off = high_diag_cut_off,
-                                                     low_diag_cut_off = low_diag_cut_off,
-                                                     duplicate_cut_off = duplicate_cut_off,
-                                                     rcn_cutoff = rcn_cutoff,
-                                                     optimize_diagonal = optimize_diagonal,
-                                                     optimize_duplicate = optimize_duplicate,
-                                                     message = message)
-     }
-################################################################
- ##### Pheno to geno match
- ################################################
-### This is important as the user might provide the relationship matrix differently
- if(exists("gkernel_checked")){
-
-
-    gkernel_pheno_match  <- pheno_geno_match(object_pheno = pheno_clean$pheno_data,
-                                             object_geno = gkernel_checked,
-                                             gen_name = gen_name,
-                                             test_set = test_set,
-                                             train_set = train_set,
-                                             message = message)
-
-    if(length(gkernel_pheno_match)>1){
-    gkernel_model_ready <- gkernel_pheno_match[[1]]
-    test_set <- gkernel_pheno_match[[2]]
-    } else{
-        gkernel_model_ready <- gkernel_pheno_match[[1]]
-
-    }
-
-    rm(gkernel_pheno_match, gkernel, gkernel_checked)
- }
-
- if(exists("gmatrix_checked")){
-
-
-     gmatrix_pheno_match <- pheno_geno_match(object_pheno = pheno_clean$pheno_data,
-                                             object_geno = gmatrix_checked,
-                                             gen_name = gen_name,
-                                             test_set = test_set,
-                                             train_set = train_set,
-                                             message = message)
-
-     if(length(gmatrix_pheno_match)>1){
-         gmatrix_model_ready <- gmatrix_pheno_match[[1]]
-
-         test_set <- gmatrix_pheno_match[[2]]
-     } else {
-         gmatrix_model_ready <- gmatrix_pheno_match[[1]]
-
-     }
-
-     rm(gmatrix_pheno_match, gmatrix, gmatrix_checked)
  }
 
 
- if(exists("omic1_kernel_checked")){
-
-
-     omic1_kernel_pheno_match <- pheno_geno_match(object_pheno = pheno_clean$pheno_data,
-                                                  object_geno = omic1_kernel_checked,
-                                                  gen_name = gen_name,
-                                                  test_set = test_set,
-                                                  train_set = train_set,
-                                                  message = message)
-
-     if(length(omic1_kernel_pheno_match)>1){
-         omic1_kernel_model_ready <- omic1_kernel_pheno_match[[1]]
-         test_set <- omic1_kernel_pheno_match[[2]]
-     } else {
-         omic1_kernel_model_ready <- omic1_kernel_pheno_match[[1]]
-     }
-
- rm(omic1_kernel_pheno_match, omic1_kernel, omic1_kernel_checked)
  }
-
-
- if(exists("omic2_kernel_checked")){
-
-
-     omic2_kernel_pheno_match <- pheno_geno_match(object_pheno = pheno_clean$pheno_data,
-                                                  object_geno = omic2_kernel_checked,
-                                                  gen_name = gen_name,
-                                                  test_set = test_set,
-                                                  train_set = train_set,
-                                                  message = message)
-
-     if(length(omic2_kernel_pheno_match)>1){
-         omic2_kernel_model_ready <- omic2_kernel_pheno_match[[1]]
-         test_set <- omic2_kernel_pheno_match[[2]]
-     } else {
-         omic2_kernel_model_ready <- omic2_kernel_pheno_match[[1]]
-     }
-
-     rm(omic2_kernel_pheno_match, omic2_kernel, omic2_kernel_checked)
- }
-
- if(exists("omic3_kernel_checked")){
-
-
-     omic3_kernel_pheno_match <- pheno_geno_match(object_pheno = pheno_clean$pheno_data,
-                                                  object_geno = omic3_kernel_checked,
-                                                  gen_name = gen_name,
-                                                  test_set = test_set,
-                                                  train_set = train_set,
-                                                  message = message)
-
-     if(length(omic3_kernel_pheno_match)>1){
-         omic3_kernel_model_ready <- omic3_kernel_pheno_match[[1]]
-         test_set <- omic3_kernel_pheno_match[[2]]
-     } else {
-         omic3_kernel_model_ready <- omic3_kernel_pheno_match[[1]]
-     }
-
-     rm(omic3_kernel_pheno_match, omic3_kernel, omic3_kernel_checked)
- }
-
-
- ### End
-#####################################################################
-
+##########################################################
 
  ##########################################################################
  #########################################################################
@@ -812,539 +627,46 @@ model_execute <- function(
     #    ((!is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL")))))){
 
  #### These models only works with one environment/location
- if(length(pheno_clean[[1]][,gen_name])==length(unique(pheno_clean[[1]][,gen_name]))){
-
- if((isTRUE(GS_model== "BRR" | GS_model== "BayesA"|  GS_model== "BayesB"| GS_model== "BayesC" | GS_model== "BL") & is.null(rand_term_model_bayesian)) |
-    (is.null(GS_model) & length(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))!=0) |
-    (!is.null(GS_model) & length(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))!=0)){
-
-     # if(length(pheno_clean[[1]][,gen_name])>length(unique(pheno_clean[[1]][,gen_name]))){
-     #     stop(message(paste(msg, paste(GS_model, 'only works for single location/enviroment.'))), call. = FALSE)
-     # }
-
-        if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-### The ETA_compiler_bayes compile the linear predictors and set parameters for the model.
-## Check the function for details.
-   # ETA  <-  ETA_compiler_bayes(
-   #      fixed = fixed,
-   #      random = random,
-   #      GS_model = GS_model,
-   #      fixed_term_model_bayesian = fixed_term_model_bayesian,
-   #      rand_term_model_bayesian = rand_term_model_bayesian,
-   #      pheno_data = pheno_clean[[1]],
-   #      geno_data = geno_model_ready,
-   #      omic1_data = NULL,
-   #      omic2_data = NULL,
-   #      omic3_data = NULL,
-   #      gen_name = gen_name)
-   #
-   # bayes_para <-  bayes_parameter_check(nIter = nIter,
-   #                                      burnIn = burnIn,
-   #                                      thin = thin)
-   #
-   #  mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
-   #                            response = response,
-   #                            weights = weights,
-   #                            ETA = ETA$ETA,
-   #                            bayes_para = bayes_para,
-   #                            verbose = FALSE
-   #                            #files_key = "files_key"
-   #                                        )
-   #
-   #  res_model_output <- mod_output_bayes(mod = mod,
-   #                                       ETA = ETA,
-   #                                       geno_data = geno_model_ready,
-   #                                       gen_name = gen_name,
-   #                                       omic1_data = NULL,
-   #                                       omic2_data = NULL,
-   #                                       omic3_data = NULL,
-   #                                       omics_data_label = omics_data_label,
-   #                                       bayes_para = bayes_para,
-   #                                       GS_model = GS_model)
-
-out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                        random = random,
-                                        GS_model = GS_model,
-                                        response = response,
-                                        weights = weights,
-                                        fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                        rand_term_model_bayesian = rand_term_model_bayesian,
-                                        pheno_data = pheno_clean[[1]],
-                                        geno_data = geno_model_ready,
-                                        omic1_data = omic1_data,
-                                        omic2_data = omic2_data,
-                                        omic3_data = omic3_data,
-                                        gen_name = gen_name,
-                                        nIter = nIter,
-                                        burnIn = burnIn,
-                                        thin = thin,
-                                        omics_data_label = omics_data_label
-            )
-
-    res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-   res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-
-        }
-        ###### omic1_clean
-
-        if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
- #            ETA  <-  ETA_compiler_bayes(
- #                fixed = fixed,
- #                random = random,
- #                GS_model = GS_model,
- #                fixed_term_model_bayesian = fixed_term_model_bayesian,
- #                rand_term_model_bayesian = rand_term_model_bayesian,
- #                pheno_data = pheno_clean[[1]],
- #                geno_data = NULL,
- #                omic1_data = omic1_model_ready,
- #                omic2_data = NULL,
- #                omic3_data = NULL,
- #                gen_name = gen_name)
- #
- #            bayes_para <-  bayes_parameter_check(nIter = nIter,
- #                                                 burnIn = burnIn,
- #                                                 thin = thin)
- # ## M_matrix_bayes_mod_single_loc
- #            mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
- #                                                  response = response,
- #                                                  weights = weights,
- #                                                  ETA = ETA$ETA,
- #                                                  bayes_para = bayes_para,
- #                                                  verbose = FALSE
- #                                                  )
- #
- #            res_model_output <- mod_output_bayes(mod = mod,
- #                                                 ETA = ETA,
- #                                                 geno_data = NULL,
- #                                                 gen_name = gen_name,
- #                                                 omic1_data = omic1_model_ready,
- #                                                 omic2_data = NULL,
- #                                                 omic3_data = NULL,
- #                                                 omics_data_label = omics_data_label,
- #                                                 bayes_para = bayes_para,
- #                                                 GS_model = GS_model
- #            )
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data = geno_data,
-                                                     omic1_data = omic1_model_ready,
-                                                     omic2_data = omic2_data,
-                                                     omic3_data = omic3_data,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-
-        }
-
-        ##### omic2_model_ready
-
-        if((!exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data = geno_data,
-                                                     omic1_data = omic1_data,
-                                                     omic2_data = omic2_model_ready,
-                                                     omic3_data = omic3_data,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-        }
-
-        ####
-
-        ##### omic3_model_ready
-
-        if((!exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data = geno_data,
-                                                     omic1_data = omic1_data,
-                                                     omic2_data = omic2_data,
-                                                     omic3_data = omic3_model_ready,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-        }
-
-
-        ##### geno_model_ready and omic1_model_ready
-
-        if((exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data = geno_model_ready,
-                                                     omic1_data = omic1_model_ready,
-                                                     omic2_data = omic2_data,
-                                                     omic3_data = omic3_data,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-        }
-
-
-        ##### geno_clean and omic2_clean
-
-        if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data = geno_model_ready,
-                                                     omic1_data = omic1_data,
-                                                     omic2_data = omic2_model_ready,
-                                                     omic3_data = omic3_data,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-        }
-
-        ##### geno_clean and omic3_clean
-
-        if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data = geno_model_ready,
-                                                     omic1_data = omic1_data,
-                                                     omic2_data = omic2_data,
-                                                     omic3_data = omic3_model_ready,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-        }
-
-
-        ##### omic1_model_ready and omic2_model_ready
-
-        if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data =  geno_data,
-                                                     omic1_data = omic1_model_ready,
-                                                     omic2_data = omic2_model_ready,
-                                                     omic3_data = omic3_data,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-        }
-
-
-        ##### omic1_model_ready and omic3_model_ready
-
-        if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data =  geno_data,
-                                                     omic1_data = omic1_model_ready,
-                                                     omic2_data = omic2_data,
-                                                     omic3_data = omic3_model_ready,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-        }
-
-
-        ####
-        ##### omic2_model_ready and omic3_model_ready
-
-        if((!exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data =  geno_data,
-                                                     omic1_data = omic1_data,
-                                                     omic2_data = omic2_model_ready,
-                                                     omic3_data = omic3_model_ready,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-        }
-
-        ########
-
-        ##### geno_model_ready, omic1_model_ready and omic2_model_ready
-
-        if((exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data =  geno_model_ready,
-                                                     omic1_data = omic1_model_ready,
-                                                     omic2_data = omic2_model_ready,
-                                                     omic3_data = omic3_data,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-        }
-
-
-        ##### geno_model_ready, omic1_model_ready and omic3_model_ready
-
-        if((exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data =  geno_model_ready,
-                                                     omic1_data = omic1_model_ready,
-                                                     omic2_data = omic2_data,
-                                                     omic3_data = omic3_model_ready,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-        }
-
-
-    #####
-
-        ##### geno_model_ready, omic2_model_ready and omic3_model_ready
-
-        if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data =  geno_model_ready,
-                                                     omic1_data = omic1_data,
-                                                     omic2_data = omic2_model_ready,
-                                                     omic3_data = omic3_model_ready,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-        }
-
-        ##### omic1_model_ready, omic2_model_ready and omic3_model_ready
-
-        if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data =  geno_data,
-                                                     omic1_data = omic1_model_ready,
-                                                     omic2_data = omic2_model_ready,
-                                                     omic3_data = omic3_model_ready,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-        }
-
-
-        ##### geno,  omic1_clean, omic2clean and omic3_clean
-
-        if((exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-            out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                     random = random,
-                                                     GS_model = GS_model,
-                                                     response = response,
-                                                     weights = weights,
-                                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                     rand_term_model_bayesian = rand_term_model_bayesian,
-                                                     pheno_data = pheno_clean[[1]],
-                                                     geno_data =  geno_model_ready,
-                                                     omic1_data = omic1_model_ready,
-                                                     omic2_data = omic2_model_ready,
-                                                     omic3_data = omic3_model_ready,
-                                                     gen_name = gen_name,
-                                                     nIter = nIter,
-                                                     burnIn = burnIn,
-                                                     thin = thin,
-                                                     omics_data_label = omics_data_label
-            )
-
-            res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-            res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-        }
+ if(length(pheno_clean[["pheno_clean_data"]][,gen_name])==length(unique(pheno_clean[["pheno_clean_data"]][,gen_name]))){
+
+     if ((GS_model %in% bayes_valid_models && is.null(rand_term_model_bayesian)) ||
+         (is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_valid_models)) ||
+         (!is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_valid_models))) {
+
+
+       # if(is.null(geno_omic_model_ready_list[["geno_model_ready"]])){
+       #
+       #   stop("geno is null")
+       # }
+       res_model_output <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
+                                                  random = random,
+                                                  GS_model = GS_model,
+                                                  response = response,
+                                                  weights = weights,
+                                                  fixed_term_model_bayesian = fixed_term_model_bayesian,
+                                                  rand_term_model_bayesian = rand_term_model_bayesian,
+                                                  pheno_data = pheno_clean[["pheno_clean_data"]],
+                                                  geno_data = if("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
+                                                  omic1_data = if("omic1_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic1_model_ready"]] else NULL,
+                                                  omic2_data = if("omic2_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic2_model_ready"]] else NULL,
+                                                  omic3_data = if("omic3_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic3_model_ready"]] else NULL,
+                                                  gen_name = gen_name,
+                                                  nIter = nIter,
+                                                  burnIn = burnIn,
+                                                  thin = thin,
+                                                  omics_data_label = omics_data_label
+         )
+
+     # Compute summary statistics and plot accuracy
+     res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]], eval_metrics = eval_metrics)
+     res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
+     res_model_output <- res_model_output[["bayes_result"]]
+
+     return(results_handling(GS_model = GS_model,
+                             res_model_output = res_model_output,
+                             res_summary_stat = res_summary_stat,
+                             res_plot = res_plot,
+                             system_database = system_database))
 
  }
 } ## End of  Bayes A, B, C, BRR, BL
@@ -1359,1401 +681,136 @@ out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
  ##########################################################################
  #######################################################################
 
- # if((isTRUE(GS_model== "RKHS") |
- #     ((is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%"RKHS"))) |
- #     ((!is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%"RKHS"))))){
-
- # if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "BRR")) & is.null(rand_term_model_bayesian)) |
- #    ((is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%c("RKHS", "BRR")))) |
- #    ((!is.null(GS_model) & isTRUE(rand_term_model_bayesian%in%c("RKHS", "BRR"))))){
-
  ## NOTE
  ## BRR is chaneg to G-BRR
  ## This is to make distinction between BRR for marker matrix and GBLUP
-# if(!exists('gkernel_model_ready') | !exists('gmatrix_model_ready') | !exists('omic1_kernel_model_ready') | !exists('omic2_kernel_model_ready') | !exists('omic3_kernel_model_ready')){
- if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "GBLUP_BRR") | isTRUE(GS_model== "GBLUP")) & is.null(rand_term_model_bayesian)) |
- #if((isTRUE(GS_model== "RKHS" | isTRUE(GS_model== "GBLUP")) & is.null(rand_term_model_bayesian)) |
-     (is.null(GS_model) & length(rand_term_model_bayesian%in%c("RKHS", "GBLUP_BRR"))!=0) |
-    (!is.null(GS_model) & length(rand_term_model_bayesian%in%c("RKHS", "GBLUP_BRR"))!=0)){
+ # Check conditions for GS_model and rand_term_model_bayesian
+ if ((GS_model %in% c("RKHS", "GBLUP_BRR", "GBLUP") && is.null(rand_term_model_bayesian)) ||
+     (is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_gblup_valid_models)) ||
+     (!is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_gblup_valid_models))) {
 
-     ## This is to make distinction between BRR for marker matrix and GBLUP
-     if(GS_model== "GBLUP_BRR"){
-         GS_modeluse = GS_model
-         GS_model = "BRR"
-
+     # Rename GS_model for GBLUP_BRR case
+     if (GS_model == "GBLUP_BRR") {
+         GS_modeluse <- GS_model
+         GS_model <- "BRR"
      }
 
-     if(exists('gmatrix_model_ready')){
-
-         gmatrix_gkernel <- gmatrix_model_ready
-     } else {
-         if(exists('gkernel_model_ready')){
-
-             gmatrix_gkernel <- gkernel_model_ready
-         }
-
-     }
-
-     ##
-     # if(!exists('gkernel_model_ready') | !exists('gmatrix_model_ready') | !exists('omic1_kernel_model_ready') | !exists('omic2_kernel_model_ready') | !exists('omic3_kernel_model_ready')){
-     #
-     #     stop(print(paste(msg, "Genomic relationship/kernel matrix is required.")), call. = FALSE)
-     # }
-
-     if(((exists('gmatrix_gkernel')) & (!exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
-
-         #if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
-
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-         # if(exists('gkernel_model_ready')){
-         #     ETA  <-  ETA_compiler_bayes_GBLUP(
-         #         fixed = fixed,
-         #         random = random,
-         #         GS_model = GS_model,
-         #         fixed_term_model_bayesian = fixed_term_model_bayesian,
-         #         rand_term_model_bayesian = rand_term_model_bayesian,
-         #         pheno_data = pheno_clean[[1]],
-         #         gkernel =  gkernel_model_ready,
-         #         gen_name = gen_name)
-         #
-         # } else {
-         #
-         #     if(exists('gmatrix_model_ready')){
-         #         ETA  <-  ETA_compiler_bayes_GBLUP(
-         #             fixed = fixed,
-         #             random = random,
-         #             GS_model = GS_model,
-         #             fixed_term_model_bayesian = fixed_term_model_bayesian,
-         #             rand_term_model_bayesian = rand_term_model_bayesian,
-         #             pheno_data = pheno_clean[[1]],
-         #             gmatrix = gmatrix_model_ready,
-         #             gen_name = gen_name)
-         #
-         #     }
-         #
-         # }
-         #
-         # bayes_para <-  bayes_parameter_check(nIter = nIter,
-         #                                      burnIn = burnIn,
-         #                                      thin = thin)
-         #
-         # mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
-         #                           response = response,
-         #                           weights = weights,
-         #                           ETA = ETA$ETA,
-         #                           bayes_para = bayes_para
-         # )
-         #
-         # if(exists("gkernel_model_ready")){
-         #     if(GS_model=="RKHS"){
-         #     res_model_output <- mod_output_bayes_RKHS(mod = mod,
-         #                                               ETA = ETA,
-         #                                               gkernel =  gkernel_model_ready,
-         #                                               gen_name = gen_name,
-         #                                               pheno_data = ETA$pheno_data,
-         #                                               heter_groups  = heter_groups,
-         #                                               omics_kernel_label = omics_kernel_label,
-         #                                               bayes_para = bayes_para
-         #     )
-         #
-         #     }
-         #
-         #     if(GS_model=="BRR"){
-         #         res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
-         #                                                       ETA = ETA,
-         #                                                       gkernel =  gkernel_model_ready,
-         #                                                       gen_name = gen_name,
-         #                                                       pheno_data = ETA$pheno_data,
-         #                                                       heter_groups  = heter_groups,
-         #                                                       omics_kernel_label = omics_kernel_label,
-         #                                                       bayes_para = bayes_para
-         #         )
-         #
-         #     }
-         #
-         # } else {
-         #
-         #     if(exists('gmatrix_model_ready')){
-         #
-         #         if(GS_model=="RKHS"){
-         #         res_model_output <- mod_output_bayes_RKHS(mod = mod,
-         #                                                   ETA = ETA,
-         #                                                   gmatrix = gmatrix_model_ready,
-         #                                                   gen_name = gen_name,
-         #                                                   pheno_data = ETA$pheno_data,
-         #                                                   heter_groups  = heter_groups,
-         #                                                   omics_kernel_label = omics_kernel_label,
-         #                                                   bayes_para = bayes_para
-         #         )
-         #
-         #         }
-         #
-         #         if(GS_model=="BRR"){
-         #             res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
-         #                                                           ETA = ETA,
-         #                                                           gmatrix = gmatrix_model_ready,
-         #                                                           gen_name = gen_name,
-         #                                                           pheno_data = ETA$pheno_data,
-         #                                                           heter_groups  = heter_groups,
-         #                                                           omics_kernel_label = omics_kernel_label,
-         #                                                           bayes_para = bayes_para
-         #             )
-         #         }
-         #     }
-         #
-         # }
-
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
+     if (GS_model %in% c("BRR", "RKHS")) {
+         # Run Bayesian model for BRR and RKHS
+       res_model_output <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
                                                    random = random,
                                                    GS_model = GS_model,
                                                    response = response,
                                                    weights = weights,
                                                    fixed_term_model_bayesian = fixed_term_model_bayesian,
                                                    rand_term_model_bayesian = rand_term_model_bayesian,
-                                                   pheno_data = pheno_clean[[1]],
-                                                   gkernel =  NULL,
-                                                   gmatrix = gmatrix_gkernel,
-                                                   omic1_kernel = omic1_kernel,
-                                                   omic2_kernel = omic2_kernel,
-                                                   omic3_kernel = omic3_kernel,
+                                                   pheno_data = pheno_clean[["pheno_clean_data"]],
+                                                   gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
+                                                   omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
+                                                   omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
+                                                   omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
                                                    gen_name = gen_name,
                                                    nIter = nIter,
                                                    burnIn = burnIn,
                                                    thin = thin,
-                                                   heter_groups  = heter_groups,
+                                                   heter_groups = heter_groups,
                                                    omics_kernel_label = omics_kernel_label)
 
-         res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-         res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-         } else {
-             if(GS_model=="GBLUP" & engine == 'asreml'){
-
-
-                 mod = asreml_utilis(fixed = fixed,
-                                     random = random,
-                                     cova=cova,
-                                     GS_model = GS_model,
-                                     response = response,
-                                     pheno_data = pheno_clean[[1]],
-                                     gmatrix = gmatrix_gkernel,
-                                     gen_name = gen_name,
-                                     heter_groups = heter_groups,
-                                     heter_resid = heter_resid,
-                                     VarCov_str = VarCov_str,
-                                     weights = weights,
-                                     core = core,
-                                     pworkspace= pworkspace,
-                                     workspace = workspace,
-                                     maxit = maxit,
-                                     inverse = inverse,
-                                     epsilon = epsilon,
-                                     engine = engine)
-
-        res_model_output_asreml <- asreml_mod_output(
-                                    mod_asreml = mod,
-                                    pheno_data = pheno_clean[[1]],
-                                    gmatrix = gmatrix_gkernel,
-                                    heter_groups = heter_groups,
-                                    gen_name = gen_name,
-                                    VarCov_str = VarCov_str,
-                                    heter_resid = heter_resid,
-                                    pworkspace= pworkspace,
-                                    workspace = workspace,
-                                    maxit = maxit
-                                             )
-
-
-
-             }
-
+         # Compute summary statistics and plot accuracy
+         res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]], eval_metrics = eval_metrics)
+         res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
+         res_model_output <- res_model_output[["bayes_result"]]
+         ### This part is for GBLUP_BRR
+         if(exists("GS_modeluse")){
+           GS_model <-  GS_modeluse
          }
 
-     }
-     ###### omic1_clean
+         return(results_handling(GS_model = GS_model,
+                                 res_model_output = res_model_output,
+                                 res_summary_stat = res_summary_stat,
+                                 res_plot = res_plot,
+                                 system_database = system_database))
 
-     if(((!exists('gmatrix_gkernel')) & (exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
+     } else if (GS_model == "GBLUP" && engine == 'asreml') {
 
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-         # ETA  <-  ETA_compiler_bayes_GBLUP(
-         #                                     fixed = fixed,
-         #                                     random = random,
-         #                                     GS_model = GS_model,
-         #                                     fixed_term_model_bayesian = fixed_term_model_bayesian,
-         #                                     rand_term_model_bayesian = rand_term_model_bayesian,
-         #                                     pheno_data = pheno_clean[[1]],
-         #                                     omic1_kernel =  omic1_kernel_model_ready,
-         #                                     gen_name = gen_name
-         # )
-         #
-         # bayes_para <-  bayes_parameter_check(nIter = nIter,
-         #                                      burnIn = burnIn,
-         #                                      thin = thin
-         # )
-         #
-         # mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
-         #                           response = response,
-         #                           weights = weights,
-         #                           ETA = ETA$ETA,
-         #                           bayes_para = bayes_para
-         # )
-         #
-         # if(GS_model=="RKHS"){
-         # res_model_output <- mod_output_bayes_RKHS(mod = mod,
-         #                                           ETA = ETA,
-         #                                           gen_name = gen_name,
-         #                                           omic1_kernel = omic1_kernel_model_ready,
-         #                                           pheno_data = ETA$pheno_data,
-         #                                           heter_groups  = heter_groups,
-         #                                           omics_kernel_label = omics_kernel_label,
-         #                                           bayes_para = bayes_para
-         # )
-         #
-         # }
-         #
-         # if(GS_model=="BRR"){
-         #     res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
-         #                                                   ETA = ETA,
-         #                                                   gen_name = gen_name,
-         #                                                   omic1_kernel = omic1_kernel_model_ready,
-         #                                                   pheno_data = ETA$pheno_data,
-         #                                                   heter_groups  = heter_groups,
-         #                                                   omics_kernel_label = omics_kernel_label,
-         #                                                   bayes_para = bayes_para
-         #     )
-         # }
-         # res_summary_stat <- summary_statistics_bayes(mod = mod,
-         #                                              eval_metrics = eval_metrics)
-         #
-         # res_plot <-  plot_acc(mod = mod, response = response)
+       # gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL
+       # if(!matrixcalc::is.positive.definite(gmatrix)) stop("GRM issue")
 
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  gkernel,
-                                                      gmatrix = gmatrix,
-                                                      omic1_kernel = omic1_kernel_model_ready,
-                                                      omic2_kernel = omic2_kernel,
-                                                      omic3_kernel = omic3_kernel,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
+       #  # Run GBLUP model with ASReml
+         mod <- asreml_utilis(fixed = fixed,
+                              random = random,
+                              cova = cova,
+                              GS_model = GS_model,
+                              response = response,
+                              pheno_data = pheno_clean[["pheno_clean_data"]],
+                              gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
+                              omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
+                              omic2_kernel = if("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
+                              omic3_kernel = if("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
+                              gen_name = gen_name,
+                              heter_groups = heter_groups,
+                              heter_resid = heter_resid,
+                              var_cov_str = var_cov_str,
+                              weights = weights,
+                              core = core,
+                              pworkspace = pworkspace,
+                              workspace = workspace,
+                              maxit = maxit,
+                              inverse = inverse,
+                              epsilon = epsilon,
+                              engine = engine)
 
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
+         # Extract model output for ASReml
+         res_model_output <- asreml_mod_output(
+             mod_asreml = mod,
+             pheno_data = pheno_clean[["pheno_clean_data"]],
+             gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
+             omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
+             omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
+             omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
+             heter_groups = heter_groups,
+             gen_name = gen_name,
+             var_cov_str = var_cov_str,
+             heter_resid = heter_resid,
+             pworkspace = pworkspace,
+             workspace = workspace,
+             maxit = maxit
+         )
 
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-
-         } else {
-           if(GS_model=="GBLUP" & engine =="asreml")  {
-
-               mod <-  asreml_utilis(fixed = fixed,
-                                   random = random,
-                                   cova=cova,
-                                   GS_model = GS_model,
-                                   response = response,
-                                   pheno_data = pheno_clean[[1]],
-                                   omic1_kernel = omic1_kernel_model_ready,
-                                   gen_name = gen_name,
-                                   heter_groups = heter_groups,
-                                   heter_resid = heter_resid,
-                                   VarCov_str = VarCov_str,
-                                   weights = weights,
-                                   core = core,
-                                   pworkspace= pworkspace,
-                                   workspace = workspace,
-                                   maxit = maxit,
-                                   inverse = inverse,
-                                   epsilon = epsilon,
-                                   engine = engine)
-
-               res_model_output_asreml <-  asreml_mod_output(mod_asreml = mod,
-                                                       pheno_data = pheno_clean[[1]],
-                                                       omic1_kernel = omic1_kernel_model_ready,
-                                                       gen_name = gen_name,
-                                                       VarCov_str = VarCov_str,
+         res_summary_stat <- summary_statistics_asreml(mod = res_model_output[["Asreml_model"]],
+                                                       response = response,
                                                        heter_groups = heter_groups,
-                                                       heter_resid = heter_resid,
-                                                       pworkspace= pworkspace,
-                                                       workspace = workspace,
-                                                       maxit = maxit
-               )
+                                                       predicted_value =  res_model_output[["Predicted_value"]],
+                                                       pred_heter_groups = NULL,
+                                                       variance_components = res_model_output[["Variance_components"]],
+                                                       eval_metrics = eval_metrics)
 
-               # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-               #                       response = response)
+
+         remove_from_global <- function(var_names) {
+           for (var_name in var_names) {
+             if(exists(var_name, envir = .GlobalEnv)) {
+               rm(list = var_name, envir = .GlobalEnv)
+               #print(paste("Object", var_name, "removed from global environment."))
+             } else {
+               #print(paste("Object", var_name, "not found in global environment."))
+             }
            }
-
          }
 
-     }
-
-     ##### omic2_model_ready
-
-     if(((!exists('gmatrix_gkernel')) & (!exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  gkernel,
-                                                      gmatrix = gmatrix,
-                                                      omic1_kernel = omic1_kernel,
-                                                      omic2_kernel = omic2_kernel_model_ready,
-                                                      omic3_kernel = omic3_kernel,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
-
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
+         #rm inv_object
+         my_variable <- c("G_inv", "omic1_inv", "omic2_inv", "omic3_inv")
+         remove_from_global(my_variable)
 
 
-         } else {
-             if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                 mod <-  asreml_utilis(fixed = fixed,
-                                     random = random,
-                                     cova=cova,
-                                     GS_model = GS_model,
-                                     response = response,
-                                     pheno_data = pheno_clean[[1]],
-                                     omic2_kernel = omic2_kernel_model_ready,
-                                     gen_name = gen_name,
-                                     heter_groups = heter_groups,
-                                     heter_resid = heter_resid,
-                                     VarCov_str = VarCov_str,
-                                     weights = weights,
-                                     core = core,
-                                     pworkspace= pworkspace,
-                                     workspace = workspace,
-                                     maxit = maxit,
-                                     inverse = inverse,
-                                     epsilon = epsilon,
-                                     engine = engine)
-
-                 res_model_output_asreml <- asreml_mod_output(
-                                                         mod_asreml = mod,
-                                                         pheno_data = pheno_clean[[1]],
-                                                         omic2_kernel = omic2_kernel_model_ready,
-                                                         gen_name = gen_name,
-                                                         VarCov_str = VarCov_str,
-                                                         heter_groups = heter_groups,
-                                                         heter_resid = heter_resid,
-                                                         pworkspace= pworkspace,
-                                                         workspace = workspace,
-                                                         maxit = maxit
-                 )
-
-                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-                 #                       response = response)
-             }
-
-         }
+         return(results_handling(GS_model = GS_model,
+                                 res_model_output = res_model_output,
+                                 res_summary_stat = res_summary_stat,
+                                 res_plot =  NULL,
+                                 system_database = system_database))
 
      }
-
-     ####
-
-     ##### omic3_model_ready
-
-     if(((!exists('gmatrix_gkernel')) & (!exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  gkernel,
-                                                      gmatrix = gmatrix,
-                                                      omic1_kernel = omic1_kernel,
-                                                      omic2_kernel = omic2_kernel,
-                                                      omic3_kernel = omic3_kernel_model_ready,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
-
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-
-         } else {
-             if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                 mod <-  asreml_utilis(fixed = fixed,
-                                     random = random,
-                                     cova=cova,
-                                     GS_model = GS_model,
-                                     response = response,
-                                     pheno_data = pheno_clean[[1]],
-                                     omic3_kernel = omic3_kernel_model_ready,
-                                     gen_name = gen_name,
-                                     heter_groups = heter_groups,
-                                     heter_resid = heter_resid,
-                                     VarCov_str = VarCov_str,
-                                     weights = weights,
-                                     core = core,
-                                     pworkspace= pworkspace,
-                                     workspace = workspace,
-                                     maxit = maxit,
-                                     inverse = inverse,
-                                     epsilon = epsilon,
-                                     engine = engine)
-
-                 res_model_output_asreml <- asreml_mod_output(
-                                                         mod_asreml = mod,
-                                                         pheno_data = pheno_clean[[1]],
-                                                         omic3_kernel = omic3_kernel_model_ready,
-                                                         gen_name = gen_name,
-                                                         VarCov_str = VarCov_str,
-                                                         heter_groups = heter_groups,
-                                                         heter_resid = heter_resid,
-                                                         pworkspace= pworkspace,
-                                                         workspace = workspace,
-                                                         maxit = maxit
-                 )
-
-                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-                 #                       response = response)
-             }
-
-         }
-
-     }
-
-
-     ##### geno_model_ready and omic1_model_ready
-
-     if(((exists('gmatrix_gkernel')) & (exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
-
-         #if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
-
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  NULL,
-                                                      gmatrix = gmatrix_gkernel,
-                                                      omic1_kernel = omic1_kernel_model_ready,
-                                                      omic2_kernel = omic2_kernel,
-                                                      omic3_kernel = omic3_kernel,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
-
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-
-         } else {
-             if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                 mod <-  asreml_utilis(fixed = fixed,
-                                     random = random,
-                                     cova=cova,
-                                     GS_model = GS_model,
-                                     response = response,
-                                     pheno_data = pheno_clean[[1]],
-                                     gmatrix = gmatrix_gkernel,
-                                     omic1_kernel = omic1_kernel_model_ready,
-                                     gen_name = gen_name,
-                                     heter_groups = heter_groups,
-                                     heter_resid = heter_resid,
-                                     VarCov_str = VarCov_str,
-                                     weights = weights,
-                                     core = core,
-                                     pworkspace= pworkspace,
-                                     workspace = workspace,
-                                     maxit = maxit,
-                                     inverse = inverse,
-                                     epsilon = epsilon,
-                                     engine = engine)
-
-                 res_model_output_asreml <- asreml_mod_output(
-                                                         mod_asreml = mod,
-                                                         pheno_data = pheno_clean[[1]],
-                                                         gmatrix = gmatrix_gkernel,
-                                                         omic1_kernel = omic1_kernel_model_ready,
-                                                         gen_name = gen_name,
-                                                         VarCov_str = VarCov_str,
-                                                         heter_groups = heter_groups,
-                                                         heter_resid = heter_resid,
-                                                         pworkspace= pworkspace,
-                                                         workspace = workspace,
-                                                         maxit = maxit
-                                                     )
-
-
-                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-                 #                       response = response)
-             }
-
-         }
-
-     }
-
-
-     ##### geno_clean and omic2_clean
-
-     if(((exists('gmatrix_gkernel')) & (!exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
-
-         #if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                          random = random,
-                                                          GS_model = GS_model,
-                                                          response = response,
-                                                          weights = weights,
-                                                          fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                          rand_term_model_bayesian = rand_term_model_bayesian,
-                                                          pheno_data = pheno_clean[[1]],
-                                                          gkernel =  NULL,
-                                                          gmatrix = gmatrix_gkernel,
-                                                          omic1_kernel = omic1_kernel,
-                                                          omic2_kernel = omic2_kernel_model_ready,
-                                                          omic3_kernel = omic3_kernel,
-                                                          gen_name = gen_name,
-                                                          nIter = nIter,
-                                                          burnIn = burnIn,
-                                                          thin = thin,
-                                                          heter_groups  = heter_groups,
-                                                          omics_kernel_label = omics_kernel_label)
-
-                 res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-                 res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-         } else {
-             if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                     mod <-  asreml_utilis(fixed = fixed,
-                                         random = random,
-                                         cova=cova,
-                                         GS_model = GS_model,
-                                         response = response,
-                                         pheno_data = pheno_clean[[1]],
-                                         gmatrix = gmatrix_gkernel,
-                                         omic2_kernel = omic2_kernel_model_ready,
-                                         gen_name = gen_name,
-                                         heter_groups = heter_groups,
-                                         heter_resid = heter_resid,
-                                         VarCov_str = VarCov_str,
-                                         weights = weights,
-                                         core = core,
-                                         pworkspace= pworkspace,
-                                         workspace = workspace,
-                                         maxit = maxit,
-                                         inverse = inverse,
-                                         epsilon = epsilon,
-                                         engine = engine)
-
-                     res_model_output_asreml <- asreml_mod_output(mod_asreml = mod,
-                                                           pheno_data = pheno_clean[[1]],
-                                                           gmatrix = gmatrix_gkernel,
-                                                           omic2_kernel = omic2_kernel_model_ready,
-                                                           gen_name = gen_name,
-                                                           VarCov_str = VarCov_str,
-                                                           heter_groups = heter_groups,
-                                                           heter_resid = heter_resid,
-                                                           pworkspace= pworkspace,
-                                                           workspace = workspace,
-                                                           maxit = maxit
-                                                         )
-
-
-                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-                 #                       response = response)
-             }
-
-         }
-
-     }
-     ##### geno_clean and omic3_clean
-
-     if(((exists('gmatrix_gkernel')) & (!exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
-
-         #if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
-
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  NULL,
-                                                      gmatrix = gmatrix_gkernel,
-                                                      omic1_kernel = omic1_kernel,
-                                                      omic2_kernel = omic2_kernel,
-                                                      omic3_kernel = omic3_kernel_model_ready,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
-
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-         } else {
-             if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                     mod <-  asreml_utilis(fixed = fixed,
-                                         random = random,
-                                         cova=cova,
-                                         GS_model = GS_model,
-                                         response = response,
-                                         pheno_data = pheno_clean[[1]],
-                                         gmatrix = gmatrix_gkernel,
-                                         omic3_kernel = omic3_kernel_model_ready,
-                                         gen_name = gen_name,
-                                         heter_groups = heter_groups,
-                                         heter_resid = heter_resid,
-                                         VarCov_str = VarCov_str,
-                                         weights = weights,
-                                         core = core,
-                                         pworkspace= pworkspace,
-                                         workspace = workspace,
-                                         maxit = maxit,
-                                         inverse = inverse,
-                                         epsilon = epsilon,
-                                         engine = engine)
-
-                     res_model_output_asreml <- asreml_mod_output(
-                                                             mod_asreml = mod,
-                                                             pheno_data = pheno_clean[[1]],
-                                                             gmatrix = gmatrix_gkernel,
-                                                             omic3_kernel = omic3_kernel_model_ready,
-                                                             gen_name = gen_name,
-                                                             VarCov_str = VarCov_str,
-                                                             heter_groups = heter_groups,
-                                                             heter_resid = heter_resid,
-                                                             pworkspace= pworkspace,
-                                                             workspace = workspace,
-                                                             maxit = maxit
-                     )
-
-
-
-                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-                 #                       response = response)
-
-
-         }
-
-         }
-
-     }
-
-
-     ##### omic1_model_ready and omic2_model_ready
-
-     if(((!exists('gmatrix_gkernel')) & (exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  NULL,
-                                                      gmatrix = NULL,
-                                                      omic1_kernel = omic1_kernel_model_ready,
-                                                      omic2_kernel = omic2_kernel_model_ready,
-                                                      omic3_kernel = omic3_kernel,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
-
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-
-         } else {
-             if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                 mod <-  asreml_utilis(fixed = fixed,
-                                     random = random,
-                                     cova=cova,
-                                     GS_model = GS_model,
-                                     response = response,
-                                     pheno_data = pheno_clean[[1]],
-                                     omic1_kernel = omic1_kernel_model_ready,
-                                     omic2_kernel = omic2_kernel_model_ready,
-                                     gen_name = gen_name,
-                                     heter_groups = heter_groups,
-                                     heter_resid = heter_resid,
-                                     VarCov_str = VarCov_str,
-                                     weights = weights,
-                                     core = core,
-                                     pworkspace= pworkspace,
-                                     workspace = workspace,
-                                     maxit = maxit,
-                                     inverse = inverse,
-                                     epsilon = epsilon,
-                                     engine = engine)
-
-                 res_model_output_asreml <- asreml_mod_output(
-                                                         mod_asreml = mod,
-                                                         pheno_data = pheno_clean[[1]],
-                                                         omic1_kernel = omic1_kernel_model_ready,
-                                                         omic2_kernel = omic2_kernel_model_ready,
-                                                         gen_name = gen_name,
-                                                         VarCov_str = VarCov_str,
-                                                         heter_groups = heter_groups,
-                                                         heter_resid = heter_resid,
-                                                         pworkspace= pworkspace,
-                                                         workspace = workspace,
-                                                         maxit = maxit
-                                                     )
-
-                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-                 #                       response = response)
-             }
-
-         }
-
-     }
-
-
-
-     ##### omic1_model_ready and omic3_model_ready
-
-
-     if(((!exists('gmatrix_gkernel')) & (exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  NULL,
-                                                      gmatrix = NULL,
-                                                      omic1_kernel = omic1_kernel_model_ready,
-                                                      omic2_kernel = omic2_kernel,
-                                                      omic3_kernel = omic3_kernel_model_ready,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
-
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-         } else {
-             if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                 mod <-  asreml_utilis(fixed = fixed,
-                                     random = random,
-                                     cova=cova,
-                                     GS_model = GS_model,
-                                     response = response,
-                                     pheno_data = pheno_clean[[1]],
-                                     omic1_kernel = omic1_kernel_model_ready,
-                                     omic3_kernel = omic3_kernel_model_ready,
-                                     gen_name = gen_name,
-                                     heter_groups = heter_groups,
-                                     heter_resid = heter_resid,
-                                     VarCov_str = VarCov_str,
-                                     weights = weights,
-                                     core = core,
-                                     pworkspace= pworkspace,
-                                     workspace = workspace,
-                                     maxit = maxit,
-                                     inverse = inverse,
-                                     epsilon = epsilon,
-                                     engine = engine)
-
-                 res_model_output_asreml <- asreml_mod_output(
-                                                         mod_asreml = mod,
-                                                         pheno_data = pheno_clean[[1]],
-                                                         omic1_kernel = omic1_kernel_model_ready,
-                                                         omic3_kernel = omic3_kernel_model_ready,
-                                                         gen_name = gen_name,
-                                                         VarCov_str = VarCov_str,
-                                                         heter_groups = heter_groups,
-                                                         heter_resid = heter_resid,
-                                                         pworkspace= pworkspace,
-                                                         workspace = workspace,
-                                                         maxit = maxit
-                                                     )
-
-                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-                 #                       response = response)
-             }
-
-         }
-
-     }
-
-
-     ####
-     ##### omic2_model_ready and omic3_model_ready
-
-
-     if(((!exists('gmatrix_gkernel')) & (!exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  NULL,
-                                                      gmatrix = NULL,
-                                                      omic1_kernel = omic1_kernel,
-                                                      omic2_kernel = omic2_kernel_model_ready,
-                                                      omic3_kernel = omic3_kernel_model_ready,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
-
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-
-         } else {
-             if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                 mod <-  asreml_utilis(fixed = fixed,
-                                     random = random,
-                                     cova=cova,
-                                     GS_model = GS_model,
-                                     response = response,
-                                     pheno_data = pheno_clean[[1]],
-                                     omic2_kernel = omic2_kernel_model_ready,
-                                     omic3_kernel = omic3_kernel_model_ready,
-                                     gen_name = gen_name,
-                                     heter_groups = heter_groups,
-                                     heter_resid = heter_resid,
-                                     VarCov_str = VarCov_str,
-                                     weights = weights,
-                                     core = core,
-                                     pworkspace= pworkspace,
-                                     workspace = workspace,
-                                     maxit = maxit,
-                                     inverse = inverse,
-                                     epsilon = epsilon,
-                                     engine = engine)
-
-                 res_model_output_asreml <- asreml_mod_output(
-                                                         mod_asreml = mod,
-                                                         pheno_data = pheno_clean[[1]],
-                                                         omic2_kernel = omic2_kernel_model_ready,
-                                                         omic3_kernel = omic3_kernel_model_ready,
-                                                         gen_name = gen_name,
-                                                         VarCov_str = VarCov_str,
-                                                         heter_groups = heter_groups,
-                                                         heter_resid = heter_resid,
-                                                         pworkspace= pworkspace,
-                                                         workspace = workspace,
-                                                         maxit = maxit
-                                                     )
-
-                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-                 #                       response = response)
-             }
-
-         }
-
-     }
-
-     ########
-
-     ##### geno_model_ready, omic1_model_ready and omic2_model_ready
-
-     if(((exists('gmatrix_gkernel')) & (exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & !exists('omic3_kernel_model_ready'))))){
-
-         #if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
-
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  NULL,
-                                                      gmatrix = gmatrix_gkernel,
-                                                      omic1_kernel = omic1_kernel_model_ready,
-                                                      omic2_kernel = omic2_kernel_model_ready,
-                                                      omic3_kernel = omic3_kernel,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
-
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-         } else {
-
-             if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                     mod <-  asreml_utilis(fixed = fixed,
-                                         random = random,
-                                         cova=cova,
-                                         GS_model = GS_model,
-                                         response = response,
-                                         pheno_data = pheno_clean[[1]],
-                                         gmatrix = gmatrix_gkernel,
-                                         omic1_kernel = omic1_kernel_model_ready,
-                                         omic2_kernel = omic2_kernel_model_ready,
-                                         gen_name = gen_name,
-                                         heter_groups = heter_groups,
-                                         heter_resid = heter_resid,
-                                         VarCov_str = VarCov_str,
-                                         weights = weights,
-                                         core = core,
-                                         pworkspace= pworkspace,
-                                         workspace = workspace,
-                                         maxit = maxit,
-                                         inverse = inverse,
-                                         epsilon = epsilon,
-                                         engine = engine)
-
-                     res_model_output_asreml <- asreml_mod_output(
-                                                             mod_asreml = mod,
-                                                             pheno_data = pheno_clean[[1]],
-                                                             gmatrix = gmatrix_gkernel,
-                                                             omic1_kernel = omic1_kernel_model_ready,
-                                                             omic2_kernel = omic2_kernel_model_ready,
-                                                             gen_name = gen_name,
-                                                             VarCov_str = VarCov_str,
-                                                             heter_groups = heter_groups,
-                                                             heter_resid = heter_resid,
-                                                             pworkspace= pworkspace,
-                                                             workspace = workspace,
-                                                             maxit = maxit
-                     )
-
-
-
-                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-                 #                       response = response)
-
-     }
-
-         }
-
-     }
-
-
-     ##### geno_model_ready, omic1_model_ready and omic3_model_ready
-
-
-     if(((exists('gmatrix_gkernel')) & (exists('omic1_kernel_model_ready') & (!exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
-
-         #if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
-
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  NULL,
-                                                      gmatrix = gmatrix_gkernel,
-                                                      omic1_kernel = omic1_kernel_model_ready,
-                                                      omic2_kernel = omic2_kernel,
-                                                      omic3_kernel = omic3_kernel_model_ready,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
-
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-     } else {
-         if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                 mod <-  asreml_utilis(fixed = fixed,
-                                     random = random,
-                                     cova=cova,
-                                     GS_model = GS_model,
-                                     response = response,
-                                     pheno_data = pheno_clean[[1]],
-                                     gmatrix = gmatrix_gkernel,
-                                     omic1_kernel = omic1_kernel_model_ready,
-                                     omic3_kernel = omic3_kernel_model_ready,
-                                     gen_name = gen_name,
-                                     heter_groups = heter_groups,
-                                     heter_resid = heter_resid,
-                                     VarCov_str = VarCov_str,
-                                     weights = weights,
-                                     core = core,
-                                     pworkspace= pworkspace,
-                                     workspace = workspace,
-                                     maxit = maxit,
-                                     inverse = inverse,
-                                     epsilon = epsilon,
-                                     engine = engine)
-
-                 res_model_output_asreml <- asreml_mod_output(
-                                                         mod_asreml = mod,
-                                                         pheno_data = pheno_clean[[1]],
-                                                         gmatrix = gmatrix_gkernel,
-                                                         omic1_kernel = omic1_kernel_model_ready,
-                                                         omic3_kernel = omic3_kernel_model_ready,
-                                                         gen_name = gen_name,
-                                                         VarCov_str = VarCov_str,
-                                                         heter_groups = heter_groups,
-                                                         heter_resid = heter_resid,
-                                                         pworkspace= pworkspace,
-                                                         workspace = workspace,
-                                                         maxit = maxit
-                                                     )
-
-
-
-             # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-             #                       response = response)
-         }
-
-     }
-
-   }
-
-     #####
-
-     ##### geno_model_ready, omic2_model_ready and omic3_model_ready
-
-
-     if(((exists('gmatrix_gkernel')) & (!exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
-
-         #if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
-
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  NULL,
-                                                      gmatrix = gmatrix_gkernel,
-                                                      omic1_kernel = omic1_kernel,
-                                                      omic2_kernel = omic2_kernel_model_ready,
-                                                      omic3_kernel = omic3_kernel_model_ready,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
-
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-         } else {
-             if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                     mod <-  asreml_utilis(fixed = fixed,
-                                         random = random,
-                                         cova=cova,
-                                         GS_model = GS_model,
-                                         response = response,
-                                         pheno_data = pheno_clean[[1]],
-                                         gmatrix = gmatrix_gkernel,
-                                         omic2_kernel = omic2_kernel_model_ready,
-                                         omic3_kernel = omic3_kernel_model_ready,
-                                         gen_name = gen_name,
-                                         heter_groups = heter_groups,
-                                         heter_resid = heter_resid,
-                                         VarCov_str = VarCov_str,
-                                         weights = weights,
-                                         core = core,
-                                         pworkspace= pworkspace,
-                                         workspace = workspace,
-                                         maxit = maxit,
-                                         inverse = inverse,
-                                         epsilon = epsilon,
-                                         engine = engine)
-
-                     res_model_output_asreml <- asreml_mod_output(
-                                                             mod_asreml = mod,
-                                                             pheno_data = pheno_clean[[1]],
-                                                             gmatrix = gmatrix_gkernel,
-                                                             omic2_kernel = omic2_kernel_model_ready,
-                                                             omic3_kernel = omic3_kernel_model_ready,
-                                                             gen_name = gen_name,
-                                                             VarCov_str = VarCov_str,
-                                                             heter_groups = heter_groups,
-                                                             heter_resid = heter_resid,
-                                                             pworkspace= pworkspace,
-                                                             workspace = workspace,
-                                                             maxit = maxit
-                                                         )
-
-
-
-                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-                 #                       response = response)
-             }
-
-         }
-
-     }
-
-
-     ##### omic1_model_ready, omic2_model_ready and omic3_model_ready
-
-     if(((!exists('gmatrix_gkernel')) & (exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  NULL,
-                                                      gmatrix = NULL,
-                                                      omic1_kernel = omic1_kernel_model_ready,
-                                                      omic2_kernel = omic2_kernel_model_ready,
-                                                      omic3_kernel = omic3_kernel_model_ready,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
-
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-         } else {
-             if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                 mod <- asreml_utilis(fixed = fixed,
-                                     random = random,
-                                     cova=cova,
-                                     GS_model = GS_model,
-                                     response = response,
-                                     pheno_data = pheno_clean[[1]],
-                                     omic1_kernel = omic1_kernel_model_ready,
-                                     omic2_kernel = omic2_kernel_model_ready,
-                                     omic3_kernel = omic3_kernel_model_ready,
-                                     gen_name = gen_name,
-                                     heter_groups = heter_groups,
-                                     heter_resid = heter_resid,
-                                     VarCov_str = VarCov_str,
-                                     weights = weights,
-                                     core = core,
-                                     pworkspace= pworkspace,
-                                     workspace = workspace,
-                                     maxit = maxit,
-                                     inverse = inverse,
-                                     epsilon = epsilon,
-                                     engine = engine)
-
-                 res_model_output_asreml <- asreml_mod_output(
-                                                         mod_asreml = mod,
-                                                         pheno_data = pheno_clean[[1]],
-                                                         omic1_kernel = omic1_kernel_model_ready,
-                                                         omic2_kernel = omic2_kernel_model_ready,
-                                                         omic3_kernel = omic3_kernel_model_ready,
-                                                         gen_name = gen_name,
-                                                         VarCov_str = VarCov_str,
-                                                         heter_groups = heter_groups,
-                                                         heter_resid = heter_resid,
-                                                         pworkspace= pworkspace,
-                                                         workspace = workspace,
-                                                         maxit = maxit
-                                                     )
-
-                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-                 #                       response = response)
-             }
-
-         }
-
-
-     }
-
-
-
-     ##### geno, omic1_clean, omic2clean and omic3_clean
-
-     if(((exists('gmatrix_gkernel')) & (exists('omic1_kernel_model_ready') & (exists('omic2_kernel_model_ready') & exists('omic3_kernel_model_ready'))))){
-
-         #if(exists('gkernel_model_ready') & exists('gmatrix_model_ready')){ stop(paste(msg, 'Either gmatrix or gkernel is expected not both at the same time.'))}
-
-         if(GS_model=="BRR" | GS_model=="RKHS"){
-
-             out_bayes <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                      random = random,
-                                                      GS_model = GS_model,
-                                                      response = response,
-                                                      weights = weights,
-                                                      fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                      rand_term_model_bayesian = rand_term_model_bayesian,
-                                                      pheno_data = pheno_clean[[1]],
-                                                      gkernel =  NULL,
-                                                      gmatrix = gmatrix_gkernel,
-                                                      omic1_kernel = omic1_kernel_model_ready,
-                                                      omic2_kernel = omic2_kernel,
-                                                      omic3_kernel = omic3_kernel,
-                                                      gen_name = gen_name,
-                                                      nIter = nIter,
-                                                      burnIn = burnIn,
-                                                      thin = thin,
-                                                      heter_groups  = heter_groups,
-                                                      omics_kernel_label = omics_kernel_label)
-
-
-             res_summary_stat <- summary_statistics_bayes(mod = out_bayes[[2]], eval_metrics = eval_metrics)
-
-             res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
-         } else {
-             if(GS_model=="GBLUP" & engine =="asreml")  {
-
-                     mod <-  asreml_utilis(fixed = fixed,
-                                         random = random,
-                                         cova=cova,
-                                         GS_model = GS_model,
-                                         response = response,
-                                         pheno_data = pheno_clean[[1]],
-                                         gmatrix = gmatrix_gkernel,
-                                         omic1_kernel = omic1_kernel_model_ready,
-                                         omic2_kernel = omic2_kernel_model_ready,
-                                         omic3_kernel = omic3_kernel_model_ready,
-                                         gen_name = gen_name,
-                                         heter_groups = heter_groups,
-                                         heter_resid = heter_resid,
-                                         VarCov_str = VarCov_str,
-                                         weights = weights,
-                                         core = core,
-                                         pworkspace= pworkspace,
-                                         workspace = workspace,
-                                         maxit = maxit,
-                                         inverse = inverse,
-                                         epsilon = epsilon,
-                                         engine = engine)
-
-                     res_model_output_asreml <- asreml_mod_output(
-                                                             mod_asreml = mod,
-                                                             pheno_data = pheno_clean[[1]],
-                                                             gmatrix = gmatrix_model_ready,
-                                                             omic1_kernel = omic1_kernel_model_ready,
-                                                             omic2_kernel = omic2_kernel_model_ready,
-                                                             omic3_kernel = omic3_kernel_model_ready,
-                                                             gen_name = gen_name,
-                                                             VarCov_str = VarCov_str,
-                                                             heter_groups = heter_groups,
-                                                             heter_resid = heter_resid,
-                                                             pworkspace= pworkspace,
-                                                             workspace = workspace,
-                                                             maxit = maxit
-                     )
-
-
-
-                 # res_plot <-  plot_acc(mod = res_summary_stat$mod,
-                 #                       response = response)
-             }
-
-         }
-
-     }
-
-#}
- } #### END GBLUP_RKHS, GBLUP_BRR and GBLUP (asreml)
+ }
+ #### END GBLUP_RKHS, GBLUP_BRR and GBLUP (asreml)
 
  ######################################################
  ######################################################
@@ -2763,2796 +820,171 @@ out_bayes <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
  ######################################################
  ######################################################
 
- ##########################################################################
- ############################################################################
- ## Start data organization for ML model fitting
- ##
- ##############################################################################
- ##############################################################################
-
- #if(exists("pheno_clean")){
-
- # if(length(pheno_clean)==2){
- #
- #   object_pheno <- object_pheno$pheno_data
- #
- #      test_set <- object_pheno$test_set
- # } else {
-
- #### These models only works with one environment/location
- #if(length(pheno_clean[[1]][,gen_name])==length(unique(pheno_clean[[1]][,gen_name]))){
-
- if(isTRUE(GS_model== "Xgboost" | GS_model== "RandomForest" | GS_model== "PartialLeastSquare" | GS_model== "SupportVectorMachine" | GS_model== "K-NearestNeighbors" | GS_model=="Lasso" | GS_model=="Ridge_Regression"))   {
-
-     if(length(pheno_clean[[1]][,gen_name])>length(unique(pheno_clean[[1]][,gen_name]))){
-         stop(print(paste(msg, paste(GS_model, 'only works for single location/enviroment.'))), call. = FALSE)
-     }
-
- pheno_clean <- ML_undefined_test_train(object_pheno = pheno_clean,
-                                        response = response)
-
- if(length(pheno_clean)==1){
-     pheno_clean <- pheno_clean$pheno_data
-     if(length(pheno_clean)==2){
-
-         pheno_clean <- pheno_clean$pheno_data
-
-         test_set_ <- pheno_clean$test_set
-     }
-
- }
-
- #}
- ####################################
-
- if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-
-         rm(geno_model_ready)
-     } else {
-
-         geno_model_ready_train <-  geno_model_ready
-
-         rm(geno_model_ready)
-     }
-
-
- }
- #####
- if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         rm(omic1_model_ready)
-
-     } else {
-
-         omic1_model_ready_train <-  omic1_model_ready
-
-         rm(omic1_model_ready)
-     }
-
-
- }
- ############
- if((!exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         rm(omic2_model_ready)
-     } else {
-
-         omic2_model_ready_train <-  omic2_model_ready
-
-         rm(omic2_model_ready)
-     }
-
-
-
- }
- #############
-
- if((!exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         rm(omic3_model_ready)
-
-     }  else {
-
-         omic3_model_ready_train <-  omic3_model_ready
-
-         rm(omic3_model_ready)
-     }
-
-
- }
-
- ########
-
- ##### geno_model_ready and omic1_model_ready
-
- if((exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-
-         ###
-         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_omic1_test = cbind(geno_model_ready_test, omic1_model_ready_test)
-
-         geno_omic1_train = cbind(geno_model_ready_train, omic1_model_ready_train)
-
-         rm(geno_model_ready, omic1_model_ready,
-            geno_model_ready_test, omic1_model_ready_test,
-            geno_model_ready_train, omic1_model_ready_train)
-
-     } else {
-
-         geno_omic1_train = cbind(geno_model_ready, omic1_model_ready)
-
-         rm(geno_model_ready, omic1_model_ready)
-     }
-
- }
- ################
-
- ##### geno_model_ready and omic2_model_ready
-
- if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-
-         ###
-         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_omic2_test = cbind(geno_model_ready_test, omic2_model_ready_test)
-
-         geno_omic2_train = cbind(geno_model_ready_train, omic2_model_ready_train)
-
-         rm(geno_model_ready, omic2_model_ready,
-            geno_model_ready_test, omic2_model_ready_test,
-            geno_model_ready_train, omic2_model_ready_train)
-
-     } else {
-
-         geno_omic2_train = cbind(geno_model_ready, omic2_model_ready)
-
-         rm(geno_model_ready, omic2_model_ready)
-     }
-
- }
-
-
- ################
- ##### geno_model_ready and omic3_model_ready
-
- if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-
-         ###
-         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_omic3_test = cbind(geno_model_ready_test, omic3_model_ready_test)
-
-         geno_omic3_train = cbind(geno_model_ready_train, omic3_model_ready_train)
-
-         rm(geno_model_ready, omic3_model_ready,
-            geno_model_ready_test, omic3_model_ready_test,
-            geno_model_ready_train, omic3_model_ready_train)
-
-     } else {
-
-         geno_omic3_train = cbind(geno_model_ready, omic3_model_ready)
-
-         rm(geno_model_ready, omic3_model_ready)
-     }
-
- }
-
- ####
- ################
- #####  omic1_model_ready and omic2_model_ready
-
- if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         ###
-         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         omic1_omic2_test = cbind(omic1_model_ready_test, omic2_model_ready_test)
-
-         omic1_omic2_train = cbind(omic1_model_ready_train, omic2_model_ready_train)
-
-         rm(omic1_model_ready, omic2_model_ready,
-            omic1_model_ready_test, omic2_model_ready_test,
-            omic1_model_ready_train, omic2_model_ready_train)
-
-     } else {
-
-         omic1_omic2_train = cbind(omic1_model_ready, omic2_model_ready)
-
-         rm(omic1_model_ready, omic2_model_ready)
-     }
-
- }
-
- ################
- #####  omic1_model_ready and omic3_model_ready
-
- if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         ###
-         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         omic1_omic3_test = cbind(omic1_model_ready_test, omic3_model_ready_test)
-
-         omic1_omic3_train = cbind(omic1_model_ready_train, omic3_model_ready_train)
-
-         rm(omic1_model_ready, omic3_model_ready,
-            omic1_model_ready_test, omic3_model_ready_test,
-            omic1_model_ready_train, omic3_model_ready_train)
-
-     } else {
-
-         omic1_omic3_train = cbind(omic1_model_ready, omic3_model_ready)
-
-         rm(omic1_model_ready, omic3_model_ready)
-     }
-
- }
-
-
- ################
- #####  omic1_model_ready and omic3_model_ready
-
- if((!exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         ###
-         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         omic2_omic3_test = cbind(omic2_model_ready_test, omic3_model_ready_test)
-
-         omic2_omic3_train = cbind(omic2_model_ready_train, omic3_model_ready_train)
-
-         rm(omic2_model_ready, omic3_model_ready,
-            omic2_model_ready_test, omic3_model_ready_test,
-            omic2_model_ready_train, omic3_model_ready_train)
-
-     } else {
-
-         omic2_omic3_train = cbind(omic2_model_ready, omic3_model_ready)
-
-         rm(omic2_model_ready, omic3_model_ready)
-     }
-
- }
-
- ################
- ##### geno_model_ready,  omic1_model_ready and omic2_model_ready
-
- if((exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & !exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-         ####
-
-         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         ###
-         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_omic1_omic2_test = scale(cbind(cbind(geno_model_ready_test, omic1_model_ready_test), omic2_model_ready_test))
-
-         geno_omic1_omic2_train = scale(cbind(cbind(geno_model_ready_train,omic1_model_ready_train), omic2_model_ready_train))
-
-         rm(geno_model_ready, omic1_model_ready, omic2_model_ready,
-            geno_model_ready_test, omic1_model_ready_test, omic2_model_ready_test,
-            geno_model_ready_train, omic1_model_ready_train, omic2_model_ready_train)
-
-     } else {
-
-         geno_omic1_omic2_train = scale(cbind(cbind(geno_model_ready, omic1_model_ready), omic2_model_ready))
-
-         rm(geno_model_ready, omic1_model_ready, omic2_model_ready)
-     }
-
- }
-
-
- ################
- ##### geno_model_ready,  omic1_model_ready and omic3_model_ready
-
- if((exists('geno_model_ready') & (exists('omic1_model_ready') & (!exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-         ####
-
-         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         ###
-         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_omic1_omic3_test = scale(cbind(cbind(geno_model_ready_test, omic1_model_ready_test), omic3_model_ready_test))
-
-         geno_omic1_omic3_train = scale(cbind(cbind(geno_model_ready_train,omic1_model_ready_train), omic3_model_ready_train))
-
-         rm(geno_model_ready, omic1_model_ready, omic3_model_ready,
-            geno_model_ready_test, omic1_model_ready_test, omic3_model_ready_test,
-            geno_model_ready_train, omic1_model_ready_train, omic3_model_ready_train)
-
-     } else {
-
-         geno_omic1_omic3_train = scale(cbind(cbind(geno_model_ready, omic1_model_ready), omic3_model_ready))
-
-         rm(geno_model_ready, omic1_model_ready, omic3_model_ready)
-     }
-
- }
-
-
- ################
- ##### geno_model_ready,  omic2_model_ready and omic3_model_ready
-
- if((exists('geno_model_ready') & (!exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-         ####
-
-         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         ###
-         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_omic2_omic3_test = scale(cbind(cbind(geno_model_ready_test, omic2_model_ready_test), omic3_model_ready_test))
-
-         geno_omic2_omic3_train = scale(cbind(cbind(geno_model_ready_train,omic2_model_ready_train), omic3_model_ready_train))
-
-         rm(geno_model_ready, omic2_model_ready, omic3_model_ready,
-            geno_model_ready_test, omic2_model_ready_test, omic3_model_ready_test,
-            geno_model_ready_train, omic2_model_ready_train, omic3_model_ready_train)
-
-     } else {
-
-         geno_omic2_omic3_train = scale(cbind(cbind(geno_model_ready, omic2_model_ready), omic3_model_ready))
-
-         rm(geno_model_ready, omic2_model_ready, omic3_model_ready)
-     }
-
- }
- #########
- #### omic1, omic2, omic 3
-
- if((!exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-
-         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         ####
-         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         ###
-         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         omic1_omic2_omic3_test = scale(cbind(cbind(omic1_model_ready_test, omic2_model_ready_test), omic3_model_ready_test))
-
-         omic1_omic2_omic3_train = scale(cbind(cbind(omic1_model_ready_train,omic2_model_ready_train), omic3_model_ready_train))
-
-         rm(omic1_model_ready, omic2_model_ready, omic3_model_ready,
-            omic1_model_ready_test, omic2_model_ready_test, omic3_model_ready_test,
-            omic1_model_ready_train, omic2_model_ready_train, omic3_model_ready_train)
-
-     } else {
-
-         geno_omic1_omic3_train = scale(cbind(cbind(geno_model_ready, omic1_model_ready), omic3_model_ready))
-
-         rm(geno_model_ready, omic1_model_ready, omic3_model_ready)
-     }
-
- }
-
-
- ################
- ##### geno_model_ready, omic1_model_ready, omic2_model_ready and omic3_model_ready
-
- if((exists('geno_model_ready') & (exists('omic1_model_ready') & (exists('omic2_model_ready') & exists('omic3_model_ready'))))){
-
-     if(exists("test_set_")){
-
-         geno_model_ready_test <-  geno_model_ready[rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_model_ready_train <-  geno_model_ready[!rownames(geno_model_ready)%in%test_set_[, gen_name], ]
-         ####
-
-         omic1_model_ready_test <-  omic1_model_ready[rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-
-         omic1_model_ready_train <-  omic1_model_ready[!rownames(omic1_model_ready)%in%test_set_[, gen_name], ]
-         ####
-
-         omic2_model_ready_test <-  omic2_model_ready[rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         omic2_model_ready_train <-  omic2_model_ready[!rownames(omic2_model_ready)%in%test_set_[, gen_name], ]
-
-         ###
-         omic3_model_ready_test <-  omic3_model_ready[rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         omic3_model_ready_train <-  omic3_model_ready[!rownames(omic3_model_ready)%in%test_set_[, gen_name], ]
-
-         geno_omic1_omic2_omic3_test = scale(cbind(cbind(geno_model_ready_test, omic1_model_ready_test),
-                                                   cbind(omic2_model_ready_test, omic3_model_ready_test)))
-
-         geno_omic1_omic2_omic3_train = scale(cbind(cbind(geno_model_ready_train,omic1_model_ready_train),
-                                                    cbind(omic2_model_ready_train, omic3_model_ready_train)))
-
-         rm(geno_model_ready, omic1_model_ready, omic2_model_ready, omic3_model_ready,
-            geno_model_ready_test, omic1_model_ready_test, omic2_model_ready_test, omic3_model_ready_test,
-            geno_model_ready_train, omic1_model_ready_train, omic2_model_ready_train, omic3_model_ready_train)
-
-     } else {
-
-         geno_omic1_omic2_omic3_train = scale(cbind(cbind(geno_model_ready, omic1_model_ready),
-                                                    cbind(omic2_model_ready, omic3_model_ready)))
-
-         rm(geno_model_ready, omic1_model_ready, omic2_model_ready, omic3_model_ready)
-     }
-
- }
-
-
- ##############################################################
- ###################################################################
  ###  Start ML Analysis
  ###
- ######################################################################
- #####################################################################
-
- if(exists('geno_model_ready_test') & exists('geno_model_ready_train')) {
-
-     if(GS_model=="Xgboost"){
-
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = geno_model_ready_train,
-                                geno_omic_test_object = geno_model_ready_test,
-                                para_tunning = para_tunning
-                                )
-
-     }
-
-     if(GS_model=="RandomForest"){
-
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_model_ready_train,
-                                    geno_omic_test_object = geno_model_ready_test,
-                                    para_tunning = para_tunning
-         )
-
-     }
-
-     if(GS_model=="K-NearestNeighbors"){
-
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                             response = response,
-                                             geno_omic_object = geno_model_ready_train,
-                                             geno_omic_test_object = geno_model_ready_test,
-                                             para_tunning = para_tunning
-         )
-
-     }
-
-     if(GS_model=="SupportVectorMachine"){
-
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_model_ready_train,
-                                    geno_omic_test_object = geno_model_ready_test,
-                                    para_tunning = para_tunning
-         )
-
-     }
-
-     ##### RR and Lasso
-     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-
-         res_model_output <- AI_RidgeRegression_Lasso(
-             pheno_object = pheno_clean,
-             response = response,
-             geno_omic_object = geno_model_ready_train,
-             geno_omic_test_object = geno_model_ready_test,
-             para_tunning = para_tunning,
-             GS_model = GS_model
-         )
-
-     }
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_model_ready_train = geno_model_ready_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model=GS_model
-                                                       )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                             pheno_object= pheno_clean,
-                             response = response,
-                             test_set = test_set_,
-                             GS_model=GS_model)
 
 
+     # AI_valid_models <- c("Xgboost",
+     #                      "RandomForest",
+     #                      "PartialLeastSquare",
+     #                      "SupportVectorMachine",
+     #                      "K-NearestNeighbors",
+     #                      "Lasso",
+     #                      "Ridge_Regression",
+     #                      "deep_learning_model")
 
- } else {
-
-
-     if(!exists('geno_model_ready_test') & exists('geno_model_ready_train')) {
-
-         if(GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_model_ready_train,
-                                    para_tunning = para_tunning
-         )
-
+     if (GS_model %in% AI_valid_models) {
+         if (length(unique(pheno_clean[["pheno_clean_data"]][, gen_name])) > length(pheno_clean[["pheno_clean_data"]][, gen_name])) {
+             stop(paste(msg, GS_model, 'only works for single location/enviroment.'), call. = FALSE)
          }
 
-         if(GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
+         ml_dat_res <- ML_data_processing(pheno_clean = pheno_clean,
+                                          response = response,
+                                          gen_name = gen_name,
+                                          geno_clean = if ("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
+                                          omic_clean = if (!"geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL
+                                          )
+
+         switch(GS_model,
+                "Xgboost" = {
+                    res_model_output <- AI_Xgb(pheno_object = ml_dat_res[["pheno_clean_data"]],
+                                               response = response,
+                                               geno_omic_object = ml_dat_res[["merged_data"]],
+                                               geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                                               message = message,
+                                               gen_name = gen_name,
+                                               scale = scale,
+                                               AI_cv_nfolds = AI_cv_nfolds,
+                                               para_tunning = para_tunning,
+                                               xgb_paras_tunning = xgb_paras_tunning
+                    )
+                },
+                "RandomForest" = {
+                    res_model_output <- AI_randomForest(pheno_object = ml_dat_res[["pheno_clean_data"]],
+                                                        response = response,
+                                                        geno_omic_object = ml_dat_res[["merged_data"]],
+                                                        geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                                                        message = message,
+                                                        gen_name = gen_name,
+                                                        scale = scale,
+                                                        AI_cv_nfolds = AI_cv_nfolds,
+                                                        para_tunning = para_tunning,
+                                                        rf_paras_tunning = rf_paras_tunning
+                    )
+                },
+                "PartialLeastSquare" = {
+                    res_model_output <-  AI_pls(pheno_object = ml_dat_res[["pheno_clean_data"]],
                                                 response = response,
-                                                geno_omic_object = geno_model_ready_train,
-                                                para_tunning = para_tunning)
+                                                geno_omic_object = ml_dat_res[["merged_data"]],
+                                                geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                                                message = message,
+                                                gen_name = gen_name,
+                                                scale = scale,
+                                                para_tunning = para_tunning,
+                                                pls_paras_tunning = pls_paras_tunning)
+                },
+                "SupportVectorMachine" = {
+                    res_model_output <- AI_svm(pheno_object = ml_dat_res[["pheno_clean_data"]],
+                                               response = response,
+                                               geno_omic_object = ml_dat_res[["merged_data"]],
+                                               geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                                               message = message,
+                                               gen_name = gen_name,
+                                               scale = scale,
+                                               AI_cv_nfolds = AI_cv_nfolds,
+                                               para_tunning = para_tunning,
+                                               svm_paras_tunning = svm_paras_tunning
+                    )
+                },
+                "K-NearestNeighbors" = {
+                    res_model_output <- AI_knn(pheno_object = ml_dat_res[["pheno_clean_data"]],
+                                               response = response,
+                                               geno_omic_object = ml_dat_res[["merged_data"]],
+                                               geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                                               message = message,
+                                               gen_name = gen_name,
+                                               scale = scale,
+                                               AI_cv_nfolds = AI_cv_nfolds,
+                                               para_tunning = para_tunning,
+                                               knn_paras_tunning = knn_paras_tunning
+                    )
+                },
+                "Lasso" = {
+                    res_model_output <- AI_RidgeRegression_Lasso(
+                        pheno_object = ml_dat_res[["pheno_clean_data"]],
+                        response = response,
+                        geno_omic_object = ml_dat_res[["merged_data"]],
+                        geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                        gen_name = gen_name,
+                        para_tunning = para_tunning,
+                        AI_cv_nfolds = AI_cv_nfolds,
+                        lasso_paras_tunning = lasso_paras_tunning,
+                        message = message,
+                        scale = scale,
+                        GS_model = GS_model
+                    )
+                },
+                "Ridge_Regression" = {
+                    res_model_output <- AI_RidgeRegression_Lasso(
+                        pheno_object = ml_dat_res[["pheno_clean_data"]],
+                        response = response,
+                        geno_omic_object = ml_dat_res[["merged_data"]],
+                        geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                        gen_name = gen_name,
+                        para_tunning = para_tunning,
+                        AI_cv_nfolds = AI_cv_nfolds,
+                        lasso_paras_tunning = rr_paras_tunning,
+                        message = message,
+                        scale = scale,
+                        GS_model = GS_model,
+                    )
+                },
+                "deep_learning_model" = {
 
-         }
+                    res_model_output <- deep_learning_model(
+                        pheno_object=ml_dat_res[["pheno_clean_data"]],
+                        geno_omic_object = ml_dat_res[["merged_data"]],
+                        geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                        response=response,
+                        gen_name=gen_name,
+                        message = message,
+                        scale = scale,
+                        para_tunning = para_tunning,
+                        param_grid = dpl_paras_tunning
+                    )
 
-         if(GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_model_ready_train,
-                                        para_tunning = para_tunning)
+                },
+                {
+                    stop(paste(msg, "Select method to calculate geno_cleanmic relationship matrix"), call. = FALSE)
+                }
+         )
 
-         }
-
-         if(GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_model_ready_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-
-         ####
-         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = geno_model_ready_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
+#browser()
+#View(res_model_output[["predicted_values"]])
+         res_summary_stat <- summary_statistics_AI(predicted_object = res_model_output[["predicted_values"]],
+                                                   pheno_object = ml_dat_res[["pheno_clean_data"]],
                                                    response = response,
-                                                   geno_omic_object = geno_model_ready_train,
+                                                   test_set = ml_dat_res[["test_set"]],
+                                                   geno_model_ready_train = ml_dat_res[["merged_data"]],
                                                    eval_metrics = eval_metrics,
-                                                   GS_model=GS_model)
-        #} ## end of Xgboost
-
-     }
- }
-
- if(exists('omic1_model_ready_test') & exists('omic1_model_ready_train'))  {
-
-     if(GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = omic1_model_ready_train,
-                                geno_omic_test_object = omic1_model_ready_test,
-                                para_tunning = para_tunning
-     )
-
-     }
-
-     if(GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                            response = response,
-                                            geno_omic_object = omic1_model_ready_train,
-                                            geno_omic_test_object = omic1_model_ready_test,
-                                            para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic1_model_ready_train,
-                                    geno_omic_test_object = omic1_model_ready_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-
-     if(GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic1_model_ready_train,
-                                    geno_omic_test_object = omic1_model_ready_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     #### RR and Lasso
-     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = omic1_model_ready_train,
-                                                      geno_omic_test_object = omic1_model_ready_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = omic1_model_ready_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model=GS_model
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                             pheno_object= pheno_clean,
-                             response = response,
-                             test_set = test_set_,
-                             GS_model=GS_model)
-
-     #} ## End of Xgboost
-
-
-
- } else {
-
-     if(!exists('omic1_model_ready_test') & exists('omic1_model_ready_train')) {
-
-         if (GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic1_model_ready_train,
-                                    para_tunning = para_tunning
+                                                   GS_model = GS_model
          )
 
-         }
-
-         if (GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                response = response,
-                                                geno_omic_object = omic1_model_ready_train,
-                                                para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic1_model_ready_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic1_model_ready_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         ### RR and Lasso
-
-         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = omic1_model_ready_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = omic1_model_ready_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model=GS_model)
-
-     #} ## End Xgboost
-
-
-     }
-
- }
-
- if(exists('omic2_model_ready_test') & exists('omic2_model_ready_train')) {
-
-     if(GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = omic2_model_ready_train,
-                                geno_omic_test_object = omic2_model_ready_test,
-                                para_tunning = para_tunning
-     )
-
-     }
-
-     if(GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                            response = response,
-                                            geno_omic_object = omic2_model_ready_train,
-                                            geno_omic_test_object = omic2_model_ready_test,
-                                            para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic2_model_ready_train,
-                                    geno_omic_test_object = omic2_model_ready_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic2_model_ready_train,
-                                    geno_omic_test_object = omic2_model_ready_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-
-     ### RR and Lasso
-
-     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = omic2_model_ready_train,
-                                                      geno_omic_test_object = omic2_model_ready_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = omic2_model_ready_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model=GS_model
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_,
-                          GS_model=GS_model)
-
-     #}
-
-
- } else {
-
-     if(!exists('omic2_model_ready_test') & exists('omic2_model_ready_train')) {
-
-         if(GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic2_model_ready_train,
-                                    para_tunning = para_tunning
+         res_plot <- plot_acc_AI(mod = res_model_output,
+                                 pheno_object = ml_dat_res[["pheno_clean_data"]],
+                                 response = response,
+                                 test_set = ml_dat_res[["test_set"]],
+                                 GS_model = GS_model
          )
 
-}
+         return(results_handling(GS_model = GS_model,
+                                 res_model_output = res_model_output,
+                                 res_summary_stat = res_summary_stat,
+                                 res_plot = res_plot,
+                                 system_database = system_database))
 
-         if(GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                response = response,
-                                                geno_omic_object = omic2_model_ready_train,
-                                                para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic2_model_ready_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic2_model_ready_train,
-                                        para_tunning = para_tunning
-             )
-
-         }
-
-         ### RR and Lasso
-         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = omic2_model_ready_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-
-            res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                    pheno_object= pheno_clean,
-                                                    response = response,
-                                                    geno_omic_object = omic2_model_ready_train,
-                                                    eval_metrics = eval_metrics,
-                                                    GS_model=GS_model)
-
-         #}
-
-     }
-
- }
-
-
- if(exists('omic3_model_ready_test') & exists('omic3_model_ready_train')) {
-
-     if (GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = omic3_model_ready_train,
-                                geno_omic_test_object = omic3_model_ready_test,
-                                para_tunning = para_tunning
-     )
-
-     }
-
-     if (GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                            response = response,
-                                            geno_omic_object = omic3_model_ready_train,
-                                            geno_omic_test_object = omic3_model_ready_test,
-                                            para_tunning = para_tunning)
-
-     }
-
-     if (GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic3_model_ready_train,
-                                    geno_omic_test_object = omic3_model_ready_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if (GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic3_model_ready_train,
-                                    geno_omic_test_object = omic3_model_ready_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-
-     ### RR and Lasso
-
-     if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = omic3_model_ready_train,
-                                                      geno_omic_test_object = omic3_model_ready_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = omic3_model_ready_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model=GS_model)
-
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_,
-                          GS_model=GS_model)
-
-     #}
-
-     ## Strat of ranopdm foes
-
- } else {
-
-     if(!exists('omic3_model_ready_test') & exists('omic3_model_ready_train')) {
-
-         if(GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic3_model_ready_train,
-                                    para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                response = response,
-                                                geno_omic_object = omic3_model_ready_train,
-                                                para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic3_model_ready_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic3_model_ready_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         ## RR and Lasso
-
-         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = omic3_model_ready_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = omic3_model_ready_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model=GS_model)
-
-
-         }
-
-
-
- }
-
-
- if(exists('geno_omic1_test') & exists('geno_omic1_train')) {
-
-     if(GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = geno_omic1_train,
-                                geno_omic_test_object = geno_omic1_test,
-                                para_tunning = para_tunning)
-
-     }
-
-
-     if(GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_train,
-                                    geno_omic_test_object = geno_omic1_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                             response = response,
-                                             geno_omic_object = geno_omic1_train,
-                                             geno_omic_test_object = geno_omic1_test,
-                                             para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_train,
-                                    geno_omic_test_object = geno_omic1_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-
-     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(
-                                    pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_train,
-                                    geno_omic_test_object = geno_omic1_test,
-                                    para_tunning = para_tunning,
-                                    GS_model = GS_model)
-
-     }
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = geno_omic1_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model=GS_model)
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_,
-                          GS_model=GS_model)
-
-     #}
-
-
-
- } else {
-
-     if(!exists('geno_omic1_test') & exists('geno_omic1_train')) {
-
-         if(GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_train,
-                                    para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic1_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic1_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic1_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         ### RR and lasso
-
-         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = geno_omic1_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = geno_omic1_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model = GS_model)
-
-
-         #}
-
-
-     }
-
-
- }
-
-
- if(exists('geno_omic2_test') & exists('geno_omic2_train')) {
-
-     if(GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = geno_omic2_train,
-                                geno_omic_test_object = geno_omic2_test,
-                                para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                            response = response,
-                                            geno_omic_object = geno_omic2_train,
-                                            geno_omic_test_object = geno_omic2_test,
-                                            para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic2_train,
-                                    geno_omic_test_object = geno_omic2_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic2_train,
-                                    geno_omic_test_object = geno_omic2_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-
-     ## RR and lasso
-
-     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = geno_omic2_train,
-                                                      geno_omic_test_object = geno_omic2_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = geno_omic2_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model=GS_model)
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                             pheno_object= pheno_clean,
-                             response = response,
-                             test_set = test_set_,
-                             GS_model=GS_model)
-
-     #}
-
-
- } else {
-
-     if(!exists('geno_omic2_test') & exists('geno_omic2_train')) {
-
-         if (GS_model=="Xgboost"){
-
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic2_train,
-                                    para_tunning = para_tunning)
-
-         }
-
-
-         if (GS_model=="RandomForest"){
-
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                response = response,
-                                                geno_omic_object = geno_omic2_train,
-                                                para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="K-NearestNeighbors"){
-
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic2_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="SupportVectorMachine"){
-
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic2_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-
-         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = geno_omic2_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = geno_omic2_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model= GS_model)
-
-
-         #}
-
-
-     }
-
-
- }
-
-
- if(exists('geno_omic3_test') & exists('geno_omic3_train')) {
-
-     if(GS_model=="Xgboost"){
-
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = geno_omic3_train,
-                                geno_omic_test_object = geno_omic3_test,
-                                para_tunning = para_tunning
-     )
-
-     }
-
-     if(GS_model=="RandomForest"){
-
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                            response = response,
-                                            geno_omic_object = geno_omic3_train,
-                                            geno_omic_test_object = geno_omic3_test,
-                                            para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="K-NearestNeighbors"){
-
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic3_train,
-                                    geno_omic_test_object = geno_omic3_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="SupportVectorMachine"){
-
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic3_train,
-                                    geno_omic_test_object = geno_omic3_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     ### RR and lasso
-     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = geno_omic3_train,
-                                                      geno_omic_test_object = geno_omic3_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = geno_omic3_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model= GS_model)
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                             pheno_object= pheno_clean,
-                             response = response,
-                             test_set = test_set_,
-                             GS_model= GS_model)
-
-     #}
-
-     ## Strat rf
-
-
- } else {
-
-     if(!exists('geno_omic3_test') & exists('geno_omic3_train')) {
-
-         if (GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic3_train,
-                                    para_tunning = para_tunning
-         )
-
-         }
-
-
-         if (GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                response = response,
-                                                geno_omic_object = geno_omic3_train,
-                                                para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic3_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic3_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-
-         ##
-         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = geno_omic3_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = geno_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model=GS_model
-         )
-
-         #}
-
-     }
-
-
- }
-
-
- if(exists('omic1_omic2_test') & exists('omic1_omic2_train')) {
-
-     if(GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = omic1_omic2_train,
-                                geno_omic_test_object = omic1_omic2_test,
-                                para_tunning = para_tunning
-     )
-
-     }
-
-     if(GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                            response = response,
-                                            geno_omic_object = omic1_omic2_train,
-                                            geno_omic_test_object = omic1_omic2_test,
-                                            para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic1_omic2_train,
-                                    geno_omic_test_object = omic1_omic2_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic1_omic2_train,
-                                    geno_omic_test_object = omic1_omic2_test,
-                                    para_tunning = para_tunning
-         )
-
-     }
-
-
-     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = omic1_omic2_train,
-                                                      geno_omic_test_object = omic1_omic2_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = omic1_omic2_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model= GS_model
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                             pheno_object= pheno_clean,
-                             response = response,
-                             test_set = test_set_,
-                             GS_model= GS_model)
-
-     #}
-
-
- } else {
-
-     if(!exists('omic1_omic2_test') & exists('omic1_omic2_train')) {
-
-         if(GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic1_omic2_train,
-                                    para_tunning = para_tunning
-         )
-
-         }
-
-         if(GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                response = response,
-                                                geno_omic_object = omic1_omic2_train,
-                                                para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic1_omic2_train,
-                                        para_tunning = para_tunning
-             )
-
-         }
-
-         if(GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic1_omic2_train,
-                                        para_tunning = para_tunning
-             )
-
-         }
-
-
-         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = omic1_omic2_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = omic1_omic2_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model= GS_model
-         )
-
-
-         #}
-
-
-     }
-
-
- }
-
-
- if(exists('omic1_omic3_test') & exists('omic1_omic3_train')) {
-
-     if(GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = omic1_omic3_train,
-                                geno_omic_test_object = omic1_omic3_test,
-                                para_tunning = para_tunning
-     )
-
-     }
-
-     if(GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                            response = response,
-                                            geno_omic_object = omic1_omic3_train,
-                                            geno_omic_test_object = omic1_omic3_test,
-                                            para_tunning = para_tunning)
-
-     }
-
-
-     if(GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic1_omic3_train,
-                                    geno_omic_test_object = omic1_omic3_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic1_omic3_train,
-                                    geno_omic_test_object = omic1_omic3_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-
-     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = omic1_omic3_train,
-                                                      geno_omic_test_object = omic1_omic3_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = omic1_omic3_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model= GS_model)
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                             pheno_object= pheno_clean,
-                             response = response,
-                             test_set = test_set_,
-                             GS_model= GS_model)
-
-     #}
-
-
- } else {
-
-     if(!exists('omic1_omic3_test') & exists('omic1_omic3_train')) {
-
-         if(GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic1_omic3_train,
-                                    para_tunning = para_tunning
-         )
-
-         }
-
-         if(GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = omic1_omic3_train,
-                                                 para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic1_omic3_train,
-                                        para_tunning = para_tunning
-             )
-
-         }
-
-         if(GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic1_omic3_train,
-                                        para_tunning = para_tunning
-             )
-
-         }
-
-
-         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = omic1_omic3_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = omic1_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model = GS_model)
-
-
-         #}
-
-     }
-
-
- }
-
-
- if(exists('omic2_omic3_test') & exists('omic2_omic3_train')) {
-
-     if(GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = omic2_omic3_train,
-                                geno_omic_test_object = omic2_omic3_test,
-                                para_tunning = para_tunning
-     )
-
-     }
-
-     if(GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                             response = response,
-                                             geno_omic_object = omic2_omic3_train,
-                                             geno_omic_test_object = omic2_omic3_test,
-                                             para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic2_omic3_train,
-                                    geno_omic_test_object = omic2_omic3_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic2_omic3_train,
-                                    geno_omic_test_object = omic2_omic3_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-
-     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = omic2_omic3_train,
-                                                      geno_omic_test_object = omic2_omic3_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = omic2_omic3_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model = GS_model
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                             pheno_object= pheno_clean,
-                             response = response,
-                             test_set = test_set_,
-                             GS_model=  GS_model)
-
-     #}
-
-
-
- } else {
-
-     if(!exists('omic2_omic3_test') & exists('omic2_omic3_train')) {
-
-         if(GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic2_omic3_train,
-                                    para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = omic2_omic3_train,
-                                                 para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic2_omic3_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic2_omic3_train,
-                                        para_tunning = para_tunning
-             )
-
-         }
-
-
-         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = omic2_omic3_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = omic2_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model= GS_model)
-
-
-         #}
-
-
-     }
-
-
- }
-
-
- if(exists('geno_omic1_omic2_test') & exists('geno_omic1_omic2_train')) {
-
-     if(GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = geno_omic1_omic2_train,
-                                geno_omic_test_object = geno_omic1_omic2_test,
-                                para_tunning = para_tunning
-     )
-
-     }
-
-     if(GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                             response = response,
-                                             geno_omic_object = geno_omic1_omic2_train,
-                                             geno_omic_test_object = geno_omic1_omic2_test,
-                                             para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_omic2_train,
-                                    geno_omic_test_object = geno_omic1_omic2_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_omic2_train,
-                                    geno_omic_test_object = geno_omic1_omic2_test,
-                                    para_tunning = para_tunning
-         )
-
-     }
-
-     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = geno_omic1_omic2_train,
-                                                      geno_omic_test_object = geno_omic1_omic2_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = geno_omic1_omic2_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model= GS_model
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                             pheno_object= pheno_clean,
-                             response = response,
-                             test_set = test_set_,
-                             GS_model= GS_model)
-
-     #}
-
-     ## strat rf
-
-
- } else {
-
-     if(!exists('geno_omic1_omic2_test') & exists('geno_omic1_omic2_train')) {
-
-         if(GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_omic2_train,
-                                    para_tunning = para_tunning
-         )
-
-         }
-
-         if(GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = geno_omic1_omic2_train,
-                                                 para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic1_omic2_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if(GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic1_omic2_train,
-                                        para_tunning = para_tunning
-             )
-
-         }
-
-
-         if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = geno_omic1_omic2_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = geno_omic1_omic2_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model= GS_model)
-
-
-         #}
-
-     }
-
-
- }
-
-
- if(exists('geno_omic1_omic3_test') & exists('geno_omic1_omic3_train')) {
-
-     if (GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = geno_omic1_omic3_train,
-                                geno_omic_test_object = geno_omic1_omic3_test,
-                                para_tunning = para_tunning
-     )
-
-     }
-
-     if (GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                             response = response,
-                                             geno_omic_object = geno_omic1_omic3_train,
-                                             geno_omic_test_object = geno_omic1_omic3_test,
-                                             para_tunning = para_tunning)
-
-     }
-
-     if (GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_omic3_train,
-                                    geno_omic_test_object = geno_omic1_omic3_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if (GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_omic3_train,
-                                    geno_omic_test_object = geno_omic1_omic3_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = geno_omic1_omic3_train,
-                                                      geno_omic_test_object = geno_omic1_omic3_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = geno_omic1_omic3_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model = GS_model
-     )
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                             pheno_object= pheno_clean,
-                             response = response,
-                             test_set = test_set_,
-                             GS_model= GS_model)
-
-     #}
-
-
- } else {
-
-     if(!exists('geno_omic1_omic3_test') & exists('geno_omic1_omic3_train')) {
-
-         if (GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_omic3_train,
-                                    para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = geno_omic1_omic3_train,
-                                                 para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic1_omic3_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic1_omic3_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-
-         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = geno_omic1_omic3_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = geno_omic1_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model= GS_model)
-
-
-         #}
-
-     }
-
-
- }
-
- ######
- if(exists('geno_omic2_omic3_test') & exists('geno_omic2_omic3_train')) {
-
-     if(GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = geno_omic2_omic3_train,
-                                geno_omic_test_object = geno_omic2_omic3_test,
-                                para_tunning = para_tunning
-     )
-
-     }
-
-     if(GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                             response = response,
-                                             geno_omic_object = geno_omic2_omic3_train,
-                                             geno_omic_test_object = geno_omic2_omic3_test,
-                                             para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic2_omic3_train,
-                                    geno_omic_test_object = geno_omic2_omic3_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if(GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic2_omic3_train,
-                                    geno_omic_test_object = geno_omic2_omic3_test,
-                                    para_tunning = para_tunning
-         )
-
-     }
-
-
-     if(GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = geno_omic2_omic3_train,
-                                                      geno_omic_test_object = geno_omic2_omic3_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = geno_omic2_omic3_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model= GS_model)
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                             pheno_object= pheno_clean,
-                             response = response,
-                             test_set = test_set_,
-                             GS_model= GS_model)
-
-
-     #}
-
- } else {
-
-     if(!exists('geno_omic2_omic3_test') & exists('geno_omic2_omic3_train')) {
-
-         if (GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic2_omic3_train,
-                                    para_tunning = para_tunning
-         )
-
-         }
-
-         if (GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = geno_omic2_omic3_train,
-                                                 para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic2_omic3_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic2_omic3_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = geno_omic2_omic3_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = geno_omic2_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model= GS_model)
-
-         #}
-
-
-     }
-
-
- }
-
- #####
-
- if(exists('omic1_omic2_omic3_test') & exists('omic1_omic2_omic3_train')) {
-
-     if (GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = omic1_omic2_omic3_train,
-                                geno_omic_test_object = omic1_omic2_omic3_test,
-                                para_tunning = para_tunning
-     )
-
-     }
-
-     if (GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                            response = response,
-                                            geno_omic_object = omic1_omic2_omic3_train,
-                                            geno_omic_test_object = omic1_omic2_omic3_test,
-                                            para_tunning = para_tunning)
-
-     }
-
-     if (GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic1_omic2_omic3_train,
-                                    geno_omic_test_object = omic1_omic2_omic3_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-
-     if (GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic1_omic2_omic3_train,
-                                    geno_omic_test_object = omic1_omic2_omic3_test,
-                                    para_tunning = para_tunning
-         )
-
-     }
-
-     if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = omic1_omic2_omic3_train,
-                                                      geno_omic_test_object = omic1_omic2_omic3_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = omic1_omic2_omic3_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model= GS_model)
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                             pheno_object= pheno_clean,
-                             response = response,
-                             test_set = test_set_,
-                             GS_model= GS_model)
-
-     #}
-
-
- } else {
-
-     if(!exists('omic1_omic2_omic3_test') & exists('omic1_omic2_omic3_train')) {
-
-         if (GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = omic1_omic2_omic3_train,
-                                    para_tunning = para_tunning
-         )
-
-         }
-
-         if (GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = omic1_omic2_omic3_train,
-                                                 para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic1_omic2_omic3_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = omic1_omic2_omic3_train,
-                                        para_tunning = para_tunning
-             )
-
-         }
-
-         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = omic1_omic2_omic3_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = omic1_omic2_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model= GS_model)
-
-
-         #}
-
-     }
-
-
- }
-
- #####
-
- if(exists('geno_omic1_omic2_omic3_test') & exists('geno_omic1_omic2_omic3_train')) {
-
-     if (GS_model=="Xgboost"){
-     res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                response = response,
-                                geno_omic_object = geno_omic1_omic2_omic3_train,
-                                geno_omic_test_object = geno_omic1_omic2_omic3_test,
-                                para_tunning = para_tunning
-     )
-
-     }
-
-     if (GS_model=="RandomForest"){
-         res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                            response = response,
-                                            geno_omic_object = geno_omic1_omic2_omic3_train,
-                                            geno_omic_test_object = geno_omic1_omic2_omic3_test,
-                                            para_tunning = para_tunning)
-
-     }
-
-     if (GS_model=="K-NearestNeighbors"){
-         res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_omic2_omic3_train,
-                                    geno_omic_test_object = geno_omic1_omic2_omic3_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-     if (GS_model=="SupportVectorMachine"){
-         res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_omic2_omic3_train,
-                                    geno_omic_test_object = geno_omic1_omic2_omic3_test,
-                                    para_tunning = para_tunning)
-
-     }
-
-
-     if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-         res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                      response = response,
-                                                      geno_omic_object = geno_omic1_omic2_omic3_train,
-                                                      geno_omic_test_object = geno_omic1_omic2_omic3_test,
-                                                      para_tunning = para_tunning,
-                                                      GS_model = GS_model)
-
-     }
-
-     res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                               pheno_object= pheno_clean,
-                                               response = response,
-                                               test_set = test_set_,
-                                               geno_omic_object = geno_omic1_omic2_omic3_train,
-                                               eval_metrics = eval_metrics,
-                                               GS_model= GS_model)
-
-     res_plot <- plot_acc_AI(mod=res_model_output,
-                          pheno_object= pheno_clean,
-                          response = response,
-                          test_set = test_set_,
-                          GS_model= GS_model)
-
-     #}
-
-
- } else {
-
-     if(!exists('geno_omic1_omic2_omic3_test') & exists('geno_omic1_omic2_omic3_train')) {
-
-         if (GS_model=="Xgboost"){
-         res_model_output <- AI_Xgb(pheno_object = pheno_clean,
-                                    response = response,
-                                    geno_omic_object = geno_omic1_omic2_omic3_train,
-                                    para_tunning = para_tunning
-         )
-
-         }
-
-         if (GS_model=="RandomForest"){
-             res_model_output <- AI_randomForest(pheno_object = pheno_clean,
-                                                 response = response,
-                                                 geno_omic_object = geno_omic1_omic2_omic3_train,
-                                                 para_tunning = para_tunning)
-
-         }
-
-
-         if (GS_model=="K-NearestNeighbors"){
-             res_model_output <- AI_knn(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic1_omic2_omic3_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-         if (GS_model=="SupportVectorMachine"){
-             res_model_output <- AI_svm(pheno_object = pheno_clean,
-                                        response = response,
-                                        geno_omic_object = geno_omic1_omic2_omic3_train,
-                                        para_tunning = para_tunning)
-
-         }
-
-
-         if (GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-             res_model_output <- AI_RidgeRegression_Lasso(pheno_object = pheno_clean,
-                                                          response = response,
-                                                          geno_omic_object = geno_omic1_omic2_omic3_train,
-                                                          para_tunning = para_tunning,
-                                                          GS_model = GS_model)
-
-         }
-
-
-         res_summary_stat <- summary_statistics_AI(mod=res_model_output,
-                                                   pheno_object= pheno_clean,
-                                                   response = response,
-                                                   geno_omic_object = geno_omic1_omic2_omic3_train,
-                                                   eval_metrics = eval_metrics,
-                                                   GS_model= GS_model
-         )
-
-#}
-
-
-     }
-
-
- }
-
-
-
-}  ### End machine learning
-
-# }
-
- ### if user provide only
-#### NOTE
-
- ## Return was added not at the end because the output format will be different
- ## when user is not using database compared when using database.
-
- # And if return is not the last statement of the function,
- # it will prematurely end the function bringing the control to the place
- # from which it was called. Thus, the Maindir was added to the return to return
- # to main working directory thus every single run has it separate output
- # even if the raw data are from the same working directory.
-
- #if(GS_model)
- ###
- ### This part is for GBLUP_BRR
- if(exists("GS_modeluse")){
-     GS_model <-  GS_modeluse
- }
-
- if(!exists("res_plot")){
-     res_plot = NULL
- }
-
- ####
- if(exists("res_model_output_asreml")){
- res_summary_stat <- summary_statistics_asreml(mod = res_model_output_asreml$Asreml_model,
-                                               response = response,
-                                               heter_groups = heter_groups,
-                                               predicted_value =  res_model_output_asreml$Predicted_value,
-                                               pred_heter_groups = NULL,
-                                               variance_components = res_model_output_asreml$Variance_components,
-                                               eval_metrics = eval_metrics)
- res_model_output = res_model_output_asreml
- #res_plot <-  plot_acc(mod = out_bayes[[2]], response = response)
-
- }
-
-
- ############
-
- zipMMatrixModelReady <- function(pathout, geno_omic_files) {
-     is_geno <- grepl("Geno", geno_omic_files, ignore.case = TRUE)
-     is_omic <- grepl("Omic", geno_omic_files, ignore.case = TRUE)
-
-     zip_name <- if (any(is_geno) && any(is_omic)) {
-         "Geno_Omics_Clean_data.zip"
-     } else if (any(is_geno)) {
-         "Geno_Clean_data.zip"
-     } else if (any(is_omic)) {
-         "Omic_Clean_data.zip"
-     } else {
-         "X_variables_Clean_data.zip"
-     }
-
-     zip(file.path(pathout, zip_name), files = geno_omic_files, flags = "-q")
- }
-
- saveOutput <- function(res_model_output, res_summary_stat,  pathout, GS_model) {
-     for (i in 1:length(res_model_output)) {
-
-         for(i in 1:length(res_model_output)){
-             ### check which output is a list
-             if(length(class(res_model_output[[i]]))==1 && class(res_model_output[[i]])!="list"){
-                 if(names(res_model_output)[i]=="Variance_components"){
-                     write.csv(res_model_output[[i]],
-                               file.path(pathout,paste(names(res_model_output)[i], "csv", sep = ".")),
-                               row.names = TRUE)
-
-                 } else if(names(res_model_output)[i]=="Asreml_model"){
-                         base::saveRDS(res_model_output[[i]],
-                                       "asreml_model.RData")
-
-                 }else{
-
-                     write.csv(res_model_output[[i]],
-                               file.path(pathout,paste(names(res_model_output)[i], "csv", sep = ".")),
-                               row.names = FALSE)
-                 }
-             } else if (length(class(res_model_output[[i]])) > 1 &&
-                        "asreml.predict" %in% class(res_model_output[[i]]) &&
-                        "data.frame" %in% class(res_model_output[[i]])) {
-
-                 write.csv(res_model_output[[i]],
-                           file.path(pathout,paste(names(res_model_output)[i], "csv", sep = ".")),
-                           row.names = TRUE)
-
-
-             } else if (length(class(res_model_output[[i]])) > 1 &&
-                        "matrix" %in% class(res_model_output[[i]]) &&
-                        "array" %in% class(res_model_output[[i]])) {
-
-                 write.csv(res_model_output[[i]],
-                           file.path(pathout,paste(names(res_model_output)[i], "csv", sep = ".")),
-                           row.names = TRUE)
-
-             } else {
-
-                 if(length(class(res_model_output[[i]]))==1 && class(res_model_output[[i]])=="list"){
-                     if(names(res_model_output)[i]=="M_matrix_model_ready"){
-                         for(j in 1:length(res_model_output[[i]])){
-                             write.csv(res_model_output[[i]][[j]],
-                                       file.path(pathout, paste(names(res_model_output[[i]][j]), "csv", sep = ".")),
-                                       row.names = TRUE)
-
-                         }
-                     } else if(names(res_model_output)[i]=="Covariance" | names(res_model_output)[i]=="Correlation"){
-                         for(j in 1:length(res_model_output[[i]])){
-                             write.csv(res_model_output[[i]][[j]],
-                                       file.path(pathout, paste(names(res_model_output[[i]][j]), "csv", sep = ".")),
-                                       row.names = TRUE)
-
-                         }
-
-                     } else if(names(res_model_output)[i]=="Asreml_model"){
-                         base::saveRDS(res_model_output[[i]],
-                                       "asreml_model.RData")
-
-                     } else {
-                         for(j in 1:length(res_model_output[[i]])){
-                             write.csv(res_model_output[[i]][[j]],
-                                       file.path(pathout, paste(names(res_model_output[[i]][j]), "csv", sep = ".")),
-                                       row.names = FALSE)
-
-                         }
-
-                     }
-
-                 }
-
-                 # if(class(res_model_output[[i]])=="asreml"){
-                 #     if(names(res_model_output)[i]=="Asreml_model"){
-                 #         base::saveRDS(res_model_output[[i]],
-                 #                       "asreml_model.RData")
-                 #     }
-                 #
-                 # }
-
-
-
-             }
-
-
-         }
-
-         # output <- res_model_output[[i]]
-         # filename <- paste(names(output), "csv", sep = ".")
-         #
-         # if (class(output) == "list") {
-         #     for (j in seq_along(output)) {
-         #         write.csv(output[[j]], file.path(pathout, filename[j]), row.names = TRUE)
-         #     }
-         # } else {
-         #     write.csv(output, file.path(pathout, filename), row.names = !is.null(rownames(output)))
-         # }
-     }
-
-     for(s in 1:length(res_summary_stat)){
-
-         if(class(res_summary_stat[[s]])!="list"){
-                 write.csv(res_summary_stat[[s]],
-                           file.path(pathout,paste(names(res_summary_stat)[s], "csv", sep = ".")),
-                           row.names = FALSE)
-
-             }
-
-
-     }
- }
-
- processMMatrixModelReady <- function(pathout) {
-     files_in_directory <- list.files()
-     geno_omic_files <- grep("ready", files_in_directory, value = TRUE)
-
-     if (length(geno_omic_files) > 0) {
-         zipMMatrixModelReady(pathout, geno_omic_files)
-         unlink(geno_omic_files)
-     }
- }
-
- saveOutputAndZip <- function(res_model_output, res_summary_stat) {
-     mainDir <- getwd()
-     systime <- format(Sys.time(), "%Y%m%d_%H%M%S")
-     systime <- gsub("[-: ]", "_", systime)
-     subDir <- paste("output", systime, sep = "_")
-     subDir2 <- paste("outputNew", systime, sep = "_")
-
-     if (dir.exists(file.path(mainDir, subDir))) {
-         dir.create(file.path(mainDir, subDir))
-         setwd(file.path(mainDir, subDir))
-     } else {
-         dir.create(file.path(mainDir, subDir2))
-         setwd(file.path(mainDir, subDir2))
-     }
-
-     pathout <- getwd()
-
-     saveOutput(res_model_output, res_summary_stat,  pathout, GS_model)
-     processMMatrixModelReady(pathout)
-
-     setwd(mainDir)
-
-     return(NULL)
- }
-
- processData <- function(GS_model,
-                         res_model_output,
-                         res_summary_stat,
-                         res_plot,
-                         system_database) {
-
-     # if (exists("GS_modeluse")) {
-     #   GS_model <- GS_modeluse
-     # }
-
-     if (GS_model %in% c("Xgboost")) {
-         output <- list(model_results = res_model_output,
-                        summary_statistic = res_summary_stat)
-         if (exists("test_set_")) {
-             output$res_plot <- res_plot
-         }
-         return(output)
-
-     } else if (GS_model %in% c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS", "GBLUP_BRR", "GBLUP")) {
-
-         if (system_database == FALSE) {
-             output <- saveOutputAndZip(res_model_output, res_summary_stat)
-         } else {
-             output <- list(model_results = res_model_output,
-                            summary_statistic = res_summary_stat)
-         }
-         return(output)
-
-     } else {
-
-         output <- list(model_results = res_model_output, summary_statistic = res_summary_stat)
-         return(output)
      }
- }
-
- if(exists("out_bayes")){
-     res_model_output =   out_bayes[[1]]
-
-     rm(out_bayes); gc()
-
- }
-
 
-return(processData(GS_model = GS_model,
-                   res_model_output = res_model_output,
-                   res_summary_stat = res_summary_stat,
-                   res_plot = res_plot,
-                   system_database = system_database))
+  ### End machine learning
 
 } ## end of function

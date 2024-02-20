@@ -12,7 +12,6 @@
 #' @param omics_data_label
 #' @param bayes_para
 #' @param ...
-#'@importFrom magrittr |>
 #' @return
 #' @export
 #'
@@ -31,10 +30,11 @@ mod_output_bayes <- function(mod=NULL,
                              GS_model = NULL,
                              ...){
 
+
   msg <- sprintf("==================================================\n")
   ### Check if the user provide lable/name for the omics data
 
-  if(typeof(omics_data_label)=='list'){
+  if(inherits(omics_data_label, 'list')){
   if(!all(sapply(omics_data_label, function(x){ is.null(x)}))!=FALSE){
 
     label <-  which(sapply(omics_data_label, function(x) !is.null(x)))
@@ -46,7 +46,7 @@ mod_output_bayes <- function(mod=NULL,
   }
 
   }else {
-    if(typeof(omics_data_label)=="character"){
+    if(inherits(omics_data_label, "character")){
 
       print_lable <-  omics_data_label
 
@@ -121,8 +121,8 @@ mod_output_bayes <- function(mod=NULL,
     ## The value here are the default values and assumed to be used when user did
     ## not provide the nIter and burnIn
 
-    nIter <- bayes_para$nIter
-    burnIn <- bayes_para$burnIn
+    nIter <- bayes_para[["nIter"]]
+    burnIn <- bayes_para[["burnIn"]]
 
     posindex <- (burnIn + 1):nIter
 
@@ -133,11 +133,11 @@ mod_output_bayes <- function(mod=NULL,
     GS_model <- "lambda"
   }
 
-BIN <- mod$output_files_names[grepl("bin", mod$output_files_names)]
+BIN <- mod[["output_files_names"]][grepl("bin", mod[["output_files_names"]])]
 
 ### Extract Error variance
 
-Var_E <- scan(mod$output_files_names[grepl("varE.dat", mod$output_files_names)],
+Var_E <- scan(mod[["output_files_names"]][grepl("varE.dat", mod[["output_files_names"]])],
                    what = numeric(),
                    sep = "\n", quiet =TRUE)
 
@@ -153,9 +153,9 @@ Var_E_Se <- sd(Var_E)/sqrt(length(Var_E))
 if(length(BIN)>1){
 
   if(GS_model=="BRR"){
-  varB_files <- mod$output_files_names[grepl("varB.dat", mod$output_files_names)]
+  varB_files <- mod[["output_files_names"]][grepl("varB.dat", mod[["output_files_names"]])]
   } else {
-  varB_files <- mod$output_files_names[grepl(paste(GS_model,"dat", sep = "."), mod$output_files_names)]
+  varB_files <- mod[["output_files_names"]][grepl(paste(GS_model,"dat", sep = "."), mod[["output_files_names"]])]
 }
 
   if(length(BIN)==4){
@@ -407,9 +407,10 @@ if(length(BIN)>1){
 } else {
 
   if(GS_model== "BRR"){
-    Var_U <- scan(mod$output_files_names[grepl("varB.dat", mod$output_files_names)],
-                     what = numeric(),
-                     sep = "\n", quiet =TRUE)
+    Var_U <- scan(mod[["output_files_names"]][grepl("varB.dat", mod[["output_files_names"]])],
+                  what = numeric(),
+                  sep = "\n")
+
     Var_U <- Var_U[posindex]
     Var_U_Se <- sd(Var_U)/sqrt(length(Var_U))
     ### The output for the variance was recently change in BGLR, this was fixed
@@ -518,7 +519,7 @@ if(length(BIN)>1){
     }
 
     ##
-    if(ETA$ETA_element_name[aa]=="omic1_data"){
+    if(ETA[["ETA_element_name"]][aa]=="omic1_data"){
 
       Bb <- BGLR::readBinMat(BIN[aa])
 
@@ -555,7 +556,7 @@ if(length(BIN)>1){
 
     }
 
-    if(ETA$ETA_element_name[aa]=="omic2_data"){
+    if(ETA[["ETA_element_name"]][aa]=="omic2_data"){
 
       Bb <- BGLR::readBinMat(BIN[aa])
 
@@ -592,7 +593,7 @@ if(length(BIN)>1){
         gid_name =gid_name)
     }
 
-    if(ETA$ETA_element_name[aa]=="omic3_data"){
+    if(ETA[["ETA_element_name"]][aa]=="omic3_data"){
 
       Bb <- BGLR::readBinMat(BIN[aa])
 
@@ -637,7 +638,7 @@ if(length(BIN)>1){
 } else {
 
 
-  if(ETA$ETA_element_name[1]=="geno_data"){
+  if(ETA[["ETA_element_name"]][1]=="geno_data"){
 
     Bb <- BGLR::readBinMat(BIN)
 
@@ -652,7 +653,7 @@ if(length(BIN)>1){
   }
 
   ##
-  if(ETA$ETA_element_name[1]=="omic1_data"){
+  if(ETA[["ETA_element_name"]][1]=="omic1_data"){
 
     Bb <- BGLR::readBinMat(BIN)
 
@@ -667,7 +668,7 @@ if(length(BIN)>1){
 
   }
 
-  if(ETA$ETA_element_name[1]=="omic2_data"){
+  if(ETA[["ETA_element_name"]][1]=="omic2_data"){
 
     Bb <- BGLR::readBinMat(BIN)
 
@@ -681,7 +682,7 @@ if(length(BIN)>1){
       gid_name =gid_name)
   }
 
-  if(ETA$ETA_element_name[1]=="omic3_data"){
+  if(ETA[["ETA_element_name"]][1]=="omic3_data"){
 
     Bb <- BGLR::readBinMat(BIN)
 
@@ -852,22 +853,22 @@ if(!is.null(geno_data) & ((is.null(omic1_data) &  is.null(omic2_data)) & is.null
 
   ### Combined all results into list
 Res <-  list(
-           res_Coeff_EBV_PEV_Rel_SE$Coefficient,
-           res_Coeff_EBV_PEV_Rel_SE$Estimated_breeding_value,
-           Predicted_value,
-           Variance_components,
-           list(geno_clean_ready = geno_data),## This is to make it compatible in output format for when the omics is more than one
-           mod$model$mu
+           Coefficients= res_Coeff_EBV_PEV_Rel_SE$Coefficient,
+           Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE$Estimated_breeding_value,
+           Predicted_value = Predicted_value,
+           Variance_components = Variance_components,
+           M_matrix_model_ready = list(geno_clean_ready = geno_data),## This is to make it compatible in output format for when the omics is more than one
+           Intercept = mod$model$mu
            )
 
 ## Add attribute/ name to the list
-names(Res) <- c(
-                "Coefficients",
-                "Estimated_breeding_value",
-                "Predicted_value",
-                "Variance_components",
-                "M_matrix_model_ready",
-                "Intercept")
+# names(Res) <- c(
+#                 "Coefficients",
+#                 "Estimated_breeding_value",
+#                 "Predicted_value",
+#                 "Variance_components",
+#                 "M_matrix_model_ready",
+#                 "Intercept")
 
 } else if(is.null(geno_data) & ((!is.null(omic1_data) &  is.null(omic2_data)) & is.null(omic3_data))){
 
@@ -882,20 +883,12 @@ names(Res) <- c(
   ### Combined all results into list
 
   Res <-  list(
-              res_Coeff_EBV_PEV_Rel_SE$Coefficient,
-              res_Coeff_EBV_PEV_Rel_SE$Estimated_breeding_value,
-              Predicted_value,
-              Variance_components,
-              list(omic_clean_ready = omic1_data),## This is to make it compatible in output format for when the omics is more than one
-              mod$model$mu)
-
-  names(Res) <- c(
-    "Coefficients",
-    "Estimated_breeding_value",
-    "Predicted_value",
-    "Variance_components",
-    "M_matrix_model_ready",
-    "Intercept")
+               Coefficients = res_Coeff_EBV_PEV_Rel_SE$Coefficient,
+               Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE$Estimated_breeding_value,
+               Predicted_value = Predicted_value,
+               Variance_components = Variance_components,
+               M_matrix_model_ready = list(omic_clean_ready = omic1_data),## This is to make it compatible in output format for when the omics is more than one
+               Intercept = mod$model$mu)
 
 
   ## Add attribute/ name to the list
@@ -941,24 +934,15 @@ names(Res) <- c(
 
 
   Res <-  list(
-             res_Coeff_EBV_PEV_Rel_SE$Coefficient,
-             res_Coeff_EBV_PEV_Rel_SE$Estimated_breeding_value,
-             Predicted_value,
-             Variance_components,
-             list(omic_clean_ready = omic2_data),## This is to make it compatible in output format for when the omics is more than one
-             mod$model$mu
+             Coefficients = res_Coeff_EBV_PEV_Rel_SE$Coefficient,
+             Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE$Estimated_breeding_value,
+             Predicted_value = Predicted_value,
+             Variance_components = Variance_components,
+             M_matrix_model_ready = list(omic_clean_ready = omic2_data),## This is to make it compatible in output format for when the omics is more than one
+             Intercept = mod$model$mu
              )
 
-  names(Res) <- c(
-    "Coefficients",
-    "Estimated_breeding_value",
-    "Predicted_value",
-    "Variance_components",
-    "M_matrix_model_ready",
-    "Intercept")
-
-
-  ## Add attribute/ name to the list
+    ## Add attribute/ name to the list
 
   if(!is.null(print_lable)){
 
@@ -1001,20 +985,14 @@ names(Res) <- c(
 
 
   Res <-  list(
-             res_Coeff_EBV_PEV_Rel_SE$Coefficient,
-             res_Coeff_EBV_PEV_Rel_SE$Estimated_breeding_value,
-             Predicted_value,
-             Variance_components,
-             list(omic_clean_ready = omic3_data), ## This is to make it compatible in output format for when the omics is more than one
-             mod$model$mu)
+             Coefficients = res_Coeff_EBV_PEV_Rel_SE$Coefficient,
+             Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE$Estimated_breeding_value,
+             Predicted_value = Predicted_value,
+             Variance_components = Variance_components,
+             M_matrix_model_ready = list(omic_clean_ready = omic3_data), ## This is to make it compatible in output format for when the omics is more than one
+             Intercept = mod$model$mu)
 
-  names(Res) <- c(
-    "Coefficients",
-    "Estimated_breeding_value",
-    "Predicted_value",
-    "Variance_components",
-    "M_matrix_model_ready",
-    "Intercept")
+#####
 
   if(!is.null(print_lable)){
 
@@ -1052,7 +1030,7 @@ names(Res) <- c(
   Reliability <- ifelse(Reliability<0, "Alias", Reliability)
 
   sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                        EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV,
+                        Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV,
                         stringsAsFactors = FALSE)
 
   colnames(sum_EBV)[1] <- gen_name
@@ -1094,26 +1072,21 @@ names(Res) <- c(
 
 
   Res <-  list(
-             list(Geno_coeff = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
+             Coefficients = list(
+                  Geno_coeff = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
                   Omic_coeff = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient),
-             list(Genomic_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                  Omic_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value),
-             sum_EBV,
-             Predicted_value,
-             Variance_components,
-             list(Geno_model_ready = geno_data,
+             Estimated_breeding_value = list(
+                 Genomic_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+                 Omic_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value),
+             Total_estimated_breeding_value = sum_EBV,
+             Predicted_value = Predicted_value,
+             Variance_components = Variance_components,
+             M_matrix_model_ready = list(
+                  Geno_model_ready = geno_data,
                   Omic_model_ready = omic1_data
                                          ),
-             mod$model$mu)
+             Intercept = mod$model$mu)
 
-  names(Res) <- c(
-             "Coefficients",
-             "Estimated_breeding_value",
-             "Total_estimated_breeding_value",
-             "Predicted_value",
-             "Variance_components",
-             "M_matrix_model_ready",
-             "Intercept")
 
   ###
   if(!is.null(print_lable)){
@@ -1156,7 +1129,7 @@ names(Res) <- c(
   Reliability <- ifelse(Reliability<0, "Alias", Reliability)
 
   sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value[, 1],
-                        EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
+                        Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
                         stringsAsFactors = FALSE)
 
   colnames(sum_EBV)[1] <- gen_name
@@ -1199,29 +1172,23 @@ names(Res) <- c(
 
 
   Res <-  list(
-                list(Geno_coeff = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
+               Coefficients = list(
+                     Geno_coeff = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
                      Omic_coeff = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient),
 
-               list(Genomic_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                    Omic_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value),
-              sum_EBV,
-              Predicted_value,
-              Variance_components,
-              list(Geno_model_ready = geno_data,
+               Estimated_breeding_value= list(
+                    Genomic_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+                    Omic_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value),
+               Total_estimated_breeding_value = sum_EBV,
+               Predicted_value = Predicted_value,
+               Variance_components = Variance_components,
+               M_matrix_model_ready = list(
+                   Geno_model_ready = geno_data,
                    Omic_model_ready = omic2_data
                  ),
-              mod$model$mu)
+              Intercept = mod$model$mu)
 
-  names(Res) <- c(
-    "Coefficients",
-    "Estimated_breeding_value",
-    "Total_estimated_breeding_value",
-    "Predicted_value",
-    "Variance_components",
-    "M_matrix_model_ready",
-    "Intercept")
-
-  ###
+   ###
   if(!is.null(print_lable)){
 
     print_lable <- unlist(print_lable)
@@ -1258,7 +1225,7 @@ names(Res) <- c(
   Reliability <- ifelse(Reliability<0, "Alias", Reliability)
 
   sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value[, 1],
-                        EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                        Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                         stringsAsFactors = FALSE)
 
   colnames(sum_EBV)[1] <- gen_name
@@ -1298,28 +1265,22 @@ names(Res) <- c(
 
 
   Res <-  list(
-               list(Geno_coeff = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
+               Coefficients =list(
+                    Geno_coeff = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
                     Omic_coeff = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
 
-              list(Genomic_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                    Omic_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+               Estimated_breeding_value = list(
+                  Genomic_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+                  Omic_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
 
-               sum_EBV,
-               Predicted_value,
-               Variance_components,
-               list(Geno_model_ready = geno_data,
+               Total_estimated_breeding_value = sum_EBV,
+               Predicted_value = Predicted_value,
+               Variance_components = Variance_components,
+               M_matrix_model_ready = list(
+                    Geno_model_ready = geno_data,
                     Omic_model_ready = omic3_data
                                 ),
-               mod$model$mu)
-
-  names(Res) <- c(
-                  "Coefficients",
-                  "Estimated_breeding_value",
-                  "Total_estimated_breeding_value",
-                  "Predicted_value",
-                  "Variance_components",
-                  "M_matrix_model_ready",
-                  "Intercept")
+               Intercept = mod$model$mu)
 
   ###
   if(!is.null(print_lable)){
@@ -1358,7 +1319,7 @@ names(Res) <- c(
   Reliability <- ifelse(Reliability<0, "Alias", Reliability)
 
   sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                        EBV = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
+                        Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
                         stringsAsFactors = FALSE)
 
   colnames(sum_EBV)[1] <- gen_name
@@ -1400,26 +1361,21 @@ names(Res) <- c(
 
 
   Res <-  list(
-               list(Omic1_coeff =  res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
+               Coefficients = list(
+                    Omic1_coeff =  res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
                     Omic2_coeff = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient),
-               list(Omic1_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
-                    Omic2_estimated_BV = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value),
-               sum_EBV,
-               Predicted_value,
-               Variance_components,
+               Estimated_breeding_value = list(
+                    Omic1_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
+                    Omic2_estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value),
+               Total_estimated_breeding_value = sum_EBV,
+               Predicted_value = Predicted_value,
+               Variance_components = Variance_components,
 
-               list(omic1_data_model_ready= omic1_data,
-                    omic2_data_model_ready= omic2_data),
-               mod$model$mu)
+               M_matrix_model_ready =  list(
+                    Omic1_data_model_ready= omic1_data,
+                    Omic2_data_model_ready= omic2_data),
+               Intercept = mod$model$mu)
 
-  names(Res) <- c(
-                  "Coefficients",
-                  "Estimated_breeding_value",
-                  "Total_estimated_breeding_value",
-                  "Predicted_value",
-                  "Variance_components",
-                  "M_matrix_model_ready",
-                  "Intercept")
 
   ###
   if(!is.null(print_lable)){
@@ -1458,7 +1414,7 @@ names(Res) <- c(
   Reliability <- ifelse(Reliability<0, "Alias", Reliability)
 
   sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value[, 1],
-                        EBV = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                        Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                         stringsAsFactors = FALSE)
 
   colnames(sum_EBV)[1] <- gen_name
@@ -1499,25 +1455,20 @@ names(Res) <- c(
 
 
   Res <-  list(
-               list(Omic2_coeff = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
-                    Omic3_coeff = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-               list(Omic2_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
-                    Omic3_estimated_BV = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
-               sum_EBV,
-               Predicted_value,
-               Variance_components,
-               list(omic2_data_model_ready= omic2_data,
-                    omic3_data_model_ready= omic3_data),
-               mod$model$mu)
+               Coefficients = list(
+                    Omic1_coeff = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
+                    Omic2_coeff = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
+               Estimated_breeding_value = list(
+                    Omic1_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
+                    Omic2_estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+               Total_estimated_breeding_value = sum_EBV,
+               Predicted_value = Predicted_value,
+               Variance_components = Variance_components,
+               M_matrix_model_ready = list(
+                    Omic1_data_model_ready= omic2_data,
+                    Omic2_data_model_ready= omic3_data),
+               Intercept = mod$model$mu)
 
-  names(Res) <- c(
-                  "Coefficients",
-                  "Estimated_breeding_value",
-                  "Total_estimated_breeding_value",
-                  "Predicted_value",
-                  "Variance_components",
-                  "M_matrix_model_ready",
-                  "Intercept")
 
   ###
   if(!is.null(print_lable)){
@@ -1539,9 +1490,7 @@ names(Res) <- c(
     }
 
   } else {
-
       message(insight::print_color(paste(msg,paste("Omics lable was not provided. Default name was applied.")), "blue"))
-
 
   }
 
@@ -1556,7 +1505,7 @@ names(Res) <- c(
   Reliability <- ifelse(Reliability<0, "Alias", Reliability)
 
   sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                        EBV = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                        Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                         stringsAsFactors = FALSE)
 
   colnames(sum_EBV)[1] <- gen_name
@@ -1596,25 +1545,20 @@ names(Res) <- c(
 
 
   Res <-  list(
-               list(Omic1_coeff = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
-                    Omic3_coeff = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-               list(Omic1_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
-                    Omic3_estimated_BV = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
-               sum_EBV,
-               Predicted_value,
-               Variance_components,
-               list(omic1_data_model_ready= omic1_data,
-                    omic2_data_model_ready= omic3_data),
-               mod$model$mu)
+              Coefficients = list(
+                    Omic1_coeff = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
+                    Omic2_coeff = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
+              Estimated_breeding_value = list(
+                    Omic1_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
+                    Omic2_estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+              Total_estimated_breeding_value = sum_EBV,
+              Predicted_value = Predicted_value,
+              Variance_components= Variance_components,
+              M_matrix_model_ready = list(
+                    Omic1_data_model_ready= omic1_data,
+                    Omic2_data_model_ready= omic3_data),
+              Intercept =  mod$model$mu)
 
-  names(Res) <- c(
-    "Coefficients",
-    "Estimated_breeding_value",
-    "Total_estimated_breeding_value",
-    "Predicted_value",
-    "Variance_components",
-    "M_matrix_model_ready",
-    "Intercept")
 
   ###
   if(!is.null(print_lable)){
@@ -1654,7 +1598,7 @@ names(Res) <- c(
   Reliability <- ifelse(Reliability<0, "Alias", Reliability)
 
   sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value[, 1],
-                        EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                        Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                         stringsAsFactors = FALSE)
 
   colnames(sum_EBV)[1] <- gen_name
@@ -1695,32 +1639,23 @@ names(Res) <- c(
                                                     genomic_h2_Se = genomic_h2_Se)
 
 Res <-list(
-            list(
-               coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
-               coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
-               coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-            list(
-               EBV_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-               EBV_2 = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
-               EBV_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
-           sum_EBV,
-           Predicted_value,
-           Variance_components,
-          list(geno_model_ready = geno_data,
-               omic1_model_ready = omic2_data,
-               omic2_model_ready = omic3_data
+           Coefficients =  list(
+               Coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
+               Coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
+               Coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
+            Estimated_breeding_value = list(
+               Estimated_breeding_value_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+               Estimated_breeding_value_2 = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
+               Estimated_breeding_value_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+           Total_estimated_breeding_value = sum_EBV,
+           Predicted_value = Predicted_value,
+           Variance_components = Variance_components,
+           M_matrix_model_ready = list(
+               Geno_model_ready = geno_data,
+               Omic1_model_ready = omic2_data,
+               Omic2_model_ready = omic3_data
                ),
-          mod$model$mu)
-
-
-  names(Res) <- c(
-             "Coefficients",
-             "Estimated_breeding_value",
-             "Total_estimated_breeding_value",
-             "Predicted_value",
-             "Variance_components",
-             "M_matrix_model_ready",
-             "intercept")
+          Intercept = mod$model$mu)
 
   ###
   if(!is.null(print_lable)){
@@ -1762,7 +1697,7 @@ Res <-list(
   Reliability <- ifelse(Reliability<0, "Alias", Reliability)
 
   sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                        EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                        Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                         stringsAsFactors = FALSE)
 
   colnames(sum_EBV)[1] <- gen_name
@@ -1805,30 +1740,23 @@ Res <-list(
 
 
   Res <-list(
-             list(
-                   coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
-                   coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
-                   coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-            list(EBV_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                 EBV_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
-                 EBV_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
-            sum_EBV,
-            Predicted_value,
-            Variance_components,
-            list(geno_model_ready = geno_data,
-                 omic1_model_ready = omic1_data,
-                 omic2_model_ready = omic3_data),
-          mod$model$mu)
+             Coefficients =  list(
+                   Coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
+                   Coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
+                   Coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
+             Estimated_breeding_value = list(
+                 Estimated_breeding_value_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+                 Estimated_breeding_value_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
+                 Estimated_breeding_value_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+             Total_estimated_breeding_value = sum_EBV,
+             Predicted_value = Predicted_value,
+             Variance_components = Variance_components,
+             M_matrix_model_ready = list(
+                 Geno_model_ready = geno_data,
+                 Omic1_model_ready = omic1_data,
+                 Omic2_model_ready = omic3_data),
+            Intercept = mod$model$mu)
 
-
-  names(Res) <- c(
-    "Coefficients",
-    "Estimated_breeding_value",
-    "Total_estimated_breeding_value",
-    "Predicted_value",
-    "Variance_components",
-    "M_matrix_model_ready",
-    "intercept")
 
   ###
   if(!is.null(print_lable)){
@@ -1867,7 +1795,7 @@ Res <-list(
   Reliability <- ifelse(Reliability<0, "Alias", Reliability)
 
   sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                        EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
+                        Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
                         stringsAsFactors = FALSE)
 
   colnames(sum_EBV)[1] <- gen_name
@@ -1909,34 +1837,26 @@ Res <-list(
                                                     genomic_h2_Se = genomic_h2_Se)
 
   Res <-list(
-              list(
-                    coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
-                    coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
-                    coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient),
-              list(
-                   EBV_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                   EBV_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
-                   EBV_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value),
-              sum_EBV,
-              Predicted_value,
-              Variance_components,
+             Coefficients = list(
+                    Coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
+                    Coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
+                    Coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient),
+             Estimated_breeding_value = list(
+               Estimated_breeding_value_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+               Estimated_breeding_value_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
+               Estimated_breeding_value_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value),
+             Total_estimated_breeding_value = sum_EBV,
+             Predicted_value = Predicted_value,
+             Variance_components = Variance_components,
 
-             list(
-                   geno_model_ready = geno_data,
-                   omic1_model_ready = omic1_data,
-                   omic2_model_ready = omic2_data
+             M_matrix_model_ready = list(
+                   Geno_model_ready = geno_data,
+                   Omic1_model_ready = omic1_data,
+                   Omic2_model_ready = omic2_data
                    ),
-            mod$model$mu)
+             Intercept = mod$model$mu)
 
 
-  names(Res) <- c(
-    "Coefficients",
-    "Estimated_breeding_value",
-    "Total_estimated_breeding_value",
-    "Predicted_value",
-    "Variance_components",
-    "M_matrix_model_ready",
-    "intercept")
 
   ###
   if(!is.null(print_lable)){
@@ -1977,7 +1897,7 @@ Res <-list(
 
 
   sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                        EBV = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                        Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                         stringsAsFactors = FALSE)
 
   colnames(sum_EBV)[1] <- gen_name
@@ -2021,32 +1941,24 @@ Res <-list(
 
 
   Res <-list(
-              list(
-                    coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
-                    coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
-                    coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-             list(
-                   EBV_1 = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
-                   EBV_2 = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
-                   EBV_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
-            sum_EBV,
-            Predicted_value,
-            Variance_components,
+             Coefficients =  list(
+                    Coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
+                    Coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
+                    Coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
+             Estimated_breeding_value = list(
+                   Estimated_breeding_value_1 = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
+                   Estimated_breeding_value_2 = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
+                   Estimated_breeding_value_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+             Total_estimated_breeding_value = sum_EBV,
+             Predicted_value = Predicted_value,
+             Variance_components = Variance_components,
 
-           list(omic1_model_ready = omic1_data,
-               omic2_model_ready = omic2_data,
-               omic3_model_ready = omic3_data),
-           mod$model$mu)
+             M_matrix_model_ready = list(
+               Omic1_model_ready = omic1_data,
+               Omic2_model_ready = omic2_data,
+               Omic3_model_ready = omic3_data),
+           Intercept = mod$model$mu)
 
-
-  names(Res) <- c(
-    "Coefficients",
-    "Estimated_breeding_value",
-    "Total_estimated_breeding_value",
-    "Predicted_value",
-    "Variance_components",
-    "M_matrix_model_ready",
-    "intercept")
 
   ###
   if(!is.null(print_lable)){
@@ -2088,7 +2000,7 @@ Res <-list(
     Reliability <- ifelse(Reliability<0, "Alias", Reliability)
 
     sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                          EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                          Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                           stringsAsFactors = FALSE)
 
     colnames(sum_EBV)[1] <- gen_name
@@ -2132,37 +2044,28 @@ Res <-list(
 
 
     Res <-list(
-                list(
-                      coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
-                      coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
-                      coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
-                      coefficients_4 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-                list(
-                     EBV_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                     EBV_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
-                     EBV_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
-                     EBV_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
-                sum_EBV,
-                Predicted_value,
-                Variance_components,
+               Coefficients = list(
+                      Coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
+                      Coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
+                      Coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
+                      Coefficients_4 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
+               Estimated_breeding_value = list(
+                 Estimated_breeding_value_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+                 Estimated_breeding_value_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
+                 Estimated_breeding_value_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
+                 Estimated_breeding_value_4 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+               Total_estimated_breeding_value = sum_EBV,
+               Predicted_value = Predicted_value,
+               Variance_components = Variance_components,
 
-                list(
-                     geno_model_ready = geno_data,
-                     omic1_model_ready = omic1_data,
-                     omic2_model_ready = omic2_data,
-                     omic3_model_ready = omic3_data
+               M_matrix_model_ready = list(
+                     Geno_model_ready = geno_data,
+                     Omic1_model_ready = omic1_data,
+                     Omic2_model_ready = omic2_data,
+                     Omic3_model_ready = omic3_data
                    ),
-                mod$model$mu)
+               Intercept = mod$model$mu)
 
-
-    names(Res) <- c(
-      "Coefficients",
-      "Estimated_breeding_value",
-      "Total_estimated_breeding_value",
-      "Predicted_value",
-      "Variance_components",
-      "M_matrix_model_ready",
-      "intercept")
 
     ###
     if(!is.null(print_lable)){
@@ -2202,8 +2105,7 @@ Res <-list(
 
 
  #}
-### remove the generated output files from the working directory
-unlink(mod$output_files_names)
+
 if(exists("res_Coeff_EBV_PEV_Rel_SE_omic1")){
   rm(res_Coeff_EBV_PEV_Rel_SE_omic1)
 }
@@ -2224,6 +2126,8 @@ if(exists("res_Coeff_EBV_PEV_Rel_SE")){
   rm(res_Coeff_EBV_PEV_Rel_SE)
 }
 
+### remove the generated output files from the working directory
+unlink(mod$output_files_names)
 return(Res)
 }
 

@@ -12,7 +12,7 @@ AI_svm(
   gen_name = NULL,
   core = NULL,
   message = TRUE,
-  center = TRUE,
+  scale = TRUE,
   para_tunning = FALSE,
   svm_paras_tunning = c(c_tune = NULL),
   c = 1,

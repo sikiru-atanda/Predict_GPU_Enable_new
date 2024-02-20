@@ -14,7 +14,7 @@ ML_undefined_test_train <- function(object_pheno = NULL,
   {
     if(length(object_pheno)==1){
 
-      object_pheno = object_pheno$pheno_data
+      object_pheno = object_pheno[["pheno_clean_data"]]
 
       if(anyNA(object_pheno[, response])){
         Na_testing <- which(is.na(object_pheno[, response]))
@@ -35,9 +35,9 @@ ML_undefined_test_train <- function(object_pheno = NULL,
 
     } else {
 
-      object_pheno <- object_pheno$pheno_data
+      object_pheno <- object_pheno[["pheno_clean_data"]]
 
-      test_set <- object_pheno$test_set
+      test_set <- object_pheno[["test_set"]]
 
     }
 
@@ -49,7 +49,7 @@ ML_undefined_test_train <- function(object_pheno = NULL,
 
   output <- list(object_pheno, test_set)
 
-  names(output) <- c("pheno_data", "test_set")
+  names(output) <- c("pheno_clean_data", "test_set")
     #}
 
   } else {
@@ -58,7 +58,7 @@ ML_undefined_test_train <- function(object_pheno = NULL,
 
   output <- list(object_pheno)
 
-  names(output) <- "pheno_data"
+  names(output) <- "pheno_clean_data"
 
     #}
 

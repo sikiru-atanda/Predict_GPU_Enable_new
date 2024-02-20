@@ -1,2 +1,0 @@
-"x"
-"mod<-asreml::asreml(fixed= Yield~1+Env,random=~corgh(Env):vm(GID,G_inv)+corgh(Env):vm(GID,omic1_inv),residual=~dsum(~id(units)|Env),na.action=list(x=""include"",y=""include""),data=pheno_data)"

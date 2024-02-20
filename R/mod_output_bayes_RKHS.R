@@ -35,6 +35,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                                  ...){
 
   msg <- sprintf("==================================================\n")
+  g_use <- NULL
   ##############
   if(typeof(omics_kernel_label)=='list'){
     if(!all(sapply(omics_kernel_label, function(x){ is.null(x)}))!=FALSE){
@@ -94,8 +95,8 @@ mod_output_bayes_RKHS <- function(mod=NULL,
   ## The value here are the default values and assumed to be used when user did
   ## not provide the nIter and burnIn
 
-  nIter <-  bayes_para$nIter
-  burnIn <-   bayes_para$burnIn
+  nIter <-  bayes_para[["nIter"]]
+  burnIn <-   bayes_para[["burnIn"]]
 
   posindex <- (burnIn + 1):nIter
   #### When the genotype are present in more than one environment/location
@@ -104,20 +105,21 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Zg<-stats::model.matrix(~factor(pheno_data[,gen_name])-1)
 
     if(!is.null(gmatrix)){
-
+      gmatrix_copy <- gmatrix  ## for across predicted value REL, SE , PEV
       gmatrix <- Zg%*%gmatrix%*%t(Zg)
 
       gmatrix <- grm_kernel_precheck(gmatrix)
     }
 
     if(!is.null(gkernel)){
-
+      gmatrix_copy <- gkernel
       gkernel <- Zg%*%gkernel%*%t(Zg)
 
       gkernel <- grm_kernel_precheck(gkernel)
     }
 
     if(!is.null(omic1_kernel)){
+      omic1_kernel_copy <- omic1_kernel
       omic1_kernel <- Zg%*%omic1_kernel%*%t(Zg)
 
       omic1_kernel <- grm_kernel_precheck(omic1_kernel)
@@ -125,12 +127,14 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     }
 
     if(!is.null(omic2_kernel)){
+      omic2_kernel_copy <- omic2_kernel
       omic2_kernel <- Zg%*%omic2_kernel%*%t(Zg)
 
       omic2_kernel <- grm_kernel_precheck(omic2_kernel)
     }
 
     if(!is.null(omic3_kernel)){
+      omic3_kernel_copy <- omic3_kernel
       omic3_kernel <- Zg%*%omic3_kernel%*%t(Zg)
 
       omic3_kernel <- grm_kernel_precheck(omic3_kernel)
@@ -165,13 +169,13 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
   mu <- mean(scan(mod$output_files_names[grepl("mu.dat", mod$output_files_names)],
                      what = numeric(),
-                     sep = "\n"))
+                     sep = "\n", quiet = TRUE))
 
 
   ### Extract Error variance
   Var_E <- scan(mod$output_files_names[grepl("varE.dat", mod$output_files_names)],
                      what = numeric(),
-                     sep = "\n")
+                     sep = "\n", quiet = TRUE)
 
   Var_E <- Var_E[posindex]
 
@@ -188,7 +192,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     if(length(BIN)==4){
       Var_U_1 <-  scan(varB_files[1],
                          what = numeric(),
-                         sep = "\n")
+                         sep = "\n", quiet = TRUE)
       ##
       Var_U_1 <- Var_U_1[posindex]
 
@@ -197,7 +201,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
       Var_U_2 <-  scan(varB_files[2],
                          what = numeric(),
-                         sep = "\n")
+                         sep = "\n", quiet = TRUE)
       Var_U_2 <- Var_U_2[posindex]
 
       # calculate standard error
@@ -205,7 +209,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
       Var_U_3 <-  scan(varB_files[3],
                          what = numeric(),
-                         sep = "\n")
+                         sep = "\n", quiet = TRUE)
       Var_U_3 <- Var_U_3[posindex]
 
       # calculate standard error
@@ -213,7 +217,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
       Var_U_4 <-  scan(varB_files[4],
                          what = numeric(),
-                         sep = "\n")
+                         sep = "\n", quiet = TRUE)
 
       Var_U_4 <- Var_U_4[posindex]
 
@@ -240,7 +244,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     if(length(BIN)==3){
       Var_U_1 <- scan(varB_files[1],
                          what = numeric(),
-                         sep = "\n")
+                         sep = "\n", quiet = TRUE)
       Var_U_1 <- Var_U_1[posindex]
       # calculate standard error
       Var_U_1_Se <- sd(Var_U_1)/sqrt(length(Var_U_1))
@@ -248,13 +252,13 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
       Var_U_2 <- scan(varB_files[2],
                          what = numeric(),
-                         sep = "\n")
+                         sep = "\n", quiet = TRUE)
       Var_U_2 <- Var_U_2[posindex]
       Var_U_2_Se <- sd(Var_U_2)/sqrt(length(Var_U_2))
 
       Var_U_3 <- scan(varB_files[3],
                          what = numeric(),
-                         sep = "\n")
+                         sep = "\n", quiet = TRUE)
       Var_U_3 <- Var_U_3[posindex]
       Var_U_3_Se <- sd(Var_U_3)/sqrt(length(Var_U_3))
 
@@ -277,14 +281,14 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     if(length(BIN)==2){
       Var_U_1 <- scan(varB_files[1],
                          what = numeric(),
-                         sep = "\n")
+                         sep = "\n", quiet = TRUE)
 
       Var_U_1 <- Var_U_1[posindex]
       Var_U_1_Se <- sd(Var_U_1)/sqrt(length(Var_U_1))
 
       Var_U_2 <- scan(varB_files[2],
                          what = numeric(),
-                         sep = "\n")
+                         sep = "\n", quiet = TRUE)
       Var_U_2 <- Var_U_2[posindex]
       Var_U_2_Se <- sd(Var_U_2)/sqrt(length(Var_U_2))
 
@@ -306,14 +310,14 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
     Var_U <- scan(mod$output_files_names[grepl("_varU.dat", mod$output_files_names)],
                      what = numeric(),
-                     sep = "\n")
+                     sep = "\n", quiet = TRUE)
 
     Var_U <- Var_U[posindex]
     Var_U_Se <- sd(Var_U)/sqrt(length(Var_U))
 
     Var_E <- scan(mod$output_files_names[grepl("varE.dat", mod$output_files_names)],
                        what = numeric(),
-                       sep = "\n")
+                       sep = "\n", quiet = TRUE)
     Var_E <- Var_E[posindex]
     Var_E_Se <-  sd(Var_E)/sqrt(length(Var_E))
 ###############
@@ -353,7 +357,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
         var_u <- scan(varB_files[aa],
                       what = numeric(),
-                      sep = "\n")
+                      sep = "\n", quiet = TRUE)
 
         var_u <- mean(var_u[posindex])
 
@@ -375,6 +379,12 @@ mod_output_bayes_RKHS <- function(mod=NULL,
       ##
       if(ETA$ETA_element_name[aa]=="omic1_kernel"){
 
+        var_u <- scan(varB_files[aa],
+                      what = numeric(),
+                      sep = "\n", quiet = TRUE)
+
+        var_u <- mean(var_u[posindex])
+
         res_Coeff_EBV_PEV_Rel_SE_omic1 <- Cal_Coeff_EBV_PEV_Rel_RHKS_glub(
           mod = mod,
           gmatrix = omic1_kernel,
@@ -389,6 +399,12 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
       if(ETA$ETA_element_name[aa]=="omic2_kernel"){
 
+        var_u <- scan(varB_files[aa],
+                      what = numeric(),
+                      sep = "\n", quiet = TRUE)
+
+        var_u <- mean(var_u[posindex])
+
         res_Coeff_EBV_PEV_Rel_SE_omic2 <- Cal_Coeff_EBV_PEV_Rel_RHKS_glub(
           mod = mod,
           gmatrix = omic2_kernel,
@@ -402,6 +418,12 @@ mod_output_bayes_RKHS <- function(mod=NULL,
       }
 
       if(ETA$ETA_element_name[aa]=="omic3_kernel"){
+
+        var_u <- scan(varB_files[aa],
+                      what = numeric(),
+                      sep = "\n", quiet = TRUE)
+
+        var_u <- mean(var_u[posindex])
 
         res_Coeff_EBV_PEV_Rel_SE_omic3 <- Cal_Coeff_EBV_PEV_Rel_RHKS_glub(
           mod = mod,
@@ -529,9 +551,9 @@ mod_output_bayes_RKHS <- function(mod=NULL,
   ####
   if(length(BIN)==1){
 
-    if(exists("g_use")){
+    if(!is.null(g_use)){
       if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
-        sep_pev_rel <- sep_pev_rel_gblup(geno_object = g_use,
+        sep_pev_rel <- sep_pev_rel_gblup(geno_object = gmatrix_copy,
                                          va = Var_U,
                                          ve = Var_E)
 
@@ -565,7 +587,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     } else if(!is.null(omic1_kernel)){
 
       if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
-        sep_pev_rel <- sep_pev_rel_gblup(geno_object = omic1_kernel,
+        sep_pev_rel <- sep_pev_rel_gblup(geno_object = omic1_kernel_copy,
                                          va = Var_U,
                                          ve = Var_E)
 
@@ -600,7 +622,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
 
       if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
-        sep_pev_rel <- sep_pev_rel_gblup(geno_object = omic2_kernel,
+        sep_pev_rel <- sep_pev_rel_gblup(geno_object = omic2_kernel_copy,
                                          va = Var_U,
                                          ve = Var_E)
 
@@ -636,7 +658,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
       if(!is.null(omic3_kernel)){
 
         if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
-          sep_pev_rel <- sep_pev_rel_gblup(geno_object = omic3_kernel,
+          sep_pev_rel <- sep_pev_rel_gblup(geno_object = omic3_kernel_copy,
                                            va = Var_U,
                                            ve = Var_E)
 
@@ -693,7 +715,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
   }
 
 
-  if(exists("g_use") & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
+  if(!is.null(g_use) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
     Variance_components <- Bayes_variance_components(Var_U = Var_U,
                                                      Var_E = Var_E,
                                                      genomic_h2 = genomic_h2,
@@ -720,7 +742,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
       "M_matrix_model_ready",
       "Intercept")
 
-  } else if(!exists("g_use") & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
+  } else if(is.null(g_use) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
     Variance_components <- Bayes_variance_components(Var_U = Var_U,
                                                      Var_E = Var_E,
@@ -781,7 +803,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     }
 
 
-  } else if(!exists("g_use") & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+  } else if(is.null(g_use) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
     Variance_components <- Bayes_variance_components(Var_U = Var_U,
                                                      Var_E = Var_E,
@@ -842,7 +864,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
     }
 
-  } else if(!exists("g_use") & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+  } else if(is.null(g_use) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
     Variance_components <- Bayes_variance_components(Var_U = Var_U,
                                                      Var_E = Var_E,
@@ -899,7 +921,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     }
 
 
-  } else if(exists("g_use") & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
+  } else if(!is.null(g_use) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
     g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_gen$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic1$Posterior
     PEV <- apply(g_omic_ebv, 1, var)
@@ -907,7 +929,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Reliability = ifelse(Reliability<0, "Alias", Reliability)
 
     sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                          EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV,
+                          Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV,
                           stringsAsFactors = FALSE)
 
     colnames(sum_EBV)[1] <- gen_name
@@ -950,8 +972,8 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Res <-  list(
       coeff = list(Geno_coeff = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
                    Omic_coeff = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient),
-      EBV = list(Genomic_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                 Omic_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value),
+      EBV = list(Genomic_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+                 Omic_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value),
       sum_EBV,
       Predicted_value,
       Variance_components = Variance_components,
@@ -1002,7 +1024,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     #####
 
 
-  } else if(exists("g_use") & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+  } else if(!is.null(g_use) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
     g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_gen$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic2$Posterior
     PEV <- apply(g_omic_ebv, 1, var)
@@ -1010,7 +1032,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Reliability = ifelse(Reliability<0, "Alias", Reliability)
 
     sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value[, 1],
-                          EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
+                          Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
                           stringsAsFactors = FALSE)
 
     colnames(sum_EBV)[1] <- gen_name
@@ -1052,8 +1074,8 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Res <-  list(
       coeff = list(Geno_coeff = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
                    Omic_coeff = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient),
-      EBV = list(Genomic_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                 Omic_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value),
+      EBV = list(Genomic_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+                 Omic_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value),
       sum_EBV,
       Predicted_value,
       Variance_components = Variance_components,
@@ -1103,7 +1125,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
     #####
 
-  } else if((exists("g_use")) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+  } else if((!is.null(g_use)) & ((is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
     g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_gen$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic3$Posterior
     PEV <- apply(g_omic_ebv, 1, var)
@@ -1111,7 +1133,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Reliability = ifelse(Reliability<0, "Alias", Reliability)
 
     sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value[, 1],
-                          EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                          Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV+ res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                           stringsAsFactors = FALSE)
 
     colnames(sum_EBV)[1] <- gen_name
@@ -1156,8 +1178,8 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Res <-  list(
       coeff = list(Geno_coeff = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
                    Omic_coeff = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-      EBV = list(Genomic_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                 Omic_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+      EBV = list(Genomic_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+                 Omic_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
       sum_EBV,
       Predicted_value,
       Variance_components = Variance_components,
@@ -1207,7 +1229,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
     #####
 
-  } else if(!exists("g_use") & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+  } else if(is.null(g_use) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
     g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_omic1$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic2$Posterior
     PEV <- apply(g_omic_ebv, 1, var)
@@ -1215,7 +1237,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Reliability = ifelse(Reliability<0, "Alias", Reliability)
 
     sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                          EBV = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
+                          Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
                           stringsAsFactors = FALSE)
 
     colnames(sum_EBV)[1] <- gen_name
@@ -1259,13 +1281,13 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Res <-  list(
       coeff = list(Omic1_coeff = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
                    Omic2_coeff = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient),
-      EBV = list(Omic1_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
-                 Omic2_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value),
+      EBV = list(Omic1_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
+                 Omic2_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value),
       sum_EBV,
       Predicted_value,
       Variance_components = Variance_components,
-      omics_omics = list(omic1_kernel_model_ready = omic1_retain,
-                        omic2_kernel_model_ready = omic2_retain
+      omics_omics = list(Omic1_kernel_model_ready = omic1_retain,
+                        Omic2_kernel_model_ready = omic2_retain
       ),
       mu = mod$model$mu)
 
@@ -1310,7 +1332,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
     #####
 
-  } else if(!exists("g_use") & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+  } else if(is.null(g_use) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
     g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_omic2$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic3$Posterior
     PEV <- apply(g_omic_ebv, 1, var)
@@ -1318,7 +1340,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Reliability = ifelse(Reliability<0, "Alias", Reliability)
 
     sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value[, 1],
-                          EBV = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                          Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                           stringsAsFactors = FALSE)
 
     colnames(sum_EBV)[1] <- gen_name
@@ -1361,8 +1383,8 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Res <-  list(
       coeff = list(Omic1_coeff = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
                    Omic2_coeff = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-      EBV = list(Omic1_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
-                 Omic2_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+      EBV = list(Omic1_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
+                 Omic2_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
       sum_EBV,
       Predicted_value,
       Variance_components = Variance_components,
@@ -1412,7 +1434,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
     #####
 
-  } else if(!exists("g_use") & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+  } else if(is.null(g_use) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
     g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_omic1$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic3$Posterior
     PEV <- apply(g_omic_ebv, 1, var)
@@ -1420,7 +1442,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Reliability = ifelse(Reliability<0, "Alias", Reliability)
 
     sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                          EBV = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                          Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                           stringsAsFactors = FALSE)
 
     colnames(sum_EBV)[1] <- gen_name
@@ -1463,13 +1485,13 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Res <-  list(
       coeff = list(Omic1_coeff = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
                    Omic2_coeff = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-      EBV = list(Omic1_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
-                 Omic2_estimated_BV= res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+      EBV = list(Omic1_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
+                 Omic2_estimated_breeding_value= res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
       sum_EBV,
       Predicted_value,
       Variance_components = Variance_components,
-      omics_omics = list(omic1_kernel_model_ready = omic1_retain,
-                        omic2_kernel_model_ready = omic3_retain
+      omics_omics = list(Omic1_kernel_model_ready = omic1_retain,
+                        Omic2_kernel_model_ready = omic3_retain
       ),
       mu = mod$model$mu)
 
@@ -1514,7 +1536,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
     #####
 
-  } else if(exists("g_use") & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+  } else if(!is.null(g_use) & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
     g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_gen$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic2$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic3$Posterior
     PEV <- apply(g_omic_ebv, 1, var)
@@ -1522,7 +1544,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Reliability = ifelse(Reliability<0, "Alias", Reliability)
 
     sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value[, 1],
-                          EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                          Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                           stringsAsFactors = FALSE)
 
     colnames(sum_EBV)[1] <- gen_name
@@ -1569,9 +1591,9 @@ mod_output_bayes_RKHS <- function(mod=NULL,
       coeff = list(coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
                    coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
                    coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-      EBV = list(EBV_1= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                 EBV_2= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
-                 EBV_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+      EBV = list(Estimated_breeding_value_1= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+                 Estimated_breeding_value_2= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
+                 Estimated_breeding_value_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
       sum_EBV,
       Predicted_value,
       Variance_components = Variance_components,
@@ -1622,7 +1644,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
     #####
 
-  } else if(exists("g_use") & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+  } else if(!is.null(g_use) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
     g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_gen$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic1$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic3$Posterior
     PEV <- apply(g_omic_ebv, 1, var)
@@ -1630,7 +1652,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Reliability = ifelse(Reliability<0, "Alias", Reliability)
 
     sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                          EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                          Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                           stringsAsFactors = FALSE)
 
     colnames(sum_EBV)[1] <- gen_name
@@ -1673,12 +1695,12 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                                                       genomic_h2_Se = genomic_h2_Se)
 
     Res <-  list(
-      coeff = list(coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
-                   coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
-                   coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-      EBV = list(EBV_1= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                 EBV_2= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
-                 EBV_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+      coeff = list(Coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
+                   Coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
+                   Coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
+      EBV = list(Estimated_breeding_value_1= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+                 Estimated_breeding_value_2= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
+                 Estimated_breeding_value_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
       sum_EBV,
       Predicted_value,
       Variance_components = Variance_components,
@@ -1727,7 +1749,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
     }
 
-  } else if(exists("g_use") & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
+  } else if(!is.null(g_use) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
     g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_gen$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic1$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic2$Posterior
     PEV <- apply(g_omic_ebv, 1, var)
@@ -1735,7 +1757,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Reliability = ifelse(Reliability<0, "Alias", Reliability)
 
     sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                          EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
+                          Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value$EBV + res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value$EBV,
                           stringsAsFactors = FALSE)
 
     colnames(sum_EBV)[1] <- gen_name
@@ -1781,9 +1803,9 @@ mod_output_bayes_RKHS <- function(mod=NULL,
       coeff = list(coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
                    coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
                    coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient),
-      EBV = list(EBV_1= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                 EBV_2= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
-                 EBV_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value),
+      EBV = list(Estimated_breeding_value_1= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+                 Estimated_breeding_value_2= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
+                 Estimated_breeding_value_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value),
       sum_EBV,
       Predicted_value,
       Variance_components = Variance_components,
@@ -1833,7 +1855,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     }
 
 
-  } else if(!exists("g_use") & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+  } else if(is.null(g_use) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
     g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_omic1$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic2$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic3$Posterior
     PEV <- apply(g_omic_ebv, 1, var)
@@ -1841,7 +1863,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
     Reliability = ifelse(Reliability<0, "Alias", Reliability)
 
     sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                          EBV = res_Coeff_EBV_PEV_Rel_SE_omic1$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic2$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                          Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_omic1$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic2$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                           stringsAsFactors = FALSE)
 
     colnames(sum_EBV)[1] <- gen_name
@@ -1885,18 +1907,18 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                                                       genomic_h2_Se = genomic_h2_Se)
 
     Res <-  list(
-      coeff = list(coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
-                   coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
-                   coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-      EBV = list(EBV_1= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
-                 EBV_2= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
-                 EBV_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+      coeff = list(Coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
+                   Coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
+                   Coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
+      EBV = list(Estimated_breeding_value_1= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
+                 Estimated_breeding_value_2= res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
+                 Estimated_breeding_value_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
       sum_EBV,
       Predicted_value,
       Variance_components = Variance_components,
-      omics_omics = list(omic1_kernel_model_ready = omic1_retain,
-                        omic2_kernel_model_ready = omic2_retain,
-                        omic3_kernel_model_ready = omic3_retain
+      omics_omics = list(Omic1_kernel_model_ready = omic1_retain,
+                        Omic2_kernel_model_ready = omic2_retain,
+                        Omic3_kernel_model_ready = omic3_retain
       ),
       mu = mod$model$mu)
 
@@ -1940,7 +1962,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
 
   } else{
 
-    if(exists("g_use") & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
+    if(!is.null(g_use) & ((!is.null(omic1_kernel) &  !is.null(omic2_kernel)) & !is.null(omic3_kernel))){
 
       g_omic_ebv = res_Coeff_EBV_PEV_Rel_SE_gen$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic1$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic2$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic3$Posterior
       PEV <- apply(g_omic_ebv, 1, var)
@@ -1948,7 +1970,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
       Reliability = ifelse(Reliability<0, "Alias", Reliability)
 
       sum_EBV <- data.frame(name = res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value[, 1],
-                            EBV = res_Coeff_EBV_PEV_Rel_SE_gen$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic1$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic2$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
+                            Estimated_breeding_value = res_Coeff_EBV_PEV_Rel_SE_gen$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic1$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic2$Posterior + res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value$EBV,
                             stringsAsFactors = FALSE)
 
       colnames(sum_EBV)[1] <- gen_name
@@ -1988,19 +2010,20 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                                                         Var_U_1_Se = Var_U_1_Se,
                                                         Var_U_2_Se = Var_U_2_Se,
                                                         Var_U_3_Se = Var_U_3_Se,
+                                                        Var_U_4_Se = Var_U_4_Se,
                                                         Var_U_Se = Var_U_Se,
                                                         Var_E_Se = Var_E_Se,
                                                         genomic_h2_Se = genomic_h2_Se)
 
       Res <-  list(
-        coeff = list(coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
-                     coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
-                     coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
-                     coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
-        EBV = list(EBV_1= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
-                   EBV_2= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
-                   EBV_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
-                   EBV_4 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
+        coeff = list(Coefficients_1 = res_Coeff_EBV_PEV_Rel_SE_gen$Coefficient,
+                     Coefficients_2 = res_Coeff_EBV_PEV_Rel_SE_omic1$Coefficient,
+                     Coefficients_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Coefficient,
+                     Coefficients_4 = res_Coeff_EBV_PEV_Rel_SE_omic3$Coefficient),
+        EBV = list(Estimated_breeding_value_1= res_Coeff_EBV_PEV_Rel_SE_gen$Estimated_breeding_value,
+                   Estimated_breeding_value_2= res_Coeff_EBV_PEV_Rel_SE_omic1$Estimated_breeding_value,
+                   Estimated_breeding_value_3 = res_Coeff_EBV_PEV_Rel_SE_omic2$Estimated_breeding_value,
+                   Estimated_breeding_value_4 = res_Coeff_EBV_PEV_Rel_SE_omic3$Estimated_breeding_value),
         sum_EBV,
         Predicted_value,
         Variance_components = Variance_components,

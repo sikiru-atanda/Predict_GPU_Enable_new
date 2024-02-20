@@ -49,7 +49,7 @@ geno_to_model <- function(geno_data = NULL,
                                  ind_call_rate_threshold = ind_call_rate_threshold,
                                  snp_call_rate_threshold = snp_call_rate_threshold,
                                  impute = impute,
-                                 map_data  = map_data,
+                                 #map_data  = map_data,
                                  message = message)
 
 

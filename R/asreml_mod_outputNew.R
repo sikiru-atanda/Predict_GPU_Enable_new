@@ -4,7 +4,7 @@
 #' @param pheno_data
 #' @param heter_groups
 #' @param gen_name
-#' @param VarCov_str
+#' @param var_cov_str
 #' @param heter_resid
 #' @param gkernel
 #' @param gmatrix
@@ -27,7 +27,7 @@ asreml_mod_output <- function(
     omic3_kernel=NULL,
     heter_groups = NULL,
     gen_name = NULL,
-    VarCov_str = NULL,
+    var_cov_str = NULL,
     heter_resid = NULL,
     pworkspace= 1e15,
     #workspace = 1e08,
@@ -35,6 +35,7 @@ asreml_mod_output <- function(
     ...
 )
 {
+
 
   msg <- sprintf("==================================================\n")
 
@@ -47,8 +48,8 @@ asreml_mod_output <- function(
   ## by default in asreml so it safe to keep it
   mod = asreml::update.asreml(mod)
   str.mod = mod_asreml$str.mod
-  Gen_pos = mod_asreml$Gen_pos
-  Inter_Gen_pos = mod_asreml$Inter_Gen_pos
+  gen_pos = mod_asreml$gen_pos
+  inter_gen_pos = mod_asreml$inter_gen_pos
   G_list = mod_asreml$G_list
   rand_term = mod_asreml$rand_term
   #############################
@@ -82,10 +83,10 @@ asreml_mod_output <- function(
     omic3_retain <- omic3_kernel
   }
   ###
-  ### !is.null(VarCov_str) & is.null(Inter_Gen_pos) incase user provide VarCov_str
+  ### !is.null(var_cov_str) & is.null(inter_gen_pos) incase user provide var_cov_str
   ## while the data is not MT in nature
-  if(!is.null(VarCov_str) & is.null(Inter_Gen_pos)){
-    VarCov_str = NULL
+  if(!is.null(var_cov_str) & is.null(inter_gen_pos)){
+    var_cov_str = NULL
     heter_groups = NULL
     heter_resid = NULL
   }
@@ -99,7 +100,7 @@ asreml_mod_output <- function(
 
   colnames(BLUP)[colnames(BLUP)%in%"std.error"] <- "Std_error"
 
-  #Heter.Grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
+  #heter_grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
 
   if (!is.null(heter_groups)){
     ### It possible the user provide the heter_groups while it actually a single environment,
@@ -108,7 +109,7 @@ asreml_mod_output <- function(
       heter_groups = NULL
     } else{
       if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
-        Heter.Grp <- as.character(unique(pheno_data[, heter_groups]))
+        heter_grp <- as.character(unique(pheno_data[, heter_groups]))
       }
     }
 
@@ -130,11 +131,11 @@ asreml_mod_output <- function(
   }
  ###
   ### For variance structure extraction
-  if(!is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
+  if(!is.null(var_cov_str) & !is.null(inter_gen_pos)){
 
-    if(isTRUE(grepl("fa", VarCov_str))){
+    if(isTRUE(grepl("fa", var_cov_str))){
       ## Extract the number of factors
-      #N_fa = substr(VarCov_str, 3, 100)
+      #N_fa = substr(var_cov_str, 3, 100)
 
       for (bb in 1:length(G_list)) {
         BV_All[[bb]] <- BV_All[[bb]][!rownames(BV_All[[bb]])%in%rownames(BV_All[[bb]][grep('Comp',rownames(BV_All[[bb]])),]), ]
@@ -147,7 +148,7 @@ asreml_mod_output <- function(
 
     } else {
 
-      if (VarCov_str %in% c("us", "corgh", "corgv", "corh", "corv")) {
+      if (var_cov_str %in% c("us", "corgh", "corgv", "corh", "corv")) {
 
 
         for (bb in 1:length(G_list)) {
@@ -165,12 +166,12 @@ asreml_mod_output <- function(
     } ## End
 
     #################################
-    if(!is.null(Inter_Gen_pos)){
+    if(!is.null(inter_gen_pos)){
       for (bb in 1:length(G_list)) {
 
         BV_All[[bb]] <- BV_All[[bb]][, c(4, 1:2)]
 
-        BV_All[[bb]][, heter_groups] <- rep(Heter.Grp, each=length(unique(BV_All[[bb]][, gen_name])))
+        BV_All[[bb]][, heter_groups] <- rep(heter_grp, each=length(unique(BV_All[[bb]][, gen_name])))
 
         BV_All[[bb]] <- BV_All[[bb]][, c(1, 4, 2:3)]
 
@@ -186,7 +187,7 @@ asreml_mod_output <- function(
 
       stop(message(paste(msg, "No interaction term")), call. = FALSE)
 
-      # if(is.null(Inter_Gen_pos)){
+      # if(is.null(inter_gen_pos)){
       # for (bb in 1:length(G_list)) {
       #
       #   BV_All[[bb]] <- BV_All[[bb]][, c(4, 1:2)]
@@ -206,16 +207,16 @@ asreml_mod_output <- function(
 
     Res= asreml_herit_varCov(model= mod,
                              heter_groups= heter_groups,
-                             VarCov_str= VarCov_str,
+                             var_cov_str= var_cov_str,
                              heter_resid= heter_resid,
                              G_list = G_list,
-                             Inter_Gen_pos = Inter_Gen_pos,
-                             Gen_pos = Gen_pos)
+                             inter_gen_pos = inter_gen_pos,
+                             gen_pos = gen_pos)
 
 
 
     #VA = Res$Genetic_Var
-    Heter.Grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
+    heter_grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
 
     for (bb in 1:length(G_list)){
 
@@ -230,7 +231,7 @@ asreml_mod_output <- function(
 
       }
 
-      if(length(VA)< length(Heter.Grp)){
+      if(length(VA)< length(heter_grp)){
 
         BV_All[[bb]][, "Reliability"] = NA
 
@@ -239,13 +240,13 @@ asreml_mod_output <- function(
         #message(paste(msg,paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive.")))
       } else{
 
-        if(length(VA) == length(Heter.Grp)){
+        if(length(VA) == length(heter_grp)){
 
-          BV_All[[bb]][, "Reliability"] = NA
+          BV_All[[bb]][, "Reliability"] <- NA
           #BV$Reliability = NA
           for (i in 1:length(VA)) {
 
-            BV_All[[bb]][, "Reliability"] <- ifelse(BV_All[[bb]][, heter_groups]%in% Heter.Grp[i],
+            BV_All[[bb]][, "Reliability"] <- ifelse(BV_All[[bb]][, heter_groups]%in% heter_grp[i],
                                                     round(1 - BV_All[[bb]][, "PEV"]/VA[i],6), BV_All[[bb]][, "Reliability"])
 
           }
@@ -259,7 +260,7 @@ asreml_mod_output <- function(
 
  } else {
     ## Problem
-    if(is.null(VarCov_str) & is.null(Inter_Gen_pos) ){
+    if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
 
 
       for (bb in 1:length(G_list)){
@@ -347,6 +348,7 @@ asreml_mod_output <- function(
       VarG_All <-  as.matrix(unlist(VarG_All))
       colnames(VarG_All) <- "Variance"
       Total_genetic_var <- sum(VarG_All[, 1])
+      #VarG_All <- cbind(VarG_All, Standard_error = NA)
       Res_Va_Ve_H2_COV_COR = list(Heritability = H,
                                   varG_per_omics = VarG_All,
                                   Total_genetic_var = Total_genetic_var,
@@ -358,7 +360,7 @@ asreml_mod_output <- function(
 
   ## when variance_covariance structure is not defined by the user and CS is used
   ### For variance structure extraction
-  if(is.null(VarCov_str) & !is.null(Inter_Gen_pos)){
+  if(is.null(var_cov_str) & !is.null(inter_gen_pos)){
 
 
     for (bb in 1:length(G_list)) {
@@ -373,12 +375,12 @@ asreml_mod_output <- function(
 
 
     #################################
-    if(!is.null(Inter_Gen_pos)){
+    if(!is.null(inter_gen_pos)){
       for (bb in 1:length(G_list)) {
 
         BV_All[[bb]] <- BV_All[[bb]][, c(4, 1:2)]
 
-        BV_All[[bb]][, heter_groups] <- rep(Heter.Grp, each=length(unique(BV_All[[bb]][, gen_name])))
+        BV_All[[bb]][, heter_groups] <- rep(heter_grp, each=length(unique(BV_All[[bb]][, gen_name])))
 
         BV_All[[bb]] <- BV_All[[bb]][, c(1, 4, 2:3)]
 
@@ -401,15 +403,15 @@ asreml_mod_output <- function(
                            heter_groups= heter_groups,
                            heter_resid= heter_resid,
                            G_list = G_list,
-                           Inter_Gen_pos = Inter_Gen_pos,
-                           Gen_pos = Gen_pos)
+                           inter_gen_pos = inter_gen_pos,
+                           gen_pos = gen_pos)
 
 
     VE <-  Res$Residual_Var
     H <- Res$Heritability
     varG_matrix = Res$varG_per_omics
     #VA = Res$Genetic_Var
-    Heter.Grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
+    heter_grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
 
     for (bb in 1:length(G_list)){
 
@@ -424,18 +426,18 @@ asreml_mod_output <- function(
 
       }
 
-      if(length(VA)< length(Heter.Grp)){
+      if(length(VA)< length(heter_grp)){
 
         print(paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive"))
       } else{
 
-        if(length(VA) == length(Heter.Grp)){
+        if(length(VA) == length(heter_grp)){
 
           BV_All[[bb]][, "Reliability"] = NA
           #BV$Reliability = NA
           for (i in 1:length(VA)) {
 
-            BV_All[[bb]][, "Reliability"] <- ifelse(BV_All[[bb]][, heter_groups]%in% Heter.Grp[i],
+            BV_All[[bb]][, "Reliability"] <- ifelse(BV_All[[bb]][, heter_groups]%in% heter_grp[i],
                                                     round(1 - BV_All[[bb]][, "PEV"]/VA[i],6), BV_All[[bb]][, "Reliability"])
 
           }
@@ -471,11 +473,11 @@ asreml_mod_output <- function(
     }
   }
   gc()
-  # if (is.null(heter_groups) & is.null(VarCov_str)){Inter_Gen_pos= NULL}
-  # if(length(Gen_pos) == length(rand_term)){Inter_Gen_pos= NULL}
-  # if(!is.null(Inter_Gen_pos)){
+  # if (is.null(heter_groups) & is.null(var_cov_str)){inter_gen_pos= NULL}
+  # if(length(gen_pos) == length(rand_term)){inter_gen_pos= NULL}
+  # if(!is.null(inter_gen_pos)){
   #
-  #   pred_heter_groups <- asreml::predict.asreml(mod, classify= rand_term[[Inter_Gen_pos]], sed=FALSE)$pvals
+  #   pred_heter_groups <- asreml::predict.asreml(mod, classify= rand_term[[inter_gen_pos]], sed=FALSE)$pvals
   #   pred_heter_groups =  pred_heter_groups[, -ncol(pred_heter_groups)] ### Remove status
   #   colnames(pred_heter_groups)[colnames(pred_heter_groups)%in%c("predicted.value", "std.error")] <- c("Predicted_value", "Std_error")
   #   pred_heter_groups[, "PEV"] <-  pred_heter_groups[, "Std_error"]^2
@@ -819,8 +821,8 @@ asreml_mod_output <- function(
   if(!is.null(heter_groups)){
 
     if(exists("coeffRaw_G")){
-      coeffRaw_G <- data.frame(x_variables = rep(gid_name , length(unique(Heter.Grp))),
-                        Env = rep(unique(Heter.Grp), each= length(gid_name)),
+      coeffRaw_G <- data.frame(x_variables = rep(gid_name , length(unique(heter_grp))),
+                        Env = rep(unique(heter_grp), each= length(gid_name)),
                         coeff = coeffRaw_G,
                         stringsAsFactors = FALSE)
     names(coeffRaw_G)[2] <- heter_groups
@@ -828,8 +830,8 @@ asreml_mod_output <- function(
     }
     ###
     if(exists("coeffRaw_omic1")){
-      coeffRaw_omic1 <- data.frame(x_variables = rep(gid_name , length(unique(Heter.Grp))),
-                               Env = rep(unique(Heter.Grp), each= length(gid_name)),
+      coeffRaw_omic1 <- data.frame(x_variables = rep(gid_name , length(unique(heter_grp))),
+                               Env = rep(unique(heter_grp), each= length(gid_name)),
                                coeff = coeffRaw_omic1,
                                stringsAsFactors = FALSE)
       names(coeffRaw_omic1)[2] <- heter_groups
@@ -837,8 +839,8 @@ asreml_mod_output <- function(
     }
     ####
     if(exists("coeffRaw_omic2")){
-      coeffRaw_omic2 <- data.frame(x_variables = rep(gid_name , length(unique(Heter.Grp))),
-                                   Env = rep(unique(Heter.Grp), each= length(gid_name)),
+      coeffRaw_omic2 <- data.frame(x_variables = rep(gid_name , length(unique(heter_grp))),
+                                   Env = rep(unique(heter_grp), each= length(gid_name)),
                                    coeff = coeffRaw_omic2,
                                    stringsAsFactors = FALSE)
       names(coeffRaw_omic2)[2] <- heter_groups
@@ -846,8 +848,8 @@ asreml_mod_output <- function(
     }
     ###
     if(exists("coeffRaw_omic3")){
-      coeffRaw_omic3 <- data.frame(x_variables = rep(gid_name , length(unique(Heter.Grp))),
-                                   Env = rep(unique(Heter.Grp), each= length(gid_name)),
+      coeffRaw_omic3 <- data.frame(x_variables = rep(gid_name , length(unique(heter_grp))),
+                                   Env = rep(unique(heter_grp), each= length(gid_name)),
                                    coeff = coeffRaw_omic3,
                                    stringsAsFactors = FALSE)
       names(coeffRaw_omic3)[2] <- heter_groups
@@ -898,9 +900,9 @@ asreml_mod_output <- function(
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV = BV_All[[1]],
+                    Estimated_breeding_value = BV_All[[1]],
                     pred_value =pred_value,
-                    coefficients = coeffRaw_G,
+                    Coefficients = coeffRaw_G,
                     list(Geno_model_ready = g_retain)
                     )
 
@@ -908,11 +910,12 @@ asreml_mod_output <- function(
 
     } else if (is.null(gmatrix) & ((!is.null(omic1_kernel) &  is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
-      Result = list(call=str.mod,
+
+      Result <- list(call=str.mod,
                     mod=mod,
-                    EBV = BV_All[[1]],
+                    Estimated_breeding_value = BV_All[[1]],
                     pred_value =pred_value,
-                    coefficients = coeffRaw_omic1,
+                    Coefficients = coeffRaw_G,
                     list(Omic_model_ready = omic1_retain))
 
 
@@ -920,11 +923,12 @@ asreml_mod_output <- function(
 
     } else if (is.null(gmatrix)  & ((is.null(omic1_kernel) &  !is.null(omic2_kernel)) & is.null(omic3_kernel))){
 
+
       Result = list(call = str.mod,
                     mod = mod,
-                    EBV = BV_All[[1]],
+                    Estimated_breeding_value = BV_All[[1]],
                     pred_value =pred_value,
-                    coefficients = coeffRaw_omic2,
+                    Coefficients = coeffRaw_G,
                     list(Omic_model_ready = omic2_retain))
 
 
@@ -934,9 +938,9 @@ asreml_mod_output <- function(
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV=BV_All[[1]],
+                    Estimated_breeding_value=BV_All[[1]],
                     pred_value =pred_value,
-                    coefficients = coeffRaw_omic3,
+                    Coefficients = coeffRaw_G,
                     list(Omic_model_ready = omic3_retain))
 
 
@@ -961,11 +965,11 @@ asreml_mod_output <- function(
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV = list(EBV_1= ebv_G,
-                               EBV_2 = ebv_omic1),
+                    Estimated_breeding_value = list(Estimated_breeding_value_1= ebv_G,
+                               Estimated_breeding_value_2 = ebv_omic1),
                     pred_value =pred_value,
-                    coefficients = list(coefficients_1 =coeffRaw_G,
-                                          coefficients_2  = coeffRaw_omic1),
+                    Coefficients = list(Coefficients_1 =coeffRaw_G,
+                                        Coefficients_2  = coeffRaw_omic1),
                     omics_geno = list(Geno_model_ready = g_retain,
                                       Omic_model_ready = omic1_retain
                     ))
@@ -989,11 +993,11 @@ asreml_mod_output <- function(
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV = list(EBV_1 = ebv_G,
+                    Estimated_breeding_value = list(EBV_1 = ebv_G,
                                  EBV_2 = ebv_omic2),
                     pred_value =pred_value,
-                    coefficients = list(coefficients_1 = coeffRaw_G,
-                                        coefficients_2 = coeffRaw_omic2),
+                    Coefficients = list(Coefficients_1 = coeffRaw_G,
+                                        Coefficients_2 = coeffRaw_omic2),
                     omics_geno = list(Geno_model_ready = g_retain,
                                       Omic_model_ready = omic2_retain
                     ))
@@ -1017,11 +1021,11 @@ asreml_mod_output <- function(
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV = list(EBV_1 = ebv_G,
-                                 EBV_2 = ebv_omic3),
+                    Estimated_breeding_value = list(Estimated_breeding_value_1 = ebv_G,
+                                                    Estimated_breeding_value_2 = ebv_omic3),
                     pred_value =pred_value,
-                    coefficients = list(coefficients_1 = coeffRaw_G,
-                                        coefficients_2 = coeffRaw_omic3),
+                    Coefficients = list(Coefficients_1 = coeffRaw_G,
+                                        Coefficients_2 = coeffRaw_omic3),
                     omics_geno = list(Geno_model_ready = g_retain,
                                       Omic_model_ready = omic3_retain
                     ))
@@ -1049,13 +1053,13 @@ asreml_mod_output <- function(
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV = list(EBV_1 = ebv_G,
-                                 EBV_2 = ebv_omic1,
-                                 EBV_3 = ebv_omic2),
+                    Estimated_breeding_value = list(Estimated_breeding_value_1 = ebv_G,
+                                                    Estimated_breeding_value_2 = ebv_omic1,
+                                                    Estimated_breeding_value_3 = ebv_omic2),
                     pred_value =pred_value,
-                    coefficients = list(coefficients_1 = coeffRaw_G,
-                                        coefficients_2 = coeffRaw_omic1,
-                                        coefficients_3 = coeffRaw_omic2),
+                    Coefficients = list(Coefficients_1 = coeffRaw_G,
+                                        Coefficients_2 = coeffRaw_omic1,
+                                        Coefficients_3 = coeffRaw_omic2),
                     omics_geno = list(Geno_model_ready = g_retain,
                                       Omic1_kernel_model_ready = omic1_retain,
                                       Omic2_kernel_model_ready = omic2_retain
@@ -1086,14 +1090,14 @@ asreml_mod_output <- function(
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV = list(EBV_1 = ebv_G,
-                                 EBV_2 = ebv_omic1,
-                                 EBV_3 = ebv_omic3),
+                    Estimated_breeding_value = list(Estimated_breeding_value_1 = ebv_G,
+                                                    Estimated_breeding_value_2 = ebv_omic1,
+                                                    Estimated_breeding_value_3 = ebv_omic3),
                     pred_value =pred_value,
 
-                    coefficients = list(coefficients_1 = coeffRaw_G,
-                                        coefficients_2 = coeffRaw_omic1,
-                                        coefficients_3 = coeffRaw_omic3),
+                    Coefficients = list(Coefficients_1 = coeffRaw_G,
+                                        Coefficients_2 = coeffRaw_omic1,
+                                        Coefficients_3 = coeffRaw_omic3),
                     omics_geno = list(Geno_model_ready = g_retain,
                                       Omic1_kernel_model_ready = omic1_retain,
                                       Omic2_kernel_model_ready = omic3_retain
@@ -1124,13 +1128,13 @@ asreml_mod_output <- function(
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV = list(EBV_1 = ebv_G,
-                                 EBV_2 = ebv_omic2,
-                                 EBV_3 = ebv_omic3),
+                    Estimated_breeding_value = list(Estimated_breeding_value_1 = ebv_G,
+                                                    Estimated_breeding_value_2 = ebv_omic2,
+                                                    Estimated_breeding_value_3 = ebv_omic3),
                     pred_value =pred_value,
-                    coefficients = list(coefficients_1 = coeffRaw_G,
-                                        coefficients_2 = coeffRaw_omic2,
-                                        coefficients_3 = coeffRaw_omic3),
+                    Coefficients = list(Coefficients_1 = coeffRaw_G,
+                                        Coefficients_2 = coeffRaw_omic2,
+                                        Coefficients_3 = coeffRaw_omic3),
                     omics_geno = list(Geno_model_ready = g_retain,
                                       Omic1_kernel_model_ready = omic2_retain,
                                       Omic2_kernel_model_ready = omic3_retain
@@ -1155,13 +1159,13 @@ asreml_mod_output <- function(
       }
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV = list(EBV_1 = ebv_omic1,
-                                 EBV_2 = ebv_omic2),
+                    Estimated_breeding_value = list(Estimated_breeding_value_1 = ebv_omic1,
+                                                    Estimated_breeding_value_2 = ebv_omic2),
                     pred_value =pred_value,
-                    coefficients = list(coefficients_1 = coeffRaw_omic1,
-                                        coefficients_2 = coeffRaw_omic2),
-                    omics_omics = list(omic1_kernel_model_ready = omic1_retain,
-                                      omic2_kernel_model_ready = omic2_retain
+                    Coefficients = list(Coefficients_1 = coeffRaw_omic1,
+                                        Coefficients_2 = coeffRaw_omic2),
+                    omics_omics = list(Omic1_kernel_model_ready = omic1_retain,
+                                       Omic2_kernel_model_ready = omic2_retain
                     ))
 
       rm(ebv_omic1, ebv_omic2,
@@ -1183,13 +1187,13 @@ asreml_mod_output <- function(
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV = list(EBV_1 = ebv_omic1,
-                               EBV_2 = ebv_omic3),
+                    Estimated_breeding_value = list(Estimated_breeding_value_1 = ebv_omic1,
+                                                    Estimated_breeding_value_2 = ebv_omic3),
                     pred_value =pred_value,
-                    coefficients = list(coefficients_1 = coeffRaw_omic1,
-                                        coefficients_2 = coeffRaw_omic3),
-                    omics_omics = list(omic1_kernel_model_ready = omic1_retain,
-                                       omic2_kernel_model_ready = omic3_retain
+                    coefficients = list(Coefficients_1 = coeffRaw_omic1,
+                                        Coefficients_2 = coeffRaw_omic3),
+                    omics_omics = list(Omic1_kernel_model_ready = omic1_retain,
+                                       Omic2_kernel_model_ready = omic3_retain
                     ))
 
       rm(ebv_omic1, ebv_omic3,
@@ -1212,13 +1216,13 @@ asreml_mod_output <- function(
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV = list(EBV_1 = ebv_omic2,
-                               EBV_2 = ebv_omic3),
+                    Estimated_breeding_value = list(Estimated_breeding_value_1 = ebv_omic2,
+                               Estimated_breeding_value_2 = ebv_omic3),
                     pred_value =pred_value,
-                    coefficients = list(coefficients_1 = coeffRaw_omic2,
-                                        coefficients_2 = coeffRaw_omic3),
-                    omics_omics = list(omic1_kernel_model_ready = omic2_retain,
-                                       omic2_kernel_model_ready = omic3_retain
+                    coefficients = list(Coefficients_1 = coeffRaw_omic2,
+                                        Coefficients_2 = coeffRaw_omic3),
+                    omics_omics = list(Omic1_kernel_model_ready = omic2_retain,
+                                       Omic2_kernel_model_ready = omic3_retain
                     ))
 
       rm(ebv_omic3, ebv_omic2,
@@ -1245,16 +1249,16 @@ asreml_mod_output <- function(
 
       Result = list(call=str.mod,
                     mod=mod,
-                    EBV = list(EBV_1 = ebv_omic1,
-                               EBV_2 = ebv_omic2,
-                               EBV_3 = ebv_omic3),
+                    Estimated_breeding_value = list(Estimated_breeding_value_1 = ebv_omic1,
+                                                    Estimated_breeding_value_2 = ebv_omic2,
+                                                    Estimated_breeding_value_3 = ebv_omic3),
                     pred_value =pred_value,
-                    coefficients = list(coefficients_1 = coeffRaw_omic1,
-                                        coefficients_2 = coeffRaw_omic2,
-                                        coefficients_3 = coeffRaw_omic3),
-                    omics_omics = list(omic1_kernel_model_ready = omic1_retain,
-                                       omic2_kernel_model_ready = omic2_retain,
-                                       omic3_kernel_model_ready = omic3_retain
+                    Coefficients = list(Coefficients_1 = coeffRaw_omic1,
+                                        Coefficients_2 = coeffRaw_omic2,
+                                        Coefficients_3 = coeffRaw_omic3),
+                    omics_omics = list(Omic1_kernel_model_ready = omic1_retain,
+                                       Omic2_kernel_model_ready = omic2_retain,
+                                       Omic3_kernel_model_ready = omic3_retain
                     ))
 
 
@@ -1287,19 +1291,19 @@ asreml_mod_output <- function(
 
         Result = list(call=str.mod,
                       mod=mod,
-                      EBV = list(EBV_1 = ebv_G,
-                                 EBV_2 = ebv_omic1,
-                                 EBV_3 = ebv_omic2,
-                                 EBV_4 = ebv_omic3),
+                      Estimated_breeding_value = list(Estimated_breeding_value_1 = ebv_G,
+                                                      Estimated_breeding_value_2 = ebv_omic1,
+                                                      Estimated_breeding_value_3 = ebv_omic2,
+                                                      Estimated_breeding_value_4 = ebv_omic3),
                       pred_value =pred_value,
-                      coefficients = list(coefficients_1 = coeffRaw_G,
-                                          coefficients_2 = coeffRaw_omic1,
-                                          coefficients_3 = coeffRaw_omic2,
-                                          coefficients_4 = coeffRaw_omic3),
-                      omics_geno =   list(geno_model_ready = g_retain,
-                                         omic1_kernel_model_ready = omic1_retain,
-                                         omic2_kernel_model_ready = omic2_retain,
-                                         omic3_kernel_model_ready = omic3_retain
+                      coefficients = list(Coefficients_1 = coeffRaw_G,
+                                          Coefficients_2 = coeffRaw_omic1,
+                                          Coefficients_3 = coeffRaw_omic2,
+                                          Coefficients_4 = coeffRaw_omic3),
+                      omics_geno =   list(Geno_model_ready = g_retain,
+                                          Omic1_kernel_model_ready = omic1_retain,
+                                          Omic2_kernel_model_ready = omic2_retain,
+                                          Omic3_kernel_model_ready = omic3_retain
                       ))
 
 
@@ -1311,7 +1315,7 @@ asreml_mod_output <- function(
       }
     }
 
-
+if(length(Result)==0){stop("Result miss")}
   names(Result) <- c(
     "Model_structure",
     "Asreml_model",
@@ -1335,10 +1339,13 @@ asreml_mod_output <- function(
     ### Add the across prediction after the Predicted_value for each environment
     aft <-  which(names(Result)=="Coefficients")
 
-    MM = rbind(Res$varG_per_omics,
+    MM <- rbind(Res$varG_per_omics,
                total_genetic_variance = as.numeric(Res$Total_genetic_var),
                heritability = as.numeric(Res$Heritability),
                residual_variance = Res$Residual_Var)
+    #View(MM)
+    #MM <- cbind(MM, Standard_error = NA)
+    #colnames(MM) <- c("Components", "Standard_error")
 
     Naming <- unlist(G_list)
     Naming <- gsub("G", "geno", Naming)
@@ -1357,6 +1364,10 @@ asreml_mod_output <- function(
                total_genetic_variance = Res_Va_Ve_H2_COV_COR$Total_genetic_var,
                heritability = Res_Va_Ve_H2_COV_COR$Heritability,
                residual_variance = Res_Va_Ve_H2_COV_COR$Residual_Var)
+
+    MM <- cbind(MM, Standard_error = NA)
+    colnames(MM) <- c("Components", "Standard_error")
+
     Naming <- unlist(G_list)
     Naming <- gsub("G", "geno", Naming)
     Naming <- paste(Naming, "variance", sep = "_")
@@ -1366,7 +1377,10 @@ asreml_mod_output <- function(
     names(Result)[(aft+1)] <-  "Variance_components"
 
   }
-
+  # if(exists("G_inv")) rm(G_inv)
+  # if(exists("omic1_inv")) rm(omic1_inv)
+  # if(exists("omic2_inv")) rm(omic2_inv)
+  # if(exists("omic3_inv")) rm(omic3_inv)
   # ifelse(names(Result) %in% c("Predicted_value", "Variance_components"),
   #        {
   #          Result$Predicted_value <- as.data.frame(Result$Predicted_value)

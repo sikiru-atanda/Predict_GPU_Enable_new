@@ -131,9 +131,9 @@ phenotype_to_model <- function(
 
     attr(pheno_data, "cleared") <- "for_model_fit"
 
-    output =  list(pheno_data)
+    output <- list(pheno_clean_data = pheno_data)
 
-    names(output) <- c("pheno_data")
+    #names(output) <- c("pheno_data")
 
     #rm(pheno_data)
 
@@ -151,8 +151,8 @@ phenotype_to_model <- function(
     if (!is.null(pheno_data_train)){
 
       pheno_data_train_ <- phenotype_precheck(pheno_data= pheno_data_train,
-                                               gen_name = gen_name,
-                                               response = response)
+                                              gen_name = gen_name,
+                                              response = response)
 
       if(attr(pheno_data_train_, "cleared")!="pass") {
 
@@ -229,10 +229,11 @@ phenotype_to_model <- function(
 
     if(!is.null(test_set_)){
 
-    output =  list(pheno_data, test_set_)
+    output <- list(pheno_clean_data = pheno_data,
+                   test_set = test_set_)
 
 
-    names(output) <- c("pheno_data", "test_set")
+    #names(output) <- c("pheno_data", "test_set")
 
     }
 
@@ -240,9 +241,9 @@ phenotype_to_model <- function(
 
     }else if (!is.null(pheno_data) & (is.null(pheno_data_train) & is.null(pheno_data_test))){
 
-      output =  list(pheno_data)
+      output <- list(pheno_clean_data = pheno_data)
 
-      names(output) <- c("pheno_data")
+      #names(output) <- c("pheno_data")
 
       #rm(pheno_data)
 
@@ -251,9 +252,10 @@ phenotype_to_model <- function(
 
     if (exists("pheno_data_train_") & exists("pheno_data_test_")){
 
-    output =  list(pheno_data, test_set_)
+    output <-   list(pheno_clean_data = pheno_data,
+                   test_set = test_set_)
 
-    names(output) <- c("pheno_data", "test_set")
+    #names(output) <- c("pheno_data", "test_set")
 
     #rm(pheno_data, test_set)
 

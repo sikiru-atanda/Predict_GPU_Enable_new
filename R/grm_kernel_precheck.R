@@ -81,7 +81,7 @@ if (!is.null(grm_kernel_data)){
   }
 
   } else {
-
+#### If bending is False check for user to see the matrix is not ill-conditioned for model fit
     if(isFALSE(matrixcalc::is.positive.definite(grm_kernel_data))){
 
       grm_kernel_data <- as.matrix(Matrix::nearPD(grm_kernel_data, posd.tol= bend_value, trace=FALSE)$mat)
@@ -94,7 +94,6 @@ if (!is.null(grm_kernel_data)){
 
   ### This is important to check even if the user defined blending as FALSE
   if(isFALSE(blending)){
-
   res = grm_kernel_diagnostic_fix(grm_kernel_data = grm_kernel_data,
                                   high_diag_cut_off = high_diag_cut_off,
                                   low_diag_cut_off = low_diag_cut_off,

@@ -13,7 +13,7 @@
 #' @export
 #'
 #' @examples
-summary_statistics_AI <- function(mod=NULL,
+summary_statistics_AI <- function(predicted_object= NULL,
                                   pheno_object= NULL,
                                   response = NULL,
                                   test_set = NULL,
@@ -44,9 +44,7 @@ summary_statistics_AI <- function(mod=NULL,
 
   nfeatures = ncol(geno_omic_object)
   feature_names = colnames(geno_omic_object)
-
-rm(geno_omic_object)
-  yhat <-  mod$predicted_values
+  yhat <-  predicted_object
   #Res <-  cat(tmp,'\n')
 
 
@@ -63,7 +61,7 @@ rm(geno_omic_object)
   trn_min <- round(min(pheno_object[, response],na.rm=TRUE), 3)
   trn_max <- round(max(pheno_object[, response],na.rm=TRUE), 3)
   var_trn <- round(var(pheno_object[, response],na.rm=TRUE),3)
-  Res_trn <- round(var(pheno_object[, response] - yhat[,1]),3)
+  Res_trn <- round(var(pheno_object[, response] - yhat[,"Predicted_value"]),3)
 
   #n<-length(mod$model$y)
 
@@ -81,7 +79,7 @@ rm(geno_omic_object)
     for (i in 1:length(eval_metrics)){
 
       Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_object[, response],
-                                          y_predicted = yhat,
+                                          y_predicted = yhat[, "Predicted_value"],
                                           eval_metrics = eval_metrics[i])
 
     }
@@ -97,7 +95,7 @@ rm(geno_omic_object)
     for (i in 1:length(eval_metrics)){
 
       Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_object[, response],
-                                          y_predicted = yhat[, 1],
+                                          y_predicted = yhat[, "Predicted_value"],
                                           eval_metrics = eval_metrics[i])
 
     }

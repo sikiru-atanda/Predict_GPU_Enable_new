@@ -10,7 +10,7 @@
 #' To DO: in the new version, option to impute missing data will be provided
 #'
 #' @param M_matrix_clean snp or omics matrix data.
-#' @param center
+#' @param scale
 #' @param method
 #' @param message
 #' @param theta
@@ -26,7 +26,7 @@
 #'
 kernel_calculation <- function(
     M_matrix_clean = NULL,
-    center=TRUE,
+    scale=TRUE,
     theta = NULL,
     alpha = 0.5,
     gamma = 1,
@@ -73,16 +73,16 @@ kernel_calculation <- function(
     stop(message(paste(msg,' Missing value is not expected.')), call. = FALSE)
     }
 
-  if(isFALSE(center)){
+  if(isFALSE(scale)){
     if(isTRUE(message)) message(insight::print_color(paste(msg,paste("If data is not previously centered.It is recommend you center the data.")), "blue"))
     }
 
-  if(isTRUE(center) && !method%in%(c("Normalized_laplacian_kernel",
+  if(isTRUE(scale) && !method%in%(c("Normalized_laplacian_kernel",
                                      "spectral_kernel_matrix"
                                      #"Matern_kernel_matrix"
                                      ))){
 
-    M_matrix_clean = scale(x = M_matrix_clean,center = T,scale = F)
+    M_matrix_clean = scale(x = M_matrix_clean,center = TRUE,scale = TRUE)
   }
   Gaussian_kernel <- function(M_matrix_clean, theta){
 

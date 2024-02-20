@@ -6,7 +6,7 @@
 #' @param random
 #' @param heter_resid
 #' @param heter_groups
-#' @param VarCov_str
+#' @param var_cov_str
 #' h@param weights
 #' @param GS_model
 #' @param core
@@ -41,7 +41,7 @@ asreml_utilisOLDD <- function(
     gen_name = NULL,
     heter_groups = NULL,
     heter_resid = FALSE,
-    VarCov_str = NULL,
+    var_cov_str = NULL,
     weights = NULL,
     core = NULL,
     workspace=1e08,
@@ -436,7 +436,7 @@ asreml_utilisOLDD <- function(
     rand_term <- strsplit(as.character(random[2]), split = "[+]")[[1]] # random parts
     rand_term = gsub(" ", "", rand_term)
 
-    # if (is.null(heter_groups) & is.null(VarCov_str)){
+    # if (is.null(heter_groups) & is.null(var_cov_str)){
     #
     #   if(exists("G_inv")){
     #     if (dim(pheno_data)[1]> dim(G_inv)[1]){
@@ -457,77 +457,77 @@ asreml_utilisOLDD <- function(
 
     #rand_InterPresent = grep(":", rand_term)
     ## No interaction term
-    rand_term_No_Inter = rand_term[!grepl(":", rand_term)]
+    rand_term_no_inter = rand_term[!grepl(":", rand_term)]
 
     ## Interaction term
-    Check_rand_Inter = rand_term[grepl(":", rand_term)]
+    check_rand_inter = rand_term[grepl(":", rand_term)]
 
     ## Extract other side expect the gen_name
-    rand_term_No_Inter_No_Gen = rand_term_No_Inter[!rand_term_No_Inter%in%gen_name]
+    rand_term_no_inter_no_gen = rand_term_no_inter[!rand_term_no_inter%in%gen_name]
     ## Get the position of other terms in the random that is not gen_name
-    Non_Gen_pos = match(rand_term_No_Inter_No_Gen, rand_term)
-    if(anyNA(Non_Gen_pos)){Non_Gen_pos = NULL}
+    non_gen_pos = match(rand_term_no_inter_no_gen, rand_term)
+    if(anyNA(non_gen_pos)){non_gen_pos = NULL}
 
-    if(length(Check_rand_Inter)!=0){
+    if(length(check_rand_inter)!=0){
 
-      TestPresentofGeno = grep(gen_name, Check_rand_Inter, value = TRUE)
-      if(anyNA(TestPresentofGeno)) {TestPresentofGeno = NULL}
+      test_present_of_geno = grep(gen_name, check_rand_inter, value = TRUE)
+      if(anyNA(test_present_of_geno)) {test_present_of_geno = NULL}
 
-      if(length(TestPresentofGeno)!=0){
+      if(length(test_present_of_geno)!=0){
 
-        Inter_Gen_pos = match(TestPresentofGeno, rand_term)
-        if(anyNA(Inter_Gen_pos)){Inter_Gen_pos = NULL}
+        inter_gen_pos = match(test_present_of_geno, rand_term)
+        if(anyNA(inter_gen_pos)){inter_gen_pos = NULL}
 
-        Non_Gen_Inter_Test =  Check_rand_Inter[!Check_rand_Inter%in%TestPresentofGeno]
-        if(anyNA(Non_Gen_Inter_Test)){Non_Gen_Inter_Test = NULL}
+        non_gen_inter_test =  check_rand_inter[!check_rand_inter%in%test_present_of_geno]
+        if(anyNA(non_gen_inter_test)){non_gen_inter_test = NULL}
 
       } else {
 
-        Non_Gen_Inter_Test = NULL
+        non_gen_inter_test = NULL
 
-        Inter_Gen_pos = NULL
+        inter_gen_pos = NULL
       }
 
-      if(length(Non_Gen_Inter_Test)!=0){
+      if(length(non_gen_inter_test)!=0){
 
-        Inter_Non_Gen_pos = match(Non_Gen_Inter_Test, rand_term)
+        inter_non_gen_pos = match(non_gen_inter_test, rand_term)
 
       }
 
-      if(is.null(Inter_Gen_pos)){warning(paste(gen_name, 'missing in the interaction term. This implies you cannot estimate GxE'))}
+      if(is.null(inter_gen_pos)){warning(paste(gen_name, 'missing in the interaction term. This implies you cannot estimate GxE'))}
 
     } else {
 
-      if(length(Check_rand_Inter)==0){
+      if(length(check_rand_inter)==0){
 
-        Inter_Gen_pos = NULL
+        inter_gen_pos = NULL
       }
     }
 
-    Gen_pos=  match(gen_name, rand_term)
-    if(anyNA(Gen_pos)){Gen_pos = NULL}
+    gen_pos=  match(gen_name, rand_term)
+    if(anyNA(gen_pos)){gen_pos = NULL}
 
     ## Eg when GID:Env with no variance structure is the only term in the
     ## random effect provided by the user
-    if(length(rand_term)==length(Check_rand_Inter) & is.null(VarCov_str)){
+    if(length(rand_term)==length(check_rand_inter) & is.null(var_cov_str)){
       stop(print(paste(msg, "provide variance-covariance structure")), call. = FALSE)
 
     }
 
 
-    if (length(Check_rand_Inter)>=1){
+    if (length(check_rand_inter)>=1){
 
       if (is.null(heter_groups)) {stop(print(paste(msg, "hetero.groups cannot be NULL")), call. = FALSE)}
     }
 
 
-    if(!is.null(VarCov_str)){
+    if(!is.null(var_cov_str)){
 
       if(is.null(heter_groups)){stop(print(paste(msg, "Provide heter_groups to model specified variance-covariance structure")), call. = FALSE)}
 
       ### Check if the number of hetero.Grp is greater 5 or greater than 5
       NN = nlevels(pheno_data[, heter_groups])
-      if (NN >=5 & isFALSE(grepl("fa", VarCov_str))){
+      if (NN >=5 & isFALSE(grepl("fa", var_cov_str))){
 
         msg <- sprintf("\r==================================================\n")
 
@@ -549,25 +549,25 @@ asreml_utilisOLDD <- function(
         Check_heter.grp.Rand = NULL
       }
 
-      #if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
+      #if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv"){
 
       #### When user provide only the Interaction term was provided by the user
-      #if(!is.null(Inter_Gen_pos) & is.null(Gen_pos)){
-      if(!is.null(Inter_Gen_pos)){
+      #if(!is.null(inter_gen_pos) & is.null(gen_pos)){
+      if(!is.null(inter_gen_pos)){
         if (length(Check_heter.grp.Rand)==0 & length(Check_heter.grp.Fixed)==0){
 
-          ### if Inter_Gen_pos is greater than 1 (Multiple kernel) but Gen_pos is null
-          #if (length(Inter_Gen_pos)>1){
+          ### if inter_gen_pos is greater than 1 (Multiple kernel) but gen_pos is null
+          #if (length(inter_gen_pos)>1){
 
-          #if (exists('G_list')){ Inter_Gen_pos_use = length(G_list) }
+          #if (exists('G_list')){ inter_gen_pos_use = length(G_list) }
 
 
           for (i in 1:length(G_list)){
 
-            if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
+            if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv"){
               #if(exists("G_inv") | exists("GK_inv")){
               random= stats::update(random,
-                                    paste(paste("~ . +", (paste(paste0(VarCov_str, paste0("(",heter_groups,")")),
+                                    paste(paste("~ . +", (paste(paste0(var_cov_str, paste0("(",heter_groups,")")),
                                                                 paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
                                                                 sep = ":"))), "+", heter_groups))
 
@@ -575,8 +575,8 @@ asreml_utilisOLDD <- function(
 
             }else{
 
-              if(isTRUE(grepl("fa", VarCov_str))) {
-                N_fa = substr(VarCov_str, 3, 100)
+              if(isTRUE(grepl("fa", var_cov_str))) {
+                N_fa = substr(var_cov_str, 3, 100)
                 #if(exists("GK_inv") | exists("G_inv")){
                 random= stats::update(random,
                                       paste(paste("~ . +", (paste(paste0("fa", paste0("(",paste0(heter_groups, ",", N_fa),")")),
@@ -587,8 +587,8 @@ asreml_utilisOLDD <- function(
               }
 
 
-              if(isTRUE(grepl("rr", VarCov_str))) {
-                N_rr = substr(VarCov_str, 3, 100)
+              if(isTRUE(grepl("rr", var_cov_str))) {
+                N_rr = substr(var_cov_str, 3, 100)
                 #if(exists("GK_inv") | exists("G_inv")){
                 random= stats::update(random,
                                       paste(paste("~ . +", (paste(paste0("rr", paste0("(",paste0(heter_groups, ",", N_rr),")")),
@@ -615,15 +615,15 @@ asreml_utilisOLDD <- function(
           for (i in 1:length(G_list)){
 
 
-            if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
+            if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv"){
               random =stats::update(random,
-                                    paste("~ . +",paste(paste0(VarCov_str, paste0("(",heter_groups,")")),
+                                    paste("~ . +",paste(paste0(var_cov_str, paste0("(",heter_groups,")")),
                                                         paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")), sep = ":")))
 
             } else{
 
-              if(isTRUE(grepl("fa", VarCov_str))) {
-                N_fa = substr(VarCov_str, 3, 100)
+              if(isTRUE(grepl("fa", var_cov_str))) {
+                N_fa = substr(var_cov_str, 3, 100)
 
                 random =stats::update(random,
                                       paste("~ . +",paste(paste0("fa", paste0("(",paste0(heter_groups, ",", N_fa),")")),
@@ -634,8 +634,8 @@ asreml_utilisOLDD <- function(
               }
 
 
-              if(isTRUE(grepl("rr", VarCov_str))) {
-                N_rr = substr(VarCov_str, 3, 100)
+              if(isTRUE(grepl("rr", var_cov_str))) {
+                N_rr = substr(var_cov_str, 3, 100)
 
                 random =stats::update(random,
                                       paste("~ . +",paste(paste0("rr", paste0("(",paste0(heter_groups, ",", N_rr),")")),
@@ -660,16 +660,16 @@ asreml_utilisOLDD <- function(
 
           for (i in 1:length(G_list)){
 
-            if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
+            if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv"){
 
               random= stats::update(random,
-                                    paste("~ . +",paste(paste0(VarCov_str, paste0("(",heter_groups,")")),
+                                    paste("~ . +",paste(paste0(var_cov_str, paste0("(",heter_groups,")")),
                                                         paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")), sep = ":")))
 
             } else{
 
-              if(isTRUE(grepl("fa", VarCov_str))) {
-                N_fa = substr(VarCov_str, 3, 100)
+              if(isTRUE(grepl("fa", var_cov_str))) {
+                N_fa = substr(var_cov_str, 3, 100)
 
                 random= stats::update(random,
                                       paste("~ . +",paste(paste0("fa",paste0("(",paste0(heter_groups, ",", N_fa),")")),
@@ -679,8 +679,8 @@ asreml_utilisOLDD <- function(
               }
 
 
-              if(isTRUE(grepl("rr", VarCov_str))) {
-                N_rr = substr(VarCov_str, 3, 100)
+              if(isTRUE(grepl("rr", var_cov_str))) {
+                N_rr = substr(var_cov_str, 3, 100)
 
                 random= stats::update(random,
                                       paste("~ . +",paste(paste0("rr",paste0("(",paste0(heter_groups, ",", N_rr),")")),
@@ -697,67 +697,67 @@ asreml_utilisOLDD <- function(
       }
       ### If user provide GID:Env
       ### use this step to drop the orginal GID:Env
-      if(!is.null(Inter_Gen_pos) & length(Gen_pos)==0){
+      if(!is.null(inter_gen_pos) & length(gen_pos)==0){
         rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
 
         rand_termCopy = gsub(" ", "", rand_termCopy)
 
-        #Inter_Gen_pos_copy = match(rand_term[Inter_Gen_pos], rand_termCopy)
+        #inter_gen_pos_copy = match(rand_term[inter_gen_pos], rand_termCopy)
         if(!is.null(heter_groups)){
-          Inter_Gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
-          if(anyNA(Inter_Gen_pos_copy)){
-            Inter_Gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
+          inter_gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
+          if(anyNA(inter_gen_pos_copy)){
+            inter_gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
           }
 
         }
 
-        random = stats::formula(stats::drop.terms(stats::terms(random),Inter_Gen_pos_copy, keep.response = F))
+        random = stats::formula(stats::drop.terms(stats::terms(random),inter_gen_pos_copy, keep.response = F))
 
       } ### End
 
       ### If user provide GID, GID:Env
-      if(!is.null(Inter_Gen_pos) & !is.null(Gen_pos)){
+      if(!is.null(inter_gen_pos) & !is.null(gen_pos)){
         ### use this step to drop the orginal GID and GID:Env
         rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
 
         rand_termCopy = gsub(" ", "", rand_termCopy)
 
-        #Inter_Gen_pos_copy = match(rand_term[Inter_Gen_pos], rand_termCopy)
+        #inter_gen_pos_copy = match(rand_term[inter_gen_pos], rand_termCopy)
         if(!is.null(heter_groups)){
-          Inter_Gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
-          if(anyNA(Inter_Gen_pos_copy)){
-            Inter_Gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
+          inter_gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
+          if(anyNA(inter_gen_pos_copy)){
+            inter_gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
           }
 
         }
-        Gen_pos_copy = match(rand_term[Gen_pos], rand_termCopy)
+        gen_pos_copy = match(rand_term[gen_pos], rand_termCopy)
 
-        random = stats::formula(stats::drop.terms(stats::terms(random), c(Gen_pos_copy,Inter_Gen_pos_copy), keep.response = F))
+        random = stats::formula(stats::drop.terms(stats::terms(random), c(gen_pos_copy,inter_gen_pos_copy), keep.response = F))
 
       }
 
       #}
 
-      #}### End of when only Gen_pos and Inter_Gen_pos are provided
+      #}### End of when only gen_pos and inter_gen_pos are provided
       ## That is user provide GID, GID:Env
 
       #####
       # #### When Interaction term and Gen were provided by the user that is GID + GID:Env
-      # if(!is.null(Inter_Gen_pos) & !is.null(Gen_pos)){
+      # if(!is.null(inter_gen_pos) & !is.null(gen_pos)){
       #   if (length(Check_heter.grp.Rand)==0 & length(Check_heter.grp.Fixed)==0){
       #
-      #     ### if Inter_Gen_pos is greater than 1 (Multiple kernel) but Gen_pos is null
-      #     #if (length(Inter_Gen_pos)>1){
+      #     ### if inter_gen_pos is greater than 1 (Multiple kernel) but gen_pos is null
+      #     #if (length(inter_gen_pos)>1){
       #
-      #     #if (exists('G_list')){ Inter_Gen_pos_use = length(G_list) }
+      #     #if (exists('G_list')){ inter_gen_pos_use = length(G_list) }
       #
       #
       #     for (i in 1:length(G_list)){
       #
-      #       if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
+      #       if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv"){
       #         #if(exists("G_inv") | exists("GK_inv")){
       #         random= stats::update(random,
-      #                               paste(paste(paste("~ . +", (paste(paste0(VarCov_str, paste0("(",heter_groups,")")),
+      #                               paste(paste(paste("~ . +", (paste(paste0(var_cov_str, paste0("(",heter_groups,")")),
       #                                                                 paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")),
       #                                                                 sep = ":"))), "+", heter_groups), "+",
       #                                     paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
@@ -766,8 +766,8 @@ asreml_utilisOLDD <- function(
       #
       #       }else{
       #
-      #         if(isTRUE(grepl("fa", VarCov_str))) {
-      #           N_fa = substr(VarCov_str, 3, 100)
+      #         if(isTRUE(grepl("fa", var_cov_str))) {
+      #           N_fa = substr(var_cov_str, 3, 100)
       #           #if(exists("GK_inv") | exists("G_inv")){
       #           random= stats::update(random,
       #                                 paste(paste(paste("~ . +", (paste(paste0("fa", paste0("(",paste0(heter_groups, ",", N_fa),")")),
@@ -779,8 +779,8 @@ asreml_utilisOLDD <- function(
       #         }
       #
       #
-      #         if(isTRUE(grepl("rr", VarCov_str))) {
-      #           N_rr = substr(VarCov_str, 3, 100)
+      #         if(isTRUE(grepl("rr", var_cov_str))) {
+      #           N_rr = substr(var_cov_str, 3, 100)
       #           #if(exists("GK_inv") | exists("G_inv")){
       #           random= stats::update(random,
       #                                 paste(paste(paste("~ . +", (paste(paste0("rr", paste0("(",paste0(heter_groups, ",", N_rr),")")),
@@ -807,17 +807,17 @@ asreml_utilisOLDD <- function(
       #     for (i in 1:length(G_list)){
       #
       #
-      #       if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
+      #       if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv"){
       #         random =stats::update(random,
-      #                               paste(paste("~ . +",paste(paste0(VarCov_str, paste0("(",heter_groups,")")),
+      #                               paste(paste("~ . +",paste(paste0(var_cov_str, paste0("(",heter_groups,")")),
       #                                                         paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")), sep = ":")),"+",
       #                                     paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
       #
       #
       #       } else{
       #
-      #         if(isTRUE(grepl("fa", VarCov_str))) {
-      #           N_fa = substr(VarCov_str, 3, 100)
+      #         if(isTRUE(grepl("fa", var_cov_str))) {
+      #           N_fa = substr(var_cov_str, 3, 100)
       #
       #           random =stats::update(random,
       #                                 paste(paste("~ . +",paste(paste0("fa", paste0("(",paste0(heter_groups, ",", N_fa),")")),
@@ -829,8 +829,8 @@ asreml_utilisOLDD <- function(
       #         }
       #
       #
-      #         if(isTRUE(grepl("rr", VarCov_str))) {
-      #           N_rr = substr(VarCov_str, 3, 100)
+      #         if(isTRUE(grepl("rr", var_cov_str))) {
+      #           N_rr = substr(var_cov_str, 3, 100)
       #
       #           random =stats::update(random,
       #                                 paste(paste("~ . +",paste(paste0("rr", paste0("(",paste0(heter_groups, ",", N_rr),")")),
@@ -856,16 +856,16 @@ asreml_utilisOLDD <- function(
       #
       #     for (i in 1:length(G_list)){
       #
-      #       if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
+      #       if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv"){
       #
       #         random=  stats::update(random,
-      #                                paste(paste("~ . +",paste(paste0(VarCov_str, paste0("(",heter_groups,")")),
+      #                                paste(paste("~ . +",paste(paste0(var_cov_str, paste0("(",heter_groups,")")),
       #                                                          paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = "")), sep = ":")), "+",
       #                                      paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
       #       } else{
       #
-      #         if(isTRUE(grepl("fa", VarCov_str))) {
-      #           N_fa = substr(VarCov_str, 3, 100)
+      #         if(isTRUE(grepl("fa", var_cov_str))) {
+      #           N_fa = substr(var_cov_str, 3, 100)
       #
       #           random= stats::update(random,
       #                                 paste(paste("~ . +",paste(paste0("fa",paste0("(",paste0(heter_groups, ",", N_fa),")")),
@@ -876,8 +876,8 @@ asreml_utilisOLDD <- function(
       #         }
       #
       #
-      #         if(isTRUE(grepl("rr", VarCov_str))) {
-      #           N_rr = substr(VarCov_str, 3, 100)
+      #         if(isTRUE(grepl("rr", var_cov_str))) {
+      #           N_rr = substr(var_cov_str, 3, 100)
       #
       #           random= stats::update(random,
       #                                 paste(paste("~ . +",paste(paste0("rr",paste0("(",paste0(heter_groups, ",", N_rr),")")),
@@ -894,48 +894,48 @@ asreml_utilisOLDD <- function(
       #
       #   # ### If user provide GID:Env
       #   # ### use this step to drop the orginal GID:Env
-      #   # if(!is.null(Inter_Gen_pos) & length(Gen_pos)==0){
+      #   # if(!is.null(inter_gen_pos) & length(gen_pos)==0){
       #   #   rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
       #   #
       #   #   rand_termCopy = gsub(" ", "", rand_termCopy)
       #   #
-      #   #   #Inter_Gen_pos_copy = match(rand_term[Inter_Gen_pos], rand_termCopy)
+      #   #   #inter_gen_pos_copy = match(rand_term[inter_gen_pos], rand_termCopy)
       #   #   if(!is.null(heter_groups)){
-      #   #     Inter_Gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
-      #   #     if(anyNA(Inter_Gen_pos_copy)){
-      #   #       Inter_Gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
+      #   #     inter_gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
+      #   #     if(anyNA(inter_gen_pos_copy)){
+      #   #       inter_gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
       #   #     }
       #   #
       #   #   }
       #   #
-      #   #   random = stats::formula(stats::drop.terms(stats::terms(random),Inter_Gen_pos_copy, keep.response = F))
+      #   #   random = stats::formula(stats::drop.terms(stats::terms(random),inter_gen_pos_copy, keep.response = F))
       #   #
       #   # } ### End
       #
       #   ### If user provide GID, GID:Env
-      #   #if(!is.null(Inter_Gen_pos) & !is.null(Gen_pos)){
+      #   #if(!is.null(inter_gen_pos) & !is.null(gen_pos)){
       #   ### use this step to drop the orginal GID and GID:Env
       #   rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
       #
       #   rand_termCopy = gsub(" ", "", rand_termCopy)
       #
-      #   #Inter_Gen_pos_copy = match(rand_term[Inter_Gen_pos], rand_termCopy)
+      #   #inter_gen_pos_copy = match(rand_term[inter_gen_pos], rand_termCopy)
       #   if(!is.null(heter_groups)){
-      #     Inter_Gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
-      #     if(anyNA(Inter_Gen_pos_copy)){
-      #       Inter_Gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
+      #     inter_gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
+      #     if(anyNA(inter_gen_pos_copy)){
+      #       inter_gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
       #     }
       #
       #   }
-      #   Gen_pos_copy = match(rand_term[Gen_pos], rand_termCopy)
+      #   gen_pos_copy = match(rand_term[gen_pos], rand_termCopy)
       #
-      #   random = stats::formula(stats::drop.terms(stats::terms(random), c(Gen_pos_copy,Inter_Gen_pos_copy), keep.response = F))
-      #
-      #   #}
+      #   random = stats::formula(stats::drop.terms(stats::terms(random), c(gen_pos_copy,inter_gen_pos_copy), keep.response = F))
       #
       #   #}
       #
-      # }### End of when only Gen_pos and Inter_Gen_pos are provided
+      #   #}
+      #
+      # }### End of when only gen_pos and inter_gen_pos are provided
       # ## That is user provide GID, GID:Env
 
     }
@@ -944,8 +944,8 @@ asreml_utilisOLDD <- function(
     ### If user provide only the gen_name in the random term as gen_name effect
     ######################################################
 
-    if(is.null(Inter_Gen_pos) & length(Gen_pos)==1){
-      #if (length(Gen_pos)==1 & length(Inter_Gen_pos)==0){
+    if(is.null(inter_gen_pos) & length(gen_pos)==1){
+      #if (length(gen_pos)==1 & length(inter_gen_pos)==0){
       ### stats::formula must be at least  length 1 so since it just one length. The
       ## adjusted random term was added and the old one was removed
       if (exists('G_list')){
@@ -961,17 +961,17 @@ asreml_utilisOLDD <- function(
 
       rand_termCopy = gsub(" ", "", rand_termCopy)
 
-      Gen_pos_copy = match(rand_term[Gen_pos], rand_termCopy)
+      gen_pos_copy = match(rand_term[gen_pos], rand_termCopy)
 
-      random = stats::formula(stats::drop.terms(stats::terms(random), Gen_pos_copy, keep.response = F))
+      random = stats::formula(stats::drop.terms(stats::terms(random), gen_pos_copy, keep.response = F))
 
     }
     ######################################################################
     #### When Variance-Covariance Structure is missing. Compound Symmetry
     ####################################################################
-    if(is.null(VarCov_str) & (length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name])))){
+    if(is.null(var_cov_str) & (length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name])))){
 
-      #if(is.null(VarCov_str) & !is.null(heter_groups)){
+      #if(is.null(var_cov_str) & !is.null(heter_groups)){
       #if(dim(pheno_data)[1]!=dim(Geno_data)[1] | dim(pheno_data)[1]!=dim(Gmatrix)[1]){
       # if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
       #   warning(paste(msg, "Variance-Covariance structure is missing."), immediate. = TRUE, call. =FALSE)
@@ -995,13 +995,13 @@ asreml_utilisOLDD <- function(
         Check_heter.grp.Rand = NULL
       }
 
-      #if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv"){
+      #if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv"){
 
-      if(!is.null(Inter_Gen_pos)){
+      if(!is.null(inter_gen_pos)){
         if (length(Check_heter.grp.Rand)==0 & length(Check_heter.grp.Fixed)==0){
 
-          ### if Inter_Gen_pos is greater than 1 (Multiple kernel) but Gen_pos is null
-          #if (length(Inter_Gen_pos)>1){
+          ### if inter_gen_pos is greater than 1 (Multiple kernel) but gen_pos is null
+          #if (length(inter_gen_pos)>1){
 
           for (i in 1:length(G_list)){
 
@@ -1038,7 +1038,7 @@ asreml_utilisOLDD <- function(
         ## If user provide ENV in the random term and missing in the fixed term
         if (length(Check_heter.grp.Fixed)==0 & length(Check_heter.grp.Rand)==1){
 
-          if (exists('G_list')){Inter_Gen_pos_use = length(G_list)}
+          if (exists('G_list')){inter_gen_pos_use = length(G_list)}
           for (i in 1:length(G_list)){
 
             #random =stats::update(random, paste("~ . +",paste(paste0('vm(', gen_name), sep = ',', paste(G_list[[i]], "_inv)", sep = ""))))
@@ -1056,26 +1056,26 @@ asreml_utilisOLDD <- function(
       }
 
       ### use this step to drop the orginal GID and GID:Env
-      if(!is.null(Gen_pos) & is.null(Inter_Gen_pos)){
+      if(!is.null(gen_pos) & is.null(inter_gen_pos)){
         rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
 
         rand_termCopy = gsub(" ", "", rand_termCopy)
 
-        Gen_pos_copy = match(rand_term[Gen_pos], rand_termCopy)
+        gen_pos_copy = match(rand_term[gen_pos], rand_termCopy)
 
-        random = stats::formula(stats::drop.terms(stats::terms(random), Gen_pos_copy, keep.response = F))
+        random = stats::formula(stats::drop.terms(stats::terms(random), gen_pos_copy, keep.response = F))
       }
 
       if(!is.null(heter_groups)){
-        Inter_Gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
-        if(anyNA(Inter_Gen_pos_copy)){
-          Inter_Gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
+        inter_gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
+        if(anyNA(inter_gen_pos_copy)){
+          inter_gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
         }
 
       }
-      Gen_pos_copy = match(rand_term[Gen_pos], rand_termCopy)
+      gen_pos_copy = match(rand_term[gen_pos], rand_termCopy)
 
-      random = stats::formula(stats::drop.terms(stats::terms(random), c(Gen_pos_copy,Inter_Gen_pos_copy), keep.response = F))
+      random = stats::formula(stats::drop.terms(stats::terms(random), c(gen_pos_copy,inter_gen_pos_copy), keep.response = F))
 
 
     } ## End of when variance-covariance str is not provided by user
@@ -1204,11 +1204,11 @@ asreml_utilisOLDD <- function(
     # #BV <- BLUP[grep(paste(paste0('vm\\(', gen_name), sep = ',', 'G_inv\\)'),rownames(BLUP)),]
     # #BV <- BLUP[grep('G_inv\\)',rownames(BLUP)),]
     #
-    # if(!is.null(VarCov_str)){
+    # if(!is.null(var_cov_str)){
     #
-    #   if(isTRUE(grepl("fa", VarCov_str))){
+    #   if(isTRUE(grepl("fa", var_cov_str))){
     #     ## Extract the number of factors
-    #     #N_fa = substr(VarCov_str, 3, 100)
+    #     #N_fa = substr(var_cov_str, 3, 100)
     #
     #     for (bb in 1:length(G_list)) {
     #       BV_All[[bb]] <- BV_All[[bb]][!rownames(BV_All[[bb]])%in%rownames(BV_All[[bb]][grep('Comp',rownames(BV_All[[bb]])),]), ]
@@ -1221,7 +1221,7 @@ asreml_utilisOLDD <- function(
     #
     #   } else {
     #
-    #     if(VarCov_str=="us" |VarCov_str=="corgh" | VarCov_str=="corgv" | VarCov_str=="corh" | VarCov_str=="corv") {
+    #     if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv") {
     #
     #
     #       for (bb in 1:length(G_list)) {
@@ -1268,7 +1268,7 @@ asreml_utilisOLDD <- function(
     #
     #   Res= VarCov_Herr(model= mod,
     #                    heter_groups=heter_groups,
-    #                    VarCov_str= VarCov_str,
+    #                    var_cov_str= var_cov_str,
     #                    heter_resid=heter_resid,
     #                    N_Omics = G_list)
     #
@@ -1306,7 +1306,7 @@ asreml_utilisOLDD <- function(
     #
     # } else {
     #   ## Problem
-    #   if(is.null(VarCov_str)){
+    #   if(is.null(var_cov_str)){
     #
     #     for (bb in 1:length(G_list)){
     #       BV_All[[bb]] <- as.data.frame(BV_All[[bb]])
@@ -1405,16 +1405,16 @@ asreml_utilisOLDD <- function(
     # ### Predicted Values
     # pred_value <- asreml::predict.asreml(mod, classify=gen_name, sed=FALSE)$pvals
     #
-    # if (is.null(heter_groups) & is.null(VarCov_str)){Inter_Gen_pos= NULL}
-    # if(length(Gen_pos) == length(rand_term)){Inter_Gen_pos= NULL}
-    # if(!is.null(Inter_Gen_pos)){
+    # if (is.null(heter_groups) & is.null(var_cov_str)){inter_gen_pos= NULL}
+    # if(length(gen_pos) == length(rand_term)){inter_gen_pos= NULL}
+    # if(!is.null(inter_gen_pos)){
     #
-    #   pred_heter_groups <- asreml::predict.asreml(mod, classify= rand_term[[Inter_Gen_pos]], sed=FALSE)$pvals
+    #   pred_heter_groups <- asreml::predict.asreml(mod, classify= rand_term[[inter_gen_pos]], sed=FALSE)$pvals
     #
     # }
     # ### Results
     #
-    # # if (!is.null(VarCov_str)){
+    # # if (!is.null(var_cov_str)){
     # #
     # #   Result = list(call=str.mod, mod=mod, ebv=BV,pred_value =pred_value,
     # #                 BIC=summary(mod)$bic, AIC=summary(mod)$aic, H2 =Res$Heritability,
@@ -1422,7 +1422,7 @@ asreml_utilisOLDD <- function(
     # #
     # #} else {
     #
-    # if (!is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
+    # if (!is.null(var_cov_str) & length(inter_gen_pos)!=0){
     #
     #   Result = list(call=str.mod, mod=mod, ebv=BV_All,pred_value =pred_value, pred_heter_groups = pred_heter_groups,
     #                 BIC=summary(mod)$bic, AIC=summary(mod)$aic, H2 =Res$Heritability,
@@ -1431,8 +1431,8 @@ asreml_utilisOLDD <- function(
     #
     # } else {
     #
-    #   #if (is.null(VarCov_str) & length(rand_inter_Pos)==0){
-    #   if (is.null(VarCov_str) & length(Inter_Gen_pos)==0){
+    #   #if (is.null(var_cov_str) & length(rand_inter_Pos)==0){
+    #   if (is.null(var_cov_str) & length(inter_gen_pos)==0){
     #
     #     Result = list(call=str.mod, mod=mod, ebv=BV_All,pred_value =pred_value,
     #                   BIC=summary(mod)$bic, AIC=summary(mod)$aic, H2 =H,
@@ -1441,8 +1441,8 @@ asreml_utilisOLDD <- function(
     #
     #   }
     #
-    #   #if (is.null(VarCov_str) & length(rand_inter_Pos)!=0){
-    #   if (is.null(VarCov_str) & length(Inter_Gen_pos)!=0){
+    #   #if (is.null(var_cov_str) & length(rand_inter_Pos)!=0){
+    #   if (is.null(var_cov_str) & length(inter_gen_pos)!=0){
     #
     #     Result = list(call=str.mod, mod=mod, ebv=BV_All,pred_value =pred_value, pred_heter_groups = pred_heter_groups,
     #                   BIC=summary(mod)$bic, AIC=summary(mod)$aic, H2 =H,
@@ -1470,15 +1470,15 @@ asreml_utilisOLDD <- function(
   output <- list(Univariate,
                  str.mod,
                  G_list,
-                 Gen_pos,
-                 Inter_Gen_pos,
+                 gen_pos,
+                 inter_gen_pos,
                  rand_term)
 
   names(output) <- c("model",
                      "str.mod",
                      "G_list",
-                     "Gen_pos",
-                     "Inter_Gen_pos",
+                     "gen_pos",
+                     "inter_gen_pos",
                      "rand_term")
   #return(c(Univariate, G_list))
   return(output)

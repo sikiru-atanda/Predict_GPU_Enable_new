@@ -12,17 +12,12 @@ Cal_Coeff_EBV_PEV_Rel_RHKS_glub(
   var_E = NULL,
   hetero = NULL,
   heter_groups = NULL,
+  gid_name = NULL,
   ...
 )
 }
 \arguments{
 \item{var_u}{genetic variance}
-
-\item{...}{}
-
-\item{beta}{the posterior samples of the random effects (marker/omic)}
-
-\item{x_variable}{marker/omic data}
 }
 \description{
 ### This function calculate the Coefficient, EBV, PEV, SE, Reliability

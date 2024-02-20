@@ -48,7 +48,7 @@ model_execute(
   random = NULL,
   heter_resid = FALSE,
   heter_groups = NULL,
-  VarCov_str = NULL,
+  var_cov_str = NULL,
   weights = NULL,
   nIter = NULL,
   burnIn = NULL,
@@ -63,11 +63,12 @@ model_execute(
   rand_term_model_bayesian = NULL,
   core = NULL,
   engine = NULL,
-  center = TRUE,
-  scaled = TRUE,
+  scale = TRUE,
   workspace = 1e+08,
   pworkspace = 1e+06,
   maxit = 50,
+  inverse = TRUE,
+  epsilon = 1e-06,
   bending = TRUE,
   bend_value = 0.01,
   blending = FALSE,
@@ -78,6 +79,21 @@ model_execute(
   rcn_cutoff = 1e-12,
   optimize_diagonal = FALSE,
   optimize_duplicate = FALSE,
+  vcf_file_name = NULL,
+  vcf_file_path = NULL,
+  vcf_file = NULL,
+  hapmap_file_name = NULL,
+  hapmap_file_path = NULL,
+  hapmap = NULL,
+  maf_threshold = 0.01,
+  het_threshold = 0.1,
+  ind_call_rate_threshold = 0.9,
+  snp_call_rate_threshold = 0.9,
+  impute = FALSE,
+  recode_format = "0,1,2",
+  out_put_map = FALSE,
+  map_data = NULL,
+  qc_filtering = TRUE,
   message = TRUE,
   system_database = FALSE,
   ...
@@ -164,7 +180,7 @@ Polynomia kernel (order 2, 3, 4) and linear}
 
 \item{heter_groups}{Column name for Environment or location}
 
-\item{VarCov_str}{user defined variance-covariance structure}
+\item{var_cov_str}{user defined variance-covariance structure}
 
 \item{weights}{weight for the response variable. Only dataframe}
 
@@ -196,8 +212,6 @@ in single location.}
 
 \item{engine}{if user has asreml}
 
-\item{center}{if X-variables should be standardized}
-
 \item{workspace}{allocate memory for asreml model fit}
 
 \item{pworkspace}{allocate memory for predict function in asreml}
@@ -212,13 +226,9 @@ in single location.}
 the default is FALSE. Thus output will be folder.}
 
 \item{...}{}
+
+\item{center}{if X-variables should be standardized}
 }
 \description{
 Title
-}
-\examples{
-#######
-1. It check if the matrix is square matrix/symmetry, if not we fix it for the user
-2. It check if the matrix is positive definite, if not we fix it.
-3. It check for NA. If present the engine will stop further analysis.
 }

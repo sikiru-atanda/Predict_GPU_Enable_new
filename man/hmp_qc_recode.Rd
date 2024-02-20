@@ -5,30 +5,13 @@
 \title{Title}
 \usage{
 hmp_qc_recode(
-  hapmap_file_name = "HapMap_300_Aug25_Select_Chr_No_Filtering.hmp.txt",
-  hapmap_file_path = "D:/PEA_BARI",
+  hapmap_file_name = NULL,
+  hapmap_file_path = NULL,
   hapmap = NULL,
   maf_threshold = 0.01,
   het_threshold = 0.1,
   ind_call_rate_threshold = 0.9,
   snp_call_rate_threshold = 0.9,
-  hwe_threshold = 0.001,
-  impute = FALSE,
-  recode_format = "0,1,2",
-  out_put_map = FALSE,
-  message = TRUE,
-  ...
-)
-
-hmp_qc_recode(
-  hapmap_file_name = "HapMap_300_Aug25_Select_Chr_No_Filtering.hmp.txt",
-  hapmap_file_path = "D:/PEA_BARI",
-  hapmap = NULL,
-  maf_threshold = 0.01,
-  het_threshold = 0.1,
-  ind_call_rate_threshold = 0.9,
-  snp_call_rate_threshold = 0.9,
-  hwe_threshold = 0.001,
   impute = FALSE,
   recode_format = "0,1,2",
   out_put_map = FALSE,
@@ -40,7 +23,5 @@ hmp_qc_recode(
 \item{...}{}
 }
 \description{
-Title
-
 Title
 }

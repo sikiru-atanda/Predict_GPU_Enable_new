@@ -1,1 +1,1 @@
-utils::globalVariables(c("."))
+utils::globalVariables(c(".", "V1", ".SD", ":="))

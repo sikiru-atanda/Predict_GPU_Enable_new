@@ -39,7 +39,8 @@
                                         nIter = NULL,
                                         burnIn = NULL,
                                         thin = NULL,
-                                        omics_data_label = NULL
+                                        omics_data_label = NULL,
+                                        ...
                                              )
  {
 
@@ -61,10 +62,10 @@
                                                  burnIn = burnIn,
                                                  thin = thin)
 
-            mod <-  bayes_mod_execute(pheno_data = ETA$pheno_data,
+            mod <-  bayes_mod_execute(pheno_data = ETA[["pheno_data"]],
                                       response = response,
                                       weights = weights,
-                                      ETA = ETA$ETA,
+                                      ETA = ETA[["ETA"]],
                                       bayes_para = bayes_para,
                                       verbose = FALSE
                                       #files_key = "files_key"
@@ -82,7 +83,8 @@
                                                  GS_model = GS_model)
 
 
-            output = list(res_model_output, mod)
+            output <-  list(bayes_result = res_model_output,
+                          bayes_model = mod)
 
             return(output)
 

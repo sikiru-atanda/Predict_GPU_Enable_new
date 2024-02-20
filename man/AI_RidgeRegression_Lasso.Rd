@@ -12,9 +12,9 @@ AI_RidgeRegression_Lasso(
   gen_name = NULL,
   core = NULL,
   message = TRUE,
-  center = TRUE,
+  scale = TRUE,
   para_tunning = FALSE,
-  Lasso_paras_tunning = c(lambda_tune = NULL),
+  lasso_paras_tunning = c(lambda_tune = NULL),
   lambda = NULL,
   GS_model = c("Lasso", "Ridge_Regression"),
   ...

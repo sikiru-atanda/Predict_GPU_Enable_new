@@ -11,7 +11,7 @@ means polynomial order 2, 3 and 4}
 \usage{
 kernel_calculation(
   M_matrix_clean = NULL,
-  center = TRUE,
+  scale = TRUE,
   theta = NULL,
   alpha = 0.5,
   gamma = 1,

@@ -12,7 +12,7 @@ AI_knn(
   gen_name = NULL,
   core = NULL,
   message = TRUE,
-  center = TRUE,
+  scale = TRUE,
   para_tunning = FALSE,
   knn_paras_tunning = c(k_tune = NULL),
   k = 5,

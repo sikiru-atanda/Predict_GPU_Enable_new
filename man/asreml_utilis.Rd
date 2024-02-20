@@ -16,10 +16,12 @@ asreml_utilis(
   omic1_kernel = NULL,
   omic2_kernel = NULL,
   omic3_kernel = NULL,
+  inverse = NULL,
+  epsilon = TRUE,
   gen_name = NULL,
   heter_groups = NULL,
   heter_resid = FALSE,
-  VarCov_str = NULL,
+  var_cov_str = NULL,
   weights = NULL,
   core = NULL,
   workspace = 1e+08,
@@ -29,7 +31,7 @@ asreml_utilis(
 )
 }
 \arguments{
-\item{VarCov_str}{h@param weights}
+\item{var_cov_str}{h@param weights}
 
 \item{...}{}
 }

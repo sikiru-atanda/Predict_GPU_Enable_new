@@ -18,9 +18,6 @@ mod_output_bayes(
   ...
 )
 }
-\arguments{
-\item{bayes_para}{}
-}
 \description{
 Title
 }

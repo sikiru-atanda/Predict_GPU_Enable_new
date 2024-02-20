@@ -41,7 +41,7 @@ geno_precheck <- function(object_geno = NULL,
     # Check if allele dosage are not in  0, 1, 2 format but -1, 0, 1 format
     check_geno <- which(object_geno == -1)
     if (length(check_geno) != 0) {
-      if (message) {
+      if(isTRUE(message)) {
         message("The allele dosages are not in 0, 1, 2. Fixing it.")
       }
       object_geno <- object_geno + 1
@@ -64,7 +64,7 @@ geno_precheck <- function(object_geno = NULL,
     # Remove monomorphic markers
     monomorphic_markers <- which(apply(object_geno, 2, function(x) length(table(x)) <= 1))
     if (length(monomorphic_markers) > 0) {
-      if (message) {
+      if(isTRUE(message)) {
         print(paste("Removing monomorphic markers:", length(monomorphic_markers)))
       }
       object_geno <- object_geno[, -monomorphic_markers, ]
@@ -72,7 +72,7 @@ geno_precheck <- function(object_geno = NULL,
       total_mono = length(monomorphic_markers)
       rm(monomorphic_markers); gc()
     } else {
-      if (message) {
+      if(isTRUE(message)) {
         print("No monomorphic markers to remove.")
       }
       total_mono = 0
@@ -84,18 +84,18 @@ geno_precheck <- function(object_geno = NULL,
       phat <- colMeans(object_geno, na.rm = TRUE) / 2
       MAF <- ifelse(phat < 0.5, phat, 1 - phat)
 
-      if (message) {
+      if(isTRUE(message)) {
         message("Minor allele frequency check (MAF).")
       }
 
       if (any(MAF < maf_threshold)) {
         object_geno <- object_geno[, -which(MAF < maf_threshold)]
         maf_markers_removed <- length(which(MAF < maf_threshold))
-        if (message) {
+        if(isTRUE(message)) {
           print(paste("Removing markers with MAF below threshold:", length(which(MAF < maf_threshold))))
         }
       } else {
-        if (message) {
+        if(isTRUE(message)) {
           message("No loci with MAF below threshold.")
         }
       }
@@ -113,7 +113,7 @@ geno_precheck <- function(object_geno = NULL,
       #low_call_rate_snps <- which(snp_call_rate < snp_call_rate_threshold)
       low_call_rate_snps <- which(snp_call_rate > snp_call_rate_threshold)
       if (length(low_call_rate_snps) > 0) {
-        if (message) {
+        if(isTRUE(message)) {
           print(paste("Removing SNPs with low call rate:", length(low_call_rate_snps)))
         }
         object_geno <- object_geno[, -low_call_rate_snps]
@@ -121,7 +121,7 @@ geno_precheck <- function(object_geno = NULL,
         #map_data <- map_data[low_call_rate_snps, ]
         markers_callrate_removed  = length(low_call_rate_snps)
       } else {
-        if (message) {
+        if(isTRUE(message)) {
           print("No SNPs removed based on SNP call rate threshold")
         }
 
@@ -141,12 +141,12 @@ geno_precheck <- function(object_geno = NULL,
       low_call_rate_inds <- which(ind_call_rate > ind_call_rate_threshold)
 
       if (length(low_call_rate_inds) > 0) {
-        if (message) {
+        if(isTRUE(message)) {
           print(paste("Removing Individuals with low call rate:", length(low_call_rate_inds)))
         }
         object_geno <- object_geno[-low_call_rate_inds, ]
       } else {
-        if (message) {
+        if(isTRUE(message)) {
           print("No individuals removed based on call rate threshold.")
         }
 
@@ -164,7 +164,7 @@ geno_precheck <- function(object_geno = NULL,
       #het_markers <- which(heteroz >= het_threshold)
       het_markers <- which(heteroz > het_threshold)
       if (length(het_markers) > 0) {
-        if (message) {
+        if(isTRUE(message)) {
           print(paste("Removing markers with high heterozygosity:", length(het_markers)))
         }
         object_geno <-  object_geno[, -het_markers]
@@ -173,7 +173,7 @@ geno_precheck <- function(object_geno = NULL,
         #snp_data <- snp_data[-het_markers, ]
 
       } else {
-        if (message) {
+        if(isTRUE(message)) {
           print("No markers removed based on heterozygosity threshold.")
         }
 

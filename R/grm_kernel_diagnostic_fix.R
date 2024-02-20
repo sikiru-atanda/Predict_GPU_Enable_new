@@ -26,6 +26,8 @@ grm_kernel_diagnostic_fix <- function(grm_kernel_data = NULL,
 
 
   msg <- sprintf("==================================================\n")
+
+  grm_kernel_data_opti <-  NULL
   # Check input value
   if (duplicate_cut_off < 0 | duplicate_cut_off > 1) {
     stop(print(paste(msg,'Duplicate threshould value must be between 0 and 1.')), call. = FALSE)
@@ -66,7 +68,6 @@ grm_kernel_diagnostic_fix <- function(grm_kernel_data = NULL,
 }
 
 # Generating potential diagonal elements to remove
-
 diag_element_remove <- data.frame(
   value = sort(diag_grmkernel[diag_grmkernel > high_diag_cut_off
                      | diag_grmkernel < low_diag_cut_off], decreasing=TRUE))
@@ -80,13 +81,14 @@ offdiag_element_remove <- unique(c(potential_duplicate$Indiv_A, potential_duplic
 grm_kernel_data_opti <- grm_kernel_data[-which(rownames(grm_kernel_data) %in% offdiag_element_remove),
                                                 -which(rownames(grm_kernel_data) %in% offdiag_element_remove)]
 
+
 }
 
 
-## Remove the diagona; element based on the threshold defined by the user
+## Remove the diagonal; element based on the threshold defined by the user
 if (isTRUE(optimize_diagonal) & nrow(diag_element_remove) > 0){
   #if (nrow(diag_element_remove) > 0){
-    if(exists('grm_kernel_data_opti')){
+    if(!is.null(grm_kernel_data_opti)){
       grm_kernel_data_opti <- grm_kernel_data_opti[-which(rownames(grm_kernel_data_opti) %in% row.names(diag_element_remove)),
                 -which(rownames(grm_kernel_data_opti) %in% row.names(grm_kernel_data_opti))]
 

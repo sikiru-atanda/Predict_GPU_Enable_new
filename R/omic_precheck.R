@@ -12,8 +12,8 @@ omic_precheck <- function(object = NULL,
                           message = TRUE){
   msg <- sprintf("==================================================\n")
   if(!is.null(object)){
-    if(class(object)[[1]]!="matrix"){
-
+    #if(class(object)[[1]]!="matrix"){
+    if(!inherits(object, "matrix")){
       if (message){
       message(paste(msg,"The data is not class matrix: we fix it." ))
       }
@@ -31,7 +31,7 @@ omic_precheck <- function(object = NULL,
     if (length(Na_col.omit)!=0){
     #object = object[ , colSums(is.na(object))==0]
 
-    object = object[ , -Na_col.omit]
+    object <- object[ , -Na_col.omit]
 
     if (message){
       message("A total of ", length(Na_col.omit),
@@ -49,7 +49,7 @@ omic_precheck <- function(object = NULL,
 
   } else {
 
-    object = NULL
+    object <- NULL
 
   }
 

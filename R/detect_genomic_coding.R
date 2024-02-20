@@ -13,7 +13,7 @@ detect_genomic_coding <- function(object_geno = NULL) {
   #unique_values <- unique(unlist(object_geno)) ## For dataframe
   unique_values <- unique(object_geno)
 
-  if(class(unique_values)=="character"){
+  if(inherits(unique_values, "character")){
     unique_values = as.double(unique_values)
   }
 

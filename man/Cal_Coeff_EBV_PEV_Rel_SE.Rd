@@ -11,6 +11,8 @@ Cal_Coeff_EBV_PEV_Rel_SE(
   var_u,
   hetero = NULL,
   heter_groups = NULL,
+  gid_name = NULL,
+  GS_model = NULL,
   ...
 )
 }

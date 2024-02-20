@@ -9,13 +9,16 @@ geno_to_model(
   geno_data = NULL,
   train_geno_data = NULL,
   test_geno_data = NULL,
+  qc_filtering = TRUE,
+  maf_threshold = 0.01,
+  het_threshold = 0.2,
+  ind_call_rate_threshold = 0.9,
+  snp_call_rate_threshold = 0.9,
+  impute = TRUE,
   map_data = NULL,
   message = TRUE,
   ...
 )
-}
-\arguments{
-\item{...}{}
 }
 \description{
 Overall, this serve as gateway between snp/marker-precheck function and readiness of

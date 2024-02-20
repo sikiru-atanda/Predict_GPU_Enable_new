@@ -30,7 +30,10 @@ summary_statistics_asreml <- function(mod=NULL,
 
   }
 ###### Important for multi-traits
-  Heter.Grp <- levels(data.frame(mod$mf)[, heter_groups])
+  # if(!is.null(heter_groups)){
+  # heter_grp <- levels(data.frame(mod$mf)[, heter_groups])
+  #
+  # }
 
 #####
   #Res <-  cat(tmp,'\n')
@@ -56,7 +59,7 @@ summary_statistics_asreml <- function(mod=NULL,
 
 
   if(is.null(heter_groups)){
-  Res_trn <- round(variance_components$Residual_Var,3)
+  Res_trn <- round(variance_components["residual_variance", 1],3)
 
   } else {
     Res_trn <-  NA
@@ -80,7 +83,7 @@ summary_statistics_asreml <- function(mod=NULL,
 
     #pred_acc <-  paste('Prediction Accuarcy =',round(cor(mod$model$y[-tst],mod$model$yHat[-tst]),3))
 
-    if(!is.null(eval_metrics) & is.null(heter_groups)){
+    if(!is.null(eval_metrics)){
       for (i in 1:length(eval_metrics)){
 
         Eval_met[i, ] <- evaluation_metrics(y_observed = pheno[, response][tst],
@@ -103,7 +106,7 @@ summary_statistics_asreml <- function(mod=NULL,
 
     #pred_acc <- paste('Prediction Accu of Training =',round(cor(mod$model$y,mod$model$yHat),3))
 
-    if(!is.null(eval_metrics) & is.null(heter_groups)){
+    if(!is.null(eval_metrics)){
       for (i in 1:length(eval_metrics)){
 
         Eval_met[i, ] <- evaluation_metrics(y_observed = pheno[, response],
@@ -116,6 +119,9 @@ summary_statistics_asreml <- function(mod=NULL,
 
   }
 
+  } else {
+
+    Eval_met <- NULL
 }
 
 
@@ -142,7 +148,7 @@ summary_statistics_asreml <- function(mod=NULL,
   names(Stat_Res)[2] <- "summary"
   rownames(Stat_Res) <- NULL
   #####
-  if(!is.null(eval_metrics)){
+  if(!is.null(eval_metrics) & !is.null(Eval_met)){
     Eval_met <- data.frame(Eval_met)
     Eval_met$stat <- rownames(Eval_met)
     Eval_met <- Eval_met[, c(2,1)]

@@ -3,11 +3,11 @@
 #'
 #' @param model
 #' @param heter_groups
-#' @param VarCov_str
+#' @param var_cov_str
 #' @param heter_resid
 #' @param G_list
-#' @param Inter_Gen_pos
-#' @param Gen_pos
+#' @param inter_gen_pos
+#' @param gen_pos
 #' @param ...
 #'
 #' @return
@@ -19,11 +19,11 @@
 asreml_herit_varCovraw <-  function(
     model = NULL,
     heter_groups = NULL,
-    VarCov_str= NULL,
+    var_cov_str= NULL,
     heter_resid=FALSE,
     G_list = NULL,
-    Inter_Gen_pos = NULL,
-    Gen_pos = NULL,
+    inter_gen_pos = NULL,
+    gen_pos = NULL,
     ...
 
 ){
@@ -99,7 +99,7 @@ asreml_herit_varCovraw <-  function(
 
 
   #### Extract variance and covariance for For factor analytic models
-  if(isTRUE(grepl("fa", VarCov_str)) | isTRUE(grepl("rr", VarCov_str))){
+  if(isTRUE(grepl("fa", var_cov_str)) | isTRUE(grepl("rr", var_cov_str))){
     ## Check for all variable is positive definitive
     ## Check for this other random term can be present aside the genetic effect
     #VAR_check <- vc[grep(paste0("!", heter_groups), rownames(vc), value = FALSE),"bound"]
@@ -110,7 +110,7 @@ asreml_herit_varCovraw <-  function(
     VarG_All = vector("list", length = length(G_list))
 
     ## Extract number of factor(s) specified by users
-    N_fa = as.double(substr(VarCov_str, 3, 100))
+    N_fa = as.double(substr(var_cov_str, 3, 100))
 
     Fac = seq(1, N_fa)
 
@@ -164,7 +164,7 @@ asreml_herit_varCovraw <-  function(
   } else { ## End of factor analytic model
 
     ##### For US
-    if (VarCov_str=="us"){
+    if (var_cov_str=="us"){
 
       ## Check for this other random term can be present aside the genetic effect
       #VAR_check <- vc[grep(paste0("!", heter_groups), rownames(vc), value = FALSE),"bound"]
@@ -266,7 +266,7 @@ asreml_herit_varCovraw <-  function(
 
      #### corgh
 
-    if (VarCov_str=="corgh"){
+    if (var_cov_str=="corgh"){
 
       Var.corr_All = vector("list", length = length(G_list))
 
@@ -320,7 +320,7 @@ asreml_herit_varCovraw <-  function(
 
     } ## end of corgh
 
-    if (VarCov_str=="corgv"){
+    if (var_cov_str=="corgv"){
 
       Var.corr_All = vector("list", length = length(G_list))
 
@@ -377,7 +377,7 @@ asreml_herit_varCovraw <-  function(
 
 ### corh
 
-    if (VarCov_str=="corh"){
+    if (var_cov_str=="corh"){
 
       Var.corr_All = vector("list", length = length(G_list))
 
@@ -424,7 +424,7 @@ asreml_herit_varCovraw <-  function(
     ## end corh
 
 
-    if (VarCov_str=="corv"){
+    if (var_cov_str=="corv"){
 
       Var.corr_All = vector("list", length = length(G_list))
 
@@ -538,14 +538,14 @@ asreml_herit_varCovraw <-  function(
 
     Total_varG[, k] <- sum(unlist(varG))
 
-    if(isTRUE(heter_resid) & !is.null(Inter_Gen_pos)){
+    if(isTRUE(heter_resid) & !is.null(inter_gen_pos)){
 
 
     H[, k] <- sum(unlist(varG))/(sum(unlist(varG))+VarE[k])
 
     } else {
 
-      if((isFALSE(heter_resid) | is.null(heter_resid)) & is.null(Inter_Gen_pos)){
+      if((isFALSE(heter_resid) | is.null(heter_resid)) & is.null(inter_gen_pos)){
 
         H[, k] <- sum(unlist(varG))/(sum(unlist(varG))+VarE)
       }
@@ -951,6 +951,6 @@ names(Result) <-  c("Covariance1",
 }
 
 
-#Res= VarCov_Her(model= mod.ref, heter_groups=heter_groups, VarCov_str= VarCov_str)
+#Res= VarCov_Her(model= mod.ref, heter_groups=heter_groups, var_cov_str= var_cov_str)
 
 

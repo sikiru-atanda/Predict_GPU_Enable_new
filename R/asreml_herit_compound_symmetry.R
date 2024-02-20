@@ -5,8 +5,8 @@
 #' @param heter_groups
 #' @param heter_resid
 #' @param G_list
-#' @param Inter_Gen_pos
-#' @param Gen_pos
+#' @param inter_gen_pos
+#' @param gen_pos
 #' @param ...
 #'
 #' @return
@@ -18,8 +18,8 @@ asreml_herit_CSM <-  function(
     heter_groups = NULL,
     heter_resid=FALSE,
     G_list = NULL,
-    Inter_Gen_pos = NULL,
-    Gen_pos = NULL,
+    inter_gen_pos = NULL,
+    gen_pos = NULL,
     ...
 
 ){
@@ -30,9 +30,9 @@ asreml_herit_CSM <-  function(
 
   ENV <- data.frame(model$mf)[, heter_groups]
 
-  Heter.Grp = levels(ENV)
+  heter_grp = levels(ENV)
 
-  N.Heter.Grp <- nlevels(ENV)
+  n_heter_grp <- nlevels(ENV)
 
   VAR_check <- vc[grep(paste0("!", heter_groups), rownames(vc), value = FALSE), ]
 
@@ -44,7 +44,7 @@ asreml_herit_CSM <-  function(
 
   if(length(VAR_check_Pos)>1) {
 
-    # stop(print(paste(paste("variance component for", as.character(Heter.Grp[VAR_check_Pos]), collapse = " and "),
+    # stop(print(paste(paste("variance component for", as.character(heter_grp[VAR_check_Pos]), collapse = " and "),
     #                    "are unstable, refit the model")), call. = FALSE)
 
     stop(print(paste(msg, paste(paste("variance component for", as.character(rownames(VAR_check)[VAR_check_Pos]), collapse = ","),
@@ -65,31 +65,31 @@ asreml_herit_CSM <-  function(
   }
 
   VarE  <- vc[grep("!R", rownames(vc)), "component"]
-  names(VarE) = Heter.Grp
+  names(VarE) = heter_grp
 
-  varG_per_omics = matrix(NA, nrow = length(G_list), ncol = length(Heter.Grp))
+  varG_per_omics = matrix(NA, nrow = length(G_list), ncol = length(heter_grp))
 
-  dimnames(varG_per_omics) <- list(unlist(G_list), Heter.Grp)
+  dimnames(varG_per_omics) <- list(unlist(G_list), heter_grp)
 
   for (g in 1:length(G_list)) {
 
   VarG = vc[grep(paste(G_list[[g]], "inv", sep = "_"), rownames(vc)), drop = TRUE,"component"]
 
-  VarG = rep(VarG, N.Heter.Grp)
+  VarG = rep(VarG, n_heter_grp)
 
   varG_per_omics[g, ] <-  VarG
 
   }
 
-  #VarG = rep(VarG, N.Heter.Grp)
+  #VarG = rep(VarG, n_heter_grp)
 
-  H = matrix(NA, nrow = 1, ncol = length(Heter.Grp))
+  H = matrix(NA, nrow = 1, ncol = length(heter_grp))
 
-  colnames(H) = Heter.Grp
+  colnames(H) = heter_grp
 
-  Total_varG = matrix(NA, nrow = 1, ncol = length(Heter.Grp))
+  Total_varG = matrix(NA, nrow = 1, ncol = length(heter_grp))
 
-  colnames(Total_varG) = colnames(Heter.Grp)
+  colnames(Total_varG) = colnames(heter_grp)
 
 
   for (k in 1:ncol(H)) {
@@ -105,14 +105,14 @@ asreml_herit_CSM <-  function(
 
     Total_varG[, k] <- sum(unlist(varG))
 
-    if(isTRUE(heter_resid) & !is.null(Inter_Gen_pos)){
+    if(isTRUE(heter_resid) & !is.null(inter_gen_pos)){
 
 
       H[, k] <- sum(unlist(varG))/(sum(unlist(varG))+VarE[k])
 
     } else {
 
-      if((isFALSE(heter_resid) | is.null(heter_resid)) & is.null(Inter_Gen_pos)){
+      if((isFALSE(heter_resid) | is.null(heter_resid)) & is.null(inter_gen_pos)){
 
         H[, k] <- sum(unlist(varG))/(sum(unlist(varG))+VarE)
       }

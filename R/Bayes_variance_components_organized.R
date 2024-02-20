@@ -41,6 +41,22 @@ Bayes_variance_components <- function(
                                 Var_E_Se = NULL,
                                 genomic_h2_Se = NULL){
 
+# browser()
+#
+#   cat(Var_U_1)
+#   cat(Var_U_2)
+#   cat(Var_U_3)
+#   cat(Var_U_4)
+#   cat(Var_U)
+#   cat(Var_E)
+#   cat(genomic_h2)
+#   cat(Var_U_1_Se)
+#   cat(Var_U_2_Se)
+#   cat(Var_U_3_Se)
+#   cat(Var_U_4_Se)
+#   cat(Var_U_Se)
+#   cat(Var_E_Se)
+#   cat(genomic_h2_Se)
 
 # if(isTRUE(all(!sapply(list("Var_U", "Var_E", "genomic_h2","Var_U_Se","Var_E_Se", "genomic_h2_Se"), is.null)))
 #     & isFALSE(all(sapply(list("Var_U_1", "Var_U_2", "Var_U_3", "Var_U_4",
@@ -106,6 +122,8 @@ Bayes_variance_components <- function(
 
 
   #####
+  # if(((((!is.null(Var_U_1)& !is.null(Var_U_2))&!is.null(Var_U_3)) & ((!is.null(Var_U_4)& !is.null(Var_U))& !is.null(genomic_h2))) &
+  #     (((!is.null(Var_U_1_Se)& !is.null(Var_U_2_Se))&!is.null(Var_U_3_Se)) & ((!is.null(Var_U_4_Se)& !is.null(Var_U_Se))& !is.null(genomic_h2_Se))))){
   if(((((!is.null(Var_U_1)& !is.null(Var_U_2))&!is.null(Var_U_3)) & ((!is.null(Var_U_4)& !is.null(Var_U))& !is.null(genomic_h2))) &
       (((!is.null(Var_U_1_Se)& !is.null(Var_U_2_Se))&!is.null(Var_U_3_Se)) & ((!is.null(Var_U_4_Se)& !is.null(Var_U_Se))& !is.null(genomic_h2_Se))))){
 

@@ -5,7 +5,7 @@
 \title{Title
 Convert dense matrix to sparse form}
 \usage{
-sparse_matrix(grm_kernel_data = NULL, drop_zero = TRUE)
+sparse_matrix(grm_kernel_data = NULL, inverse = NULL, drop_zero = TRUE)
 }
 \arguments{
 \item{drop_zero}{}

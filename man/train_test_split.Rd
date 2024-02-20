@@ -17,7 +17,7 @@ train_test_split(
 )
 }
 \arguments{
-\item{...}{}
+\item{message}{}
 }
 \description{
 Title

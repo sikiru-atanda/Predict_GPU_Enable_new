@@ -20,7 +20,7 @@ AI_Xgb(
   response = NULL,
   gen_name = NULL,
   message = TRUE,
-  center = TRUE,
+  scale = TRUE,
   para_tunning = FALSE,
   xgb_paras_tunning = c(Iter_tune = NULL, learning_rate_tune = NULL, L2_tune = NULL,
     L1_tune = NULL),
@@ -47,7 +47,7 @@ AI_Xgb(
 
 \item{gen_name}{column name containing individuals/genotypes}
 
-\item{center}{standardization of the x-variables}
+\item{scale}{}
 
 \item{para_tunning}{if user required parameter tunning}
 
@@ -66,8 +66,6 @@ AI_Xgb(
 \item{N_feature_impo}{number of feature/ x variables to extract based on the importance/weight}
 
 \item{core}{number of ram for paralllel job}
-
-\item{...}{}
 }
 \description{
 Title Extreme Gradient Boosting Machine Learning Genomic Selection Pipeline

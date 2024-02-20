@@ -199,11 +199,11 @@ Binary files /dev/null and b/.RData differ
 [32m+[m[32mETA = list()[m
 [32m+[m[32mmsg <- sprintf("==================================================\n")[m
 [32m+[m[32m### Get the random terms. Here no interaction terms in the random effect[m
-[32m+[m[32mrand_term_no_inter <- random_terms(random = random,[m
++rand_term_no_inter
 [32m+[m[32mobject = pheno_data)[m
 [32m+[m[32mpheno_data = pheno_clean[[1]][m
 [32m+[m[32m### Get the random terms. Here no interaction terms in the random effect[m
-[32m+[m[32mrand_term_no_inter <- random_terms(random = random,[m
++rand_term_no_inter
 [32m+[m[32mobject = pheno_data)[m
 [32m+[m[32mlibrary(PredictProR)[m
 [32m+[m[32mrm(list = ls()); ls()[m
