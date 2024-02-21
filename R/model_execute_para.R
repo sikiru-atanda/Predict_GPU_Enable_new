@@ -193,6 +193,8 @@
 #'
 model_execute <- function(
     pheno_data = NULL,
+    # pheno_file_name = NULL,
+    # pheno_file_path= NULL,
     pheno_data_train = NULL,
     pheno_data_test = NULL,
     geno_data = NULL,
@@ -415,6 +417,35 @@ model_execute <- function(
 
  }
 
+ ######
+ if(!is.null(vcf_file) | (!is.null(vcf_file_name) & !is.null(vcf_file_path))){
+   geno_data <- vcf_qc_recode(vcf_file_name = vcf_file_name,
+                              vcf_file_path = vcf_file_path,
+                              vcf_file = vcf_file,
+                              maf_threshold = maf_threshold,
+                              het_threshold =het_threshold,
+                              ind_call_rate_threshold = ind_call_rate_threshold,
+                              snp_call_rate_threshold = snp_call_rate_threshold,
+                              impute = impute,
+                              recode_format = recode_format,
+                              out_put_map = out_put_map,
+                              message = message)
+ } else {
+   if(!is.null(hapmap) | (!is.null(hapmap_file_name) & !is.null(hapmap_file_path))){
+     geno_data <- hmp_qc_recode(hapmap_file_name = hapmap_file_name,
+                                hapmap_file_path = hapmap_file_path,
+                                hapmap = hapmap,
+                                maf_threshold = maf_threshold,
+                                het_threshold =het_threshold,
+                                ind_call_rate_threshold = ind_call_rate_threshold,
+                                snp_call_rate_threshold = snp_call_rate_threshold,
+                                impute = impute,
+                                recode_format = recode_format,
+                                out_put_map = out_put_map,
+                                message = message)
+   }
+
+ }
 
  #### Get the clean geno_data ready for model fit
  ## The geno_to_model function depend on geno_precheck function. The expected
@@ -666,6 +697,7 @@ model_execute <- function(
                              res_model_output = res_model_output,
                              res_summary_stat = res_summary_stat,
                              res_plot = res_plot,
+                             geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
                              system_database = system_database))
 
  }
@@ -729,6 +761,7 @@ model_execute <- function(
                                  res_model_output = res_model_output,
                                  res_summary_stat = res_summary_stat,
                                  res_plot = res_plot,
+                                 geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
                                  system_database = system_database))
 
      } else if (GS_model == "GBLUP" && engine == 'asreml') {
@@ -806,6 +839,7 @@ model_execute <- function(
                                  res_model_output = res_model_output,
                                  res_summary_stat = res_summary_stat,
                                  res_plot =  NULL,
+                                 geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
                                  system_database = system_database))
 
      }
@@ -965,8 +999,9 @@ model_execute <- function(
                                                    pheno_object = ml_dat_res[["pheno_clean_data"]],
                                                    response = response,
                                                    test_set = ml_dat_res[["test_set"]],
-                                                   geno_model_ready_train = ml_dat_res[["merged_data"]],
+                                                   geno_omic_object = ml_dat_res[["merged_data"]],
                                                    eval_metrics = eval_metrics,
+                                                   model_parameters = res_model_output[["model_parameters"]],
                                                    GS_model = GS_model
          )
 
@@ -980,7 +1015,8 @@ model_execute <- function(
          return(results_handling(GS_model = GS_model,
                                  res_model_output = res_model_output,
                                  res_summary_stat = res_summary_stat,
-                                 res_plot = res_plot,
+                                 res_plot = NULL,
+                                 geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
                                  system_database = system_database))
 
      }

@@ -95,7 +95,7 @@ AI_randomForest <- function(pheno_object=NULL,
                                 stringsAsFactors = FALSE)
 
 
-         names(AI_preds)[1] = c(gen_name)
+         names(AI_preds)[1:2] = c(gen_name, "Predicted_value")
 
 
          bestTune <- c(AI_fit$bestTune, AI_fit$method)
@@ -177,7 +177,7 @@ if(!is.null(geno_omic_test_object)){
                                 PEV = NA,
                                 Reliability = NA,
                                 stringsAsFactors = FALSE)
-         names(AI_preds)[1] = c(gen_name)
+         names(AI_preds)[1:2] = c(gen_name, "Predicted_value")
 
          res_feature = caret::varImp(AI_fit)[[1]]
          res_feature = data.frame(feature = colnames(geno_omic_object),
@@ -194,11 +194,11 @@ if(!is.null(geno_omic_test_object)){
      } ## End of when no need for tunning.
 
 
-     model_para <- data.frame(parameters = c("ntree","mtry"),
-                              value = c(AI_fit$ntree, AI_fit$mtry),
+     model_para <- data.frame(stat = c("ntree","mtry"),
+                              summary = c(AI_fit$ntree, AI_fit$mtry),
                               stringsAsFactors = FALSE)
 
-
+     colnames(model_para)[1:2] <- c("stat", "summary")
      output = list(model_para,
                    AI_preds,
                    res_feature,

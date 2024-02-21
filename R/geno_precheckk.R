@@ -38,6 +38,10 @@ geno_precheck <- function(object_geno = NULL,
       stop("Individual or marker names not assigned to rows or columns of 'object_geno'.")
     }
 
+   AA <-  detect_genomic_coding(object_geno = object_geno)
+   if(AA=="SNP (0, 1, 2, -1)") {
+     stop("SNP recoding is wrong.")
+   }
     # Check if allele dosage are not in  0, 1, 2 format but -1, 0, 1 format
     check_geno <- which(object_geno == -1)
     if (length(check_geno) != 0) {

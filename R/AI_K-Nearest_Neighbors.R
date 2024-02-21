@@ -90,7 +90,7 @@ if(!is.null(geno_omic_test_object)){
                                  stringsAsFactors = FALSE)
 
 
-         names(AI_preds)[1] = c(gen_name)
+         names(AI_preds)[1:2] = c(gen_name, "Predicted_value")
 
          bestTune <- c(AI_fit$bestTune, AI_fit$method)
 
@@ -137,7 +137,7 @@ if(!is.null(geno_omic_test_object)){
                                 PEV = NA,
                                 Reliability = NA,
                                 stringsAsFactors = FALSE)
-         names(AI_preds)[1] = c(gen_name)
+         names(AI_preds)[1:2] = c(gen_name, "Predicted_value")
 
        } else {
          stop("Training set missing")
@@ -146,8 +146,9 @@ if(!is.null(geno_omic_test_object)){
 
      } ## End of when no need for tunning.
 
-     model_para <- data.frame(parameter ="k",
-                              value = AI_fit$k)
+     model_para <- data.frame(stat ="k",
+                              summary = AI_fit$k)
+     colnames(model_para)[1:2] <- c("stat", "summary")
      output = list(model_para,
                    AI_preds,
                    AI_fit)

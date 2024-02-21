@@ -86,7 +86,7 @@ AI_svm <- function(pheno_object=NULL,
                                 PEV = NA,
                                 Reliability = NA,
                                 stringsAsFactors = FALSE)
-         names(AI_preds)[1] = c(gen_name)
+         names(AI_preds)[1:2] = c(gen_name, "Predicted_value")
 
          bestTune <- c(AI_fit$bestTune, AI_fit$method)
 
@@ -105,6 +105,7 @@ AI_svm <- function(pheno_object=NULL,
          AI_fit = kernlab::ksvm(x = geno_omic_object,
                                 y = pheno_object[, response],
                                 scaled  = FALSE,
+                                type = "nu-svr",
                                 C = c
          )
 
@@ -115,7 +116,7 @@ AI_svm <- function(pheno_object=NULL,
          } else {
            if(!is.null(geno_omic_object) & is.null(geno_omic_test_object)) {
              AI_preds <- kernlab::predict(AI_fit,
-                                          geno_omic_test_object)
+                                          geno_omic_object)
            }
 
          }
@@ -126,16 +127,18 @@ AI_svm <- function(pheno_object=NULL,
                                 PEV = NA,
                                 Reliability = NA,
                                 stringsAsFactors = FALSE)
-         names(AI_preds)[1] = c(gen_name)
+         names(AI_preds)[1:2] = c(gen_name, "Predicted_value")
 
        }
 
-       model_para <- data.frame(parameters = c("epsilon", "C"),
-                                value = c(AI_fit@param$epsilon,AI_fit@param$C)
-       )
 
      } ## End of when no need for tunning.
 
+
+  model_para <- data.frame(stat = c("epsilon", "C"),
+                           summary = c(AI_fit@param$epsilon,AI_fit@param$C)
+  )
+  colnames(model_para)[1:2] <- c("stat", "summary")
 
      output = list(model_para,
                    AI_preds,

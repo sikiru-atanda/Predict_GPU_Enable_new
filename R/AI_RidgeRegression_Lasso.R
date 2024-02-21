@@ -103,7 +103,7 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
                                 PEV = NA,
                                 Reliability = NA,
                                 stringsAsFactors = FALSE)
-         names(AI_preds)[1] = c(gen_name)
+         names(AI_preds)[1:2] = c(gen_name, "Predicted_value")
 
          bestTune <- c(AI_fit$bestTune, AI_fit$GS_model)
 
@@ -153,7 +153,7 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
                                 PEV = NA,
                                 Reliability = NA,
                                 stringsAsFactors = FALSE)
-         names(AI_preds)[1] = c(gen_name)
+         names(AI_preds)[1:2] = c(gen_name, "Predicted_value")
 
 
 
@@ -166,11 +166,11 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
 
 
 
-     model_para <- data.frame(parameters = c("lambda", "alpha"),
-                              value = c(AI_fit$lambda,alpha),
+     model_para <- data.frame(stat = c("lambda", "alpha"),
+                              summary = c(AI_fit$lambda,alpha),
                               stringsAsFactors = FALSE)
 
-
+     colnames(model_para)[1:2] <- c("stat", "summary")
 
      output = list(model_para,
                    AI_preds,

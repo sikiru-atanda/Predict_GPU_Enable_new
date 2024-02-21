@@ -209,10 +209,10 @@ if(!is.null(geno_omic_test_object)){
   model_para <- c(nrounds = xgb_fit$niter, xgb_fit$params)
 
   model_para <- as.data.frame(unlist(model_para))
-  model_para <-  data.frame(model_paramters = rownames(model_para),
-                            value = model_para,
+  model_para <-  data.frame(stat = rownames(model_para),
+                            summary = model_para,
                   stringsAsFactors = FALSE)
-  colnames(model_para)[2] <- "value"
+  colnames(model_para)[1:2] <- c("stat", "summary")
 
   rownames(model_para) <- NULL
 

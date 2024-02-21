@@ -153,7 +153,7 @@ summary_statistics_bayes <- function(mod=NULL,
 
   output <-  list(Stat_Res)
 
-  names(output) <- "Statics_summary"
+  names(output) <- "summary_statistics"
 
   return(output)
 

@@ -14,14 +14,13 @@ results_handling <-  function(GS_model = NULL,
                               res_model_output = NULL,
                               res_summary_stat = NULL,
                               res_plot = NULL,
+                              geno_qc_stat = NULL,
                               system_database = TRUE){
-  ### This part is for GBLUP_BRR
-  # if(exists("GS_modeluse")){
-  #   GS_model <-  GS_modeluse
-  # }
 
-  if(!exists("res_plot")){
-    res_plot = NULL
+  if(!is.null(geno_qc_stat)){
+
+    res_model_output[["geno_qc_stat"]] <- geno_qc_stat
+
   }
 
   ############
@@ -60,7 +59,7 @@ results_handling <-  function(GS_model = NULL,
 
           } else if(names(res_model_output)[i]=="trained_model"){
             base::saveRDS(res_model_output[[i]],
-                          "AI_trained_model.RData")
+                          paste(GS_model, "trained_model.RData", sep = "_"))
 
           }else{
 
@@ -123,31 +122,11 @@ results_handling <-  function(GS_model = NULL,
 
           }
 
-          # if(class(res_model_output[[i]])=="asreml"){
-          #     if(names(res_model_output)[i]=="Asreml_model"){
-          #         base::saveRDS(res_model_output[[i]],
-          #                       "asreml_model.RData")
-          #     }
-          #
-          # }
-
-
-
         }
 
 
       }
 
-      # output <- res_model_output[[i]]
-      # filename <- paste(names(output), "csv", sep = ".")
-      #
-      # if (class(output) == "list") {
-      #     for (j in seq_along(output)) {
-      #         write.csv(output[[j]], file.path(pathout, filename[j]), row.names = TRUE)
-      #     }
-      # } else {
-      #     write.csv(output, file.path(pathout, filename), row.names = !is.null(rownames(output)))
-      # }
     }
     if(!is.null(res_summary_stat)){
     for(s in 1:length(res_summary_stat)){
@@ -181,7 +160,7 @@ results_handling <-  function(GS_model = NULL,
     subDir <- paste("output", systime, sep = "_")
     subDir2 <- paste("outputNew", systime, sep = "_")
 
-    if (dir.exists(file.path(mainDir, subDir))) {
+    if (!dir.exists(file.path(mainDir, subDir))) {
       dir.create(file.path(mainDir, subDir))
       setwd(file.path(mainDir, subDir))
     } else {
@@ -209,29 +188,25 @@ results_handling <-  function(GS_model = NULL,
     #   GS_model <- GS_modeluse
     # }
 
-    if (GS_model %in% c("Xgboost")) {
-      output <- list(model_results = res_model_output,
-                     summary_statistic = res_summary_stat)
-      if (exists("test_set_")) {
-        output$res_plot <- res_plot
-      }
-      return(output)
+    # if (GS_model %in% c("Xgboost")) {
+    #   output <- list(model_results = res_model_output,
+    #                  summary_statistic = res_summary_stat)
+    #   if (exists("test_set_")) {
+    #     output$res_plot <- res_plot
+    #   }
+    #   return(output)
 
-    } else if (GS_model %in% c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS", "GBLUP_BRR", "GBLUP")) {
+    #} else if (GS_model %in% c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS", "GBLUP_BRR", "GBLUP")) {
 
       if (isFALSE(system_database)) {
         output <- saveOutputAndZip(res_model_output, res_summary_stat)
       } else {
         output <- list(model_results = res_model_output,
-                       summary_statistic = res_summary_stat)
+                       summary_statistic = res_summary_stat
+                       )
       }
       return(output)
 
-    } else {
-
-      output <- list(model_results = res_model_output, summary_statistic = res_summary_stat)
-      return(output)
-    }
   }
 
 

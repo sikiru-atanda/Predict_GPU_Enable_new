@@ -48,8 +48,8 @@ process_geno_data <- function(geno_data = NULL,
   msg <- sprintf("==================================================\n")
 
 # genomic data check ------------------------------------------------------
-
-  cleaned_data <- geno_to_model(geno_data = geno_data,
+### geno_data will be a list when user supplied vcf/hampmap and it is recorded in the engine
+  cleaned_data <- geno_to_model(geno_data = if (inherits(geno_data, "list")) geno_data[["snps_matrix"]] else geno_data,
                                 train_geno_data = train_geno_data,
                                 test_geno_data = test_geno_data,
                                 maf_threshold = maf_threshold,
@@ -58,8 +58,21 @@ process_geno_data <- function(geno_data = NULL,
                                 snp_call_rate_threshold = snp_call_rate_threshold,
                                 impute = impute,
                                 map_data = map_data,
-                                qc_filtering = qc_filtering,
+                                qc_filtering = if (inherits(geno_data, "list")) NULL else qc_filtering,
                                 message = message)
+
+  ### This import the geno_qc from QC and recoding and add it for the final
+  ## qc_metrics_and_summary_stat when raw snp data is provided
+  if (inherits(geno_data, "list")) {
+    metric_removed <- c("markers_callrate_removed",
+                        "ind_callrate_removed",
+                        "het_markers_removed",
+                        "maf_markers_removed")
+    index_metric_removed <- which(!(rownames(cleaned_data[["qc_metrics_and_summary_stat"]]) %in% metric_removed))
+    cleaned_data[["qc_metrics_and_summary_stat"]] <- rbind(cleaned_data[["qc_metrics_and_summary_stat"]][index_metric_removed, ],
+                                                           geno_data[["qc_metrics_and_summary_stat"]])
+  }
+
 
   if(attr(cleaned_data[["snps_matrix"]], "cleared")!="for_model_fit" && all(class(cleaned_data[["snps_matrix"]])!=c("matrix", "array"))) {
     stop(print(paste(msg,'Data is not fit for model')), call. = FALSE)

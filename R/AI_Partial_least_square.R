@@ -100,14 +100,14 @@ AI_pls <- function(pheno_object=NULL,
                          stringsAsFactors = FALSE)
 
 
-  names(AI_preds)[1] = c(gen_name)
+  names(AI_preds)[1:2] = c(gen_name, "Predicted_value")
 
   row.names(AI_preds) <- NULL
   #}
-  optimal_com <-  data.frame(parameters = "component",
-                             value = optimal_components)
-
-  output = list(optimal_com,
+  model_para <-  data.frame(stat = "component",
+                             summary = optimal_components)
+  colnames(model_para)[1:2] <- c("stat", "summary")
+  output = list(model_para,
                 AI_preds,
                 pls_model)
 

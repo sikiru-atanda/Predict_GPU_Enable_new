@@ -18,6 +18,7 @@ summary_statistics_AI <- function(predicted_object= NULL,
                                   response = NULL,
                                   test_set = NULL,
                                   geno_omic_object=NULL,
+                                  model_parameters = NULL,
                                   eval_metrics = c("Accuracy",
                                                    "Mean_Squared_Error",
                                                    "Bias",
@@ -32,31 +33,12 @@ summary_statistics_AI <- function(predicted_object= NULL,
 
   rownames(Eval_met) <- eval_metrics
 
-  #n_pheno <- paste('Number of phenotypes=', (nrow(pheno_object)))
-
   n_pheno <- nrow(pheno_object)
 
-  # if(GS_model=="Xgboost"){
-  # nfeatures <-  mod$trained_model$nfeatures
-  #
-  # feature_names <- mod$trained_model$feature_names
-  # }
-
   nfeatures = ncol(geno_omic_object)
-  feature_names = colnames(geno_omic_object)
+  #feature_names = colnames(geno_omic_object)
   yhat <-  predicted_object
   #Res <-  cat(tmp,'\n')
-
-
-  #cat(' Min (Traning set)', response, '= ', min(mod$y,na.rm=TRUE),'\n')
-  #cat(' Min', paste0(paste0("(",response),')'), '= ', min(mod$y,na.rm=TRUE),'\n')
-  #trn_min <- paste(paste('Min', '= '), round(min(pheno_object[, response],na.rm=TRUE), 3), sep = "")
-  #cat(' Max (Traning set)',response, '= ', max(mod$y,na.rm=TRUE),'\n')
-  #cat(' Max', paste0(paste0("(",response),')'), '= ', max(mod$y,na.rm=TRUE),'\n')
-  #trn_max <- paste(paste('Max', '= '), round(max(pheno_object[, response],na.rm=TRUE), 3), sep = "")
-  #cat(' Variance of phenotypes (TRN)=', round(var(mod$y,na.rm=TRUE),4),'\n')
-  #var_trn <- paste('Variance of phenotypes =', round(var(pheno_object[, response],na.rm=TRUE),3))
-  #Res_trn <- paste('Residual variance=',round(var(pheno_object[, response] - yhat[,1]),3))
 
   trn_min <- round(min(pheno_object[, response],na.rm=TRUE), 3)
   trn_max <- round(max(pheno_object[, response],na.rm=TRUE), 3)
@@ -103,9 +85,7 @@ summary_statistics_AI <- function(predicted_object= NULL,
   }
 
 
-
-
-  Stat_Res = as.data.frame(t(data.frame(Min = trn_min,
+  Stat_Res <- as.data.frame(t(data.frame(Min = trn_min,
                                         Max = trn_max,
                                         Phenotype_Variance = var_trn,
                                         Residual_Variance = Res_trn,
@@ -114,51 +94,28 @@ summary_statistics_AI <- function(predicted_object= NULL,
                                         Number_Predictors = nfeatures,
                                         GS_model = GS_model
                                         )))
-  Stat_Res$stat = rownames( Stat_Res)
-  Stat_Res =  Stat_Res[, c(2,1)]
+  Stat_Res$stat <- rownames( Stat_Res)
+  Stat_Res <- Stat_Res[, c(2,1)]
   names(Stat_Res)[2] <- "summary"
-
-  Eval_met = data.frame(Eval_met)
-  Eval_met$stat = rownames(Eval_met)
-  Eval_met =  Eval_met[, c(2,1)]
+  if(!is.null(eval_metrics) & !is.null(Eval_met)){
+  Eval_met <- data.frame(Eval_met)
+  Eval_met$stat <- rownames(Eval_met)
+  Eval_met <- Eval_met[, c(2,1)]
   names(Eval_met)[2] <- "summary"
 
-  Stat_Res = rbind(Stat_Res, Eval_met)
-  #####
-if(GS_model=="Xgboost"){
-  model_para = do.call(rbind, mod$trained_model$params[-c(8, 9)])
-  model_para = data.frame(rbind(model_para, eval_metric = mod$model_parameters[[9]][1]))
-  model_para$Parameters = rownames(model_para)
-  model_para = model_para[, c(2,1)]
-  names(model_para)[2] <- "Value"
-
-}
-
-  if(GS_model=="RandomForest" | GS_model== "K-NearestNeighbors" | GS_model== "SupportVectorMachine" | GS_model=="Lasso" | GS_model=="Ridge_Regression"){
-
-    model_para = data.frame(Value= mod$model_parameters)
-    model_para$Parameters = rownames(model_para)
-    model_para = model_para[, c(2,1)]
-
-
+  Stat_Res <- rbind(Stat_Res, Eval_met)
   }
 
- #  output <- list(Min = trn_min, Max = trn_max, Variance = var_trn,
- #                 Residual = Res_trn, n_trn = n_trn, n_tst = n_tst,
- #                 pred_acc = pred_acc,
- #                 model_para = mod$model_results$model_parameters[-length(mod$model_results$model_parameters)]
- # )
- #
- #
- #
- #  names(output) <-  c("trn_min", "trn_max", "variance_trn",
- #                      "Residual", "n_trn", "n_tst",
- #                      "pred_acc", "model_para")
+  if(!is.null(model_parameters)){
+    Stat_Res <- rbind(Stat_Res, model_parameters)
+  }
+  #####
 
 
-  output <-  list(Stat_Res, model_para)
 
-  names(output) <- c("Statics_summary", "model_parameters")
+  output <-  list(Stat_Res)
+
+  names(output) <- "summary_statistics"
 
   return(output)
 
