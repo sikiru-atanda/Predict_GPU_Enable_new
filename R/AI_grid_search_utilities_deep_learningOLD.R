@@ -1,4 +1,3 @@
-
 #' Title
 #'
 #' @param X_train
@@ -11,15 +10,15 @@
 #'
 #' @return
 #' @export
-#'
+#' @importFrom magrittr |>
 #' @examples
-grid_search_deep_learning <- function(X_train,
-                           y_train,
-                           param_grid,
-                           epochs,
-                           batch_size,
-                           validation_split = 0.2,
-                           early_stop = TRUE) {
+grid_search_deeplearningOLD <- function(X_train,
+                        y_train,
+                        param_grid,
+                        epochs,
+                        batch_size,
+                        validation_split = 0.2,
+                        early_stop = TRUE) {
   results <- list()
 
   # Default values for hyperparameters
@@ -54,13 +53,13 @@ grid_search_deep_learning <- function(X_train,
                                                  epoch,
                                                  batch_size_val)
             if(isFALSE(early_stop)){
-              # Train the model
-              history <- model |> keras::fit(
-                x = X_train, y = y_train,
-                epochs = epoch,
-                batch_size = batch_size_val,
-                verbose = 0
-              )
+            # Train the model
+            history <- model |> keras::fit(
+              x = X_train, y = y_train,
+              epochs = epoch,
+              batch_size = batch_size_val,
+              verbose = 0
+            )
 
             } else {
               if(is.null(validation_split)| is.na(validation_split)){

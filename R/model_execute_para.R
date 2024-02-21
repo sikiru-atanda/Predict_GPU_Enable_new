@@ -639,8 +639,21 @@ model_execute <- function(
 
 
  }
-##########################################################
+### Concatenation of omics for ML
 
+ if (GS_model %in% AI_valid_models) {
+
+   ml_dat_res <- ML_data_processing(pheno_clean = pheno_clean,
+                                    response = response,
+                                    gen_name = gen_name,
+                                    geno_clean = if ("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
+                                    omic_clean = if (!"geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL
+   )
+
+
+ }
+
+ ### Ends
  ##########################################################################
  #########################################################################
  ## Start of Bayes A, B, C, BL and BRR Models for Single Location       ##
@@ -872,12 +885,12 @@ model_execute <- function(
              stop(paste(msg, GS_model, 'only works for single location/enviroment.'), call. = FALSE)
          }
 
-         ml_dat_res <- ML_data_processing(pheno_clean = pheno_clean,
-                                          response = response,
-                                          gen_name = gen_name,
-                                          geno_clean = if ("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
-                                          omic_clean = if (!"geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL
-                                          )
+         # ml_dat_res <- ML_data_processing(pheno_clean = pheno_clean,
+         #                                  response = response,
+         #                                  gen_name = gen_name,
+         #                                  geno_clean = if ("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
+         #                                  omic_clean = if (!"geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL
+         #                                  )
 
          switch(GS_model,
                 "Xgboost" = {

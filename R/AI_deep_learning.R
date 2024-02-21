@@ -87,18 +87,56 @@ deep_learning_model <- function(pheno_object=NULL,
     return(res)
   }
 
+  # get_best_model <- function(results, param_grid) {
+  #   if (length(results) == 0) {
+  #     stop("No results provided.")
+  #   }
+  #
+  #   best_accuracy <- 0
+  #   best_model <- NULL
+  #   best_hyperparameters <- NULL
+  #
+  #   for (key in names(results)) {
+  #     if (!is.null(results[[key]]$history)) {
+  #       validation_accuracy <- max(results[[key]]$history$metrics[[2]])
+  #
+  #       if (validation_accuracy > best_accuracy) {
+  #         best_accuracy <- validation_accuracy
+  #         best_model <- results[[key]]$model
+  #         best_hyperparameters <- key
+  #       }
+  #     }
+  #   }
+  #
+  #   if (is.null(best_model)) {
+  #     stop("No valid models found in the results.")
+  #   }
+  #
+  #   # Extract the hyperparameters dynamically based on the param_grid provided by the user
+  #   hyperparameters <- strsplit(best_hyperparameters, "_")[[1]]
+  #   hyperparameters_names <- names(param_grid)
+  #   hyperparameters_df <- data.frame(matrix(ncol = length(param_grid), nrow = 1))
+  #   colnames(hyperparameters_df) <- hyperparameters_names
+  #
+  #   for (i in seq_along(hyperparameters_names)) {
+  #     hyperparameters_df[, i] <- hyperparameters[i]
+  #   }
+  #
+  #   return(list(best_model = best_model, best_hyperparameters = hyperparameters_df))
+  # }
+
   # Create and compile the model
 
 
-  if (para_tunning) {
+  if (isTRUE(para_tunning)) {
     # Perform grid search for hyperparameter tuning
-    grid_results <- grid_search_dp(geno_omic_object,
-                                   y_train,
-                                   param_grid,
-                                   epochs,
-                                   batch_size,
-                                   validation_split,
-                                   early_stop)
+    grid_results <- grid_search_deep_learning(geno_omic_object,
+                                             y_train,
+                                             param_grid,
+                                             epochs,
+                                             batch_size,
+                                             validation_split,
+                                             early_stop)
 
     best_model <- get_best_model(grid_results, param_grid)
 
@@ -108,7 +146,13 @@ deep_learning_model <- function(pheno_object=NULL,
                   best_model = best_model,
                   grid_results = best_model$best_hyperparameters))
     } else {
-      return(list(best_model = best_model, grid_results = grid_results))
+
+      if (!is.null(geno_omic_object) & is.null(geno_omic_test_object)) {
+        predictions <- stats::predict(best_model$best_model, geno_omic_object)
+      }
+      return(list(predictions = predictions,
+                  best_model = best_model,
+                  grid_results = best_model$best_hyperparameters))
     }
   } else {
     model <- deep_learning_model_utility(geno_omic_object,
@@ -123,7 +167,10 @@ deep_learning_model <- function(pheno_object=NULL,
       predictions <- stats::predict(model, geno_omic_test_object)
       return(list(predictions = predictions, model = model))
     } else {
-      return(list(model = model))
+      if (!is.null(geno_omic_object) & is.null(geno_omic_test_object)) {
+        predictions <- stats::predict(model, geno_omic_object)
+      }
+      return(list(predictions = predictions, model = model))
     }
   }
 }
