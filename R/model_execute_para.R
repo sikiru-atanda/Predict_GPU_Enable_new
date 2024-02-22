@@ -281,7 +281,6 @@ model_execute <- function(
                      "Relative_Squared_Error",
                      "Mean_Absolute_Error",
                      "Mean_Absolute_Percent_Error"),
-    para_tunning = FALSE,
     fixed_term_model_bayesian = 'FIXED',
     rand_term_model_bayesian = NULL,
     core = NULL,
@@ -320,6 +319,15 @@ model_execute <- function(
     qc_filtering = TRUE,
     message= TRUE,
     system_database = FALSE,
+    num_hidden_layers = 1,
+    neurons_per_layer = NULL,
+    learning_rate = 0.001,
+    epochs = 10,
+    batch_size = 32 ,
+    para_tunning = FALSE,
+    param_grid = NULL,
+    validation_split = 0.2,
+    early_stop = TRUE,
     xgb_paras_tunning = NULL,
     rf_paras_tunning = NULL,
     pls_paras_tunning = NULL,
@@ -336,61 +344,122 @@ model_execute <- function(
     msg <- sprintf("==================================================\n")
 
     # Define available models and variance structures
-    var_cov_str_available <- c("us",
-                               "corgh",
-                               "corgv",
-                               "corh",
-                               "corv",
-                               "fa",
-                               "rr")
-    AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare", "SupportVectorMachine", "K-NearestNeighbors", "Lasso", "Ridge_Regression", "deep_learning_model")
+    var_cov_str_available <- c("us","corgh","corgv",
+                               "corh","corv","fa","rr")
+
+    AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare",
+                         "SupportVectorMachine", "K-NearestNeighbors", "Lasso",
+                         "Ridge_Regression", "deep_learning_model")
     bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
     bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
+
+    asreml_model <- "GBLUP"
+
+    # if(!is.null(var_cov_str)){
+    # if (!(var_cov_str %in% var_cov_str_available)) {
+    #   stop("Invalid output variance-covariance structure. Choose from: ",
+    #        paste(var_cov_str_available, collapse = ", "), call. = FALSE)
+    #   }
+    # }
+
+    if(is.null(GS_model)){
+      stop(paste(msg, "Genomic prediction model is missing."), call. = FALSE)
+
+    }else{
+      if (!(GS_model %in% c(bayes_valid_models,
+                            bayes_gblup_valid_models,
+                            asreml_model,
+                            AI_valid_models))) {
+      stop("Invalid genomic prediction model. Choose from:\n", paste(c(bayes_valid_models,
+                                                                      bayes_gblup_valid_models,
+                                                                      asreml_model,
+                                                                      AI_valid_models), collapse = ", "),
+           call. = FALSE)
+      }
+
+    }
 
     # Check for mandatory phenotypic data
     if (is.null(pheno_data)){
       stop(paste(msg, "Phenotypic data is missing."), call. = FALSE)
     }
 
+    ##############
+    # Define conditions
+    condition1 <- ((is.null(geno_data) & is.null(omic1_data)) & (is.null(omic2_data) & is.null(omic3_data)))
+    condition1_1 <- (is.null(gmatrix_method) & (is.null(kernel_method)))
+
+    condition2 <- ((is.null(gmatrix) & is.null(gkernel)) & ((is.null(omic1_kernel) & is.null(omic2_kernel)) & is.null(omic3_kernel)))
+    ###################
+
     # Check for ASReml requirement for GBLUP
+    if(!is.null(engine)){
     if (GS_model == "GBLUP" && engine != "asreml") {
       stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
     }
 
-    # Check for multi-environment structure and required inputs for GBLUP
-    if (length(pheno_data[,gen_name]) > length(unique(pheno_data[,gen_name])) & is.null(heter_groups)){
-      stop(paste(msg, "Your phenotypic data has a multi-environment structure, but the column containing the environment/location is missing. Provide it in heter_groups."), call. = FALSE)
+    } else {
 
+      if(is.null(engine)){
+        stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
+      }
+    }
+
+    # Check for multi-environment structure and required inputs for GBLUP
+    if (length(pheno_data[,gen_name]) > length(unique(pheno_data[,gen_name]))){
+      if( is.null(heter_groups)){
+      stop(paste(msg, "Your phenotypic data has a multi-environment structure, but the column containing the environment/location is missing. Provide it in heter_groups."), call. = FALSE)
+      }
+
+      ### This is important for asreml for multi-environment analysis
+      if (GS_model %in% "GBLUP") {
+        if ((!is.null(heter_groups) & !is.null(heter_resid)) & is.null(var_cov_str)) {
+          stop("Your data suggest multi-environment but variance-covariance structure is missing.Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
+        } else if ((!is.null(heter_groups) & is.null(heter_resid)) & !is.null(var_cov_str)){
+          stop("Your data suggest multi-environment but variance-covariance structure. heter_resid must be TRUE.", call. = FALSE)
+          } else {
+          if (!(var_cov_str %in% var_cov_str_available)) {
+            stop("Invalid output variance-covariance structure. Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
+          }
+        }
+      }
       # Check for required inputs for multi-environment GBLUP
-      # if ((GS_model %in% c("GBLUP_BRR", "RKHS")) &&
-      #     ((is.null(gmatrix) || is.null(gkernel) || is.null(omic1_kernel) || is.null(omic2_kernel) || is.null(omic3_kernel)) ||
-      #      ((is.null(geno_data) || is.null(omic1_data) || is.null(omic2_data) || is.null(omic3_data)) &&
-      #       (is.null(gmatrix_method) || is.null(kernel_method))))) {
-      #   stop(paste(msg, "To fit a Bayesian multi-environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
-      # }
+      # Check if condition1 is true
+      if (GS_model %in% c(bayes_gblup_valid_models, "GBLUP")){
+        if (condition1!=condition1_1 & isTRUE(condition2)) {
+          #print('ok')
+          stop(paste(msg, "To fit a Bayesian or ASReml multi-environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
+        }
+
+      }
+
+    } else {
+
+    # Check for single environment GBLUP and Bayesian models
+    if (length(pheno_data[,gen_name]) == length(unique(pheno_data[,gen_name]))){
+
+      # Check for required inputs for Bayesian or ASReml single environment GBLUP models
+      if (GS_model %in% c(bayes_gblup_valid_models, "GBLUP")){
+        if (condition1!=condition1_1 & isTRUE(condition2)) {
+          #print('ok')
+          stop(paste(msg, "To fit a Bayesian or ASReml single environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
+        }
+
+      }
+
+
+      # Check for required inputs for Bayesian models
+      if (GS_model %in% c(bayes_valid_models, AI_valid_models)){
+        if (isTRUE(condition1)) {
+          #print('ok')
+          stop(paste(msg, "To fit a Bayesian or machine learning model, provide genomic or omics data."), call. = FALSE)
+        }
+
+      }
 
     }
 
-    # Check for single environment GBLUP and Bayesian models
-    # if (length(pheno_data[,gen_name]) == length(unique(pheno_data[,gen_name]))){
-    #
-    #   # Check for required inputs for Bayesian or ASReml single environment GBLUP models
-    #   if ((GS_model %in% c(bayes_gblup_valid_models, "GBLUP")) &&
-    #       ((is.null(gmatrix) || is.null(gkernel) || is.null(omic1_kernel) || is.null(omic2_kernel) || is.null(omic3_kernel)) ||
-    #        (is.null(geno_data) || is.null(omic1_data) || is.null(omic2_data) || is.null(omic3_data)) &&
-    #        (is.null(gmatrix_method) || is.null(kernel_method)))) {
-    #     stop(paste(msg, "To fit a Bayesian or ASReml single environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
-    #   }
-    #
-    #
-    #   # Check for required inputs for Bayesian models
-    #   if ((GS_model %in% bayes_valid_models) &&
-    #       (is.null(geno_data) || is.null(omic1_data) || is.null(omic2_data) || is.null(omic3_data))) {
-    #     stop(paste(msg, "To fit a Bayesian model, provide genomic or omics data."), call. = FALSE)
-    #   }
-    #
-    # }
-
+    }
     ##
 ### Check phenotype_to_model for details
  #    This serve as gateway between phenotype-precheck function and readiness of
@@ -994,6 +1063,13 @@ model_execute <- function(
                         geno_omic_test_object = ml_dat_res[["merged_data_test"]],
                         response=response,
                         gen_name=gen_name,
+                        num_hidden_layers = num_hidden_layers,
+                        neurons_per_layer = neurons_per_layer,
+                        learning_rate = learning_rate,
+                        epochs = epochs,
+                        batch_size = batch_size,
+                        validation_split = validation_split,
+                        early_stop = early_stop,
                         message = message,
                         scale = scale,
                         para_tunning = para_tunning,

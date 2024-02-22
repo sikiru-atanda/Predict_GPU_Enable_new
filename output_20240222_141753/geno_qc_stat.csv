@@ -1,0 +1,10 @@
+"metric","stat"
+"snp_call_rate_threshold",0.9
+"total_snp_removed",0
+"ind_call_rate_threshold",0.9
+"total_genotypes_removed",0
+"het_threshold",0.1
+"total_het_snps_removed",0
+"maf_threshold",0.01
+"total_maf_snps_remove",0
+"total_monomorphic_snps_removed",0

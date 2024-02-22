@@ -1,22 +1,25 @@
 
 #' Title
 #'
-#' @param X_train
-#' @param y_train
 #' @param num_hidden_layers
 #' @param neurons_per_layer
 #' @param learning_rate
 #' @param epochs
-#' @param X_test
-#' @param tuning
 #' @param param_grid
 #' @param validation_split
 #' @param early_stop
 #' @param batch_size
+#' @param pheno_object
+#' @param geno_omic_object
+#' @param geno_omic_test_object
+#' @param response
+#' @param gen_name
+#' @param message
+#' @param scale
+#' @param para_tunning
 #'
 #' @return
 #' @export
-#' @importFrom magrittr |>
 #'
 #' @examples
 deep_learning_model <- function(pheno_object=NULL,
@@ -60,6 +63,7 @@ deep_learning_model <- function(pheno_object=NULL,
         best_accuracy <- validation_accuracy
         best_model <- results[[key]]$model
         best_hyperparameters <- unlist(strsplit(key, "_")[[1]])
+
       }
     }
 
@@ -86,7 +90,7 @@ deep_learning_model <- function(pheno_object=NULL,
                  best_hyperparameters = best_hyperparameters)
     return(res)
   }
-
+######
   # get_best_model <- function(results, param_grid) {
   #   if (length(results) == 0) {
   #     stop("No results provided.")
@@ -142,17 +146,30 @@ deep_learning_model <- function(pheno_object=NULL,
 
     if (!is.null(geno_omic_test_object)) {
       predictions <- stats::predict(best_model$best_model, geno_omic_test_object)
-      return(list(predictions = predictions,
-                  best_model = best_model,
-                  grid_results = best_model$best_hyperparameters))
+      predictions <- data.frame(name = rownames(geno_omic_object),
+                                Predicted_value = as.data.frame(predictions),
+                                Standard_error = NA,
+                                PEV = NA,
+                                Reliability = NA,
+                                stringsAsFactors = FALSE)
+      names(predictions)[1:2] <- c(gen_name,"Predicted_value")
+      # return(list(predictions = predictions,
+      #             best_model = best_model,
+      #             grid_results = best_model$best_hyperparameters))
+      return(list(predicted_values = predictions, trained_model = best_model))
     } else {
 
       if (!is.null(geno_omic_object) & is.null(geno_omic_test_object)) {
         predictions <- stats::predict(best_model$best_model, geno_omic_object)
+        predictions <- data.frame(name = rownames(geno_omic_object),
+                                  Predicted_value = as.data.frame(predictions),
+                                  Standard_error = NA,
+                                  PEV = NA,
+                                  Reliability = NA,
+                                  stringsAsFactors = FALSE)
+        names(predictions)[1:2] <- c(gen_name,"Predicted_value")
       }
-      return(list(predictions = predictions,
-                  best_model = best_model,
-                  grid_results = best_model$best_hyperparameters))
+      return(list(predicted_values = predictions, trained_model = best_model))
     }
   } else {
     model <- deep_learning_model_utility(geno_omic_object,
@@ -165,12 +182,26 @@ deep_learning_model <- function(pheno_object=NULL,
     # Use the provided model for prediction
     if (!is.null(geno_omic_test_object)) {
       predictions <- stats::predict(model, geno_omic_test_object)
-      return(list(predictions = predictions, model = model))
+      predictions <- data.frame(name = rownames(geno_omic_object),
+                                Predicted_value = as.data.frame(predictions),
+                                Standard_error = NA,
+                                PEV = NA,
+                                Reliability = NA,
+                                stringsAsFactors = FALSE)
+      names(predictions)[1:2] <- c(gen_name,"Predicted_value")
+      return(list(predicted_values = predictions, trained_model = model))
     } else {
       if (!is.null(geno_omic_object) & is.null(geno_omic_test_object)) {
         predictions <- stats::predict(model, geno_omic_object)
+        predictions <- data.frame(name = rownames(geno_omic_object),
+                                  Predicted_value = as.data.frame(predictions),
+                                  Standard_error = NA,
+                                  PEV = NA,
+                                  Reliability = NA,
+                                  stringsAsFactors = FALSE)
+        names(predictions)[1:2] <- c(gen_name,"Predicted_value")
       }
-      return(list(predictions = predictions, model = model))
+      return(list(predicted_values = predictions, trained_model = model))
     }
   }
 }

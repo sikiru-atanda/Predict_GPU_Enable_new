@@ -1,4 +1,3 @@
-
 #' Title
 #'
 #' @param X_train
@@ -14,92 +13,83 @@
 #'
 #' @examples
 grid_search_deep_learning <- function(X_train,
-                           y_train,
-                           param_grid,
-                           epochs,
-                           batch_size,
-                           validation_split = 0.2,
-                           early_stop = TRUE) {
+                                      y_train,
+                                      param_grid,
+                                      epochs,
+                                      batch_size,
+                                      validation_split = 0.2,
+                                      early_stop = TRUE) {
   results <- list()
 
-  # Default values for hyperparameters
-  default_values <- list(
-    num_hidden_layers = 1,
-    neurons_per_layer = ncol(X_train)/2,
-    learning_rate = 0.001,
-    epochs = 10,
-    batch_size = 32
-  )
-
-  # Replace default values with user-provided values if available
-  for (param_name in names(param_grid)) {
-    default_values[[param_name]] <- param_grid[[param_name]]
+  # Check if validation_split is within valid range
+  if (early_stop && (validation_split < 0 || validation_split >= 1)) {
+    stop("Validation split must be between 0 and 1.")
   }
 
-  if (length(param_grid[["num_hidden_layers"]]) != length(param_grid[["neurons_per_layer"]])) {
-    stop("Length of num_hidden_layers must match length of neurons_per_layer.")
-  }
+  # Generate all combinations of hyperparameters
+  hyperparam_combinations <- expand.grid(param_grid)
 
-  for (num_hidden_layers in default_values$num_hidden_layers) {
-    for (neurons_per_layer in default_values$neurons_per_layer) {
-      for (learning_rate in default_values$learning_rate) {
-        for (epoch in default_values$epochs) {
-          for (batch_size_val in default_values$batch_size) {
-            # Create and compile the model with current hyperparameters
-            model <- deep_learning_model_utility(X_train,
-                                                 y_train,
-                                                 num_hidden_layers,
-                                                 neurons_per_layer,
-                                                 learning_rate,
-                                                 epoch,
-                                                 batch_size_val)
-            if(isFALSE(early_stop)){
-              # Train the model
-              history <- model |> keras::fit(
-                x = X_train, y = y_train,
-                epochs = epoch,
-                batch_size = batch_size_val,
-                verbose = 0
-              )
+  for (i in 1:nrow(hyperparam_combinations)) {
+    # Extract hyperparameter values for the current combination
+    hyperparams <- hyperparam_combinations[i, ]
 
-            } else {
-              if(is.null(validation_split)| is.na(validation_split)){
-                stop("Provide validation_split to implement early_stop functionality")
-              }
-              # Create a validation set from the training data
-              validation_split <- validation_split  # 20% of the data for validation
-              indices <- sample.int(nrow(X_train), size = floor(validation_split * nrow(X_train)))
-              X_val <- X_train[-indices, ]
-              y_val <- y_train[-indices]
+    num_hidden_layers <- hyperparams$num_hidden_layers
+    #neurons_per_layer <- hyperparams$neurons_per_layer
+    neurons_per_layer <- if(inherits(hyperparams$neurons_per_layer, "list")) unlist(hyperparams$neurons_per_layer) else hyperparams$neurons_per_layer
+    learning_rate <- hyperparams$learning_rate
 
-              # Define early stopping callback
-              early_stopping <- keras::callback_early_stopping(monitor = "val_loss", patience = 3)
-
-              # Train the model with early stopping
-              history <- model |> keras::fit(
-                x = X_train,
-                y = y_train,
-                epochs = epoch,
-                batch_size = batch_size_val,
-                verbose = 0,
-                validation_data = list(X_val, y_val),
-                callbacks = list(early_stopping)
-              )
-            }
-
-            # Save the model and training history
-            results[[paste(num_hidden_layers,
-                           neurons_per_layer,
-                           learning_rate,
-                           epoch,
-                           batch_size_val, collapse = "_")]] <- list(
-                             model = model,
-                             history = history
-                           )
-          }
-        }
-      }
+    # Ensure that the number of neurons_per_layer matches the number of num_hidden_layers
+    if (length(neurons_per_layer) != num_hidden_layers) {
+      warning("Length of neurons_per_layer does not match num_hidden_layers. Skipping this combination.")
+      next
     }
+
+    # Create and compile the model with current hyperparameters
+    model <- deep_learning_model_utility(X_train,
+                                         y_train,
+                                         num_hidden_layers,
+                                         neurons_per_layer,
+                                         learning_rate,
+                                         epochs,
+                                         batch_size)
+
+    # Train the model with or without early stopping
+    if (early_stop) {
+      # Create a validation set from the training data
+      indices <- sample.int(nrow(X_train), size = floor(validation_split * nrow(X_train)))
+      X_val <- X_train[-indices, ]
+      y_val <- y_train[-indices]
+
+      # Define early stopping callback
+      early_stopping <- keras::callback_early_stopping(monitor = "val_loss", patience = 3)
+
+      # Train the model with early stopping
+      history <- model |> keras::fit(
+        x = X_train,
+        y = y_train,
+        epochs = epochs,
+        batch_size = batch_size,
+        verbose = 0,
+        validation_data = list(X_val, y_val),
+        callbacks = list(early_stopping)
+      )
+    } else {
+      # Train the model without early stopping
+      history <- model |> keras::fit(
+        x = X_train,
+        y = y_train,
+        epochs = epochs,
+        batch_size = batch_size,
+        verbose = 0
+      )
+    }
+
+    # Store the model and training history with a systematic name
+    result_name <- paste0("Model_", i)  # You can adjust the naming scheme as needed
+    results[[result_name]] <- list(
+      model = model,
+      history = history
+    )
   }
 
   return(results)
