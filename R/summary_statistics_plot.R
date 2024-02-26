@@ -23,6 +23,9 @@ summary_statistics_bayes <- function(mod=NULL,
 
   rownames(Eval_met) <- eval_metrics
 
+  } else {
+
+    Eval_met <- NULL
   }
 
   #Res <-  cat(tmp,'\n')
@@ -69,6 +72,7 @@ summary_statistics_bayes <- function(mod=NULL,
     }
 
     }
+
 
   }else{
 

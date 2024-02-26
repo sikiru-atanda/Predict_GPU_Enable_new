@@ -50,288 +50,338 @@ ETA_compiler_fixed_term <- function(fixed = NULL,
 #' 1. Extract all the random terms from the formula
 #' 2. Compile all the random terms and set the model for each term
 #'
-#' @param fixed fixed effect. it must be in formula separated by +
-#' @param random random effect, it must be formula separated by +
-#' @param GS_model model defined by user
-#' @param fixed_term_model_bayesian Model for fixed effect/term(s). default is FIXED
-#' @param rand_term_model_bayesian Model for all random term(s) defined by the user
-#' @param pheno_data phenotypic data. Dataframe or matrix is acceptable
-#' @param geno_data  snp/marker data. Dataframe or matrix is acceptable
-#' @param omic1_data omic data .Dataframe or matrix is acceptable
-#' @param omic2_data omic data .Dataframe or matrix is acceptable
-#' @param omic3_data omic data .Dataframe or matrix is acceptable
-#' @param gen_name   Column name containing the genotype or individuals in the phenotypic data
+#' @param fixed
+#' @param random
+#' @param GS_model
+#' @param fixed_term_model_bayesian
+#' @param rand_term_model_bayesian
+#' @param pheno_data
+#' @param geno_data
+#' @param omic1_data
+#' @param omic2_data
+#' @param omic3_data
+#' @param gen_name
 #' @param ...
-#'
-#' @return
-#' @export
-#'
-#' @examples
-
 ETA_compiler_bayes <- function(
-         fixed = NULL,
-         random = NULL,
-         GS_model = NULL,
-         fixed_term_model_bayesian = NULL,
-         rand_term_model_bayesian = NULL,
-         pheno_data = NULL,
-         geno_data = NULL,
-         omic1_data = NULL,
-         omic2_data = NULL,
-         omic3_data = NULL,
-         gen_name = NULL,
-         ...
-){
-
-  ### Create empty list for ETA
-  ETA = list()
-
-  msg <- sprintf("==================================================\n")
-  ### Get the random terms. Here no interaction terms in the random effect
-  ## This function is present in the bayesians_preprocess.R check for details
-  rand_term_no_inter <- random_terms(random = random,
-                                     pheno_data = pheno_data)
-
-  ### Assign
-  rand_model <- random_term_model(rand_terms = rand_term_no_inter,
-                                  gen_name = gen_name,
-                                  rand_terms_model_bayesian = rand_term_model_bayesian,
-                                  GS_model = GS_model,
-                                  message = message)
-
-  if(!is.null(fixed)){
-   ETA <-  ETA_compiler_fixed_term(fixed = fixed,
-                                   pheno_data = pheno_data,
-                                   fixed_term_model_bayesian = fixed_term_model_bayesian)
-
-   #len_ETA = length(ETA)
-}
-  # } else {
-  #
-  #   len_ETA = 0
-  # }
-
-   if(length(rand_model)==1 && length(rand_term_no_inter)==1){
-
-     if(!is.null(geno_data) & ((is.null(omic1_data) &  is.null(omic2_data)) & is.null(omic3_data))){
-
-     ETA[[length(ETA) + 1]] <- list(X= as.matrix(geno_data),
-                                 model=rand_model,
-                                 saveEffects=TRUE)
-
-     ETA_element_name = c("geno_data")
-     } else if(is.null(geno_data) & ((!is.null(omic1_data) &  is.null(omic2_data)) & is.null(omic3_data))){
-
-       ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_data),
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-      ETA_element_name = c("omic1_data")
-     } else if ((is.null(geno_data) & is.null(omic1_data)) &  (!is.null(omic2_data) & is.null(omic3_data))){
-
-       ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_data),
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-      ETA_element_name = c("omic2_data")
-
-     } else if((is.null(geno_data) & is.null(omic1_data)) &  (is.null(omic2_data) & !is.null(omic3_data))){
-
-       ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_data),
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-       ETA_element_name = c("omic3_data")
-       #If user provide geno_data and omic1_data
-
-     } else if ((!is.null(geno_data) & !is.null(omic1_data)) &  (is.null(omic2_data) & is.null(omic3_data))){
-
-       ETA[[length(ETA) + 1]] <- list(X= geno_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-
-       ETA[[length(ETA) + 1]] <- list(X= omic1_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-
-       ETA_element_name = c("geno_data", "omic1_data")
-
-     } else if((!is.null(geno_data) & !is.null(omic2_data)) &  (is.null(omic1_data) & is.null(omic3_data))){
-
-       ETA[[length(ETA) + 1]] <- list(X= geno_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-
-       ETA[[length(ETA) + 1]] <- list(X= omic2_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-      ETA_element_name = c("geno_data", "omic2_data")
-
-     } else if ((!is.null(geno_data) & is.null(omic1_data)) &  (is.null(omic2_data) & !is.null(omic3_data))){
-
-       ETA[[length(ETA) + 1]] <- list(X= geno_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-
-       ETA[[length(ETA) + 1]] <- list(X= omic3_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-       ETA_element_name = c("geno_data", "omic3_data")
-
-     } else if ((is.null(geno_data) & !is.null(omic1_data)) &  (!is.null(omic2_data) & is.null(omic3_data))){
-
-       ETA[[length(ETA) + 1]] <- list(X= omic1_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-
-       ETA[[length(ETA) + 1]] <- list(X= omic2_data,
-                                      model=rand_model,
-                                      saveEffects=TRUE)
-
-
-       ETA_element_name = c("omic1_data", "omic2_data")
-     } else if((is.null(geno_data) & !is.null(omic1_data)) &  (is.null(omic2_data) & !is.null(omic3_data))){
-
-       ETA[[length(ETA) + 1]] <- list(X= omic1_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-
-       ETA[[length(ETA) + 1]] <- list(X= omic3_data,
-                                      model=rand_model,
-                                      saveEffects=TRUE)
-
-       ETA_element_name = c("omic1_data", "omic3_data")
-     } else if((is.null(geno_data) & is.null(omic1_data)) &  (!is.null(omic2_data) & !is.null(omic3_data))){
-
-       ETA[[length(ETA) + 1]] <- list(X= omic2_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-
-       ETA[[length(ETA) + 1]] <- list(X= omic3_data,
-                                      model=rand_model,
-                                      saveEffects=TRUE)
-
-       ETA_element_name = c("omic2_data", "omic3_data")
-     } else if ((((!is.null(geno_data) & !is.null(omic1_data)) &  !is.null(omic2_data)) & is.null(omic3_data))){
-
-       ETA[[length(ETA) + 1]] <- list(X= geno_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-
-       ETA[[length(ETA) + 1]] <- list(X= omic1_data,
-                                      model=rand_model,
-                                      saveEffects=TRUE)
-
-       ETA[[length(ETA) + 1]] <- list(X= omic2_data,
-                                      model=rand_model,
-                                      saveEffects=TRUE)
-
-       ETA_element_name = c("geno_data", "omic1_data", "omic2_data")
-
-     } else if(((((!is.null(geno_data) & !is.null(omic1_data)) &  is.null(omic2_data)) & !is.null(omic3_data)))){
-
-       ETA[[length(ETA) + 1]] <- list(X= geno_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-
-       ETA[[length(ETA) + 1]] <- list(X= omic1_data,
-                                      model=rand_model,
-                                      saveEffects=TRUE)
-
-       ETA[[length(ETA) + 1]] <- list(X= omic3_data,
-                                      model=rand_model,
-                                      saveEffects=TRUE)
-
-       ETA_element_name = c("geno_data", "omic1_data", "omic3_data")
-       ###
-     } else if(((((!is.null(geno_data) & is.null(omic1_data)) &  !is.null(omic2_data)) & !is.null(omic3_data)))){
-
-       ETA[[length(ETA) + 1]] <- list(X= geno_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-
-       ETA[[length(ETA) + 1]] <- list(X= omic2_data,
-                                      model=rand_model,
-                                      saveEffects=TRUE)
-
-       ETA[[length(ETA) + 1]] <- list(X= omic3_data,
-                                      model=rand_model,
-                                      saveEffects=TRUE)
-
-
-       ETA_element_name = c("geno_data", "omic2_data", "omic3_data")
-
-       } else if(((((is.null(geno_data) & !is.null(omic1_data)) &  !is.null(omic2_data)) & !is.null(omic3_data)))){
-
-         ETA[[length(ETA) + 1]] <- list(X= omic1_data,
-                                    model=rand_model,
-                                    saveEffects=TRUE)
-
-
-         ETA[[length(ETA) + 1]] <- list(X= omic2_data,
-                                        model=rand_model,
-                                        saveEffects=TRUE)
-
-         ETA[[length(ETA) + 1]] <- list(X= omic3_data,
-                                        model=rand_model,
-                                        saveEffects=TRUE)
-
-
-         ETA_element_name = c("omic1_data", "omic2_data", "omic3_data")
-
-
-     } else {
-
-       if(((((!is.null(geno_data) & !is.null(omic1_data)) &  !is.null(omic2_data)) & !is.null(omic3_data)))){
-
-       ETA[[length(ETA) + 1]] <- list(X= geno_data,
-                                  model=rand_model,
-                                  saveEffects=TRUE)
-
-
-       ETA[[length(ETA) + 1]] <- list(X= omic1_data,
-                                      model=rand_model,
-                                      saveEffects=TRUE)
-
-       ETA[[length(ETA) + 1]] <- list(X= omic2_data,
-                                      model=rand_model,
-                                      saveEffects=TRUE)
-
-       ETA[[length(ETA) + 1]] <- list(X= omic3_data,
-                                      model=rand_model,
-                                      saveEffects=TRUE)
-
-       }
-
-       ETA_element_name = c("geno_data", "omic1_data", "omic2_data", "omic3_data")
-     }
-
-   } else {
-
-     stop(paste(msg, 'This works only for one random effect'))
-
-
-   }
-
-  output <- list(ETA= ETA, pheno_data = pheno_data, ETA_element_name = ETA_element_name)
-
+    fixed = NULL,
+    random = NULL,
+    GS_model = NULL,
+    fixed_term_model_bayesian = NULL,
+    rand_term_model_bayesian = NULL,
+    pheno_data = NULL,
+    geno_data = NULL,
+    omic1_data = NULL,
+    omic2_data = NULL,
+    omic3_data = NULL,
+    gen_name = NULL,
+    ...
+) {
+  ETA <- list()
+  msg <- "==================================================\n"
+
+  rand_term_no_inter <- random_terms(random = random, pheno_data = pheno_data)
+  rand_model <- random_term_model(
+    rand_terms = rand_term_no_inter,
+    gen_name = gen_name,
+    rand_terms_model_bayesian = rand_term_model_bayesian,
+    GS_model = GS_model,
+    message = message
+  )
+
+  if (!is.null(fixed)) {
+    ETA <- ETA_compiler_fixed_term(
+      fixed = fixed,
+      pheno_data = pheno_data,
+      fixed_term_model_bayesian = fixed_term_model_bayesian
+    )
+  }
+
+  if (length(rand_model) != 1 || length(rand_term_no_inter) != 1) {
+    stop(paste(msg, 'This works only for one random effect'))
+  }
+
+  datasets <- list(geno_data, omic1_data, omic2_data, omic3_data)
+  dataset_names <- c("geno_data", "omic1_data", "omic2_data", "omic3_data")
+  ETA_element_name <- character()
+
+  for (i in seq_along(datasets)) {
+    dataset <- datasets[[i]]
+    if (!is.null(dataset)) {
+      ETA[[length(ETA) + 1]] <- list(X = as.matrix(dataset), model = rand_model, saveEffects = TRUE)
+      ETA_element_name <- c(ETA_element_name, dataset_names[i])
+    }
+  }
+
+  output <- list(ETA = ETA, pheno_data = pheno_data, ETA_element_name = ETA_element_name)
   names(output) <- c("ETA", "pheno_data", "ETA_element_name")
-
   return(output)
-
-
-
 }
+
+
+# ETA_compiler_bayes <- function(
+#          fixed = NULL,
+#          random = NULL,
+#          GS_model = NULL,
+#          fixed_term_model_bayesian = NULL,
+#          rand_term_model_bayesian = NULL,
+#          pheno_data = NULL,
+#          geno_data = NULL,
+#          omic1_data = NULL,
+#          omic2_data = NULL,
+#          omic3_data = NULL,
+#          gen_name = NULL,
+#          ...
+# ){
+#
+#   ### Create empty list for ETA
+#   ETA = list()
+#
+#   msg <- sprintf("==================================================\n")
+#   ### Get the random terms. Here no interaction terms in the random effect
+#   ## This function is present in the bayesians_preprocess.R check for details
+#   rand_term_no_inter <- random_terms(random = random,
+#                                      pheno_data = pheno_data)
+#
+#   ### Assign
+#   rand_model <- random_term_model(rand_terms = rand_term_no_inter,
+#                                   gen_name = gen_name,
+#                                   rand_terms_model_bayesian = rand_term_model_bayesian,
+#                                   GS_model = GS_model,
+#                                   message = message)
+#
+#   if(!is.null(fixed)){
+#    ETA <-  ETA_compiler_fixed_term(fixed = fixed,
+#                                    pheno_data = pheno_data,
+#                                    fixed_term_model_bayesian = fixed_term_model_bayesian)
+#
+#    #len_ETA = length(ETA)
+# }
+#   # } else {
+#   #
+#   #   len_ETA = 0
+#   # }
+#
+#    if(length(rand_model)==1 && length(rand_term_no_inter)==1){
+#
+#      if(!is.null(geno_data) & ((is.null(omic1_data) &  is.null(omic2_data)) & is.null(omic3_data))){
+#
+#      ETA[[length(ETA) + 1]] <- list(X= as.matrix(geno_data),
+#                                  model=rand_model,
+#                                  saveEffects=TRUE)
+#
+#      ETA_element_name = c("geno_data")
+#      } else if(is.null(geno_data) & ((!is.null(omic1_data) &  is.null(omic2_data)) & is.null(omic3_data))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic1_data),
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#       ETA_element_name = c("omic1_data")
+#      } else if ((is.null(geno_data) & is.null(omic1_data)) &  (!is.null(omic2_data) & is.null(omic3_data))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic2_data),
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#       ETA_element_name = c("omic2_data")
+#
+#      } else if((is.null(geno_data) & is.null(omic1_data)) &  (is.null(omic2_data) & !is.null(omic3_data))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= as.matrix(omic3_data),
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#        ETA_element_name = c("omic3_data")
+#        #If user provide geno_data and omic1_data
+#
+#      } else if ((!is.null(geno_data) & !is.null(omic1_data)) &  (is.null(omic2_data) & is.null(omic3_data))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= geno_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic1_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#
+#        ETA_element_name = c("geno_data", "omic1_data")
+#
+#      } else if((!is.null(geno_data) & !is.null(omic2_data)) &  (is.null(omic1_data) & is.null(omic3_data))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= geno_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic2_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#       ETA_element_name = c("geno_data", "omic2_data")
+#
+#      } else if ((!is.null(geno_data) & is.null(omic1_data)) &  (is.null(omic2_data) & !is.null(omic3_data))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= geno_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic3_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#        ETA_element_name = c("geno_data", "omic3_data")
+#
+#      } else if ((is.null(geno_data) & !is.null(omic1_data)) &  (!is.null(omic2_data) & is.null(omic3_data))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic1_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic2_data,
+#                                       model=rand_model,
+#                                       saveEffects=TRUE)
+#
+#
+#        ETA_element_name = c("omic1_data", "omic2_data")
+#      } else if((is.null(geno_data) & !is.null(omic1_data)) &  (is.null(omic2_data) & !is.null(omic3_data))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic1_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic3_data,
+#                                       model=rand_model,
+#                                       saveEffects=TRUE)
+#
+#        ETA_element_name = c("omic1_data", "omic3_data")
+#      } else if((is.null(geno_data) & is.null(omic1_data)) &  (!is.null(omic2_data) & !is.null(omic3_data))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic2_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic3_data,
+#                                       model=rand_model,
+#                                       saveEffects=TRUE)
+#
+#        ETA_element_name = c("omic2_data", "omic3_data")
+#      } else if ((((!is.null(geno_data) & !is.null(omic1_data)) &  !is.null(omic2_data)) & is.null(omic3_data))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= geno_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic1_data,
+#                                       model=rand_model,
+#                                       saveEffects=TRUE)
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic2_data,
+#                                       model=rand_model,
+#                                       saveEffects=TRUE)
+#
+#        ETA_element_name = c("geno_data", "omic1_data", "omic2_data")
+#
+#      } else if(((((!is.null(geno_data) & !is.null(omic1_data)) &  is.null(omic2_data)) & !is.null(omic3_data)))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= geno_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic1_data,
+#                                       model=rand_model,
+#                                       saveEffects=TRUE)
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic3_data,
+#                                       model=rand_model,
+#                                       saveEffects=TRUE)
+#
+#        ETA_element_name = c("geno_data", "omic1_data", "omic3_data")
+#        ###
+#      } else if(((((!is.null(geno_data) & is.null(omic1_data)) &  !is.null(omic2_data)) & !is.null(omic3_data)))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= geno_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic2_data,
+#                                       model=rand_model,
+#                                       saveEffects=TRUE)
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic3_data,
+#                                       model=rand_model,
+#                                       saveEffects=TRUE)
+#
+#
+#        ETA_element_name = c("geno_data", "omic2_data", "omic3_data")
+#
+#        } else if(((((is.null(geno_data) & !is.null(omic1_data)) &  !is.null(omic2_data)) & !is.null(omic3_data)))){
+#
+#          ETA[[length(ETA) + 1]] <- list(X= omic1_data,
+#                                     model=rand_model,
+#                                     saveEffects=TRUE)
+#
+#
+#          ETA[[length(ETA) + 1]] <- list(X= omic2_data,
+#                                         model=rand_model,
+#                                         saveEffects=TRUE)
+#
+#          ETA[[length(ETA) + 1]] <- list(X= omic3_data,
+#                                         model=rand_model,
+#                                         saveEffects=TRUE)
+#
+#
+#          ETA_element_name = c("omic1_data", "omic2_data", "omic3_data")
+#
+#
+#      } else {
+#
+#        if(((((!is.null(geno_data) & !is.null(omic1_data)) &  !is.null(omic2_data)) & !is.null(omic3_data)))){
+#
+#        ETA[[length(ETA) + 1]] <- list(X= geno_data,
+#                                   model=rand_model,
+#                                   saveEffects=TRUE)
+#
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic1_data,
+#                                       model=rand_model,
+#                                       saveEffects=TRUE)
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic2_data,
+#                                       model=rand_model,
+#                                       saveEffects=TRUE)
+#
+#        ETA[[length(ETA) + 1]] <- list(X= omic3_data,
+#                                       model=rand_model,
+#                                       saveEffects=TRUE)
+#
+#        }
+#
+#        ETA_element_name = c("geno_data", "omic1_data", "omic2_data", "omic3_data")
+#      }
+#
+#    } else {
+#
+#      stop(paste(msg, 'This works only for one random effect'))
+#
+#
+#    }
+#
+#   output <- list(ETA= ETA, pheno_data = pheno_data, ETA_element_name = ETA_element_name)
+#
+#   names(output) <- c("ETA", "pheno_data", "ETA_element_name")
+#
+#   return(output)
+#
+#
+#
+# }
 
 

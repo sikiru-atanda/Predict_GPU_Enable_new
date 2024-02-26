@@ -21,6 +21,7 @@
 #' @param heter_groups
 #' @param omics_kernel_label
 #' @param ...
+#' @param weights
 #'
 #' @return
 #' @export
@@ -76,10 +77,12 @@ mod <-  bayes_mod_execute(pheno_data = ETA[["pheno_data"]],
 )
 
 
-  if(GS_model=="RKHS"){
-    res_model_output <- mod_output_bayes_RKHS(mod = mod,
+  if(GS_model%in%c("RKHS", "BRR")){
+    # mod_output_bayes_RKHS
+    res_model_output <- mod_output_bayes_gbluBRR_RKHS(mod = mod,
                                               ETA = ETA,
                                               gkernel =  gkernel,
+                                              GS_model = GS_model,
                                               gmatrix = gmatrix,
                                               omic1_kernel = omic1_kernel,
                                               omic2_kernel = omic2_kernel,
@@ -93,22 +96,24 @@ mod <-  bayes_mod_execute(pheno_data = ETA[["pheno_data"]],
 
   }
 
-  if(GS_model=="BRR"){
-    res_model_output <- mod_output_bayes_BRRGBLUP(mod = mod,
-                                                  ETA = ETA,
-                                                  gkernel =  gkernel,
-                                                  gmatrix = gmatrix,
-                                                  omic1_kernel = omic1_kernel,
-                                                  omic2_kernel = omic2_kernel,
-                                                  omic3_kernel = omic3_kernel,
-                                                  gen_name = gen_name,
-                                                  pheno_data = ETA[["pheno_data"]],
-                                                  heter_groups  = heter_groups,
-                                                  omics_kernel_label = omics_kernel_label,
-                                                  bayes_para = bayes_para
-    )
-
-  }
+  # if(GS_model=="BRR"){
+  #   # mod_output_bayes_BRRGBLUP
+  #   res_model_output <- mod_output_bayes_gbluBRR_RKHS(mod = mod,
+  #                                                 ETA = ETA,
+  #                                                 gkernel =  gkernel,
+  #                                                 gmatrix = gmatrix,
+  #                                                 GS_model = GS_model,
+  #                                                 omic1_kernel = omic1_kernel,
+  #                                                 omic2_kernel = omic2_kernel,
+  #                                                 omic3_kernel = omic3_kernel,
+  #                                                 gen_name = gen_name,
+  #                                                 pheno_data = ETA[["pheno_data"]],
+  #                                                 heter_groups  = heter_groups,
+  #                                                 omics_kernel_label = omics_kernel_label,
+  #                                                 bayes_para = bayes_para
+  #   )
+  #
+  # }
 
 output <-  list(bayes_result = res_model_output,
               bayes_model = mod)

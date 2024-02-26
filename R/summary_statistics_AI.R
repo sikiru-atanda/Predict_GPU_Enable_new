@@ -29,9 +29,15 @@ summary_statistics_AI <- function(predicted_object= NULL,
                                   GS_model = NULL,
                                                    ...){
 
-  Eval_met <- matrix(NA, nrow = length(eval_metrics), ncol = 1)
 
-  rownames(Eval_met) <- eval_metrics
+  if(!is.null(eval_metrics)){
+    Eval_met <- matrix(NA, nrow = length(eval_metrics), ncol = 1)
+
+    rownames(Eval_met) <- eval_metrics
+
+  } else {
+    Eval_met <- NULL
+  }
 
   n_pheno <- nrow(pheno_object)
 
@@ -58,6 +64,7 @@ summary_statistics_AI <- function(predicted_object= NULL,
 
     #pred_acc <-  paste('Prediction Accuarcy =',round(cor(pheno_object[, response],yhat[,1]),3))
 
+    if(!is.null(eval_metrics)){
     for (i in 1:length(eval_metrics)){
 
       Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_object[, response],
@@ -65,6 +72,9 @@ summary_statistics_AI <- function(predicted_object= NULL,
                                           eval_metrics = eval_metrics[i])
 
     }
+
+    }
+
 
   }else{
 

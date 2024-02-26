@@ -27,8 +27,9 @@ geno_precheck <- function(object_geno = NULL,
                           message = TRUE,
                           ...) {
   # ... (input validation, if necessary)
-
+  msg <- sprintf("==================================================\n")
   if (!is.null(object_geno)) {
+    if(inherits(object_geno, "character")) stop(print(paste(msg,'Genomic data should be data.frame or matrix not character.')), call. = FALSE)
     if (!is.matrix(object_geno)) {
       object_geno <- as.matrix(object_geno)
     }
@@ -41,29 +42,50 @@ geno_precheck <- function(object_geno = NULL,
    AA <-  detect_genomic_coding(object_geno = object_geno)
    if(AA=="SNP (0, 1, 2, -1)") {
      stop("SNP recoding is wrong.")
+   } else if(AA=="SNP (-1, 0, 1)"){
+     object_geno <- object_geno + 1
+     if(isTRUE(message)) {
+       message("The allele dosages are not in 0, 1, 2. Fixing it to calculate GRM using Yang or VanRadan")
+     }
+   } else{
+     if(AA=="Presence/Absence (0, 1)"){
+       # Convert 1s to 2s
+       object_geno[object_geno == 1] <- 2
+       if(isTRUE(message)) {
+         message("The allele dosages are not in 0, 1. Fixing it to calculate GRM using Yang or VanRadan")
+       }
+
+     }
    }
     # Check if allele dosage are not in  0, 1, 2 format but -1, 0, 1 format
-    check_geno <- which(object_geno == -1)
-    if (length(check_geno) != 0) {
-      if(isTRUE(message)) {
-        message("The allele dosages are not in 0, 1, 2. Fixing it.")
-      }
-      object_geno <- object_geno + 1
-    } else {
-
-      ### Then check if the matrix is presence and absence where presence is 1 and absence is 0
-      ## change it to 0, 2
-    ## Check if it not coded 0,1 instead 0, 2
-    unique_values <- unique(object_geno)
-    if(is.character(unique_values)=="character"){
-      unique_values = as.double(unique_values)
-    }
-
-    if (all(unique_values %in% c(0, 1))) {
-      object_geno[object_geno == 1] <- 2
-    }
-
-  }
+  #   check_geno <- which(object_geno == -1)
+  #   if (length(check_geno) != 0) {
+  #     if(isTRUE(message)) {
+  #       message("The allele dosages are not in 0, 1, 2. Fixing it.")
+  #     }
+  #     object_geno <- object_geno + 1
+  #   } else {
+  #
+  #     ### Then check if the matrix is presence and absence where presence is 1 and absence is 0
+  #     ## change it to 0, 2
+  #   ## Check if it not coded 0,1 instead 0, 2
+  #   unique_values <- unique(object_geno)
+  #   if(is.character(unique_values)=="character"){
+  #     unique_values = as.double(unique_values)
+  #   }
+  #
+  #   if (all(unique_values %in% c(0, 1))) {
+  #     object_geno[object_geno == 1] <- 2
+  #   }
+  #
+  # }
+    #######
+    ### Set initial value for qc parameters
+    markers_callrate_removed  <-  0
+    ind_callrate_removed  <-  0
+    het_markers_removed  <-  0
+    maf_markers_removed <-  0
+    ####
     ###
     # Remove monomorphic markers
     monomorphic_markers <- which(apply(object_geno, 2, function(x) length(table(x)) <= 1))
@@ -195,18 +217,19 @@ geno_precheck <- function(object_geno = NULL,
 
   #### Aggregate all the maker data
 
-  if(!exists("markers_callrate_removed")) {
-    markers_callrate_removed  = 0
-  }
-  if(!exists("ind_callrate_removed ")) {
-    ind_callrate_removed  = 0
-  }
-  if(!exists("het_markers_removed ")) {
-    het_markers_removed  = 0
-  }
-  if(!exists("maf_markers_removed")) {
-    maf_markers_removed = 0
-  }
+
+  # if(!exists("markers_callrate_removed")) {
+  #   markers_callrate_removed  = 0
+  # }
+  # if(!exists("ind_callrate_removed ")) {
+  #   ind_callrate_removed  = 0
+  # }
+  # if(!exists("het_markers_removed ")) {
+  #   het_markers_removed  = 0
+  # }
+  # if(!exists("maf_markers_removed")) {
+  #   maf_markers_removed = 0
+  # }
   #########################
   summary_stat_snp= data.frame(
     snp_call_rate_threshold = snp_call_rate_threshold,

@@ -362,17 +362,6 @@ asreml_utilis <- function(
       ################################################
 
 
-      #Univariate[[trait]] = mod
-
-    #} ## End loop for multiple response variables
-
-    #names(Univariate) <- response
-
-    #names(Univariate)[trait] <- response[trait]
-    #parallel::stopCluster(cl)
-
-    #doParallel::stopImplicitCluster()
-
 output <- list(mod,
                str_mod,
                G_list,

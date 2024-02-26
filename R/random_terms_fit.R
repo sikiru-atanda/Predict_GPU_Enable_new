@@ -128,7 +128,6 @@ random_terms_fit <- function(random = NULL,
           # Adding fixed factors
           if (!is.null(fixed_term)) {
 
-
             ### Update the fixed term if not null
             fixed =  stats::update(fixed,
                                    paste("~ . +", heter_groups))

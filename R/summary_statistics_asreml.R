@@ -10,6 +10,7 @@
 #' @examples
 summary_statistics_asreml <- function(mod=NULL,
                                       response = NULL,
+                                      pheno_data = NULL,
                                       eval_metrics = c("Accuracy",
                                                       "Mean_Squared_Error",
                                                       "Bias",
@@ -23,40 +24,23 @@ summary_statistics_asreml <- function(mod=NULL,
                                       variance_components = NULL,
                                      ...){
 
+#browser()
   if(!is.null(eval_metrics)){
     Eval_met <- matrix(NA, nrow = length(eval_metrics), ncol = 1)
 
     rownames(Eval_met) <- eval_metrics
 
+  } else {
+    Eval_met <- NULL
   }
-###### Important for multi-traits
-  # if(!is.null(heter_groups)){
-  # heter_grp <- levels(data.frame(mod$mf)[, heter_groups])
-  #
-  # }
 
-#####
-  #Res <-  cat(tmp,'\n')
-
-  #n_pheno <-paste('Number of phenotypes=', (sum(!is.na(mod$model$y))))
-  #cat(' Min (Traning set)', response, '= ', min(mod$y,na.rm=TRUE),'\n')
-  #cat(' Min', paste0(paste0("(",response),')'), '= ', min(mod$y,na.rm=TRUE),'\n')
-  #trn_min <- paste(paste('Min', '= '), round(min(mod$model$y,na.rm=TRUE), 3), sep = "")
-  #cat(' Max (Traning set)',response, '= ', max(mod$y,na.rm=TRUE),'\n')
-  #cat(' Max', paste0(paste0("(",response),')'), '= ', max(mod$y,na.rm=TRUE),'\n')
-  #trn_max <- paste(paste('Max', '= '), round(max(mod$model$y,na.rm=TRUE), 3), sep = "")
-  #cat(' Variance of phenotypes (TRN)=', round(var(mod$y,na.rm=TRUE),4),'\n')
-  # var_trn <- paste('Variance of phenotypes =', round(var(mod$model$y,na.rm=TRUE),3))
-  # Res_trn <- paste('Residual variance=',round(mod$model$varE,3))
-
-  pheno <-  as.data.frame(mod$mf)
-  n_pheno <- sum(!is.na(pheno[, response]))
-  trn_min <-  round(min(pheno[, response],na.rm=TRUE), 3)
-  trn_max <- round(max(pheno[, response],na.rm=TRUE), 3)
-  var_trn <- round(var(pheno[, response],na.rm=TRUE),3)
-  n_trn <- length(pheno[, response])
-  n_tst <- n_pheno
-
+  #pheno <-  as.data.frame(mod$mf)
+  n_pheno <- sum(!is.na(pheno_data[, response]))
+  trn_min <-  round(min(pheno_data[, response],na.rm=TRUE), 3)
+  trn_max <- round(max(pheno_data[, response],na.rm=TRUE), 3)
+  var_trn <- round(var(pheno_data[, response],na.rm=TRUE),3)
+  n_trn <- n_pheno
+  n_tst <- 0
 
   if(is.null(heter_groups)){
   Res_trn <- round(variance_components["residual_variance", 1],3)
@@ -65,28 +49,23 @@ summary_statistics_asreml <- function(mod=NULL,
     Res_trn <-  NA
   }
 
-  if(nrow(pheno)==length(unique(pheno[, gen_name]))){
+  if(nrow(pheno_data)==length(unique(pheno_data[, gen_name]))){
 
 
-  n<-length(pheno[, response])
+  n<-length(pheno_data[, response])
 
-  if(any(is.na(pheno[, response]))){
-    tst <- which(is.na(pheno[, response]))
+  if(any(is.na(pheno_data[, response]))){
+    tst <- which(is.na(pheno_data[, response]))
 
     n_trn <- n-length(tst)
 
     n_tst <- length(tst)
 
-    # n_trn <- paste('Number of Traning =',n-length(tst))
-    #
-    # n_tst <- paste('Number of Testing =',length(tst))
-
-    #pred_acc <-  paste('Prediction Accuarcy =',round(cor(mod$model$y[-tst],mod$model$yHat[-tst]),3))
-
+    ###
     if(!is.null(eval_metrics)){
       for (i in 1:length(eval_metrics)){
 
-        Eval_met[i, ] <- evaluation_metrics(y_observed = pheno[, response][tst],
+        Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_data[, response][tst],
                                             y_predicted = predicted_value$Predicted_value[tst],
                                             eval_metrics = eval_metrics[i])
 
@@ -94,22 +73,17 @@ summary_statistics_asreml <- function(mod=NULL,
 
     }
 
+
   }else{
 
     n_trn <- n
 
     n_tst <- 0
-
-    # n_trn <- paste('Number of Traning =',n)
-    #
-    # n_tst <- paste('Number of Testing =',0)
-
-    #pred_acc <- paste('Prediction Accu of Training =',round(cor(mod$model$y,mod$model$yHat),3))
-
+####
     if(!is.null(eval_metrics)){
       for (i in 1:length(eval_metrics)){
 
-        Eval_met[i, ] <- evaluation_metrics(y_observed = pheno[, response],
+        Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_data[, response],
                                             y_predicted = predicted_value$Predicted_value,
                                             eval_metrics = eval_metrics[i])
 
@@ -123,18 +97,7 @@ summary_statistics_asreml <- function(mod=NULL,
 
     Eval_met <- NULL
 }
-
-
-  #colnames(model) = "model_for_Linear_predictors"
-
-  # output <- list(Min = trn_min, Max = trn_max, Variance = var_trn,
-  #                Residual = Res_trn, n_trn = n_trn, n_tst = n_tst,
-  #                pred_acc = pred_acc, model_type = model)
-  #
-  # names(output) <-  c("trn_min", "trn_max", "variance_trn",
-  #                     "Residual", "n_trn", "n_tst",
-  #                     "pred_acc", "model_type")
-
+####
   Stat_Res <-  as.data.frame(t(data.frame(Min = trn_min,
                                         Max = trn_max,
                                         Phenotype_Variance = var_trn,
@@ -148,6 +111,7 @@ summary_statistics_asreml <- function(mod=NULL,
   names(Stat_Res)[2] <- "summary"
   rownames(Stat_Res) <- NULL
   #####
+
   if(!is.null(eval_metrics) & !is.null(Eval_met)){
     Eval_met <- data.frame(Eval_met)
     Eval_met$stat <- rownames(Eval_met)
@@ -159,6 +123,7 @@ summary_statistics_asreml <- function(mod=NULL,
     ## validation exercise. proper validation exercise should be done with validation fxn
     Eval_met <- Eval_met[complete.cases(Eval_met), ]
     ####
+
     Stat_Res <- rbind(Stat_Res, Eval_met)
 
   }

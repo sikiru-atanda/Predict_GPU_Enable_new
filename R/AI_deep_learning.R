@@ -1,4 +1,94 @@
 
+# Utility function to get the best model from grid search results
+#' Title
+#'
+#' @param results
+#' @param param_grid
+#'
+#' @return
+#' @export
+#'
+#' @examples
+get_best_model <- function(results, param_grid) {
+  best_accuracy <- 0
+  best_model <- NULL
+
+  for (key in names(results)) {
+    history <- results[[key]]$history
+    validation_accuracy <- max(results[[key]]$history$metrics[[2]])
+
+    if (validation_accuracy > best_accuracy) {
+      best_accuracy <- validation_accuracy
+      best_model <- results[[key]]$model
+      best_hyperparameters <- unlist(strsplit(key, "_")[[1]])
+
+    }
+  }
+
+  # Ensure that the number of hyperparameters extracted matches the number specified in param_grid
+  if (all(!c("epochs", "batch_size") %in% names(param_grid))) {
+    names_grid <- c(names(param_grid), "epochs", "batch_size")
+  } else {
+    names_grid <- names(param_grid)
+  }
+
+  # if (length(best_hyperparameters) != length(unlist(param_grid))) {
+  #   stop("Number of hyperparameters obtained from grid search results does not match the number specified in param_grid.")
+  # }
+
+  # Create a data frame with hyperparameter names and the best value for each parameter
+  # hyperparameters_df <- data.frame(
+  #   parameter = names_grid,
+  #   value = sapply(strsplit(best_hyperparameters, " ")[[1]], tail, 1),
+  #   stringsAsFactors = FALSE,
+  #   row.names = NULL
+  # )
+
+  res <-  list(best_model = best_model,
+               best_hyperparameters = best_hyperparameters)
+  return(res)
+}
+######
+# get_best_model <- function(results, param_grid) {
+#   if (length(results) == 0) {
+#     stop("No results provided.")
+#   }
+#
+#   best_accuracy <- 0
+#   best_model <- NULL
+#   best_hyperparameters <- NULL
+#
+#   for (key in names(results)) {
+#     if (!is.null(results[[key]]$history)) {
+#       validation_accuracy <- max(results[[key]]$history$metrics[[2]])
+#
+#       if (validation_accuracy > best_accuracy) {
+#         best_accuracy <- validation_accuracy
+#         best_model <- results[[key]]$model
+#         best_hyperparameters <- key
+#       }
+#     }
+#   }
+#
+#   if (is.null(best_model)) {
+#     stop("No valid models found in the results.")
+#   }
+#
+#   # Extract the hyperparameters dynamically based on the param_grid provided by the user
+#   hyperparameters <- strsplit(best_hyperparameters, "_")[[1]]
+#   hyperparameters_names <- names(param_grid)
+#   hyperparameters_df <- data.frame(matrix(ncol = length(param_grid), nrow = 1))
+#   colnames(hyperparameters_df) <- hyperparameters_names
+#
+#   for (i in seq_along(hyperparameters_names)) {
+#     hyperparameters_df[, i] <- hyperparameters[i]
+#   }
+#
+#   return(list(best_model = best_model, best_hyperparameters = hyperparameters_df))
+# }
+
+
+
 #' Title
 #'
 #' @param num_hidden_layers
@@ -50,84 +140,6 @@ deep_learning_model <- function(pheno_object=NULL,
   }
 
   if(is.null(neurons_per_layer)) neurons_per_layer <- list(ncol(geno_omic_object)/2)
-  # Utility function to get the best model from grid search results
-  get_best_model <- function(results, param_grid) {
-    best_accuracy <- 0
-    best_model <- NULL
-
-    for (key in names(results)) {
-      history <- results[[key]]$history
-      validation_accuracy <- max(results[[key]]$history$metrics[[2]])
-
-      if (validation_accuracy > best_accuracy) {
-        best_accuracy <- validation_accuracy
-        best_model <- results[[key]]$model
-        best_hyperparameters <- unlist(strsplit(key, "_")[[1]])
-
-      }
-    }
-
-    # Ensure that the number of hyperparameters extracted matches the number specified in param_grid
-    if (all(!c("epochs", "batch_size") %in% names(param_grid))) {
-      names_grid <- c(names(param_grid), "epochs", "batch_size")
-    } else {
-      names_grid <- names(param_grid)
-    }
-
-    # if (length(best_hyperparameters) != length(unlist(param_grid))) {
-    #   stop("Number of hyperparameters obtained from grid search results does not match the number specified in param_grid.")
-    # }
-
-    # Create a data frame with hyperparameter names and the best value for each parameter
-    # hyperparameters_df <- data.frame(
-    #   parameter = names_grid,
-    #   value = sapply(strsplit(best_hyperparameters, " ")[[1]], tail, 1),
-    #   stringsAsFactors = FALSE,
-    #   row.names = NULL
-    # )
-
-    res <-  list(best_model = best_model,
-                 best_hyperparameters = best_hyperparameters)
-    return(res)
-  }
-######
-  # get_best_model <- function(results, param_grid) {
-  #   if (length(results) == 0) {
-  #     stop("No results provided.")
-  #   }
-  #
-  #   best_accuracy <- 0
-  #   best_model <- NULL
-  #   best_hyperparameters <- NULL
-  #
-  #   for (key in names(results)) {
-  #     if (!is.null(results[[key]]$history)) {
-  #       validation_accuracy <- max(results[[key]]$history$metrics[[2]])
-  #
-  #       if (validation_accuracy > best_accuracy) {
-  #         best_accuracy <- validation_accuracy
-  #         best_model <- results[[key]]$model
-  #         best_hyperparameters <- key
-  #       }
-  #     }
-  #   }
-  #
-  #   if (is.null(best_model)) {
-  #     stop("No valid models found in the results.")
-  #   }
-  #
-  #   # Extract the hyperparameters dynamically based on the param_grid provided by the user
-  #   hyperparameters <- strsplit(best_hyperparameters, "_")[[1]]
-  #   hyperparameters_names <- names(param_grid)
-  #   hyperparameters_df <- data.frame(matrix(ncol = length(param_grid), nrow = 1))
-  #   colnames(hyperparameters_df) <- hyperparameters_names
-  #
-  #   for (i in seq_along(hyperparameters_names)) {
-  #     hyperparameters_df[, i] <- hyperparameters[i]
-  #   }
-  #
-  #   return(list(best_model = best_model, best_hyperparameters = hyperparameters_df))
-  # }
 
   # Create and compile the model
 

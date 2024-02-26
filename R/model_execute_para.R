@@ -235,17 +235,6 @@ model_execute <- function(
     test_set = NULL,
     gmatrix_method = NULL,
     kernel_method = NULL,
-    # kernel_method = c("Gaussian_kernel",
-    #                   "Linear_kernel",
-    #                   "Poly2_kernel",
-    #                   "Poly3_kernel",
-    #                   "Poly4_kernel",
-    #                   "spectral_kernel",
-    #                   "Matern_kernel",
-    #                   "Composite_kernel",
-    #                   "Normalized_laplacian_kernel",
-    #                   "Anova_radial_basis_kernel"
-    # ),
     response=NULL,
     gen_name=NULL,
     cova=NULL,
@@ -258,29 +247,8 @@ model_execute <- function(
     nIter=NULL,
     burnIn=NULL,
     thin=NULL,
-    GS_model = c("GBLUP",
-                 "GBLUP_BRR",
-                 "RKHS",
-                 "BRR",
-                 "BayesA",
-                 "BayesB",
-                 "BayesC",
-                 "BL",
-                 "Xgboost",
-                 "RandomForest",
-                 "PartialLeastSquare",
-                 "SupportVectorMachine",
-                 "K-NearestNeighbors",
-                 "Lasso",
-                 "Ridge_Regression"
-                 ),
-    eval_metrics = c("Accuracy",
-                     "Mean_Squared_Error",
-                     "Bias",
-                     "Root_Mean_Squared_Error",
-                     "Relative_Squared_Error",
-                     "Mean_Absolute_Error",
-                     "Mean_Absolute_Percent_Error"),
+    GS_model = NULL,
+    eval_metrics = NULL,
     fixed_term_model_bayesian = 'FIXED',
     rand_term_model_bayesian = NULL,
     core = NULL,
@@ -345,7 +313,8 @@ model_execute <- function(
 
     # Define available models and variance structures
     var_cov_str_available <- c("us","corgh","corgv",
-                               "corh","corv","fa","rr")
+                               "corh","corv","fa1","fa2", "fa3", "fa4"
+                               )  # reuced rank removed for now"rr1","rr2", "rr3", "rr4"
 
     AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare",
                          "SupportVectorMachine", "K-NearestNeighbors", "Lasso",
@@ -361,7 +330,48 @@ model_execute <- function(
     #        paste(var_cov_str_available, collapse = ", "), call. = FALSE)
     #   }
     # }
+#######################################
 
+    eval_metrics_available <- c("Accuracy",
+                                "Mean_Squared_Error",
+                                "Bias",
+                                "Root_Mean_Squared_Error",
+                                "Relative_Squared_Error",
+                                "Mean_Absolute_Error",
+                                "Mean_Absolute_Percent_Error")
+    if(!is.null(eval_metrics)){
+    if (!(eval_metrics %in% eval_metrics_available)) {
+      stop("Invalid evaluation metrics for the model. Choose from: ",
+           paste(eval_metrics_available, collapse = ", "), call. = FALSE)
+      }
+    }
+
+    kernel_method_avaliable <- c("Gaussian_kernel",
+                                 "Linear_kernel",
+                                 "Composite_kernel",
+                                 "Poly2_kernel",
+                                 "Poly3_kernel",
+                                 "Poly4_kernel")
+
+    if(!is.null(kernel_method)){
+      if (!(kernel_method %in% kernel_method_avaliable)) {
+        stop("Invalid kernel method. Choose from: ",
+             paste(eval_metrics_available, collapse = ", "), call. = FALSE)
+      }
+    }
+
+    gmatrix_method_available <- c("VanRaden",
+                                  "Weighted_VanRaden",
+                                  "Yang",
+                                  "Epistasis")
+
+    if(!is.null(gmatrix_method)){
+      if (!(gmatrix_method %in% gmatrix_method_available)) {
+        stop("Invalid genomic relationship method. Choose from: ",
+             paste(gmatrix_method_available, collapse = ", "), call. = FALSE)
+      }
+    }
+    #############################
     if(is.null(GS_model)){
       stop(paste(msg, "Genomic prediction model is missing."), call. = FALSE)
 
@@ -400,7 +410,7 @@ model_execute <- function(
 
     } else {
 
-      if(is.null(engine)){
+      if(is.null(engine) & GS_model == "GBLUP"){
         stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
       }
     }
@@ -408,7 +418,7 @@ model_execute <- function(
     # Check for multi-environment structure and required inputs for GBLUP
     if (length(pheno_data[,gen_name]) > length(unique(pheno_data[,gen_name]))){
       if( is.null(heter_groups)){
-      stop(paste(msg, "Your phenotypic data has a multi-environment structure, but the column containing the environment/location is missing. Provide it in heter_groups."), call. = FALSE)
+        stop(paste(msg, "Your phenotypic data has a multi-environment structure,\n but the column containing the environment/location is missing.\n Please provide heter_groups parameter.\n For example: heter_groups = 'locations'.\n If you have location as column name in your phenotypic data."), call. = FALSE)
       }
 
       ### This is important for asreml for multi-environment analysis
@@ -437,7 +447,10 @@ model_execute <- function(
 
     # Check for single environment GBLUP and Bayesian models
     if (length(pheno_data[,gen_name]) == length(unique(pheno_data[,gen_name]))){
-
+ #### In case user erroneously provide this while it is a single location
+      if(!is.null(heter_groups)) heter_groups <- NULL
+      if(!is.null(heter_resid)) heter_resid <- NULL
+      if(!is.null(var_cov_str)) var_cov_str <- NULL
       # Check for required inputs for Bayesian or ASReml single environment GBLUP models
       if (GS_model %in% c(bayes_gblup_valid_models, "GBLUP")){
         if (condition1!=condition1_1 & isTRUE(condition2)) {
@@ -846,13 +859,13 @@ model_execute <- function(
                                  geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
                                  system_database = system_database))
 
-     } else if (GS_model == "GBLUP" && engine == 'asreml') {
-
+     } else {
+       if (GS_model == "GBLUP" && engine == 'asreml') {
        # gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL
        # if(!matrixcalc::is.positive.definite(gmatrix)) stop("GRM issue")
 
        #  # Run GBLUP model with ASReml
-         mod <- asreml_utilis(fixed = fixed,
+         mod <- asreml_utilis_new(fixed = fixed,
                               random = random,
                               cova = cova,
                               GS_model = GS_model,
@@ -876,7 +889,8 @@ model_execute <- function(
                               engine = engine)
 
          # Extract model output for ASReml
-         res_model_output <- asreml_mod_output(
+
+         res_model_output <- asreml_mod_output_new(
              mod_asreml = mod,
              pheno_data = pheno_clean[["pheno_clean_data"]],
              gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
@@ -885,6 +899,7 @@ model_execute <- function(
              omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
              heter_groups = heter_groups,
              gen_name = gen_name,
+             response = response,
              var_cov_str = var_cov_str,
              heter_resid = heter_resid,
              pworkspace = pworkspace,
@@ -892,8 +907,10 @@ model_execute <- function(
              maxit = maxit
          )
 
-         res_summary_stat <- summary_statistics_asreml(mod = res_model_output[["Asreml_model"]],
+
+         res_summary_stat <- summary_statistics_asreml(mod =  res_model_output[["Asreml_model"]],
                                                        response = response,
+                                                       pheno_data = pheno_clean[["pheno_clean_data"]],
                                                        heter_groups = heter_groups,
                                                        predicted_value =  res_model_output[["Predicted_value"]],
                                                        pred_heter_groups = NULL,
@@ -901,20 +918,20 @@ model_execute <- function(
                                                        eval_metrics = eval_metrics)
 
 
-         remove_from_global <- function(var_names) {
-           for (var_name in var_names) {
-             if(exists(var_name, envir = .GlobalEnv)) {
-               rm(list = var_name, envir = .GlobalEnv)
-               #print(paste("Object", var_name, "removed from global environment."))
-             } else {
-               #print(paste("Object", var_name, "not found in global environment."))
-             }
-           }
-         }
-
-         #rm inv_object
-         my_variable <- c("G_inv", "omic1_inv", "omic2_inv", "omic3_inv")
-         remove_from_global(my_variable)
+         # remove_from_global <- function(var_names) {
+         #   for (var_name in var_names) {
+         #     if(exists(var_name, envir = .GlobalEnv)) {
+         #       rm(list = var_name, envir = .GlobalEnv)
+         #       #print(paste("Object", var_name, "removed from global environment."))
+         #     } else {
+         #       #print(paste("Object", var_name, "not found in global environment."))
+         #     }
+         #   }
+         # }
+         #
+         # #rm inv_object
+         # my_variable <- c("G_inv", "omic1_inv", "omic2_inv", "omic3_inv")
+         # remove_from_global(my_variable)
 
 
          return(results_handling(GS_model = GS_model,
@@ -924,6 +941,7 @@ model_execute <- function(
                                  geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
                                  system_database = system_database))
 
+       }
      }
  }
  #### END GBLUP_RKHS, GBLUP_BRR and GBLUP (asreml)

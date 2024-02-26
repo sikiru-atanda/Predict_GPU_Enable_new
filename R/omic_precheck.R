@@ -12,6 +12,7 @@ omic_precheck <- function(object = NULL,
                           message = TRUE){
   msg <- sprintf("==================================================\n")
   if(!is.null(object)){
+    if(inherits(object, "character")) stop(print(paste(msg,'Omic data should be data.frame or matrix not character.')), call. = FALSE)
     #if(class(object)[[1]]!="matrix"){
     if(!inherits(object, "matrix")){
       if (message){

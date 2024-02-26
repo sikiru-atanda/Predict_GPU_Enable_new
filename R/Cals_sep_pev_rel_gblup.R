@@ -14,12 +14,12 @@
 #'
 #' @examples
 sep_pev_rel_gblup <- function(geno_object = NULL,
-                            X = NULL,
-                            Z = NULL,
-                            va = NULL,
-                            ve = NULL,
-                            h2 = NULL,
-                            lambda = NULL){
+                              X = NULL,
+                              Z = NULL,
+                              va = NULL,
+                              ve = NULL,
+                              h2 = NULL,
+                              lambda = NULL){
 
 
   if(is.null(Z)){
@@ -62,7 +62,7 @@ ZZG_diag <- diag(ZZG)
 pev <- (ZZG_diag*ve)
 sep <- sqrt(pev) ## Standard error
 rel <- 1-ZZG_diag*lambda
-rel = ifelse(rel<0, "Alias", rel)
+rel = ifelse(rel<0, NA, rel)
 
 output <- data.frame(rel=rel,pev=pev,sep=sep)
 

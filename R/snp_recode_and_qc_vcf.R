@@ -100,9 +100,10 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
 
   # Calculate minor allele frequency
   allele_freq <- apply(vcf_file[, 10:ncol(vcf_file)], 1, function(x) {
+    x <- x[!which(x %in% c('./.', '|.', 'NA', '.'))]
     allele_counts <- table(x)
     minor_allele_count <- min(allele_counts)
-    major_allele_count <- max(allele_counts)
+    #major_allele_count <- max(allele_counts)
     maf <- minor_allele_count / sum(allele_counts)
     return(maf)
   })
