@@ -1,21 +1,45 @@
-
-#' Title
+#' Calculate Coefficients, EBV, PEV, and Reliability for RKHS and GBLUP Models
 #'
-#' ### This function calculate the Coefficient, EBV, PEV, SE, Reliability
+#' This function computes the posterior means of marker effects (coefficients),
+#' estimated breeding values (EBV), prediction error variance (PEV), and reliability
+#' for genomic selection models based on RKHS and GBLUP approaches. It uses a genomic
+#' relationship matrix, model outputs, and variance components to compute these values.
 #'
-#' @param gen_name
-#' @param var_u genetic variance
-#' @param ...
-#' @param mod
-#' @param gmatrix
-#' @param var_E
-#' @param hetero
-#' @param heter_groups
-#' @param gid_name
-#' @return
-#' @export
+#' @param mod A model object returned from a genomic selection analysis, which
+#'   contains the fitted model components such as effects and predictions.
+#' @param gmatrix A numeric matrix representing the genomic relationship matrix (GRM) or other kernels from omics
+#'   used in the model. Row and column names should correspond to individual IDs.
+#' @param gen_name A character string specifying the column name in `gmatrix` that
+#'   represents the genetic identifiers for the individuals.
+#' @param var_u The genetic variance component estimated from the model.
+#' @param var_E The residual variance component estimated from the model.
+#' @param hetero A vector indicating the heterogeneity groups of individuals, if applicable.
+#' @param heter_groups A character string specifying the name of the column representing
+#'   heterogeneity groups in the output, if `hetero` is not NULL.
+#' @param gid_name A character string specifying the names of genetic identifiers in the
+#'   output data frame.
+#' @param ... Additional arguments passed to the function.
+#'
+#' @return A list containing:
+#'   - `Posterior`: Raw posterior means of marker effects.
+#'   - `Coefficient`: A data frame of coefficients for each variable.
+#'   - `Estimated_breeding_value`: A data frame of estimated breeding values for individuals.
+#'   - `PEV`: Prediction error variance associated with the EBVs.
+#'   - `Reliability`: Reliability of the EBVs.
 #'
 #' @examples
+#' # Assuming 'mod' is a model object from a genomic selection analysis,
+#' # 'gmatrix' is a genomic relationship matrix, and 'var_u' and 'var_E'
+#' # are estimated variance components:
+#' result <- cal_coeff_ebv_pev_rel_RHKS_glub(mod = model_obj,
+#'                                           gmatrix = genomic_matrix,
+#'                                           gen_name = "IndividualID",
+#'                                           var_u = 0.5,
+#'                                           var_E = 0.3,
+#'                                           gid_name = "GenID")
+#' @export
+#' @importFrom dplyr mutate
+#' @importFrom stats solve t
 cal_coeff_ebv_pev_rel_RHKS_glub <- function(mod = NULL,
                                             gmatrix = NULL,
                                             gen_name = NULL,

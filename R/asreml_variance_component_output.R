@@ -1,11 +1,30 @@
-#' Title
+#' Extract and Format Variance Components from ASReml Results
 #'
-#' @param res_var_cov_h_ve
+#' This function processes the results from an ASReml model to extract and format variance components,
+#' supporting analyses across various genetic components and multiple environments. It handles both
+#' single and multiple omics data types and can accommodate models with a single environment or multiple environments.
 #'
-#' @return
-#' @export
+#' @param res_var_cov_h_ve A list containing results from an ASReml model, including genetic variances
+#' per omics, total genetic variance, residual variance, and heritability estimates.
+#'
+#' @return Depending on the input, returns either a data frame of variance components for a single environment
+#' or a list containing a data frame of variance components for multiple environments, along with covariance
+#' and correlation matrices if available.
+#'
+#' @details
+#' The function interprets the structure of the input data to dynamically adjust its output, providing
+#' detailed variance component summaries. It supports comprehensive genetic analysis workflows by facilitating
+#' the extraction of key statistical measures critical for understanding the genetic architecture of traits
+#' studied. The function can process complex variance-covariance structures and accommodate models specifying
+#' heterogeneity in residuals.
 #'
 #' @examples
+#' # Assuming `res_var_cov_h_ve` is a list containing ASReml model results:
+#' var_comp_results <- asreml_variance_components(res_var_cov_h_ve)
+#' print(var_comp_results)
+#'
+#' @export
+#'
 asreml_variance_components <-  function(res_var_cov_h_ve
                                           ){
 
@@ -53,12 +72,12 @@ asreml_variance_components <-  function(res_var_cov_h_ve
 
     ## One or more than one omics but multiple location/environment
     if (nrow(varG_per_omics) >= 1 & ncol(varG_per_omics) > 1) {
-      for (j in 1:ncol(varG_per_omics)) {
+      for (j in 1:ncol(varG_per_omics)) { ## each column represent environment
         # Initialize var_u_omics_list for each column
         var_u_omics_list <- list()
 
         # Populate var_u_omics_list with values from varG_per_omics
-        for (i in 1:nrow(varG_per_omics)) {
+        for (i in 1:nrow(varG_per_omics)) { ## each row represent each omics
           var_u_omics_list[[i]] <- varG_per_omics[i, j]
         }
 

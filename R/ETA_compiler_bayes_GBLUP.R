@@ -1,48 +1,32 @@
-
-#' Title
+#' Compile ETA for Bayesian Genomic Prediction Models
 #'
-#' @param fixed
-#' @param random
-#' @param GS_model
-#' @param fixed_term_model_bayesian
-#' @param rand_term_model_bayesian
-#' @param pheno_data
-#' @param gen_name
-#' @param gmatrix
-#' @param gkernel
-#' @param omic1_kernel
-#' @param omic2_kernel
-#' @param omic3_kernel
-#' @param heter_groups
-#' @param ...
+#' This function compiles the ETA components for Bayesian genomic prediction models,
+#' including RKHS, and GBLUP_BRR, based on the provided fixed and random model terms,
+#' genomic or other omics relationship matrices, and phenotypic data.
 #'
-#' @return
-#' @export
-#'
+#' @param fixed A formula or a list of formulas specifying the fixed effects.
+#' @param random A formula or a list of formulas specifying the random effects.
+#' @param GS_model A character string specifying the genomic selection model to use.
+#' @param fixed_term_model_bayesian Character string specifying the model for fixed terms. Default is NULL.
+#' @param rand_term_model_bayesian Character vector specifying the models for each random term. Default is NULL.
+#' @param pheno_data A data.frame containing the phenotypic data.
+#' @param gmatrix A numeric matrix representing the genomic relationship matrix.
+#' @param gkernel A numeric matrix representing a genomic kernel for RKHS models. Default is NULL.
+#' @param omic1_kernel A numeric matrix representing an omics-based kernel. Default is NULL.
+#' @param omic2_kernel Same as `omic1_kernel`. Default is NULL.
+#' @param omic3_kernel Same as `omic1_kernel`. Default is NULL.
+#' @param gen_name A character string specifying the column name in `pheno_data` that contains the genotype identifiers.
+#' @param heter_groups A character string specifying the column name in `pheno_data` for heterogeneous groups. Default is NULL.
+#' @return A list containing the compiled ETA components, the modified phenotypic data, and names of ETA elements.
 #' @examples
-
-
-#' Title
-#'
-#' @param fixed
-#' @param random
-#' @param GS_model
-#' @param fixed_term_model_bayesian
-#' @param rand_term_model_bayesian
-#' @param pheno_data
-#' @param gen_name
-#' @param gmatrix
-#' @param gkernel
-#' @param omic1_kernel
-#' @param omic2_kernel
-#' @param omic3_kernel
-#' @param heter_groups
-#' @param ...
-#'
-#' @return
+#' # Assuming pheno_data is your phenotypic dataset, gmatrix is the genomic relationship matrix:
+#' result <- ETA_compiler_bayes_GBLUP(fixed = ~ fixed_effect,
+#'                                    random = ~ random_effect,
+#'                                    GS_model = "RKHS",
+#'                                    pheno_data = pheno_data,
+#'                                    gmatrix = gmatrix,
+#'                                    gen_name = "GenotypeID")
 #' @export
-#'
-#' @examples
 
 ETA_compiler_bayes_GBLUP <- function(
     fixed = NULL,
@@ -60,7 +44,7 @@ ETA_compiler_bayes_GBLUP <- function(
     heter_groups = NULL,
     ...
 ){
-
+#browser()
   ### Create empty list for ETA
 
   #rm(ZE, ZEZE, Zg, K1, K2, ETA)
@@ -69,7 +53,7 @@ ETA_compiler_bayes_GBLUP <- function(
   msg <- sprintf("==================================================\n")
   ### Get the random terms. Both no interaction and interaction terms if present in the random terms
   rand_terms <- random_terms(random = random,
-                             object = pheno_data)
+                             pheno_data = pheno_data)
 
   ### Assign
   rand_model <- random_term_model(rand_terms = rand_terms,
@@ -160,7 +144,6 @@ ETA_compiler_bayes_GBLUP <- function(
 
     rand_model = rand_model_copy[ra]
 
-
     ### start when no genotype
     if(is.null(non_gen_pos_mod)){
       if(length(non_gen_pos_mod)!=0){
@@ -177,11 +160,14 @@ ETA_compiler_bayes_GBLUP <- function(
 
     datasets <- list(gmatrix, omic1_kernel, omic2_kernel, omic3_kernel)
     dataset_names <- c("gmatrix", "omic1_kernel", "omic2_kernel", "omic3_kernel")
+    datasets_index <- which(!sapply(datasets, is.null))
+    datasets <-  datasets[datasets_index]
+    dataset_names <- dataset_names[datasets_index]
     ETA_element_name <- character()
 
     for (i in seq_along(datasets)) {
       dataset <- datasets[[i]]
-      if (!is.null(dataset)) {
+      if (!is.null(dataset)) { ## this seems redundant but useful
         if(rand_model== "RKHS"){
           if((ra == gen_pos_mod ) & is.null(Zg)){
             ETA[[length(ETA) + 1]] <- list(K= as.matrix(dataset),
@@ -248,13 +234,7 @@ ETA_compiler_bayes_GBLUP <- function(
   }
   output <- list(ETA= ETA, pheno_data = pheno_data, ETA_element_name = ETA_element_name)
 
-  names(output) <- c("ETA", "pheno_data", "ETA_element_name")
-
   return(output)
-
-
-
-
 
 }
 

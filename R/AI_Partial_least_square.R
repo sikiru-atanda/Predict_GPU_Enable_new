@@ -37,7 +37,7 @@ AI_pls <- function(pheno_object=NULL,
                    ...
 
 ){
-
+  msg <- sprintf("==================================================\n")
 
   # Define cross-validation control
   cv <- caret::trainControl(method = resample_method_tune, number = 10)
@@ -61,7 +61,21 @@ AI_pls <- function(pheno_object=NULL,
 
   } else {
 
+    pls_model <- pls::plsr(yy~ geno_omic_object,
+                           scale = FALSE,
+                           center = FALSE,
+                           ncomp = optimal_components,
+                           validation = "none")
+    cumulative_explained_variance <- cumsum(pls::explvar(pls_model))
+    # Find the number of components explaining at least 90% of the variance
+    num_components <- which(cumulative_explained_variance >= 90)[1]
+    if(ncomp< num_components){
+      optimal_components <- num_components
+  message(paste(msg, "The number of component provided explain less than 90% of the variance. We make adjustment as this might affect final result."))
+    }else {
     optimal_components <-  ncomp
+
+    }
   }
 
   # Fit the final PLS model with the optimal number of components

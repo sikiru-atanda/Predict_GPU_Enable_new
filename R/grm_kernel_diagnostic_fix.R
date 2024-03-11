@@ -1,21 +1,49 @@
 
 
 #' Title
-#' This process was infer from ASRgenomics. It was modified and improved to suite the
-#' objectives in this package
+#' Diagnose and Optimize Genomic Relationship Matrix (GRM) Kernel
 #'
-#' @param grm_kernel_data
-#' @param high_diag_cut_off
-#' @param low_diag_cut_off
-#' @param duplicate_cut_off
-#' @param optimize_diagonal
-#' @param optimize_duplicate
-#' @param message
+#' This function performs diagnostic checks on a genomic relationship matrix (GRM) kernel and
+#' applies optimizations based on specified cutoff values for diagonal elements and correlation
+#' thresholds for potential duplicates. It allows for the exclusion of outliers and potential
+#' duplicate individuals to ensure the quality of the genomic relationship matrix.
 #'
-#' @return
-#' @export
+#' @param grm_kernel_data Numeric matrix, the genomic relationship matrix (GRM) kernel to be diagnosed.
+#' @param high_diag_cut_off Numeric, the upper threshold for the diagonal elements of the GRM kernel.
+#'        Diagonal elements above this threshold may indicate outliers and can be excluded.
+#' @param low_diag_cut_off Numeric, the lower threshold for the diagonal elements of the GRM kernel.
+#'        Diagonal elements below this threshold may indicate outliers and can be excluded.
+#' @param duplicate_cut_off Numeric, the correlation threshold for identifying potential duplicate
+#'        individuals within the GRM kernel. Pairs with a correlation above this threshold are
+#'        considered potential duplicates.
+#' @param optimize_diagonal Logical, if TRUE, the function will exclude diagonal elements outside
+#'        the specified upper and lower cutoffs.
+#' @param optimize_duplicate Logical, if TRUE, the function will exclude individuals identified
+#'        as potential duplicates based on the correlation threshold.
+#'
+#' @return A list containing the optimized or cleaned GRM kernel matrix and optional diagnostic
+#'         information about potential duplicates and diagonal elements to be removed. The list
+#'         contains the following elements:
+#'         - `clean_matrix`: The optimized GRM kernel matrix.
+#'         - `potential_off_diag_with_duplicate`: A data frame of potential duplicates, if any, and their correlations.
+#'         - `potential_diag_to_remove`: A data frame of diagonal elements suggested for removal, if any.
 #'
 #' @examples
+#' # Example GRM kernel matrix
+#' grm <- matrix(rnorm(100), ncol=10)
+#' diag(grm) <- runif(10, 0.8, 1.2) # Example diagonal elements
+#' # Diagnose and optimize the GRM kernel
+#' result <- grm_kernel_diagnostic_fix(grm_kernel_data = grm,
+#'                                     high_diag_cut_off = 1.2,
+#'                                     low_diag_cut_off = 0.8,
+#'                                     duplicate_cut_off = 0.95,
+#'                                     optimize_diagonal = TRUE,
+#'                                     optimize_duplicate = TRUE)
+#' print(result$clean_matrix)
+#'
+#'This process was infer from ASRgenomics.
+#'It was modified and improved to suite the objective in this package
+#' @export
 grm_kernel_diagnostic_fix <- function(grm_kernel_data = NULL,
                               high_diag_cut_off = 1.2,
                               low_diag_cut_off = 0.8,
@@ -54,7 +82,8 @@ grm_kernel_diagnostic_fix <- function(grm_kernel_data = NULL,
   off_diag <- sparse_grmkernel[sparse_grmkernel$Row != sparse_grmkernel$Col,]
   rm(sparse_grmkernel, corr_grmkernel, sparse_corr)
 
-
+  potential_duplicate <- NULL
+  diag_element_remove <- NULL
   # Generating potential duplicates to remove
   potential_duplicate <- off_diag[off_diag$Corr > duplicate_cut_off,]
   if(nrow(potential_duplicate)>0){
@@ -77,13 +106,9 @@ diag_element_remove <- data.frame(
 if(isTRUE(optimize_duplicate) &  nrow(potential_duplicate)>0){
 offdiag_element_remove <- unique(c(potential_duplicate$Indiv_A, potential_duplicate$Indiv_B))
 
-
 grm_kernel_data_opti <- grm_kernel_data[-which(rownames(grm_kernel_data) %in% offdiag_element_remove),
                                                 -which(rownames(grm_kernel_data) %in% offdiag_element_remove)]
-
-
 }
-
 
 ## Remove the diagonal; element based on the threshold defined by the user
 if (isTRUE(optimize_diagonal) & nrow(diag_element_remove) > 0){
@@ -93,54 +118,34 @@ if (isTRUE(optimize_diagonal) & nrow(diag_element_remove) > 0){
                 -which(rownames(grm_kernel_data_opti) %in% row.names(grm_kernel_data_opti))]
 
     } else {
-
       grm_kernel_data_opti <- grm_kernel_data[-which(rownames(grm_kernel_data) %in% row.names(diag_element_remove)),
                                                    -which(rownames(grm_kernel_data) %in% row.names(grm_kernel_data))]
-
     }
-
-
-  #}
 
 }
 
 
-  if((exists("potential_duplicate") & !exists("diag_element_remove")) &  nrow(potential_duplicate)>0){
-  res = list(grm_kernel_data_opti,
-             potential_duplicate)
+  if((!is.null(potential_duplicate) & is.null(diag_element_remove)) &  nrow(potential_duplicate)>0){
+  res <-  list(clean_matrix = grm_kernel_data_opti,
+               potential_off_diag_with_duplicate = potential_duplicate)
 
-  names(res) = c("clean_matrix",
-                 "potential_off_diag_with_duplicate")
 
-  } else if((exists("diag_element_remove") & !exists("potential_duplicate")) &  nrow(diag_element_remove)>0){
+  } else if((!is.null(diag_element_remove) & is.null(potential_duplicate)) &  nrow(diag_element_remove)>0){
 
-    res = list(grm_kernel_data_opti,
-               diag_element_remove)
+    res <-  list(lean_matrix = grm_kernel_data_opti,
+               potential_diag_to_remove = diag_element_remove)
 
-    names(res) =  c("clean_matrix",
-                    "potential_diag_to_remove")
+  } else if((!is.null(diag_element_remove) & !is.null(potential_duplicate)) &  ((nrow(diag_element_remove)>0) & (nrow(potential_duplicate)>0))){
 
-  } else if((exists("diag_element_remove") & exists("potential_duplicate")) &  ((nrow(diag_element_remove)>0) & (nrow(potential_duplicate)>0))){
+    res <-  list(clean_matrix = grm_kernel_data_opti,
+               potential_off_diag_with_duplicate = potential_duplicate,
+               potential_diag_to_remove = diag_element_remove)
 
-    res = list(grm_kernel_data_opti,
-               potential_duplicate,
-               diag_element_remove)
-
-    names(res) =  c("clean_matrix",
-                    "potential_off_diag_with_duplicate",
-                    "potential_diag_to_remove")
   } else {
 
-    res = list(grm_kernel_data)
-
-    names(res) =  c("clean_matrix")
-
+    res <-  list(clean_matrix = grm_kernel_data)
   }
 
   return(res)
-
-
-
-
 
 }

@@ -7,7 +7,7 @@
 #' @param CV
 #' @param random_state
 #' @param replication
-#' @param nFolds
+#' @param nfolds
 #'
 #' @return
 #' @export
@@ -15,14 +15,15 @@
 #' @examples
 
 
-CV1_CV2 <- function(
-    pheno_data,
-    gen_name,
-    heter_groups,
-    CV = NULL,
-    nFolds = NULL,
-    random_state = NULL,
-    replication = 1){
+CV1_CV2_for_multi_environment <- function(
+                                          pheno_data,
+                                          gen_name,
+                                          heter_groups,
+                                          CV = NULL,
+                                          nfolds = NULL,
+                                          random_state = NULL,
+                                          replication = 1,
+                                          ...){
 
   msg <- sprintf("==================================================\n")
 
@@ -31,7 +32,7 @@ CV1_CV2 <- function(
 
   if (is.null(heter_groups)){stop(message(paste(msg,"Provide the a pointer (heter_groups) to the column contaning the environments")), call. = FALSE)}
   if(CV>2){stop(message(paste(msg,"CV must be 1 or 2")), call. = FALSE)}
-  if(is.null(nFolds)){stop(message(paste(msg,"Provide value the number of desired folds")), call. = FALSE)}
+  if(is.null(nfolds)){stop(message(paste(msg,"Provide value the number of desired folds")), call. = FALSE)}
   ## Order the pheno_data data by gen_name and by Environment
   pheno_data = pheno_data[order(pheno_data[, gen_name]), ]
   pheno_data = pheno_data[order(pheno_data[, heter_groups]), ]
@@ -50,7 +51,7 @@ CV1_CV2 <- function(
 
   Rep_FoldCV = vector(mode = "list", length = replication)
 
-  All_nFolds <- vector(mode = "integer",  length(pheno_data[, gen_name]))
+  All_nfolds <- vector(mode = "integer",  length(pheno_data[, gen_name]))
 
   if(!is.null(random_state) & is.numeric(random_state)){
     set.seed(random_state)
@@ -60,18 +61,18 @@ CV1_CV2 <- function(
 
     for (r in 1:replication) {
 
-      mfold <- sample(1:nFolds, size = length(ID_GIDs), replace = TRUE)
+      mfold <- sample(1:nfolds, size = length(ID_GIDs), replace = TRUE)
 
       for (i in 1:length(pheno_data[, gen_name])) {
 
-        All_nFolds[i] <- mfold[which(ID_GIDs == pheno_data[, gen_name][i])]
+        All_nfolds[i] <- mfold[which(ID_GIDs == pheno_data[, gen_name][i])]
 
       }
 
-      Rep_FoldCV[[r]] <- All_nFolds
+      Rep_FoldCV[[r]] <- All_nfolds
 
       names(Rep_FoldCV)[r] <- paste(paste(paste("Rep", r, sep = ""),
-                                          paste(nFolds, 'Fold', sep = ""), sep="_"),
+                                          paste(nfolds, 'Fold', sep = ""), sep="_"),
                                     paste("CV", CV, sep=""), sep = "")
 
     }
@@ -89,16 +90,16 @@ CV1_CV2 <- function(
 
         Env_GIDs_size = length(Env_GIDs)
 
-        tmpFold <- sample(1:nFolds, size =  Env_GIDs_size, replace =  Env_GIDs_size > nFolds)
+        tmpFold <- sample(1:nfolds, size =  Env_GIDs_size, replace =  Env_GIDs_size > nfolds)
 
-        All_nFolds[Env_GIDs] <- tmpFold
+        All_nfolds[Env_GIDs] <- tmpFold
 
       }
 
-      Rep_FoldCV[[r]] <- All_nFolds
+      Rep_FoldCV[[r]] <- All_nfolds
 
       names(Rep_FoldCV)[r] <- paste(paste(paste("Rep", r, sep = ""),
-                                          paste(nFolds, 'Fold', sep = ""), sep="_"),
+                                          paste(nfolds, 'Fold', sep = ""), sep="_"),
                                     paste("CV", CV, sep=""), sep = "")
 
     }

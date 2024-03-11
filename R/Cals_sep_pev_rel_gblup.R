@@ -1,18 +1,31 @@
-
-#' Title
+#' Calculate Standard Error, PEV, and Reliability for GBLUP
 #'
-#' @param geno_object
-#' @param X
-#' @param Z
-#' @param va
-#' @param ve
-#' @param h2
-#' @param lambda
+#' This function calculates the standard errors, prediction error variances (PEVs),
+#' and reliabilities for genomic estimated breeding values (GEBVs) using genomic best
+#' linear unbiased prediction (GBLUP). It adjusts the genomic relationship matrix with
+#' a shrinkage factor and computes these metrics based on the adjusted matrix.
 #'
-#' @return
-#' @export
+#' @param geno_object Numeric matrix representing the genomic relationship matrix (GRM).
+#' @param X Optional; design matrix for fixed effects.
+#' @param Z Optional; design matrix for random effects, defaults to an identity matrix if NULL.
+#' @param va Numeric; the additive genetic variance component.
+#' @param ve Numeric; the residual (environmental) variance component.
+#' @param h2 Optional; heritability on the observed scale. If not provided, it is calculated from `va` and `ve`.
+#' @param lambda Optional; shrinkage parameter. If not provided, it is calculated from heritability (`h2`).
+#'
+#' @return A data frame containing three columns:
+#'   - `rel`: Reliability of the GEBVs.
+#'   - `pev`: Prediction error variance of the GEBVs.
+#'   - `sep`: Standard error of the prediction for the GEBVs.
 #'
 #' @examples
+#' # Assuming geno_object, va, and ve are predefined:
+#' results <- sep_pev_rel_gblup(geno_object = GRM,
+#'                              va = 0.5,
+#'                              ve = 0.5)
+#' @export
+#' @importFrom stats solve
+
 sep_pev_rel_gblup <- function(geno_object = NULL,
                               X = NULL,
                               Z = NULL,

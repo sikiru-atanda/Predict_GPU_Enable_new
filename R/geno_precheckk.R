@@ -1,22 +1,34 @@
-
-
-
-#' Title
+#' Quality Control for Genomic Data
 #'
-#' @param object_geno
-#' @param qc_filtering
-#' @param maf_threshold
-#' @param het_threshold
-#' @param ind_call_rate_threshold
-#' @param snp_call_rate_threshold
-#' @param impute
-#' @param message
-#' @param ...
+#' This function applies quality control (QC) filters to genomic data. It checks and adjusts SNP coding, removes monomorphic markers, and filters markers based on minor allele frequency (MAF), heterozygosity, and call rates for both individuals and SNPs.
 #'
-#' @return
-#' @export
+#' @param object_geno A matrix or data.frame containing genomic data with individuals in rows and SNPs in columns.
+#' @param qc_filtering Logical, if TRUE, quality control filtering is applied based on the thresholds provided.
+#' @param maf_threshold Numeric, the threshold for minor allele frequency below which SNPs are removed.
+#' @param het_threshold Numeric, the threshold for heterozygosity above which SNPs are removed.
+#' @param ind_call_rate_threshold Numeric, the threshold for individual call rate below which individuals are removed.
+#' @param snp_call_rate_threshold Numeric, the threshold for SNP call rate below which SNPs are removed.
+#' @param impute Logical, if TRUE, missing values are imputed. Currently, this parameter is not used in the function but could be implemented for imputation.
+#' @param message Logical, if TRUE, messages about the QC process are displayed.
+#' @param ... Additional arguments affecting the QC process.
+#'
+#' @return A list containing:
+#'   - \code{snps_matrix}: The genomic data matrix after applying QC filters.
+#'   - \code{qc_metrics_and_summary_stat}: A data frame summarizing the QC process, including the number of markers and individuals removed.
 #'
 #' @examples
+#' # Assuming `genomic_data` is a matrix with SNP data
+#' qc_results <- geno_precheck(object_geno = genomic_data, qc_filtering = TRUE,
+#'                             maf_threshold = 0.05, het_threshold = 0.2,
+#'                             ind_call_rate_threshold = 0.9, snp_call_rate_threshold = 0.9)
+#' qc_genomic_data <- qc_results$snps_matrix
+#' qc_summary <- qc_results$qc_metrics_and_summary_stat
+#'
+#' @importFrom stats colMeans
+#' @importFrom dplyr rename rownames_to_column
+#' @import tibble
+#' @export
+#'
 geno_precheck <- function(object_geno = NULL,
                           qc_filtering = TRUE,
                           maf_threshold = 0.05,
@@ -36,23 +48,25 @@ geno_precheck <- function(object_geno = NULL,
 
     # Check row and column names in object_geno.
     if (is.null(rownames(object_geno)) || is.null(colnames(object_geno))) {
-      stop("Individual or marker names not assigned to rows or columns of 'object_geno'.")
-    }
+      stop(print(paste(msg,"Individual or marker names not assigned to rows or columns of 'object_geno'.")), call. = FALSE)
+      }
 
    AA <-  detect_genomic_coding(object_geno = object_geno)
    if(AA=="SNP (0, 1, 2, -1)") {
-     stop("SNP recoding is wrong.")
+     stop(print(paste(msg,"SNP recoding is decoded wrongly as (0,1,2-1).\n Snp recode should either be SNP: (-1, 0, 1) or (0, 1, 2).")), call. = FALSE)
+
    } else if(AA=="SNP (-1, 0, 1)"){
      object_geno <- object_geno + 1
      if(isTRUE(message)) {
-       message("The allele dosages are not in 0, 1, 2. Fixing it to calculate GRM using Yang or VanRadan")
+       message(insight::print_color(paste(msg, "The allele dosages are not in 0, 1, 2.\n We Fix it to required format to calculate GRM using Yang or VanRadan"), "blue"))
+
      }
    } else{
      if(AA=="Presence/Absence (0, 1)"){
        # Convert 1s to 2s
        object_geno[object_geno == 1] <- 2
        if(isTRUE(message)) {
-         message("The allele dosages are not in 0, 1. Fixing it to calculate GRM using Yang or VanRadan")
+         message(insight::print_color(paste(msg, "The allele dosages are not in 0, 2.\n We Fix it to required format to calculate GRM using Yang or VanRadan"), "blue"))
        }
 
      }
@@ -91,15 +105,15 @@ geno_precheck <- function(object_geno = NULL,
     monomorphic_markers <- which(apply(object_geno, 2, function(x) length(table(x)) <= 1))
     if (length(monomorphic_markers) > 0) {
       if(isTRUE(message)) {
-        print(paste("Removing monomorphic markers:", length(monomorphic_markers)))
+        message(insight::print_color(paste(msg, paste("Removing monomorphic markers:", length(monomorphic_markers))), "blue"))
       }
       object_geno <- object_geno[, -monomorphic_markers, ]
       #map_data <- map_data[-monomorphic_markers, ]
-      total_mono = length(monomorphic_markers)
+      total_mono <-  length(monomorphic_markers)
       rm(monomorphic_markers); gc()
     } else {
       if(isTRUE(message)) {
-        print("No monomorphic markers to remove.")
+        message(insight::print_color(paste(msg, "No monomorphic markers to remove."), "blue"))
       }
       total_mono = 0
     }
@@ -110,19 +124,15 @@ geno_precheck <- function(object_geno = NULL,
       phat <- colMeans(object_geno, na.rm = TRUE) / 2
       MAF <- ifelse(phat < 0.5, phat, 1 - phat)
 
-      if(isTRUE(message)) {
-        message("Minor allele frequency check (MAF).")
-      }
-
       if (any(MAF < maf_threshold)) {
         object_geno <- object_geno[, -which(MAF < maf_threshold)]
         maf_markers_removed <- length(which(MAF < maf_threshold))
         if(isTRUE(message)) {
-          print(paste("Removing markers with MAF below threshold:", length(which(MAF < maf_threshold))))
+          message(insight::print_color(paste(msg, paste("Removing markers with MAF below threshold:", maf_markers_removed)), "blue"))
         }
       } else {
         if(isTRUE(message)) {
-          message("No loci with MAF below threshold.")
+          message(insight::print_color(paste(msg, "No markers removed based on MAF threshold."), "blue"))
         }
       }
     }
@@ -140,18 +150,18 @@ geno_precheck <- function(object_geno = NULL,
       low_call_rate_snps <- which(snp_call_rate > snp_call_rate_threshold)
       if (length(low_call_rate_snps) > 0) {
         if(isTRUE(message)) {
-          print(paste("Removing SNPs with low call rate:", length(low_call_rate_snps)))
+          message(insight::print_color(paste(msg, paste("Removing SNPs with low call rate:", length(low_call_rate_snps))), "blue"))
         }
         object_geno <- object_geno[, -low_call_rate_snps]
         #hapmap <- hapmap[low_call_rate_snps, ]
         #map_data <- map_data[low_call_rate_snps, ]
-        markers_callrate_removed  = length(low_call_rate_snps)
+        markers_callrate_removed  <-  length(low_call_rate_snps)
       } else {
         if(isTRUE(message)) {
-          print("No SNPs removed based on SNP call rate threshold")
+          message(insight::print_color(paste(msg, "No SNPs removed based on SNP call rate threshold."), "blue"))
         }
 
-        markers_callrate_removed  = 0
+        markers_callrate_removed  <-  0
       }
       rm(snp_call_rate, low_call_rate_snps); gc()
     }
@@ -168,15 +178,15 @@ geno_precheck <- function(object_geno = NULL,
 
       if (length(low_call_rate_inds) > 0) {
         if(isTRUE(message)) {
-          print(paste("Removing Individuals with low call rate:", length(low_call_rate_inds)))
+          message(insight::print_color(paste(msg, paste("Removing Individuals with low call rate:", length(low_call_rate_inds))), "blue"))
         }
         object_geno <- object_geno[-low_call_rate_inds, ]
       } else {
         if(isTRUE(message)) {
-          print("No individuals removed based on call rate threshold.")
+          message(insight::print_color(paste(msg, "No individuals removed based on call rate threshold."), "blue"))
         }
 
-        ind_callrate_removed = 0
+        ind_callrate_removed <-  0
       }
 
       rm(ind_call_rate, low_call_rate_inds); gc()
@@ -191,7 +201,7 @@ geno_precheck <- function(object_geno = NULL,
       het_markers <- which(heteroz > het_threshold)
       if (length(het_markers) > 0) {
         if(isTRUE(message)) {
-          print(paste("Removing markers with high heterozygosity:", length(het_markers)))
+          message(insight::print_color(paste(msg, paste("Removing markers with high heterozygosity:", length(het_markers))), "blue"))
         }
         object_geno <-  object_geno[, -het_markers]
         het_markers_removed  <- length(het_markers)
@@ -200,7 +210,7 @@ geno_precheck <- function(object_geno = NULL,
 
       } else {
         if(isTRUE(message)) {
-          print("No markers removed based on heterozygosity threshold.")
+          message(insight::print_color(paste(msg, "No markers removed based on heterozygosity threshold."), "blue"))
         }
 
         het_markers_removed <- 0
@@ -212,24 +222,11 @@ geno_precheck <- function(object_geno = NULL,
    ####
 
   } else {
-    stop("Marker/snp data cannot be empty.")
+    stop(print(paste(msg,"Marker/snp data cannot be empty.")), call. = FALSE)
+
   }
 
   #### Aggregate all the maker data
-
-
-  # if(!exists("markers_callrate_removed")) {
-  #   markers_callrate_removed  = 0
-  # }
-  # if(!exists("ind_callrate_removed ")) {
-  #   ind_callrate_removed  = 0
-  # }
-  # if(!exists("het_markers_removed ")) {
-  #   het_markers_removed  = 0
-  # }
-  # if(!exists("maf_markers_removed")) {
-  #   maf_markers_removed = 0
-  # }
   #########################
   summary_stat_snp= data.frame(
     snp_call_rate_threshold = snp_call_rate_threshold,

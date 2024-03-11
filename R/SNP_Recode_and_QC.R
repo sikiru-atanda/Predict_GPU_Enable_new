@@ -1,93 +1,44 @@
-## -*- mode: R-4.1.2 -*-
-###########################################################################
-##
-## hmp to numeric (AA=1,Aa=0,aa=-1) | (AA=2,Aa=1,aa=0)
-##
-##              Copyright (C) 2023 Sikiru
-##
-## ** Filename: snp_recode_and_qc.R
-##
-## ** This function perform QC and recoding of SNPs
-##
-## * Function Inputs :
-## * hapmap = hapmap file
-## * het = percentage of heterozyoug SNPs allowed (numberic)
-## * maf = minor allele frequency (numeric)
-## * call_rate = percentage of missing value permitted (numeric)
-## * recode = recoding format for the SNP which can be either Meth2_1_0 that is (AA=2,Aa=1,aa=0) or "Meth1_0_-1 that is (AA=1,Aa=0,aa=-1)
-##
-##
-## ** Authors: Sikiru
-##
-##   This program is free software; you can redistribute it and/or modify
-##   it under the terms of the GNU General Public License as published by
-##   the Free Software Foundation; either version 2 of the License, or
-##  (at your option) any later version.
-##
-##   This program is distributed in the hope that it will be useful, but
-##   WITHOUT ANY WARRANTY; without even the implied warranty of
-##   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-##   General Public License for more details.
-##
-##   You should have received a copy of the GNU General Public License
-##   along with this program; if not, write to the Free Software Foundation,
-##   Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-##
-#############################################################################
-#############################################################################
-## This function required installation of data.table library
 
-# library(data.table)
-#
-# # CLEAR 'WorkSpace' (R  environment)
-#
-# rm(list = ls()); ls()
-# gc()
-# cat("\014")
-#
-#
-# ## Set working directory where you have the hapmap file
-# setwd("D:/PEA_BARI")
-#
-#
-# ## Load Hapmap file
-# Selec_ch.300 <- fread('HapMap_300_Aug25_Select_Chr_No_Filtering.hmp.txt', sep='\t', header=T, check.names=FALSE)
-
-# Selec_ch.300 <- read.delim("HapMap_300_Aug25_Select_Chr_No_Filtering.hmp.txt",
-#                            colClasses = "character",
-#                            #nrows=50,
-#                            comment.char="", check.names=FALSE,
-#                            header=TRUE,na.strings=c(NA,"N","NN","B","V","H","D",".","-"))
-#
-# ### Data must be in data.table.
-#
-# Selec_ch.300 <-  as.data.table(Selec_ch.300)
-#
-
-## Start of the functions for QC and Recording of SNP
-
-
-#' Title
+#' Quality Control and Recoding for HapMap Data
 #'
-#' @param hapmap_file_name
-#' @param hapmap_file_path
-#' @param hapmap
-#' @param maf_threshold
-#' @param het_threshold
-#' @param ind_call_rate_threshold
-#' @param snp_call_rate_threshold
-#' @param hwe_threshold
-#' @param impute
-#' @param recode_format
-#' @param out_put_map
-#' @param message
-#' @param ...
+#' Performs quality control checks and recodes HapMap genotype data. It allows for filtering based on minor allele frequency (MAF), heterozygosity, individual and SNP call rates, and optionally imputes missing data. The function can also recode genotype data into numeric formats.
 #'
-#' @return
-#' @export
+#' @param hapmap_file_name A string specifying the name of the HapMap file to be processed. If NULL, `hapmap` must be provided.
+#' @param hapmap_file_path A string specifying the path to the directory containing the HapMap file. If NULL, `hapmap` must be provided.
+#' @param hapmap An optional data.table object containing HapMap data. If NULL, `hapmap_file_name` and `hapmap_file_path` must be provided.
+#' @param maf_threshold A numeric value specifying the threshold for minor allele frequency (MAF). Markers below this threshold will be removed.
+#' @param het_threshold A numeric value specifying the threshold for heterozygosity. Markers above this threshold will be removed.
+#' @param ind_call_rate_threshold A numeric value specifying the threshold for individual call rate. Individuals below this threshold will be removed.
+#' @param snp_call_rate_threshold A numeric value specifying the threshold for SNP call rate. SNPs below this threshold will be removed.
+#' @param impute A logical value indicating whether missing data should be imputed. If TRUE, missing values will be imputed.
+#' @param recode_format A string specifying the format for recoding genotype data. Can be "0,1,2" or "-1,0,1".
+#' @param out_put_map A logical value indicating whether to output a map of SNP information.
+#' @param message A logical value indicating whether to display messages during processing.
+#' @param ... Additional arguments to be passed to underlying functions.
+#' @importFrom data.table := .SD .SDcols lapply
+#'
+#' @return A list containing three elements:
+#' \itemize{
+#'   \item{snps_matrix}{A matrix or data.table of the processed and possibly recoded SNP data.}
+#'   \item{snp_map}{An optional data.table containing SNP mapping information, depending on `out_put_map`.}
+#'   \item{qc_metrics_and_summary_stat}{A data.frame summarizing the quality control metrics and actions taken.}
+#' }
 #'
 #' @examples
-#' @importFrom data.table := .SD .SDcols lapply
+#' \dontrun{
+#'   result <- hmp_qc_recode(hapmap_file_name = "sample_data.txt",
+#'                           hapmap_file_path = "path/to/data",
+#'                           maf_threshold = 0.05,
+#'                           het_threshold = 0.1,
+#'                           ind_call_rate_threshold = 0.95,
+#'                           snp_call_rate_threshold = 0.95,
+#'                           impute = TRUE,
+#'                           recode_format = "0,1,2",
+#'                           out_put_map = TRUE,
+#'                           message = TRUE)
+#' }
+#'
+#' @export
 #'
 hmp_qc_recode <- function(hapmap_file_name = NULL,
                           hapmap_file_path = NULL,
@@ -104,11 +55,18 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
                           ...
 )
 {
+  msg <- sprintf("==================================================\n")
   ### Remove All loci with All NAs and monomorphic markers
   ####### TO DO
   # Develop function to accomodate when the data is already recoded but
   ## Not filtered
   #if(!is.null(hapmap) && !is.null(geno))#{
+## Place holders
+  markers_callrate_removed  <-  0
+  ind_callrate_removed  <-  0
+  het_markers_removed  <-  0
+  maf_markers_removed <-  0
+  snp_data <- NULL
 
   ###############################
 
@@ -134,8 +92,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
 
   }else{
     if(is.null(hapmap)){
-
-      stop("Hapmap data is missing.")
+      stop(print(paste(msg,"Hapmap data is missing.")), call. = FALSE)
 
     }
 
@@ -146,35 +103,35 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
 
     hapmap <- data.table::as.data.table(hapmap)
   }
-  # snp_data = hapmap[, 12:ncol(hapmap)]
-  # rownames(snp_data) <- hapmap$`rs#`
-  #
-  # map = hapmap[, 1:11]
-
+  #### Check and to be sure the expected header for snps name is present.
+  ## it is usually rs#
+  snp_names_check <- grep("rs", colnames(hapmap)[1:11], ignore.case = TRUE)
+  if(length(snp_names_check)==0 | length(snp_names_check)>1){
+    stop(print(paste(msg,"rs# header/column name is missing or provided wrongly.")), call. = FALSE)
+  }
   #########
 
   # Remove monomorphic markers
   monomorphic_markers <- which(apply(hapmap[, 12:ncol(hapmap)], 1, function(x) length(table(x)) <= 1))
   if (length(monomorphic_markers) > 0) {
-    if (message) {
-      print(paste("Removing monomorphic markers:", length(monomorphic_markers)))
+    if (isTRUE(message)) {
+      message(insight::print_color(paste(msg, paste("Removing monomorphic markers:", length(monomorphic_markers))), "blue"))
     }
     hapmap <- hapmap[-monomorphic_markers, ]
     #map_data <- map_data[-monomorphic_markers, ]
-    total_mono = length(monomorphic_markers)
+    total_mono <-  length(monomorphic_markers)
     rm(monomorphic_markers); gc()
   } else {
-    if (message) {
-      print("No monomorphic markers to remove.")
+    if (isTRUE(message)) {
+      message(insight::print_color(paste(msg, "No monomorphic markers to remove."), "blue"))
     }
-    total_mono = 0
+    total_mono <-  0
   }
 
 
 
   ### Remove markers with high missing value based on desired thresold
   if(!is.null(snp_call_rate_threshold)) {
-
     # Calculate individual call rate
     snp_call_rate <- rowMeans(is.na(hapmap[, 12:ncol(hapmap)]))
 
@@ -182,19 +139,19 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
     #low_call_rate_snps <- which(snp_call_rate < snp_call_rate_threshold)
     low_call_rate_snps <- which(snp_call_rate > snp_call_rate_threshold)
     if (length(low_call_rate_snps) > 0) {
-      if (message) {
-        print(paste("Removing SNPs with low call rate:", length(low_call_rate_snps)))
+      if (isTRUE(message)) {
+        message(insight::print_color(paste(msg, paste("Removing SNPs with low call rate:", length(low_call_rate_snps))), "blue"))
       }
       hapmap <- hapmap[-low_call_rate_snps, ]
       #hapmap <- hapmap[low_call_rate_snps, ]
       #map_data <- map_data[low_call_rate_snps, ]
-      markers_callrate_removed  = length(low_call_rate_snps)
+      markers_callrate_removed  <-  length(low_call_rate_snps)
     } else {
-      if (message) {
-        print("No SNPs removed based on SNP call rate threshold")
+      if (isTRUE(message)) {
+        message(insight::print_color(paste(msg, "No SNPs removed based on SNP call rate threshold."), "blue"))
       }
 
-      markers_callrate_removed  = 0
+      markers_callrate_removed  <-  0
     }
     rm(snp_call_rate, low_call_rate_snps); gc()
   }
@@ -212,16 +169,16 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
 
     low_call_rate_inds <-  low_call_rate_inds+11
     if (length(low_call_rate_inds) > 0) {
-      if (message) {
-        print(paste("Removing Individuals with low call rate:", length(low_call_rate_inds)))
+      if (isTRUE(message)) {
+        message(insight::print_color(paste(msg, paste("Removing Individuals with low call rate:", length(low_call_rate_inds))), "blue"))
       }
       hapmap <- hapmap[, -low_call_rate_inds, with = FALSE]
     } else {
-      if (message) {
-        print("No individuals removed based on call rate threshold.")
+      if (isTRUE(message)) {
+        message(insight::print_color(paste(msg, "No individuals removed based on call rate threshold."), "blue"))
       }
 
-      ind_callrate_removed = 0
+      ind_callrate_removed <-  0
     }
 
     rm(ind_call_rate, low_call_rate_inds); gc()
@@ -237,27 +194,21 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
         #het_markers <- which(heteroz >= het_threshold)
     het_markers <- which(heteroz > het_threshold)
     if (length(het_markers) > 0) {
-      if (message) {
-        print(paste("Removing markers with high heterozygosity:", length(het_markers)))
+      if (isTRUE(message)) {
+        message(insight::print_color(paste(msg, paste("Removing markers with high heterozygosity:", length(het_markers))), "blue"))
       }
       hapmap <- hapmap[-het_markers, ]
 
-      het_markers_removed = length(het_markers)
+      het_markers_removed <-  length(het_markers)
       rm(het_markers, heteroz); gc()
       #map_data <- map_data[-het_markers, ]
     } else {
-      if (message) {
-        print("No markers removed based on heterozygosity threshold.")
+      if (isTRUE(message)) {
+        message(insight::print_color(paste(msg, "No markers removed based on heterozygosity threshold."), "blue"))
       }
 
-      het_markers_removed = 0
+      het_markers_removed <-  0
     }
-
-    #snp_data <- snp_data[heteroz < het_threshold, ]
-
-    ## Gather meta data
-
-
   }
 
   #####
@@ -275,13 +226,12 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
       return(minor_allele_freq)
     })
 
-
     #hapmap <- hapmap[minor_allele_freq >= maf_threshold,]
     maf_markers <-  which(minor_allele_freq < maf_threshold)
 
     if (length(maf_markers) > 0) {
-      if (message) {
-        print(paste("Removing markers with MAF below threshold:", length(maf_markers)))
+      if (isTRUE(message)) {
+        message(insight::print_color(paste(msg, paste("Removing markers with MAF below threshold:", length(maf_markers))), "blue"))
       }
     hapmap <- hapmap[-maf_markers,]
 
@@ -289,19 +239,16 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
   rm(maf_markers); gc()
 
     }else {
-      if (message) {
-        print("No markers removed based on MAF threshold.")
+      if (isTRUE(message)) {
+        message(insight::print_color(paste(msg, "No markers removed based on MAF threshold."), "blue"))
       }
 
-      maf_markers_removed = 0
+      maf_markers_removed <-  0
     }
-    #maf_markers_removed <-  (N_snp - ncol(hapmap))
 
   }
 
   if (!is.null(recode_format)) {
-  #if (recode_format %in% c("0,1,2", "-1,0,1")) {
-
     hapmap2numeric_meth2_1_0 <- function(hapmap){
       hapmap_numeric <- apply(hapmap[, c(1, 2,12:ncol(hapmap)), with=FALSE], 1, function(x){
         x[which(x%in%c('R', 'Y', 'S', 'W', 'K', 'M'))] <- 1
@@ -318,9 +265,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
         }
         return(x)
       })
-
       return(t(hapmap_numeric[-(1:2), ]))
-      #return(t(hapmap_numeric))
     }
 
     hapmap2numeric_meth1_1 <- function(hapmap){
@@ -373,27 +318,11 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
       }
 
     }
-
     # End
-
-
   }
   ##################
   ## Aggregate all the info
   #### Aggregate all the maker data
-
-  if(!exists("markers_callrate_removed")) {
-    markers_callrate_removed  = 0
-  }
-  if(!exists("ind_callrate_removed ")) {
-    ind_callrate_removed  = 0
-  }
-  if(!exists("het_markers_removed ")) {
-    het_markers_removed  = 0
-  }
-  if(!exists("maf_markers_removed")) {
-    maf_markers_removed = 0
-  }
   #########################
   summary_stat_snp= data.frame(
     snp_call_rate_threshold = snp_call_rate_threshold,
@@ -416,11 +345,11 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
 
   ######
 
-  if(isTRUE(out_put_map) & exists("snp_data")){
+  if(isTRUE(out_put_map) & !is.null(snp_data)){
    map <-   snp_data[, 1:11]
-
+   snp_names_index <- grep("rs", colnames(map), ignore.case = TRUE)
    snp_data <- t(snp_data[, 12:ncol(snp_data)])
-   colnames(snp_data) <- map$`rs#`
+   colnames(snp_data) <- as.data.frame(map)[, snp_names_index]
 
    snp_data <- apply(snp_data, 2, as.double)
 
@@ -433,11 +362,11 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
    )
 
 
-  } else if(isFALSE(out_put_map) & exists("snp_data")){
+  } else if(isFALSE(out_put_map) & !is.null(snp_data)){
     map <-   snp_data[, 1:11]
-
+    snp_names_index <- grep("rs", colnames(map), ignore.case = TRUE)
     snp_data <- t(snp_data[, 12:ncol(snp_data)])
-    colnames(snp_data) <- map$`rs#`
+    colnames(snp_data) <- as.data.frame(map)[, snp_names_index]
 
     snp_data <- apply(snp_data, 2, as.double)
 
@@ -451,8 +380,9 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
 
   } else if(isTRUE(out_put_map) & is.null(recode_format)){
     map <-   hapmap[, 1:11]
+    snp_names_index <- grep("rs", colnames(map), ignore.case = TRUE)
     hapmap <- t(hapmap[, 12:ncol(hapmap)])
-    colnames(hapmap) <- map$`rs#`
+    colnames(hapmap) <- as.data.frame(map)[, snp_names_index]
 
     return(list(snps_matrix= hapmap,
                 snp_map = map,
@@ -463,8 +393,9 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
   } else {
     if(isFALSE(out_put_map) & is.null(recode_format)){
       map <-   hapmap[, 1:11]
+      snp_names_index <- grep("rs", colnames(map), ignore.case = TRUE)
       hapmap <- t(hapmap[, 12:ncol(hapmap)])
-      colnames(hapmap) <- map$`rs#`
+      colnames(hapmap) <- as.data.frame(map)[, snp_names_index]
       rm(map); gc()
 
       return(list(snps_matrix= hapmap,
@@ -475,17 +406,6 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
     }
 
   }
-
-
-
-
-
-
-
-
-
-  #return(filter)
-
 
 }
 

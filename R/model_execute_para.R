@@ -67,6 +67,7 @@
 #' @param omic3_kernel  relationship matrix using different kernel methods
 #' @param pheno_data_train phenotypic data for training set. NA not allowed. Dataframe or matrix is allowed
 #' @param pheno_data_test phenotypic data for the testing set. NA is allowed. Dataframe or matrix is allowed
+#' @param cross_validation
 #' @param coefficient_1 coefficient for the training set using either genomic or any omics data.
 #' We allowed up to 4 omics data for model fit
 #' @param coefficient_2
@@ -227,6 +228,7 @@ model_execute <- function(
     test_omics_label = list(test_omic1_data = NULL,
                             test_omic2_data = NULL,
                             test_omic3_data = NULL),
+    cross_validation = FALSE,
     coefficient_1 = NULL,
     coefficient_2 = NULL,
     coefficient_3 = NULL,
@@ -313,8 +315,8 @@ model_execute <- function(
 
     # Define available models and variance structures
     var_cov_str_available <- c("us","corgh","corgv",
-                               "corh","corv","fa1","fa2", "fa3", "fa4"
-                               )  # reuced rank removed for now"rr1","rr2", "rr3", "rr4"
+                               "corh","corv","fa1","fa2", "fa3", "fa4",
+                               "rr1","rr2", "rr3", "rr4")  # reuced rank removed for now"rr1","rr2", "rr3", "rr4"
 
     AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare",
                          "SupportVectorMachine", "K-NearestNeighbors", "Lasso",
@@ -332,13 +334,9 @@ model_execute <- function(
     # }
 #######################################
 
-    eval_metrics_available <- c("Accuracy",
-                                "Mean_Squared_Error",
-                                "Bias",
-                                "Root_Mean_Squared_Error",
-                                "Relative_Squared_Error",
-                                "Mean_Absolute_Error",
-                                "Mean_Absolute_Percent_Error")
+    eval_metrics_available <- c("accuracy", "mean_squared_error", "bias",
+                                "root_mean_squared_error", "relative_squared_error",
+                                "mean_absolute_error", "mean_absolute_percent_error")
     if(!is.null(eval_metrics)){
     if (!(eval_metrics %in% eval_metrics_available)) {
       stop("Invalid evaluation metrics for the model. Choose from: ",
@@ -356,7 +354,7 @@ model_execute <- function(
     if(!is.null(kernel_method)){
       if (!(kernel_method %in% kernel_method_avaliable)) {
         stop("Invalid kernel method. Choose from: ",
-             paste(eval_metrics_available, collapse = ", "), call. = FALSE)
+             paste(kernel_method_avaliable, collapse = ", "), call. = FALSE)
       }
     }
 
@@ -424,12 +422,12 @@ model_execute <- function(
       ### This is important for asreml for multi-environment analysis
       if (GS_model %in% "GBLUP") {
         if ((!is.null(heter_groups) & !is.null(heter_resid)) & is.null(var_cov_str)) {
-          stop("Your data suggest multi-environment but variance-covariance structure is missing.Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
+          stop(msg, "Your data suggest multi-environment but variance-covariance structure is missing.Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
         } else if ((!is.null(heter_groups) & is.null(heter_resid)) & !is.null(var_cov_str)){
-          stop("Your data suggest multi-environment but variance-covariance structure. heter_resid must be TRUE.", call. = FALSE)
+          stop(msg, "Your data suggest multi-environment but variance-covariance structure. heter_resid must be TRUE.", call. = FALSE)
           } else {
           if (!(var_cov_str %in% var_cov_str_available)) {
-            stop("Invalid output variance-covariance structure. Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
+            stop(msg, "Invalid output variance-covariance structure. Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
           }
         }
       }
@@ -736,6 +734,13 @@ model_execute <- function(
  }
 
  ### Ends
+#################################################################
+############# Cross-Validation Start
+
+
+
+###############################################################
+
  ##########################################################################
  #########################################################################
  ## Start of Bayes A, B, C, BL and BRR Models for Single Location       ##

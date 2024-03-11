@@ -1,11 +1,27 @@
-#' Title
+#' Detect Genomic Coding Scheme
 #'
-#' @param object_geno
+#' This function detects the coding scheme used in a genomic dataset based on the unique values present.
+#' It supports detection of common coding schemes for presence/absence and SNP data.
 #'
-#' @return
-#' @export
+#' @param object_geno Numeric or character vector containing genomic data from which to detect the coding scheme.
+#'
+#' @return A character string describing the detected coding scheme. Common schemes include:
+#'   - "Presence/Absence (0, 1)"
+#'   - "Presence/Absence (0, 2)"
+#'   - "SNP (-1, 0, 1)"
+#'   - "SNP (0, 1, 2, -1)"
+#'   - "SNP (0, 1, 2)"
+#' If the function cannot match the data to a known scheme, it returns "Unknown coding scheme".
 #'
 #' @examples
+#' # Assuming object_geno is a numeric vector with SNP data
+#' coding_scheme <- detect_genomic_coding(object_geno = c(0, 1, 2, 0, 1, 2))
+#'
+#' # Assuming object_geno is a character vector with presence/absence data
+#' coding_scheme <- detect_genomic_coding(object_geno = c("0", "1", "0", "1"))
+#'
+#' @export
+
 detect_genomic_coding <- function(object_geno = NULL) {
   unique_values <- unique(object_geno)
 

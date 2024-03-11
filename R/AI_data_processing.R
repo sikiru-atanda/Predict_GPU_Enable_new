@@ -2,7 +2,7 @@
 #' Title
 #'
 #' @param geno_data
-#' @param omic_data
+#' @param omic_data  list of omics
 #'
 #' @return
 #' @export

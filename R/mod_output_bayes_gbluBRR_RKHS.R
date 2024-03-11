@@ -180,7 +180,10 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
     dataset <- datasets[[i]]
     if(!is.null(Zg)){
     ZgZg <- Zg%*%dataset%*%t(Zg)
+
+    suppressMessages({
     ZgZg <- grm_kernel_precheck(ZgZg)
+    })
 
     }
 

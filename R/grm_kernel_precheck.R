@@ -1,31 +1,47 @@
-
-#' Title
-#' grm_kernel_data is a genomic relationship matrix or relationship matrix calculated using
-#' other omics data. The relationship matrix can be calculated using any method.
-#' NA is not allowed in the relationship matrix
-#' ####
-#' Checks
-#' #######
-#' 1. It check if the matrix is square matrix/symmetry, if not we fix it for the user
-#' 2. It check if the matrix is positive definite, if not we fix it.
-#' 3. It check for NA. If present the engine will stop further analysis.
+#' Precheck and Optimize Genomic Relationship Matrix (GRM) or (Kernel)
 #'
+#' Performs various prechecks and optimizations on a genomic relationship matrix (GRM) or (kernel),
+#' including NA checks, symmetry verification, bending for positive definiteness, and blending with
+#' a pedigree matrix. It also provides diagnostics and fixes for outliers and potential duplicate
+#' individuals based on specified cutoff values.
 #'
+#' @param grm_kernel_data Numeric matrix representing the GRM or kernel to be checked and optimized.
+#' @param pedigree_matrix Optional numeric matrix representing a pedigree-based relationship matrix
+#'        for blending with the GRM kernel.
+#' @param bending Logical indicating whether to apply bending to ensure the matrix is positive
+#'        definite.
+#' @param bend_value Numeric value specifying the bending adjustment to be applied.
+#' @param blending Logical indicating whether to blend the GRM kernel with the pedigree matrix.
+#' @param blending_value Numeric value specifying the proportion of blending to be applied.
+#' @param high_diag_cut_off Numeric value specifying the upper cutoff for diagonal elements.
+#' @param low_diag_cut_off Numeric value specifying the lower cutoff for diagonal elements.
+#' @param duplicate_cut_off Numeric value specifying the correlation threshold for identifying
+#'        potential duplicate individuals.
+#' @param rcn_cutoff Numeric value specifying the reciprocal condition number cutoff for determining
+#'        matrix stability.
+#' @param optimize_diagonal Logical indicating whether to remove diagonal elements outside the
+#'        specified cutoffs.
+#' @param optimize_duplicate Logical indicating whether to remove individuals identified as
+#'        potential duplicates.
+#' @param message Logical indicating whether to display messages during the processing.
+#' @param ... Additional arguments to be passed to underlying functions.
 #'
-#' @param grm_kernel_data
-#' @param bending
-#' @param bend_value
-#' @param blending
-#' @param blending_value
-#' @param high_diag_cut_off
-#' @param low_diag_cut_off
-#' @param duplicate_cut_off
-#' @param optimize_diagonal
-#' @param optimize_duplicate
-#' @param message
-#' @param pedigree_matrix
-#' @param rcn_cutoff  #the reciprocal conditional number of the inverse
-#' @param ...
+#' @return The function returns the optimized GRM kernel matrix with applied prechecks and
+#'         optimizations. Attributes are set to indicate that the matrix is ready for model fitting.
+#'
+#' @examples
+#' # Example GRM or kernel matrix
+#' grm <- matrix(rnorm(100), ncol=10)
+#' diag(grm) <- runif(10, 0.8, 1.2) # Example diagonal elements
+#' # Precheck and optimize the GRM kernel
+#' optimized_grm <- grm_kernel_precheck(grm_kernel_data = grm,
+#'                                      bending = TRUE,
+#'                                      bend_value = 0.01,
+#'                                      blending = FALSE,
+#'                                      blending_value = 0.02)
+#' print(optimized_grm)
+#'
+#' @export
 grm_kernel_precheck <- function(grm_kernel_data= NULL,
                                 pedigree_matrix = NULL,
                                 bending = TRUE,
@@ -67,7 +83,6 @@ if (!is.null(grm_kernel_data)){
   #if(!isSymmetric.matrix(grm_kernel_data)) {stop(print(paste(msg,'grm_kernel_data is not symmetric')), call. = FALSE)}
   if(!isSymmetric.matrix(grm_kernel_data)) {
     message(insight::print_color(paste(msg,paste("Relationsip Matrix is not symmetric'. We fix it.")), "blue"))
-
     grm_kernel_data <- Matrix::forceSymmetric(grm_kernel_data)
     grm_kernel_data <- Matrix::as.matrix(grm_kernel_data)
   }
@@ -75,39 +90,33 @@ if (!is.null(grm_kernel_data)){
   if(isTRUE(bending) & !is.null(bend_value)){
   if(isFALSE(matrixcalc::is.positive.definite(grm_kernel_data))){
     message(insight::print_color(paste(msg,paste("Relationsip Matrix is not positive definite. We fix it.")), "blue"))
-
     grm_kernel_data <- as.matrix(Matrix::nearPD(grm_kernel_data, posd.tol= bend_value, trace=FALSE)$mat)
-
   }
 
   } else {
 #### If bending is False check for user to see the matrix is not ill-conditioned for model fit
     if(isFALSE(matrixcalc::is.positive.definite(grm_kernel_data))){
-
       grm_kernel_data <- as.matrix(Matrix::nearPD(grm_kernel_data, posd.tol= bend_value, trace=FALSE)$mat)
       #message(paste(msg,"Relationsip Matrix is not positive definite. Set bending = TRUE to fix it"))
       message(insight::print_color(paste(msg,paste("Relationsip Matrix is not positive definite.\n \t We fix it by bending to make the matrix stable.")), "blue"))
-
     }
-
   }
 
   ### This is important to check even if the user defined blending as FALSE
   if(isFALSE(blending)){
-  res = grm_kernel_diagnostic_fix(grm_kernel_data = grm_kernel_data,
+  res <-  grm_kernel_diagnostic_fix(grm_kernel_data = grm_kernel_data,
                                   high_diag_cut_off = high_diag_cut_off,
                                   low_diag_cut_off = low_diag_cut_off,
                                   duplicate_cut_off = duplicate_cut_off,
                                   optimize_diagonal = optimize_diagonal,
-                                  optimize_duplicate = optimize_duplicate
-  )
+                                  optimize_duplicate = optimize_duplicate)
 
 ### Also implore the reciprocal conditional number as metric to decide
   ## ill-conditioned/unstable matrix
-  rcn <- rcond(res$clean_matrix)
+  rcn <- rcond(res[["clean_matrix"]])
     #if("potential_off_diag_with_duplicate"%in%names(res)){
     if("potential_off_diag_with_duplicate"%in%names(res) | rcn < rcn_cutoff){
-      grm_kernel_data <- res$clean_matrix
+      grm_kernel_data <- res[["clean_matrix"]]
       ncol_nrow <- ncol(grm_kernel_data)
       grm_kernel_data_ <- (1-blending_value)*grm_kernel_data + blending_value*diag(x=1, nrow=ncol_nrow , ncol=ncol_nrow )
 
@@ -139,7 +148,6 @@ if (!is.null(grm_kernel_data)){
 
         }
       }
-
 
     }
 
@@ -175,10 +183,10 @@ if (!is.null(grm_kernel_data)){
 
 }
 
-  if(exists("res")){
-  rm(res)
-
-  }
+  # if(exists("res")){
+  # rm(res)
+  #
+  # }
 
   #### Declare it also as an grm_kernel_data for final usage
   #class(grm_kernel_data) <-c("matrix", "array", "krm_data")

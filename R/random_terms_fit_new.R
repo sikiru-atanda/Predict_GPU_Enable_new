@@ -459,11 +459,10 @@ random_terms_fit_new <- function(random = NULL,
 
   }
 
-  out <- list(code_asr = code_asr,
+  return(list(code_asr = code_asr,
               gen_pos = gen_pos,
               inter_gen_pos = inter_gen_pos,
-              rand_term = rand_term
-  )
+              rand_term = rand_term))
 
-  return(out)
+
 }

@@ -1,30 +1,34 @@
-#' Title
-#' #' Title
+#' Prepare Genomic Data for Model Fitting
 #'
-#'Overall, this serve as gateway between snp/marker-precheck function and readiness of
-#' the snp/marker data for model fitting#'
-#' The objective of this function is to do the following:
-#' 1. Check the output from geno-precheck function for geno_data before declaring it for model fit
-#' 2. If geno_data_train and geno_data_test were present and pass through the pre-check process,
-#'   These will processed be processed that is:
-#'    1) It check that column name (maker/snp) for both data match/the same
-#'    2) Combined the dataset for model fit and prediction.
-#'    It is assumed here that geno_data is missing/not provided by the user.
-#' 3. The output will be a matrix(geno_data) declared for model fit.
+#' This function prepares genomic data for model fitting by performing quality control (QC) checks, adjusting SNP coding, and ensuring compatibility between training and testing datasets. It can handle scenarios with only training data, only testing data, or both, and applies QC filters based on parameters such as minor allele frequency (MAF) and heterozygosity thresholds.
 #'
+#' @param geno_data A matrix or data.frame containing genomic data for the full dataset. Used if no separate training or testing datasets are provided.
+#' @param train_geno_data A matrix or data.frame containing genomic data for the training set.
+#' @param test_geno_data A matrix or data.frame containing genomic data for the testing set.
+#' @param qc_filtering Logical, if TRUE, quality control filtering is applied.
+#' @param maf_threshold Numeric, threshold for minor allele frequency below which SNPs are removed.
+#' @param het_threshold Numeric, threshold for heterozygosity above which SNPs are removed.
+#' @param ind_call_rate_threshold Numeric, threshold for individual call rate below which individuals are removed.
+#' @param snp_call_rate_threshold Numeric, threshold for SNP call rate below which SNPs are removed.
+#' @param impute Logical, if TRUE, indicates that missing values should be imputed. This feature is planned but not yet implemented.
+#' @param map_data A data.frame or matrix containing marker information. Used alongside `geno_data` if provided.
+#' @param message Logical, if TRUE, messages about the QC and data preparation process are displayed.
+#' @param ... Additional arguments affecting the QC process.
 #'
-#' @param geno_data
-#' @param train_geno_data
-#' @param test_geno_data
-#' @param qc_filtering
-#' @param maf_threshold
-#' @param het_threshold
-#' @param ind_call_rate_threshold
-#' @param snp_call_rate_threshold
-#' @param impute
-#' @param map_data
-#' @param message
-#' @param ...
+#' @return A list containing:
+#'   - \code{snps_matrix}: The genomic data matrix after applying QC filters and ensuring compatibility between datasets.
+#'   - \code{qc_metrics_and_summary_stat}: A data frame summarizing the QC process, including the number of markers and individuals removed.
+#'
+#' @examples
+#' # Assuming `genomic_data` is a matrix with SNP data for the full dataset
+#' result <- geno_to_model(geno_data = genomic_data, qc_filtering = TRUE)
+#' prepared_genomic_data <- result$snps_matrix
+#' qc_summary <- result$qc_metrics_and_summary_stat
+#'
+#' @importFrom stats colMeans
+#' @importFrom dplyr rename rownames_to_column
+#' @import tibble
+#' @export
 
 
 geno_to_model <- function(geno_data = NULL,

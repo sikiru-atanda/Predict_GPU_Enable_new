@@ -1,21 +1,42 @@
-
-#' Title
+#' Calculate Coefficients, EBVs, PEVs, and Reliability with Standard Errors
 #'
-#' ### This function calculate the Coefficient, EBV, PEV, SE, Reliability
+#' This function computes coefficients, estimated breeding values (EBVs), prediction
+#' error variances (PEVs), and reliability for genomic selection models, incorporating
+#' standard errors. It is designed for use with both single-environment and multi-environment
+#' datasets, accommodating models like RKHS and GBLUP.
 #'
-#' @param beta  the posterior samples of the random effects (marker/omic)
-#' @param x_variable marker/omic data
-#' @param gen_name
-#' @param var_u genetic variance
-#' @param hetero
-#' @param heter_groups
-#' @param gid_name
-#' @param ...
+#' @param beta Numeric vector or matrix of regression coefficients or marker effects.
+#' @param x_variable Numeric matrix of predictor variables or the genomic relationship matrix.
+#' @param gen_name Character string specifying the column name in `x_variable` that
+#'   represents the genetic identifiers for the individuals.
+#' @param var_u Numeric, the genetic variance component estimated from the model.
+#' @param hetero Optional; a vector indicating the heterogeneity groups of individuals,
+#'   if applicable.
+#' @param heter_groups Optional; a character string specifying the name of the column
+#'   representing heterogeneity groups in the output, if `hetero` is not NULL.
+#' @param gid_name Character string specifying the names of genetic identifiers in the
+#'   output data frame.
+#' @param GS_model Optional; character string specifying the genomic selection model used.
+#'   This parameter can influence certain calculations or outputs.
+#' @param ... Additional arguments passed to the function.
 #'
-#' @return
-#' @export
+#' @return A list containing:
+#'   - `Posterior`: Matrix of posterior estimates derived from `beta` and `x_variable`.
+#'   - `Coefficient`: A data frame of coefficients for each variable.
+#'   - `Estimated_breeding_value`: A data frame of estimated breeding values for individuals.
+#'   - `PEV`: Prediction error variance associated with the EBVs.
+#'   - `Reliability`: Reliability of the EBVs, calculated as 1 - (PEV/var_u).
 #'
 #' @examples
+#' # Assume beta, x_variable, and var_u are already defined:
+#' results <- cal_coeff_ebv_pev_rel_se_new(beta = beta_coefficients,
+#'                                         x_variable = genomic_matrix,
+#'                                         gen_name = "GenID",
+#'                                         var_u = estimated_genetic_variance,
+#'                                         gid_name = "GenID")
+#' @export
+#' @importFrom dplyr mutate
+#' @importFrom stats var
 cal_coeff_ebv_pev_rel_se_new <- function(beta,
                                      x_variable,
                                      gen_name,

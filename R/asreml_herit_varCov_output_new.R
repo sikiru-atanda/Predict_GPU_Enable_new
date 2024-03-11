@@ -19,22 +19,42 @@ List_list = function(names_in_inv_list, het_gp){
   return(All_varGs)
 }
 
-#' Title
+#' Calculate Heritability and extract Variance component, Covariance Structures from ASReml Model
 #'
-#' @param model
-#' @param heter_groups
-#' @param var_cov_str
-#' @param heter_resid
-#' @param G_list
-#' @param inter_gen_pos
-#' @param gen_pos
-#' @param ...
+#' This function calculates heritability and extracts variance-covariance and correlation structures from an ASReml model. It is designed to work with models that may include heterogeneity in residuals and supports the inclusion of multiple genetic or omics components. The function also handles different variance-covariance structures specified by the user.
 #'
-#' @return
+#' @param model An `asreml` model object resulting from fitting an ASReml model.
+#' @param heter_groups A character string specifying the column in the model's data frame that represents different heterogeneity groups (e.g., environments).
+#' @param var_cov_str A character string indicating the type of variance-covariance structure to be analyzed (`"us"`, `"fa"`, `"rr"`, `"corgh"`, `"corgv"`, `"corh"`, or `"corv"`).
+#' @param heter_resid A logical indicating whether heterogeneity in residuals is considered.
+#' @param names_in_inv_list A character vector of names identifying the inverse matrices in the model, related to different genetic or omics components.
+#' @param inter_gen_pos Optional parameter specifying the position of interaction terms in genetic models.
+#' @param gen_pos Optional parameter specifying the position of genetic terms in the model.
+#' @param ... Additional arguments passed to underlying functions.
 #'
+#' @return A list containing the following elements:
+#' \itemize{
+#'   \item{Covariance}{A list of variance-covariance matrices for each genetic component.}
+#'   \item{Correlation}{A list of correlation matrices for each genetic component.}
+#'   \item{Heritability}{A matrix of heritability estimates for each heterogeneity group.}
+#'   \item{Total_genetic_var}{Total genetic variance for each heterogeneity group.}
+#'   \item{varG_per_omics}{Variance attributed to each genetic component for each heterogeneity group.}
+#'   \item{Residual_Var}{Residual variance for each heterogeneity group.}
+#' }
+#'
+#' @details
+#' The function primarily focuses on extracting and computing key genetic statistics from a given ASReml model. It supports a range of variance-covariance structures, including but not limited to unstructured (`us`), factor analytic (`fa`), and various correlation structures (`corgh`, `corgv`, `corh`, `corv`). The function checks for stability in variance components and requires a stable model for accurate computations.
 #'
 #' @examples
-#'
+#' # Assuming 'asreml_model' is a fitted ASReml model with proper variance structures:
+#' results <- asreml_herit_varCov_new(model = asreml_model,
+#'                                    heter_groups = "Environment",
+#'                                    var_cov_str = "fa2",
+#'                                    heter_resid = TRUE,
+#'                                    names_in_inv_list = c("G_inv", "omic1_inv"),
+#'                                    inter_gen_pos = 2,
+#'                                    gen_pos = 1)
+#' @export
 
 asreml_herit_varCov_new <-  function(
     model = NULL,
@@ -52,22 +72,13 @@ asreml_herit_varCov_new <-  function(
 
   vc <- asreml::summary.asreml(model)$varcomp
 
-  #heter_grp <- as.character(unique(data.frame(model$mf)[, heter_groups]))
-
   ENV <- data.frame(model$mf)[, heter_groups]
-
   heter_grp = levels(ENV)
-
-  #n_heter_grp <- length(heter_grp)
-
   n_heter_grp <- nlevels(ENV)
 
   VarCov <- matrix(NA, ncol = n_heter_grp, nrow = n_heter_grp)
-
   CORR <- matrix(NA, ncol = n_heter_grp, nrow = n_heter_grp)
-
   corr_all = vector(mode = 'list', length = length(names_in_inv_list))
-
   varcov_all = vector(mode = 'list', length = length(names_in_inv_list))
   ########
   extracted_names_from_inv_list <- gsub("_inv", "", names_in_inv_list, ignore.case = TRUE)
@@ -141,54 +152,32 @@ asreml_herit_varCov_new <-  function(
 
   }
 
-  #### This needs to be turn on
-  # if (any(is.na(vc$std.error))) {
-  #   stop(print(paste(msg, "Some variance component are non estimatable. Refix the model")), call. = FALSE)
-  # }
-
-  #################################################################
-
-
   #### Extract variance and covariance for For factor analytic models
   if(isTRUE(grepl("fa", var_cov_str)) | isTRUE(grepl("rr", var_cov_str))){
     ## Check for all variable is positive definitive
     ## Check for this other random term can be present aside the genetic effect
     #VAR_check <- vc[grep(paste0("!", heter_groups), rownames(vc), value = FALSE),"bound"]
 
-
     CheckR <- vc[grep("!R", rownames(vc)), "component"]
-
     VarG_all = vector("list", length = length(names_in_inv_list))
 
     ## Extract number of factor(s) specified by users
     N_fa = as.double(substr(var_cov_str, 3, 100))
-
     Fac = seq(1, N_fa)
 
 
     for(l in seq_along(names_in_inv_list)){
 
       LL = vc[grep(names_in_inv_list[l], rownames(vc)), drop=FALSE,]
-
       VarG <- LL[grep("!var", rownames(LL)), drop=FALSE, ]
-
       VarG <- VarG[, 1]
-
       names(VarG) <- heter_grp
-
-      #FA_All = vector(mode = 'list', length = length(G_list))
-
-      #for (fa in 1:length(G_list)){
 
       All_Fac = vector(mode = 'list', length = length(Fac))
 
       for (i in 1:length(Fac)) {
-
         TT = LL[grep(paste0("!fa", Fac[i]), rownames(LL)), ]
-
         All_Fac[[i]] = TT[grep(names_in_inv_list[l], rownames(TT)), "component"]
-
-
       }
 
       All_Fac = do.call(cbind, All_Fac)
@@ -201,10 +190,6 @@ asreml_herit_varCov_new <-  function(
       VarG_all[[l]] = VarG
 
     }
-
-    # names(varcov_all) <- paste(G_list, "covariance", sep = "_")
-    # names(corr_all) <- paste(G_list, "correlation", sep = "_")
-
 
   } else { ## End of factor analytic model
 
@@ -219,20 +204,15 @@ asreml_herit_varCov_new <-  function(
       VarG_all = List_list(names_in_inv_list = names_in_inv_list, het_gp = heter_grp)
 
       for(l in 1:length(names_in_inv_list)){
-
         LL = vc[grep(names_in_inv_list[l], rownames(vc)), drop=FALSE,]
         for (G in 1:length(heter_grp)) {
           VarG_all[[l]][[G]] = LL[grep(heter_grp[G], rownames(LL)), drop=FALSE,]
         }
 
-
       }
-
-
 
       for (g in 1:length(names_in_inv_list)) {
             VarCovRaw_All[[g]] <- VarCovRaw[grep(names_in_inv_list[g], rownames(VarCovRaw)), "component"]
-        #}
 
         a <- 1
         for (r in 1:n_heter_grp) {
@@ -249,9 +229,6 @@ asreml_herit_varCov_new <-  function(
         dimnames(corr_all[[g]]) <-  list(heter_grp , heter_grp )
 
       }
-
-      # dimnames(varcov_all[[g]]) <-  list(heter_grp , heter_grp )
-      # dimnames(corr_all[[g]]) <-  list(heter_grp , heter_grp )
 
     }
     # End of us
@@ -270,8 +247,6 @@ asreml_herit_varCov_new <-  function(
         var_corr <- LL[grep(".cor", rownames(LL)),drop=FALSE, "component"]
         VarG <- LL[grep(paste0(heter_groups, "_"), rownames(LL)), "component"]
         names(VarG) = heter_grp
-        #for (caa in 1:length(G_list)) {
-
 
         a <- 1
         for (r in 1:n_heter_grp) {
@@ -291,14 +266,11 @@ asreml_herit_varCov_new <-  function(
         dimnames(varcov_all[[l]]) <-  list(heter_grp, heter_grp)
         dimnames(corr_all[[l]]) <-  list(heter_grp, heter_grp)
         VarG_all[[l]] = VarG
-        #} # End of Corgh
+
       }
-
-      # names(varcov_all) <- paste(G_list, "covariance", sep = "_")
-      # names(corr_all) <- paste(G_list, "correlation", sep = "_")
-
     } ## end of corgh
 
+    ## start corgv
     if (var_cov_str=="corgv"){
         var_corr_all = vector("list", length = length(names_in_inv_list))
         CheckR <- vc[grep("!R", rownames(vc)), "component"]
@@ -310,8 +282,7 @@ asreml_herit_varCov_new <-  function(
           var_corr <- LL[grep(".cor", rownames(LL)),drop=FALSE, "component"]
           VarG <- LL[grep(paste0(heter_groups, "!var"), rownames(LL)), drop = TRUE,"component"]
           VarG = rep( VarG, n_heter_grp)
-        #names(VarG) = heter_grp
-        #for (caa in 1:length(G_list)) {
+
         a <- 1
         for (r in 1:n_heter_grp) {
           for (c in 1:r) {
@@ -330,20 +301,17 @@ asreml_herit_varCov_new <-  function(
         dimnames(varcov_all[[l]]) <-  list(heter_grp, heter_grp)
         dimnames(corr_all[[l]]) <-  list(heter_grp, heter_grp)
         VarG_all[[l]] = VarG
-        #} # End of Corgh
-      }
 
-      # names(varcov_all) <- paste(G_list, "covariance", sep = "_")
-      # names(corr_all) <- paste(G_list, "correlation", sep = "_")
+      }
 
     } ### End corgv
 
     ### corh
-
     if (var_cov_str=="corh"){
         var_corr_all = vector("list", length = length(names_in_inv_list))
         CheckR <- vc[grep("!R", rownames(vc)), "component"]
         VarG_all = vector("list", length = length(names_in_inv_list))
+
       for(l in 1:length(names_in_inv_list)){
         LL = vc[grep(names_in_inv_list[l], rownames(vc)), drop=FALSE,]
         ######
@@ -355,14 +323,12 @@ asreml_herit_varCov_new <-  function(
         dimnames(varcov_all[[l]]) <-  list(heter_grp, heter_grp)
         dimnames(corr_all[[l]]) <-  list(heter_grp, heter_grp)
         VarG_all[[l]] = VarG
-        #} # End of corv
+
       }
 
-      # names(varcov_all) <- paste(G_list, "covariance", sep = "_")
-      # names(corr_all) <- paste(G_list, "correlation", sep = "_")
-    }
+    } # End of corh
 
-    ## end corh
+    ## corv
     if (var_cov_str=="corv"){
           var_corr_all = vector("list", length = length(names_in_inv_list))
           CheckR <- vc[grep("!R", rownames(vc)), "component"]
@@ -381,17 +347,10 @@ asreml_herit_varCov_new <-  function(
         dimnames(varcov_all[[l]]) <-  list(heter_grp, heter_grp)
         dimnames(corr_all[[l]]) <-  list(heter_grp, heter_grp)
         VarG_all[[l]] = VarG
-        #} # End of corv
+
       }
-
-      # names(varcov_all) <- paste(G_list, "covariance", sep = "_")
-      # names(corr_all) <- paste(G_list, "correlation", sep = "_")
-    }
-
-    ### End corv
-
-
-  }
+    }### End corv
+ }
 
   ### Calculate genomic Heritability for Each Location for any of the variance-covariance structure
   VarE = vc[grep("!R", rownames(vc)), "component"]
@@ -406,7 +365,6 @@ asreml_herit_varCov_new <-  function(
   colnames(Total_varG) = heter_grp
 
   for (va in 1:length(names_in_inv_list)) {
-    #varG_per_omics[va, ] <- VarG_all[[va]]
     varG_per_omics[va, ] <- diag(varcov_all[[va]])
 
   }
@@ -415,11 +373,10 @@ asreml_herit_varCov_new <-  function(
   for (k in 1:ncol(H)) {
     varG = c()
     for (v in 1:length(names_in_inv_list)) {
-      #varG[[v]] = VarG_all[[v]][k, 1]
       varG[[v]] = varG_per_omics[v, k]
 
     }
-
+### since omics can be more than 1
     Total_varG[, k] <- sum(unlist(varG))
     if(isTRUE(heter_resid) & !is.null(inter_gen_pos)){
 
@@ -437,23 +394,14 @@ asreml_herit_varCov_new <-  function(
   }
 
   ### This is to create variance-covariance and correlation matrix
-  ## for every any number of G that the user provide
-  result <- list(Covariance = varcov_all,
+  ## for any number of omics that the user provide
+  return (list(Covariance = varcov_all,
                  Correlation = corr_all,
                  Heritability = H,
                  Total_genetic_var = Total_varG,
                  varG_per_omics = varG_per_omics,
-                 Residual_Var = VarE)
+                 Residual_Var = VarE))
 
-  # names(Result) <-  c("Covariance",
-  #                     "Correlation",
-  #                     "Heritability",
-  #                     "Total_genetic_var",
-  #                     "varG_per_omics",
-  #                     "Residual_Var")
-
-
-  return(result)
 
 }
 

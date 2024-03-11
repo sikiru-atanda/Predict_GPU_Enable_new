@@ -1,25 +1,40 @@
-#vcf_file_name = "2021_NDSU_AYT.vcf",
-#vcf_file_path = "D:/PredictProR"
-#' Title
+#' Quality Control and Recoding for VCF Data
 #'
-#' @param vcf_file_name
-#' @param vcf_file_path
-#' @param vcf_file
-#' @param maf_threshold
-#' @param het_threshold
-#' @param ind_call_rate_threshold
-#' @param snp_call_rate_threshold
-#' @param impute
-#' @param recode_format
-#' @param out_put_map
-#' @param message
+#' Performs quality control filters on Variant Call Format (VCF) data, including filtering based on minor allele frequency (MAF),
+#' heterozygosity rate, individual and SNP call rates, and optionally recodes the genotype data.
 #'
-#' @return
-#' @export
+#' @param vcf_file_name Name of the VCF file (optional).
+#' @param vcf_file_path Path to the directory containing the VCF file (optional).
+#' @param vcf_file An object containing the VCF data (optional).
+#' @param maf_threshold Threshold for minor allele frequency below which SNPs will be removed.
+#' @param het_threshold Threshold for heterozygosity above which SNPs will be removed.
+#' @param ind_call_rate_threshold Threshold for individual call rate below which individuals will be removed.
+#' @param snp_call_rate_threshold Threshold for SNP call rate below which SNPs will be removed.
+#' @param impute Logical indicating whether missing genotypes should be imputed.
+#' @param recode_format String specifying the format for recoding genotypes. Can be "0,1,2" for homozygous reference,
+#' heterozygous, and homozygous alternate, respectively, or "-1,0,1" for an alternative coding scheme.
+#' @param out_put_map Logical indicating whether to output the SNP map along with the recoded data.
+#' @param message Logical indicating whether messages about the QC process should be displayed.
+#'
+#' @details The function supports reading VCF data from a file or directly from an R object. It applies several QC
+#' filters based on user-defined thresholds and can recode the genotype data into numeric format for further analysis.
+#' The function allows for the imputation of missing data and the inclusion of a SNP map in the output.
+#'
+#' @return A list containing the following elements:
+#' \itemize{
+#'   \item{snps_matrix}{Matrix of the recoded genotype data.}
+#'   \item{snp_map}{Data frame of the SNP map, if \code{out_put_map} is TRUE.}
+#'   \item{qc_metrics_and_summary_stat}{Data frame summarizing the QC metrics and the number of SNPs/individuals removed.}
+#' }
 #'
 #' @examples
+#' # Assuming `vcf_data` is your VCF data frame
+#' result <- vcf_qc_recode(vcf_file = vcf_data, maf_threshold = 0.05, het_threshold = 0.15,
+#'                         ind_call_rate_threshold = 0.9, snp_call_rate_threshold = 0.9,
+#'                         recode_format = "0,1,2", out_put_map = TRUE, message = TRUE)
+#' @export
 #' @importFrom data.table := .SD .SDcols lapply
-#'
+
 vcf_qc_recode <-   function(vcf_file_name = NULL,
                            vcf_file_path = NULL,
                            vcf_file = NULL,
@@ -33,6 +48,13 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
                            out_put_map = TRUE,
                            #beagle_path = "D:/PredictProR",
                            message = TRUE) {
+
+  msg <- sprintf("==================================================\n")
+  #### Place holders
+  markers_callrate_removed  <-  0
+  ind_callrate_removed  <-  0
+  het_markers_removed  <-  0
+  maf_markers_removed <-  0
 
   if(!is.null(vcf_file_name) && !is.null(vcf_file_path)){
     # Construct the full file path
@@ -56,17 +78,12 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
       })
     }
 
-
-
   }else{
     if(is.null(vcf_file)){
-
-      stop("vcf file is missing.")
-
+      stop(print(paste(msg,"vcf file is missing.")), call. = FALSE)
     }
 
   }
-
 
   if(isFALSE(data.table::is.data.table(vcf_file))){
 
@@ -82,8 +99,8 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
   # Remove monomorphic markers
   monomorphic_markers <- which(apply(vcf_file[, 10:ncol(vcf_file)], 1, function(x) length(table(x)) <= 1))
   if (length(monomorphic_markers) > 0) {
-    if (message) {
-      print(paste("Removing monomorphic markers:", length(monomorphic_markers)))
+    if (isTRUE(message)) {
+      message(insight::print_color(paste(msg, paste("Removing monomorphic markers:", length(monomorphic_markers))), "blue"))
     }
 
     vcf_file <- vcf_file[-monomorphic_markers, ]
@@ -91,8 +108,8 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
     total_mono <- length(monomorphic_markers)
     rm(monomorphic_markers); gc()
   } else {
-    if (message) {
-      print("No monomorphic markers to remove.")
+    if (isTRUE(message)) {
+      message(insight::print_color(paste(msg, "No monomorphic markers to remove."), "blue"))
     }
     total_mono <-  0
   }
@@ -113,8 +130,9 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
   if(!is.null(maf_threshold)){
   maf_markers <-  which(allele_freq < maf_threshold)
   if (length(maf_markers) > 0) {
-    if (message) {
-      print(paste("Removing markers with MAF below threshold:", length(maf_markers)))
+    if (isTRUE(message)) {
+      message(insight::print_color(paste(msg, paste("Removing markers with MAF below threshold:", length(maf_markers))), "blue"))
+
     }
 
     vcf_file <-  vcf_file[-maf_markers, ]
@@ -123,8 +141,8 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
     rm(maf_markers); gc()
 
   } else {
-    if (message) {
-      print("No markers removed based on MAF threshold.")
+    if (isTRUE(message)) {
+      message(insight::print_color(paste(msg, "No markers removed based on MAF threshold."), "blue"))
     }
     maf_markers_removed <- 0
   }
@@ -138,8 +156,8 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
   #het_markers <- which(heteroz >= het_threshold)
   het_markers <- which(heteroz > het_threshold)
   if (length(het_markers) > 0) {
-    if (message) {
-      print(paste("Removing markers with high heterozygosity:", length(het_markers)))
+    if (isTRUE(message)) {
+      message(insight::print_color(paste(msg, paste("Removing markers with high heterozygosity:", length(het_markers))), "blue"))
     }
     vcf_file <-  vcf_file[-het_markers, ]
     het_markers_removed  <- length(het_markers)
@@ -147,15 +165,13 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
     #snp_data <- snp_data[-het_markers, ]
 
   } else {
-    if (message) {
-      print("No markers removed based on heterozygosity threshold.")
+    if (isTRUE(message)) {
+      message(insight::print_color(paste(msg, "No markers removed based on heterozygosity threshold."), "blue"))
     }
-
     het_markers_removed <- 0
   }
 
   }
-
 
   # Calculate individual call rate
 
@@ -166,16 +182,18 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
   #low_call_rate_snps <- which(snp_call_rate < snp_call_rate_threshold)
   low_call_rate_snps <- which(snp_call_rate > snp_call_rate_threshold)
   if (length(low_call_rate_snps) > 0) {
-    if (message) {
-      print(paste("Removing SNPs with low call rate:", length(low_call_rate_snps)))
+    if (isTRUE(message)) {
+      message(insight::print_color(paste(msg, paste("Removing SNPs with low call rate:", length(low_call_rate_snps))), "blue"))
+
     }
     vcf_file <-  vcf_file[-low_call_rate_snps, ]
     markers_callrate_removed <- length(low_call_rate_snps)
     rm(low_call_rate_snps, snp_call_rate); gc()
     #snp_data <- snp_data[low_call_rate_snps, ]
   } else {
-    if (message) {
-      print("No SNPs removed based on SNP call rate threshold")
+    if (isTRUE(message)) {
+      message(insight::print_color(paste(msg, "No SNPs removed based on SNP call rate threshold."), "blue"))
+
     }
 
     markers_callrate_removed <- 0
@@ -192,16 +210,18 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
   low_call_rate_inds <- which(ind_call_rate > ind_call_rate_threshold)
   low_call_rate_inds <- low_call_rate_inds+9
   if (length(low_call_rate_inds) > 0) {
-    if (message) {
-      print(paste("Removing Individuals with low call rate:", length(low_call_rate_inds)))
+    if (isTRUE(message)) {
+      message(insight::print_color(paste(msg, paste("Removing Individuals with low call rate:", length(low_call_rate_inds))), "blue"))
+
     }
     vcf_file <- vcf_file[, -low_call_rate_inds, with = FALSE]
 
     #snp_data <- snp_data[, -low_call_rate_inds, with = FALSE]
     #snp_data <- snp_data[, low_call_rate_inds, with = FALSE]
   } else {
-    if (message) {
-      print("No individuals removed based on call rate threshold.")
+    if (isTRUE(message)) {
+      message(insight::print_color(paste(msg, "No individuals removed based on call rate threshold."), "blue"))
+
     }
   }
 
@@ -245,30 +265,13 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
     }
 
   } else {
-    stop("Invalid recode format. Use '0,1,2' or '-1,0,1'.")
+    stop(print(paste(msg,"Invalid recode format. Use '0,1,2' or '-1,0,1'.")), call. = FALSE)
+
   }
 }
-
-  ####
-
-  #######
   ##################
   ## Aggregate all the info
   #### Aggregate all the maker data
-
-  if(!exists("markers_callrate_removed")) {
-    markers_callrate_removed  = 0
-  }
-  if(!exists("ind_callrate_removed ")) {
-    ind_callrate_removed  = 0
-  }
-  if(!exists("het_markers_removed ")) {
-    het_markers_removed  = 0
-  }
-  if(!exists("maf_markers_removed")) {
-    maf_markers_removed = 0
-  }
-
   summary_stat_snp= data.frame(
     snp_call_rate_threshold = snp_call_rate_threshold,
     total_snp_removed = markers_callrate_removed,

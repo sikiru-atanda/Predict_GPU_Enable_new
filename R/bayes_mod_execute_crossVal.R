@@ -31,13 +31,7 @@ bayes_mod_execute_crossval <- function(pheno_object = NULL,
                                        core = NULL,
                                        test_set_val =NULL,
                                        cross_validation = NULL,
-                                       eval_metrics = c("Accuracy",
-                                                        "Mean_Squared_Error",
-                                                        "Bias",
-                                                        "Root_Mean_Squared_Error",
-                                                        "Relative_Squared_Error",
-                                                        "Mean_Absolute_Error",
-                                                        "Mean_Absolute_Percent_Error"),
+                                       eval_metrics = NULL,
                                        ...
 )
 {

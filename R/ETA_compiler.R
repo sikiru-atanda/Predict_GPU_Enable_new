@@ -1,22 +1,29 @@
-
-
+#' Compile ETA for Fixed Terms in Bayesian Models
 #'
-#' This function deal with fixed terms defined by the user and assign model to each fixed term
+#' This function prepares the ETA components for fixed terms in Bayesian genomic prediction models.
+#' It uses the specified fixed effects from the phenotypic data and compiles them into a format suitable
+#' for inclusion in a Bayesian analysis. This is particularly useful for preparing data for models
+#' such as GBLUP, RKHS, and BRR.
 #'
-#' @param fixed fixed terms defined by the user
-#' @param fixed_term_model_bayesian model for the fixed term and the default is FIXED
-#' @param pheno_data phenotypic data
-#'
-#' @return
-#' @export
-#'
+#' @param fixed A formula specifying the fixed effects to be included in the model.
+#' @param fixed_term_model_bayesian Optionally specify the model for the fixed terms in the Bayesian framework.
+#'        This is usually "FIXED" but can be left NULL for automatic handling.
+#' @param pheno_data A data frame containing the phenotypic data, including columns for all variables
+#'        specified in the `fixed` formula.
+#' @return A list of lists where each inner list represents an ETA component for a fixed term.
+#'         Each component contains the model matrix (`X`) and the model type (`model`) for that fixed term.
 #' @examples
+#' \dontrun{
+#' # Assuming pheno_data is your phenotypic dataset and fixed_effect is your fixed effect formula:
+#' result <- ETA_compiler_fixed_term(fixed = ~fixed_effect1 + fixed_effect2,
+#'                                   pheno_data = pheno_data)
+#' }
+#' @export
 
 ETA_compiler_fixed_term <- function(fixed = NULL,
                          fixed_term_model_bayesian = NULL,
                          pheno_data = NULL
                          ){
-
 
   ### Initialize steps for compiling the Fixed terms
   ## Start with creating empty list for ETA compilation
@@ -45,23 +52,38 @@ ETA_compiler_fixed_term <- function(fixed = NULL,
 }
 
 
-#' Title
-#' This function does this following:
-#' 1. Extract all the random terms from the formula
-#' 2. Compile all the random terms and set the model for each term
+#' Compile ETA for random and fixed term combined for Bayesian Genomic Prediction Models
 #'
-#' @param fixed
-#' @param random
-#' @param GS_model
-#' @param fixed_term_model_bayesian
-#' @param rand_term_model_bayesian
-#' @param pheno_data
-#' @param geno_data
-#' @param omic1_data
-#' @param omic2_data
-#' @param omic3_data
-#' @param gen_name
-#' @param ...
+#' This function compiles the effects to be estimated (ETA) for Bayesian genomic prediction models, including fixed and random effects, using genomic and omics data. It prepares the model matrices for fixed effects and the relationship matrices for random effects to be used in Bayesian analysis, such as GBLUP, RKHS, and Bayesian Regression.
+#'
+#' @param fixed Formula specifying the fixed effects to be included in the model.
+#' @param random Formula specifying the random effects to be included in the model.
+#' @param GS_model A character string specifying the genomic selection model to be used (e.g., "BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS").
+#' @param fixed_term_model_bayesian Optionally, specify the model for the fixed terms in the Bayesian framework.
+#' @param rand_term_model_bayesian Optionally, specify the model for the random terms in the Bayesian framework.
+#' @param pheno_data A data frame containing the phenotypic data, including columns for all variables specified in the `fixed` and `random` formulas.
+#' @param geno_data Genomic relationship matrix or genotype data.
+#' @param omic1_data First omics data matrix.
+#' @param omic2_data Second omics data matrix.
+#' @param omic3_data Third omics data matrix.
+#' @param gen_name Name of the genotype column in `pheno_data`.
+#' @return A list containing the compiled ETA components, the modified phenotypic data, and names of the ETA elements. Each element in the ETA list represents a model component (fixed or random effect) along with its corresponding model matrix (`X`) or relationship matrix (`K`), and the specified model type.
+#' @examples
+#' \dontrun{
+#' # Assuming pheno_data is your phenotypic dataset and you have genomic and omics data:
+#' ETA_result <- ETA_compiler_bayes(
+#'   fixed = ~ fixed_effect,
+#'   random = ~ (1|gen_name),
+#'   GS_model = "BRR",
+#'   pheno_data = pheno_data,
+#'   geno_data = geno_matrix,
+#'   omic1_data = omic1_matrix,
+#'   # Additional omics data can be added as needed
+#'   gen_name = "GenotypeID"
+#' )
+#' }
+#' @export
+#'
 ETA_compiler_bayes <- function(
     fixed = NULL,
     random = NULL,
@@ -102,11 +124,14 @@ ETA_compiler_bayes <- function(
 
   datasets <- list(geno_data, omic1_data, omic2_data, omic3_data)
   dataset_names <- c("geno_data", "omic1_data", "omic2_data", "omic3_data")
+  datasets_index <- which(!sapply(datasets, is.null))
+  datasets <-  datasets[datasets_index]
+  dataset_names <- dataset_names[datasets_index]
   ETA_element_name <- character()
 
   for (i in seq_along(datasets)) {
     dataset <- datasets[[i]]
-    if (!is.null(dataset)) {
+    if (!is.null(dataset)) {  ## this seems redundant but necessary
       ETA[[length(ETA) + 1]] <- list(X = as.matrix(dataset), model = rand_model, saveEffects = TRUE)
       ETA_element_name <- c(ETA_element_name, dataset_names[i])
     }

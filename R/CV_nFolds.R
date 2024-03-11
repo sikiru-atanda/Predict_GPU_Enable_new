@@ -46,13 +46,7 @@ CV_nfolds <- function(
 
   Rep_FoldCV <- vector(mode = "list", length=replication)
 
-  # if(!is.null(list) | list==TRUE) {
-  # Rep_FoldCV <- vector(mode = "list", length=replication)
-  # }
-  #
-  # if(is.null(list) | list==FALSE) {
-  #   Rep_FoldCV <- matrix()
-  # }
+  method <- match.arg(method)
 
   msg <- sprintf("==================================================\n")
 

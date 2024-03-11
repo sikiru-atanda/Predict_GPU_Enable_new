@@ -17,8 +17,8 @@ pheno = droplevels(pheno.data[pheno.data$Env%in%c("F5I"), ])
 library(PredictProR)
 bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
 AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare", "SupportVectorMachine", "K-NearestNeighbors", "Lasso", "Ridge_Regression", "deep_learning_model")
-sik <- model_execute(pheno_data = pheno2,
-                     geno_data = GRM,
+sik <- model_execute(pheno_data = pheno,
+                     #geno_data = GRM,
                      #omic1_data = COP,
                      #omic2_data = COP,
                      omic3_data = COP,
@@ -32,15 +32,15 @@ sik <- model_execute(pheno_data = pheno2,
 )
 ###
 bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
-sik <- model_execute(pheno_data = pheno2,
+sik <- model_execute(pheno_data = pheno,
                      gmatrix = GRM,
-                     #omic1_kernel = COP,
+                     omic1_kernel = COP,
                      #omic2_kernel = COP,
                      #omic3_kernel = COP,
                      random = ~GID,
                      gen_name = "GID",
                      response ="Yield",
-                     GS_model = "GBLUP_BRR",
+                     GS_model = "RKHS",
                      heter_groups = "Env",
                      system_database = FALSE
 )
@@ -48,7 +48,7 @@ sik <- model_execute(pheno_data = pheno2,
 ###
 library(PredictProR)
 asreml_model <- c("GBLUP")
-sik <- model_execute(pheno_data = pheno2,
+sik <- model_execute(pheno_data = pheno,
                      #gmatrix = GRM,
                      omic1_kernel = GRM,
                      omic2_kernel = GRM2,
@@ -77,14 +77,23 @@ AA <- model_execute(random = ~ GID + GID:Env ,
                     GS_model = "GBLUP",
                     pheno_data = pheno,
                     gmatrix = GRM,
+                    omic1_kernel = COP,
                     gen_name = "GID",
                     engine = "asreml",
                     heter_resid = TRUE,
                     heter_groups = "Env",
-                    var_cov_str = "corgh",
+                    var_cov_str = "rr2",
                     response = "Yield",
-                    system_database = FALSE
+                    system_database = FALSE,
+                    inverse = TRUE
                     )
+
+res = asreml::asreml(fixed = Yield~1,
+                     random = ~ Env + vm(GID, GRM):rr(Env, 2),
+                     residual = ~ dsum( ~ units|Env),
+                     na.action = na.method(y = "include", x = "include"),
+                     data = pheno
+)
 
 #### Bayesian model
 bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")

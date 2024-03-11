@@ -1,28 +1,29 @@
-
-
-#' Title
-#' This function calculate the relationship for using different kernel methods
-#' M_matrix_clean is not expected with NA value
-#' The following kernel methods are available:
-#' Gaussian, Linear, Exponential, Poly2, Poly3, Poly4. The number at the end of poly
-#' means polynomial order 2, 3 and 4
+#' Calculate Kernel Matrix for Omics Data
 #'
-#' To DO: in the new version, option to impute missing data will be provided
+#' This function computes a kernel matrix for omics data using various methods, including Gaussian, Linear,
+#' Composite, and Polynomial kernels. The function allows for scaling of the input matrix and customization of
+#' kernel parameters.
 #'
-#' @param M_matrix_clean snp or omics matrix data.
-#' @param scale
-#' @param method
-#' @param message
-#' @param theta
-#' @param alpha
-#' @param smoothness_parameter
-#' @param length_scale
-#' @param ...
+#' @param M_matrix_clean A numeric matrix representing the cleaned omics or M matrix.
+#' @param scale Logical, indicating if the input matrix should be scaled. Defaults to TRUE.
+#' @param theta Numeric, the theta parameter for the Gaussian and Exponential kernels. Defaults to 1 if not provided.
+#' @param alpha Numeric, the mixing parameter for the Composite kernel. Defaults to 0.5.
+#' @param gamma Numeric, the gamma parameter for the Anova radial basis kernel.
+#' @param smoothness_parameter Numeric, the smoothness parameter for the Matérn kernel.
+#' @param length_scale Numeric, the length scale parameter for the Matérn kernel.
+#' @param method Character string specifying the kernel calculation method. Supported methods include "Gaussian_kernel",
+#' "Linear_kernel", "Composite_kernel", "Poly2_kernel", "Poly3_kernel", and "Poly4_kernel".
+#' @param message Logical, indicating if messages should be printed. Defaults to TRUE.
+#' @param ... Additional arguments passed to the kernel calculation function.
 #'
-#' @return
-#' @export
+#' @return Returns a numeric matrix representing the calculated kernel matrix.
 #'
 #' @examples
+#' # Example usage with a Gaussian kernel
+#' M_matrix <- matrix(rnorm(100), ncol=10)
+#' kernel_matrix <- kernel_calculation(M_matrix_clean = M_matrix, method = "Gaussian_kernel")
+#'
+#' @export
 #'
 kernel_calculation <- function(
     M_matrix_clean = NULL,
@@ -32,17 +33,6 @@ kernel_calculation <- function(
     gamma = 1,
     smoothness_parameter = 1.5,
     length_scale = 2,
-#     method = c("Gaussian_kernel",
-#                 "Linear_kernel",
-#                 "Poly2_kernel",
-#                 "Poly3_kernel",
-#                 "Poly4_kernel",
-#                 "spectral_kernel",
-#                 "Matern_kernel",
-#                 "Composite_kernel",
-#                 "Normalized_laplacian_kernel",
-#                 "Anova_radial_basis_kernel"
-# ),
     method = NULL,
     message = TRUE,
     ...){
@@ -58,13 +48,24 @@ kernel_calculation <- function(
 
     }
 
-  # if(all(class(M_matrix_clean)!= c("matrix", "array", "omic_matrix"))) {
-  #   stop(print('Data is not class matrix'), call. = FALSE)
-  # }
+  kernel_method_avaliable <- c("Gaussian_kernel",
+                               "Linear_kernel",
+                               "Composite_kernel",
+                               "Poly2_kernel",
+                               "Poly3_kernel",
+                               "Poly4_kernel")
+
+  if(!is.null(method)){
+    if (!(method %in% kernel_method_avaliable)) {
+      stop("Invalid kernel method. Choose from: ",
+           paste(kernel_method_avaliable, collapse = ", "), call. = FALSE)
+    }
+  }
+
 
   ## checking if the class attribute "matrix" is present in the vector of class attributes returned by class.
-  if(!("matrix") %in%class(M_matrix_clean)) {
-    M_matrix_clean = as.matrix(M_matrix_clean)
+  if(!inherits(M_matrix_clean, "matrix")) {
+    M_matrix_clean <-  as.matrix(M_matrix_clean)
     message(insight::print_color(paste(msg,paste("M_matrix is not class matrix. We fix it.")), "blue"))
 
   }

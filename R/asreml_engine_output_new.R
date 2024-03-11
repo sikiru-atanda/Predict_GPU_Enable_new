@@ -1,12 +1,29 @@
 
-#' Title
+#' Remove Variables from the Global Environment
 #'
-#' @param var_names
+#' This function removes specified variables from the global environment.
+#' It iterates through a list of variable names, checks if each exists in the
+#' global environment, and if so, removes it.
 #'
-#' @return
-#' @export
+#' @param var_names A character vector containing the names of the variables to be removed.
 #'
 #' @examples
+#' # Define some variables in the global environment
+#' a <- 1
+#' b <- 2
+#' c <- 3
+#' # Now remove 'a' and 'b' from the global environment
+#' remove_from_global(c("a", "b"))
+#'
+#' @return Invisible NULL. The function is used for its side effect of
+#' removing variables and does not return a value.
+#'
+#' @note If a specified variable does not exist in the global environment,
+#' the function will silently skip it without any message. Uncomment the print
+#' statements in the function body to enable logging of actions taken.
+#'
+#' @export
+
 remove_from_global <- function(var_names) {
   for (var_name in var_names) {
     if(exists(var_name, envir = .GlobalEnv)) {
@@ -18,18 +35,31 @@ remove_from_global <- function(var_names) {
   }
 }
 
-#' Title
+#' Calculate Coefficients Using with out from Asreml model
 #'
-#' @param gmatrix
-#' @param ebv
-#' @param heter_groups
-#' @param heter_grp
-#' @param gid_name
+#' This function calculates coefficients based on a genetic relationship matrix and estimated breeding values (EBVs), optionally considering heterogeneity across groups. It returns a data frame of coefficients for each variable or group, depending on the input parameters.
 #'
-#' @return
-#' @export
+#' @param gmatrix A square, symmetric matrix representing the genetic relationships among individuals.
+#' @param ebv A numeric vector of estimated breeding values corresponding to the individuals in `gmatrix`.
+#' @param heter_groups A character string specifying the name of the column in the returned data frame that will contain the heterogeneity groups. This parameter is optional; if not provided, the function assumes homogeneity across all individuals.
+#' @param heter_grp A vector indicating the heterogeneity group for each individual. If `heter_groups` is not NULL, this parameter must be provided.
+#' @param gid_name A character vector or string specifying the names of the variables or genetic IDs to be included in the output data frame. If `heter_groups` is not NULL, `gid_name` represents the names to be repeated for each heterogeneity group.
+#'
+#' @return A data frame with coefficients calculated for each variable specified by `gid_name` or for each heterogeneity group, depending on whether heterogeneity was considered. The data frame structure varies based on the input parameters:
+#' - When heterogeneity is not considered, returns a data frame with variables or genetic IDs and their corresponding coefficients.
+#' - When heterogeneity is considered, returns a data frame with variables/genetic IDs, the specified heterogeneity groups, and the coefficients for each group.
 #'
 #' @examples
+#' # Example usage without considering heterogeneity
+#' gmatrix <- matrix(c(1, 0.5, 0.5, 1), nrow = 2)
+#' ebv <- c(100, 150)
+#' cal_coeff_asreml(gmatrix, ebv, NULL, NULL, c("Var1", "Var2"))
+#'
+#' # Example usage considering heterogeneity
+#' heter_grp <- c("Env1", "Env2", "Env1", "Env2")
+#' cal_coeff_asreml(gmatrix, ebv, "Environment", heter_grp, c("Var1", "Var2"))
+#'
+#' @export
 cal_coeff_asreml <- function(gmatrix,
                              ebv,
                              heter_groups,
@@ -59,34 +89,41 @@ cal_coeff_asreml <- function(gmatrix,
   return(coeff)
 }
 
-#' Title
+#' Perform ASReml Model Output Processing and Analysis
 #'
-#' @param mod_asreml
-#' @param pheno_data
-#' @param heter_groups
-#' @param gen_name
-#' @param var_cov_str
-#' @param heter_resid
-#' @param gkernel
-#' @param gmatrix
-#' @param omic1_kernel
-#' @param omic2_kernel
-#' @param omic3_kernel
-#' @param ...
-#' @param response
-#' @param omics_kernel_label
-#' @param pworkspace
-#' @param maxit
+#' This function processes the output from an ASReml model, performing various tasks such as updating the model, summarizing coefficients, predicting values, and handling multiple kernels or genomic matrices. It supports handling heterogeneity in residuals, multiple omics kernels, and environmental grouping. It is designed to work with complex multi-environment genetic models.
 #'
-#' @return
-#' @export
+#' @param mod_asreml An `asreml` object containing the fitted model.
+#' @param pheno_data A data frame of phenotypic data.
+#' @param response A character string specifying the response variable in `pheno_data`.
+#' @param gmatrix A genomic relationship matrix.
+#' @param omic1_kernel A kernel matrix for the first omics data type (optional).
+#' @param omic2_kernel A kernel matrix for the second omics data type (optional).
+#' @param omic3_kernel A kernel matrix for the third omics data type (optional).
+#' @param omics_kernel_label A list specifying labels for the omics kernels (optional).
+#' @param heter_groups A character string specifying the column in `pheno_data` that defines heterogeneous groups for residual variances (optional).
+#' @param gen_name A character string specifying the name of the genotype column in `pheno_data`.
+#' @param var_cov_str A string indicating the variance-covariance structure to be used in the model (optional).
+#' @param heter_resid Logical indicating if heterogeneous residuals are considered (optional).
+#' @param pworkspace The size of the workspace for the ASReml algorithm in bytes.
+#' @param maxit The maximum number of iterations for the ASReml algorithm.
+#' @param ... Additional arguments passed to the underlying ASReml functions.
+#'
+#' @return A list containing several components, including coefficients, the ASReml model, estimated breeding values, variance components, and matrices ready for modeling.
+#'
+#' @details
+#' The function updates the given `asreml` model, extracts and summarizes the variance components, predicts breeding values, and calculates reliability and prediction error variance. It handles both single and multi-environment trial data, allowing for the inclusion of multiple omics data types through kernel matrices. Variance components can be extracted based on specified structures, and the function is capable of dealing with heterogeneity in residuals.
 #'
 #' @examples
+#' # This is a complex function designed to be used within a specific workflow
+#' # involving ASReml-R models. Example usage would require setting up an ASReml model
+#' # and then calling this function with the appropriate arguments.
+#'
+#' @export
 asreml_mod_output_new <- function(
     mod_asreml = NULL,
     pheno_data = NULL,
     response = NULL,
-    gkernel=NULL,
     gmatrix = NULL,
     omic1_kernel=NULL,
     omic2_kernel=NULL,
@@ -187,7 +224,7 @@ asreml_mod_output_new <- function(
   ### For variance structure extraction
   if(!is.null(var_cov_str) & !is.null(inter_gen_pos)){
 
-    if(isTRUE(grepl("fa", var_cov_str))){
+    if(isTRUE(grepl("fa", var_cov_str)) | isTRUE(grepl("rr", var_cov_str))){
       ## Extract the number of factors
       #N_fa = substr(var_cov_str, 3, 100)
 
@@ -320,6 +357,7 @@ asreml_mod_output_new <- function(
 
       }
 
+      #### Extration of the genetic variance for all omics to calcuate heritability.
       VarG_All <- vector("list", length = length(names_in_inv_list))
       names(VarG_All) <- names_in_inv_list
       VarG <- vc[grep(paste("^vm\\(", gen_name, sep = ""), rownames(vc)), drop=FALSE, ]
@@ -329,13 +367,12 @@ asreml_mod_output_new <- function(
         VarG_All[[g]] <-VarG[grep(names_in_inv_list[g], rownames(VarG)), "component"]
 
       }
-
+#### Residual variance
       VE <- vc[grep("!R", row.names(vc)), "component"]
       varG_matrix <-  unlist(VarG_All)
       H <-  matrix(NA, nrow = 1, ncol = length(VE))
 
-      #BV$PEV <- BV$std.error^2
-      #BV_All$PEV <- BV_All$std.error^2
+      #####
       for (bb in seq_along(names_in_inv_list)){
         estimated_breeding_value_list[[bb]][, "Prediction_error_variance"] <- estimated_breeding_value_list[[bb]][, "Standard_error"]^2
         estimated_breeding_value_list[[bb]][, "Reliability"] <- round(1 - estimated_breeding_value_list[[bb]][, "Prediction_error_variance"]/as.double((VarG_All[bb])),6)
@@ -356,7 +393,7 @@ asreml_mod_output_new <- function(
 
       #colnames(VarG_All) <- "Variance"
       Total_genetic_var <- sum(VarG_All[, 1])
-
+#### Single location
       Res_Va_Ve_H2_COV_COR <-  list(Heritability = H,
                                     varG_per_omics = VarG_All,
                                     Total_genetic_var = Total_genetic_var,
@@ -394,11 +431,8 @@ asreml_mod_output_new <- function(
                                                  inter_gen_pos = inter_gen_pos,
                                                  gen_pos = gen_pos)
 
-
-    #VE <-  Res_Va_Ve_H2_COV_COR[["Residual_Var"]]
-    #H <- Res_Va_Ve_H2_COV_COR[["Heritability"]]
     varG_matrix = Res_Va_Ve_H2_COV_COR[["varG_per_omics"]]
-    #VA = Res$Genetic_Var
+    ##
     heter_grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
 
     for (bb in seq_along(names_in_inv_list)){
@@ -415,7 +449,7 @@ asreml_mod_output_new <- function(
       } else{
         if(length(VA) == length(heter_grp)){
           estimated_breeding_value_list[[bb]][, "Reliability"] <- NA
-          #BV$Reliability = NA
+          ###
           for (i in 1:length(VA)) {
             estimated_breeding_value_list[[bb]][, "Reliability"] <- ifelse(estimated_breeding_value_list[[bb]][, heter_groups]%in% heter_grp[i],
                                                     round(1 - estimated_breeding_value_list[[bb]][, "Prediction_error_variance"]/VA[i],6), estimated_breeding_value_list[[bb]][, "Reliability"])
@@ -454,8 +488,8 @@ asreml_mod_output_new <- function(
   ## sik
 
   if(!is.null(Zg)){
-    genotype_means <- pheno %>%
-      dplyr::group_by(!!dplyr::sym(gen_name)) %>%
+    genotype_means <- pheno |>
+      dplyr::group_by(!!dplyr::sym(gen_name)) |>
       dplyr::summarise(mean_value = mean(!!dplyr::sym(response), na.rm = TRUE))
     genotype_means <-  as.data.frame(genotype_means)
     # Reorder genotype_means based on name in predicted_value
@@ -534,16 +568,18 @@ asreml_mod_output_new <- function(
   }
 
   ### Initialize step to calculate coefficient for each omics
-
+### Gather all the variables in the function some might be null
   datasets <- list(gmatrix, omic1_kernel, omic2_kernel, omic3_kernel)
   dataset_names <- c("gmatrix", "omic1_kernel", "omic2_kernel", "omic3_kernel")
-  datasets_index <- which(!sapply(datasets, is.null))
+  datasets_index <- which(!sapply(datasets, is.null)) ## identify null variable
 
-  datasets <-  datasets[datasets_index]
+  datasets <-  datasets[datasets_index] ## remove null variable
   dataset_names <- dataset_names[datasets_index]
   coefficients_list <-   list()
   m_matrix_model_ready_list <-   list()
   sum_estimated_breeding_value <-  0
+  ## names_in_inv_list used to fit asreml model contains names of the kernel/gmatrix with inv this will identify it and remove it
+  ## The idea is to make sure the order of the name is the same here and in names_in_in_list
   extracted_names_from_inv_list <- gsub("_inv", "", names_in_inv_list, ignore.case = TRUE)
   index_names_inv_extracted_omic <- grep("omic", extracted_names_from_inv_list, ignore.case = TRUE)
   index_names_inv_extracted_geno <- grep("gmatrix", extracted_names_from_inv_list, ignore.case = TRUE)
@@ -552,6 +588,7 @@ asreml_mod_output_new <- function(
     extracted_names_from_inv_list[index_names_inv_extracted_omic] <- paste(extracted_names_from_inv_list[index_names_inv_extracted_omic], "kernel", sep = "_")
   } else {
     if (length(index_names_inv_extracted_omic) == 1) {
+      ## When ist is length 1, we just want omic_kernel irrespective of wither omic1 or omic2 or omic is provided
       extracted_names_from_inv_list[index_names_inv_extracted_omic] <- paste("omic", "kernel", sep = "_")
       dataset_names[index_names_inv_extracted_omic] <- paste("omic", "kernel", sep = "_")
     }
@@ -567,7 +604,7 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
   dataset_names <- dataset_names[match(extracted_names_from_inv_list, dataset_names)]
 
 } else {
-  stop("names must be the same length")
+  stop(paste(msg, "Different names were provided."), call. = FALSE)
 }
 
   for (i in seq_along(datasets)) {
@@ -575,10 +612,11 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
     if (!is.null(dataset)) {
     if(!is.null(Zg)){
       ZgZg <- Zg%*%dataset%*%t(Zg)
+      suppressMessages({
       ZgZg <- grm_kernel_precheck(ZgZg)
+      })
 
     }
-
       coefficients_list[[paste("coefficient",dataset_names[i], sep = "_")]] <- cal_coeff_asreml(gmatrix = if(!is.null(Zg)) ZgZg else dataset,
                                                                                                 ebv = estimated_breeding_value_list[[i]][, "BLUP"],
                                                                                                 heter_groups = heter_groups,
@@ -677,8 +715,8 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
 
 } else{
   if(inherits(variance_components, "data.frame")){
-    covariance = NULL
-    correlation = NULL
+    covariance <-  NULL
+    correlation <-  NULL
 
   }
 }
@@ -749,9 +787,9 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
     }
 
   } else {
-
+    if(is.null(gmatrix)){
     message(insight::print_color(paste(msg,paste("Omics lable was not provided. Default name was applied.")), "blue"))
-
+}
 
   }
 #####################################################################
@@ -834,7 +872,6 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
     }
   }
 
-  #my_variable <- c("G_inv", "omic1_inv", "omic2_inv", "omic3_inv")
   remove_from_global(names_in_inv_list)
 
     return(res)

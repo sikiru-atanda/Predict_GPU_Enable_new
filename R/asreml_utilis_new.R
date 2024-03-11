@@ -1,18 +1,33 @@
-
-
-#' Title
+#' Compute Inverse and Sparse Matrix from a Kernel Matrix
 #'
-#' @param kernel
-#' @param epsilon
-#' @param inverse
+#' This function computes the inverse of a given kernel matrix using a regularization
+#' technique to handle nearly positive definite matrices with small negative eigenvalues.
+#' It can also return a sparse representation of the kernel matrix.
 #'
-#' @return
-#' @export
+#' @param kernel A numeric square matrix representing the kernel from which to compute the inverse.
+#' @param epsilon A small positive value (regularization parameter) added to the diagonal elements
+#'        to ensure the matrix is positive definite. Default is 1e-6. adjust as needed
+#' @param inverse Logical indicating whether to compute and return the inverse of the kernel matrix.
+#'        If FALSE, returns a sparse matrix representation of the original kernel matrix. Default is NULL.
+#'
+#' @return If `inverse = TRUE`, returns a matrix which is the inverse of the input kernel matrix,
+#'         with additional attributes "rowNames", "colNames", and "INVERSE" set to TRUE.
+#'         If `inverse = FALSE`, returns a sparse matrix representation of the kernel matrix,
+#'         with "rowNames", "colNames", and "INVERSE" set to FALSE. If an error occurs during
+#'         inversion, it returns `NULL` and prints an error message.
 #'
 #' @examples
-# Function to compute inverse and create sparse matrix
-# Regularization parameter (adjust as needed)
-
+#' # Create a symmetric positive definite matrix
+#' kernel_matrix <- matrix(c(2, -1, -1, 2), ncol = 2)
+#' rownames(kernel_matrix) <- colnames(kernel_matrix) <- c("A", "B")
+#'
+#' # Compute the inverse
+#' inverse_matrix <- compute_inverse_and_sparse(kernel = kernel_matrix, inverse = TRUE)
+#'
+#' # Compute a sparse representation
+#' sparse_matrix <- compute_inverse_and_sparse(kernel = kernel_matrix, inverse = FALSE)
+#'
+#' @export
 
 compute_inverse_and_sparse <- function(kernel = NULL,
                                        epsilon = 1e-6,
@@ -74,33 +89,53 @@ compute_inverse_and_sparse <- function(kernel = NULL,
 }
 
 
-#' Title
+#' Adjust Random Terms for ASReml Model Fitting
 #'
-#' @param response
-#' @param cova
-#' @param fixed
-#' @param random
-#' @param heter_resid
-#' @param heter_groups
-#' @param var_cov_str
-#' h@param weights
-#' @param GS_model
-#' @param core
-#' @param weights
-#' @param pheno_data
-#' @param gmatrix
-#' @param gkernel
-#' @param omic1_kernel
-#' @param omic2_kernel
-#' @param omic3_kernel
-#' @param workspace
-#' @param maxit
-#' @param gen_name
-#' @param ...
+#' This function prepares and adjusts random terms for fitting an ASReml model,
+#' facilitating the modeling of genetic data with potential heterogeneity and
+#' specific variance-covariance structures. It allows for the specification of
+#' fixed and random effects, interaction terms, and various models of heterogeneity
+#' and variance-covariance among genetic components.
 #'
-#' @return
+#' @param random A formula specifying the random effects to be included in the model.
+#' @param fixed A formula specifying the fixed effects to be included in the model.
+#' @param fixed_term A character vector specifying fixed terms to be considered in the model.
+#' @param heter_groups A character string identifying the grouping variable for heterogeneity.
+#' @param heter_resid A logical indicating if heterogeneity in residuals should be considered.
+#' @param var_cov_str A character string indicating the type of variance-covariance structure.
+#' @param code_asr A character vector for storing ASReml code or model specification.
+#' @param names_in_inv_list A character vector of names identifying inverse matrices in the model,
+#' related to different genetic components.
+#' @param gen_name A character string specifying the name of the genetic factor in the model.
+#' @param pheno_data A data frame containing phenotypic data used in the model.
+#' @param ... Additional arguments for future use or extensions.
+#'
+#' @return A list containing elements critical for ASReml model specification,
+#' including adjusted code for model fitting, positions of genetic and interaction terms,
+#' and the defined random terms.
+#'
+#' @details
+#' The function is particularly useful for complex genetic models requiring precise
+#' specification of random effects, handling of heterogeneity across groups, and
+#' incorporation of specific variance-covariance structures. It preprocesses the input
+#' model terms to ensure compatibility with ASReml software requirements and facilitates
+#' the inclusion of genetic interactions and heterogeneity terms.
+#'
 #' @examples
-#' @importFrom foreach %dopar%
+#' # Assuming a hypothetical ASReml model setup:
+#' random_effects <- ~ Genotype + Genotype:Environment
+#' fixed_effects <- ~ Environment + Treatment
+#' pheno <- data.frame(Genotype = factor(rep(1:10, each = 6)),
+#'                     Environment = factor(rep(1:3, times = 20)),
+#'                     Treatment = factor(rep(c("Control", "Treated"), each = 30)),
+#'                     Yield = rnorm(60, mean = 100, sd = 15))
+#'
+#' model_setup <- random_terms_fit_new(random = random_effects,
+#'                                     fixed = fixed_effects,
+#'                                     heter_groups = "Environment",
+#'                                     gen_name = "Genotype",
+#'                                     pheno_data = pheno)
+#' @export
 
 asreml_utilis_new <- function(
     fixed = NULL,
