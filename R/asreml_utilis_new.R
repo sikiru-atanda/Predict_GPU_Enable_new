@@ -156,7 +156,6 @@ asreml_utilis_new <- function(
     heter_resid = FALSE,
     var_cov_str = NULL,
     weights = NULL,
-    core = NULL,
     workspace=1e08,
     engine = NULL,
     pworkspace= 1e06,

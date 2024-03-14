@@ -40,8 +40,29 @@ pheno_geno_match <- function(object_geno = NULL,
                              gen_name = NULL,
                              train_set = NULL,
                              test_set = NULL,
+                             heter_groups = NULL,
                              message = TRUE) {
   msg <- sprintf("==================================================\n")
+
+  # Check if genotypes are consistent across all environments
+  if(!is.null(heter_groups)){
+  env_counts <- object_pheno |>
+    dplyr::group_by(!!rlang::sym(heter_groups)) |>
+    dplyr::summarise(Count = dplyr::n_distinct(!!rlang::sym(gen_name)))
+
+  if(dplyr::n_distinct(env_counts$Count) > 1) {
+    stop(sprintf("%s are not consistent across all %s. Stopping.", gen_name, heter_groups))
+
+  } else {
+    # Order genotypes consistently across environments then by environment
+    object_pheno <- object_pheno |>
+      dplyr::arrange(!!rlang::sym(gen_name)) |>
+      dplyr::arrange(!!rlang::sym(heter_groups))
+
+  }
+
+  }
+
   ID_pheno <- as.character(unique(object_pheno[, gen_name]))
 
   if (!isTRUE(all(ID_pheno %in% rownames(object_geno)))) {

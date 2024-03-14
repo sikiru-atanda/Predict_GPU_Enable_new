@@ -1,9 +1,14 @@
 
-set_parallel_plan <- function(n_trait, replication, num_cores, sys_name) {
-  # Define the plan based on system, number of traits, and replications
+set_parallel_plan <- function(n_trait,
+                              n_model,
+                              replication,
+                              num_cores,
+                              sys_name) {
+  # Define the plan based on the system
   plan_type <- ifelse(sys_name == "Windows", "multisession", "multicore")
 
-  if ((n_trait > 1 && replication <= 1) || (replication > 1 && n_trait <= 1) || (n_trait > 1 && replication > 1)) {
+  # Check if parallel execution is beneficial
+  if (n_trait > 1 || n_model > 1 || replication > 1) {
     future::plan(plan_type, workers = num_cores)
   } else {
     future::plan("sequential")
@@ -18,20 +23,33 @@ predict_with_model <- function(model = NULL, y = NULL, omics_data = NULL, tst = 
   switch(model,
          "Xgboost" = AI_xgboost_cv(y = y, omics = omics_data, tst = tst, eta = additional_params$eta,
                                    nrounds = additional_params$nrounds, max_depth = additional_params$max_depth,
-                                   scale = additional_params$scale, gamma = additional_params$gamma,
+                                   scaling = additional_params$scaling, omic_count = additional_params$omic_count,
+                                   centering = additional_params$centering, gamma = additional_params$gamma,
                                    colsample_bytree = additional_params$colsample_bytree,
                                    subsample = additional_params$subsample),
          "RandomForest" = AI_randomforest_cv(y = y, omics = omics_data, tst = tst,
-                                             scale = additional_params$scale, ntree = additional_params$ntree),
+                                             scaling = additional_params$scaling,
+                                             centering = additional_params$centering, ntree = additional_params$ntree,
+                                             omic_count = additional_params$omic_count),
          "PartialLeastSquare" = AI_pls_cv(y = y, omics = omics_data, tst = tst,
-                                          scale = additional_params$scale, ncomp = additional_params$ncomp),
+                                          scaling = additional_params$scaling,
+                                          centering = additional_params$centering, ncomp = additional_params$ncomp,
+                                          omic_count = additional_params$omic_count),
          "Ridge_Regression" = AI_ridge_regression_cv(y = y, omics = omics_data, tst = tst,
-                                                     scale = additional_params$scale),
-         "Lasso" = AI_lasso_cv(y = y, omics = omics_data, tst = tst, scale = additional_params$scale),
+                                                     scaling = additional_params$scaling,
+                                                     centering = additional_params$centering,
+                                                     omic_count = additional_params$omic_count),
+         "Lasso" = AI_lasso_cv(y = y, omics = omics_data, tst = tst, scaling = additional_params$scaling,
+                               centering = additional_params$centering,
+                               omic_count = additional_params$omic_count),
          "SupportVectorMachine" = AI_svm_cv(y = y, omics = omics_data, tst = tst,
-                                            scale = additional_params$scale, c = additional_params$c),
+                                            scaling = additional_params$scaling,
+                                            centering = additional_params$centering, c = additional_params$c,
+                                            omic_count = additional_params$omic_count),
          "K-NearestNeighbors" = AI_knn_cv(y = y, omics = omics_data, tst = tst,
-                                          scale = additional_params$scale, k = additional_params$k),
+                                          scaling = additional_params$scaling,
+                                          centering = additional_params$centering, k = additional_params$k,
+                                          omic_count = additional_params$omic_count),
          "Bayes" = bayes_mod_cv(y = y, ETA = additional_params$ETA, weights = additional_params$weights,
                                 bayes_para = additional_params$bayes_para, tst = tst)
   )
@@ -40,43 +58,76 @@ predict_with_model <- function(model = NULL, y = NULL, omics_data = NULL, tst = 
 ###########################
 
 models_execute_crossval <- function(pheno_data = NULL,
-                                        response = NULL,
-                                        gen_name = NULL,
-                                        test_size = NULL,
-                                        random_state = NULL,
-                                        replication = NULL,
-                                        weights = NULL,
-                                        ETA = NULL,
-                                        ml_dat_res = NULL,
-                                        heter_groups = NULL,
-                                        bayes_para = NULL,
-                                        verbose = FALSE,
-                                        num_cores = NULL,
-                                        nfolds = NULL,
-                                        cross_validation_meth = NULL,
-                                        sampling_method = NULL,
-                                        eval_metrics = NULL,
-                                        GS_model_cv = NULL,
-                                        scale = TRUE,
-                                        eta = 0.001, ## xgboost
-                                        nrounds = 5000, ## xgboost
-                                        max_depth = 6, ## xgboost
-                                        gamma = 4, ## xgboost
-                                        subsample = 0.5, ## xgboost
-                                        colsample_bytree = 1, ## xgboost
-                                        ncomp = 3, #### pls
-                                        ntree = 500, ### random forest
-                                        k = 5, ## for knn
-                                        c = 1, ## svm
-                                        ...){
+                                    response = NULL,
+                                    gen_name = NULL,
+                                    test_size = NULL,
+                                    random_state = NULL,
+                                    replication = NULL,
+                                    weights = NULL,
+                                    model_prep_all_bayes_cv = NULL,
+                                    ml_dat_res = NULL,
+                                    heter_groups = NULL,
+                                    verbose = FALSE,
+                                    num_cores = NULL,
+                                    nfolds = NULL,
+                                    cross_validation_meth = NULL, ## this handle th ETA for bayes model
+                                    sampling_method = NULL,
+                                    eval_metrics = NULL,
+                                    GS_model_cv = NULL,
+                                    scaling = FALSE,
+                                    centering = TRUE,
+                                    eta = 0.001, ## xgboost
+                                    nrounds = 5000, ## xgboost
+                                    max_depth = 6, ## xgboost
+                                    gamma = 4, ## xgboost
+                                    subsample = 0.5, ## xgboost
+                                    colsample_bytree = 1, ## xgboost
+                                    ncomp = 3, #### pls
+                                    ntree = 500, ### random forest
+                                    k = 5, ## for knn
+                                    c = 1, ## svm
+                                    ...){
 
-  #browser()
+  ##browser()
+
+  if(!is.null(cross_validation_meth) & length(cross_validation_meth)>1){
+    stop('use only one cross_validation method at a time')
+  }
+  ##### if user choose repeated and stratified CV strategy but
+  ## forget to choose sampling stratgy or replication is not defined.
+  patterns <- c("stratified", "Repeated")
+
+  # Use sapply to apply grep to each pattern and return a named logical vector indicating presence.
+  if(is.null(sampling_method) | is.null(replication)){
+    matche_strings <- sapply(patterns, function(pattern) {
+      length(grep(pattern, cross_validation_meth, ignore.case = TRUE)) > 0
+    }, simplify = FALSE)
+
+    # Name the list elements with the patterns.
+    names(matche_strings) <- patterns
+
+    # Filter to get only the patterns that were found.
+    present_patterns <- names(matche_strings)[unlist(matche_strings)]
+
+    if("stratified"%in%present_patterns) sampling_method <- "stratified"
+
+    if("Repeated"%in%present_patterns) {
+      stop("You select repeated cross-validation provide number of replications.\n For example, replication = 2")
+    }
+
+
+  }
 
   # Prepare additional parameters for model prediction
-  additional_params <- list(ETA = ETA, weights = weights, bayes_para = bayes_para, scale = scale,
+  ETA <-  NULL
+  bayes_para <- NULL
+  omic_count <- if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL
+
+  additional_params <- list(ETA = ETA, weights = weights, bayes_para = bayes_para,
+                            scaling = scaling,centering = centering,
                             eta = eta, nrounds = nrounds, max_depth = max_depth, gamma = gamma,
                             colsample_bytree = colsample_bytree, subsample = subsample, ntree = ntree,
-                            ncomp = ncomp, c = c, k = k)
+                            ncomp = ncomp, c = c, k = k, omic_count = omic_count)
 
 
   AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare",
@@ -101,6 +152,8 @@ models_execute_crossval <- function(pheno_data = NULL,
   }
 
   n_trait <- length(response)
+  n_model <- length(GS_model_cv)
+
   msg <- sprintf("==================================================\n")
 
   holds_out_methods_avail <- c("Hold_Out",
@@ -118,39 +171,22 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     "CV2",
                                     "Repeated_CV1",
                                     "Repeated_CV2")
+
+
   ###############################################################
   # Main logic
+  sys_name <- Sys.info()["sysname"]
   if (!is.null(num_cores) && num_cores > 1) {
-    sys_name <- Sys.info()["sysname"]
-    set_parallel_plan(n_trait, replication, num_cores, sys_name)
+    #sys_name <- Sys.info()["sysname"]
+    set_parallel_plan(n_trait, n_model,replication,num_cores,sys_name)
   } else {
     # Automatically determine the number of cores and use half of them
     detected_cores <- parallel::detectCores(logical = TRUE)
     # For non-Windows systems, consider physical cores only
-    if (Sys.info()["sysname"] != "Windows") {
-      detected_cores <- parallel::detectCores(logical = FALSE)
-    }
     num_cores <- round(detected_cores * 0.5)
-    sys_name <- Sys.info()["sysname"]
-    set_parallel_plan(n_trait, replication, num_cores, sys_name)
-  }
 
-  # Determine the parallel strategy based on the number of traits and replications
-  # if (!is.null(num_cores) && num_cores > 1) {
-  #   if (n_trait > 1 && replication <= 1) {
-  #     future::plan("multisession", workers = num_cores)
-  #   } else if (replication > 1 && n_trait <= 1) {
-  #     future::plan("multisession", workers = num_cores)
-  #   } else if (n_trait > 1 && replication > 1) {
-  #     # When both traits and replications are greater than 1, set up a more complex parallel strategy
-  #     # This example uses multisession for traits; further nested parallelism for replications could be complex and requires careful management
-  #     future::plan("multisession", workers = num_cores)
-  #   } else {
-  #     future::plan(sequential)
-  #   }
-  # } else {
-  #   future::plan(sequential)
-  # }
+    set_parallel_plan(n_trait, n_model,replication,num_cores,sys_name)
+  }
 
   # Create a list of all combinations of response variables and replications
   tasks <- expand.grid(response = response, replication = seq_len(replication),
@@ -299,6 +335,8 @@ models_execute_crossval <- function(pheno_data = NULL,
         if(model %in% c(bayes_valid_models, bayes_gblup_valid_models)) {
           #model_use <- model
           #model <- "Bayes" # Use a general term for Bayesian models for the switch function
+          additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
+          additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
 
           ypred_cv[tst, "yhat"] <- predict_with_model(model = "Bayes", y = yNA,
                                                       tst = tst, additional_params = additional_params)
@@ -306,7 +344,7 @@ models_execute_crossval <- function(pheno_data = NULL,
         }
 
         if(model %in% c(AI_valid_models)) {
-        ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = ml_dat_res[["merged_data"]],
+        ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = ml_dat_res[["merged_data"]][["merge_data"]],
                                                     tst = tst, additional_params = additional_params)
         }
 
@@ -319,13 +357,14 @@ models_execute_crossval <- function(pheno_data = NULL,
 
       if(model %in% c(bayes_valid_models, bayes_gblup_valid_models)) {
         #model <- "Bayes" # Use a general term for Bayesian models for the switch function
-
+        additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
+        additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
         ypred_cv[tst, "yhat"] <- predict_with_model(model = "Bayes", y = yNA,
                                                     tst = tst, additional_params = additional_params)
       }
 
       if(model %in% c(AI_valid_models)) {
-        ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = ml_dat_res[["merged_data"]],
+        ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = ml_dat_res[["merged_data"]][["merge_data"]],
                                                     tst = tst, additional_params = additional_params)
       }
 
@@ -368,9 +407,7 @@ models_execute_crossval <- function(pheno_data = NULL,
       results_eval_metrics_reps[, eval_metrics] <-
         lapply(results_eval_metrics_reps[, eval_metrics, drop = FALSE],
                function(x) as.double(as.character(x)))
-
     }
-
 
     list(trait = trait, rep = rep, model = model, eval_metrics_reps = results_eval_metrics_reps)
   }, future.seed = TRUE)

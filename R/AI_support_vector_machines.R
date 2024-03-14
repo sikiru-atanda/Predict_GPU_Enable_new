@@ -24,9 +24,10 @@ AI_svm <- function(pheno_object=NULL,
                    geno_omic_test_object = NULL,
                    response=NULL,
                    gen_name=NULL,
-                   core = NULL,
                    message = TRUE,
-                   scale = TRUE,
+                   scaling = TRUE,
+                   centering = FALSE,
+                   omic_count = NULL,
                    para_tunning = FALSE,
                    AI_cv_nfolds = 5,
                    svm_paras_tunning= c(c_tune=NULL),
@@ -35,6 +36,21 @@ AI_svm <- function(pheno_object=NULL,
 
 ){
 
+  ## SVM performance is sensitive to the scale of the input features,
+  ## so scaling the data is recommended to ensure that all features contribute
+  ## equally to the distance metric in the kernel space
+  if(!is.null(geno_omic_object) & !is.null(pheno_object)) {
+    if(isTRUE(scaling) || isFALSE(scaling)){
+      geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = TRUE)
+    }
+
+  }
+  if(!is.null(geno_omic_test_object)){
+    if(isTRUE(scaling) || isFALSE(scaling)){
+      geno_omic_test_object <- scale(geno_omic_test_object, center = TRUE, scale = TRUE)
+    }
+
+  }
   #msg <- sprintf("==================================================\n")
      if(isTRUE(para_tunning)){
        # create hyperparameter grid

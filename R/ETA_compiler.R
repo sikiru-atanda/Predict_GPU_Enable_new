@@ -96,12 +96,14 @@ ETA_compiler_bayes <- function(
     omic2_data = NULL,
     omic3_data = NULL,
     gen_name = NULL,
+    scaling = TRUE,
     ...
 ) {
   ETA <- list()
   msg <- "==================================================\n"
 
   rand_term_no_inter <- random_terms(random = random, pheno_data = pheno_data)
+
   rand_model <- random_term_model(
     rand_terms = rand_term_no_inter,
     gen_name = gen_name,
@@ -131,6 +133,13 @@ ETA_compiler_bayes <- function(
 
   for (i in seq_along(datasets)) {
     dataset <- datasets[[i]]
+    if("BRR" %in% rand_model){
+      if(!is.null(dataset)) {
+        if(isTRUE(scaling)){
+        dataset <- scale(dataset, center = TRUE, scale = TRUE)
+        }
+      }
+    }
     if (!is.null(dataset)) {  ## this seems redundant but necessary
       ETA[[length(ETA) + 1]] <- list(X = as.matrix(dataset), model = rand_model, saveEffects = TRUE)
       ETA_element_name <- c(ETA_element_name, dataset_names[i])

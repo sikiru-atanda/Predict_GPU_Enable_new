@@ -43,7 +43,9 @@ AI_Xgb <- function(pheno_object=NULL,
                    gen_name=NULL,
                    AI_cv_nfolds = 5,
                    message = TRUE,
-                   scale = TRUE,
+                   scaling = TRUE,
+                   centering = FALSE,
+                   omic_count = NULL,
                    para_tunning = FALSE,
                    xgb_paras_tunning= c(Iter_tune = NULL, # number of boosting iterations
                                         learning_rate_tune = NULL, # learning rate, low value means model is more robust to overfitting
@@ -57,11 +59,29 @@ AI_Xgb <- function(pheno_object=NULL,
                    booster = "gblinear",
                    iteration = 5000,
                    N_feature_impo = 10,
-                   core = NULL,
                    ...
 
 ){
 
+  if(!is.null(geno_omic_object)){
+    if(isTRUE(scaling)){
+      geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = TRUE)
+    } else{
+      if(isTRUE(centering) && !is.null(omic_count)){
+        geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = FALSE)
+      }
+    }
+  }
+
+  if(!is.null(geno_omic_test_object)){
+    if(isTRUE(scaling)){
+      geno_omic_test_object <- scale(geno_omic_test_object, center = TRUE, scale = TRUE)
+    } else{
+      if(isTRUE(centering) && !is.null(omic_count)){
+        geno_omic_test_object <- scale(geno_omic_test_object, center = TRUE, scale = FALSE)
+      }
+    }
+  }
   #msg <- sprintf("==================================================\n")
 ## when length of response variable is 1
 #########################
@@ -84,6 +104,7 @@ xgb_grid = expand.grid(nrounds = xgb_paras_tunning$Iter_tune , # number of boost
                                         allowParallel = TRUE)
 
     if(!is.null(geno_omic_object)){
+
       GID <- rownames(geno_omic_object)
    xgb_fit = caret::train(x = geno_omic_object,
                    y = pheno_object[, response],

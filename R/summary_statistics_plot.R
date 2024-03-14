@@ -124,54 +124,46 @@ summary_statistics_bayes <- function(mod=NULL,
 
 
 
-#' Title
-#'
-#' @param mod
-#' @param ...
-#'
-#' @return
-#' @export
-#'
-#' @examples
-plot_acc <- function(mod,response, ...){
 
-  # DT_ <- data.frame(y = c(mod$y,mod$yHat),yhat = c(mod$yhat, mod$y))
-  #   # Scatter plot by group
-  # ggplot2::ggplot(DT_, aes(x = y, y = yhat)) +
-  #   ggplot2::geom_point()+
-  #   ggplot2::geom_smooth(method="lm") +
-  #   ggpmisc::stat_poly_line() +
-  #   ggpmisc::stat_poly_eq(use_label(c("R2")))
-  #
-
-  #DT = data.frame(y = mod$y, yhat = mod$yHat)
-  if(any(is.na(mod$y)))
-  {
-    tst <- which(is.na(mod$y))
-
-    # grDevices::tiff(file="saving_plot3.tiff", units="in",
-    #      width=8, height=5, res=300)
-
-
- graphics::plot(mod$y[tst]~I(mod$yHat[tst]),ylab="Fitted Value",
-       xlab="Predicted Value" ,cex=1,bty="L")
-    graphics::points(y=mod$y[tst],x=mod$yHat[tst],col=c("red", 'blue'),cex=1,pch=21)
-  #points(y=mod$y,x=mod$yHat,col=c("red", 'blue'),cex=1,pch=21)
-    graphics::legend("topleft", legend=c("testing", "training"),bty="n",
-         pch=c(1,19), col=c("red","blue"))
-  #abline(lm(I(mod$y[-tst])~I(mod$yHat[-tst]))$coef,col=1,lwd=2)
-    graphics::abline(stats::lm(I(mod$y[tst])~I(mod$yHat[tst]))$coef,col=2,lwd=2)
-
-    grDevices::dev.off()
-
-  }
-
-  return(grDevices::jpeg(filename=paste(paste(response, "predAccuracy", sep="_"), "jpg", sep = "."), units="in",
-                         width=8, height=5, res=300))
-
-  grDevices::dev.off()
-
-}
+# plot_acc <- function(mod,response, ...){
+#
+#   # DT_ <- data.frame(y = c(mod$y,mod$yHat),yhat = c(mod$yhat, mod$y))
+#   #   # Scatter plot by group
+#   # ggplot2::ggplot(DT_, aes(x = y, y = yhat)) +
+#   #   ggplot2::geom_point()+
+#   #   ggplot2::geom_smooth(method="lm") +
+#   #   ggpmisc::stat_poly_line() +
+#   #   ggpmisc::stat_poly_eq(use_label(c("R2")))
+#   #
+#
+#   #DT = data.frame(y = mod$y, yhat = mod$yHat)
+#   if(any(is.na(mod$y)))
+#   {
+#     tst <- which(is.na(mod$y))
+#
+#     # grDevices::tiff(file="saving_plot3.tiff", units="in",
+#     #      width=8, height=5, res=300)
+#
+#
+#  graphics::plot(mod$y[tst]~I(mod$yHat[tst]),ylab="Fitted Value",
+#        xlab="Predicted Value" ,cex=1,bty="L")
+#     graphics::points(y=mod$y[tst],x=mod$yHat[tst],col=c("red", 'blue'),cex=1,pch=21)
+#   #points(y=mod$y,x=mod$yHat,col=c("red", 'blue'),cex=1,pch=21)
+#     graphics::legend("topleft", legend=c("testing", "training"),bty="n",
+#          pch=c(1,19), col=c("red","blue"))
+#   #abline(lm(I(mod$y[-tst])~I(mod$yHat[-tst]))$coef,col=1,lwd=2)
+#     graphics::abline(stats::lm(I(mod$y[tst])~I(mod$yHat[tst]))$coef,col=2,lwd=2)
+#
+#     grDevices::dev.off()
+#
+#   }
+#
+#   return(grDevices::jpeg(filename=paste(paste(response, "predAccuracy", sep="_"), "jpg", sep = "."), units="in",
+#                          width=8, height=5, res=300))
+#
+#   grDevices::dev.off()
+#
+# }
 
 
 

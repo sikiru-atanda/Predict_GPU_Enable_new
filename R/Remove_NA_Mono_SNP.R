@@ -15,9 +15,6 @@ Remove_NA_Mono_SNP <- function(geno = NULL,
                             ){
 
   na.counter <- 0
-
-
-
   # SNP data
   #loc.list.All.NA <- array(NA,ncol(geno))
   loc.list.Mono <- array(NA,ncol(geno))

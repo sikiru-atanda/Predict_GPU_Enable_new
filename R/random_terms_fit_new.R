@@ -99,8 +99,10 @@ random_terms_fit_new <- function(random = NULL,
 
 
     if (length(check_rand_inter)>=1){
-
-      if (is.null(heter_groups)) {stop(print(paste(msg, "hetero.groups cannot be NULL")), call. = FALSE)}
+      if (length(pheno_data[,gen_name]) ==length(unique(pheno_data[,gen_name]))){
+        stop(print(paste(msg, "Phenotypic data contain single environment but you specify multi-environment analysis.")), call. = FALSE)
+      }
+      if (is.null(heter_groups)) {stop(print(paste(msg, heter_groups,"cannot be NULL")), call. = FALSE)}
     }
 
 

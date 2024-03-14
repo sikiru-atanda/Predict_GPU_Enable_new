@@ -55,6 +55,7 @@
                                         thin = NULL,
                                         omics_data_label = NULL,
                                         cross_validation = FALSE,
+                                        scaling =TRUE,
                                         ...
                                              ) {
 
@@ -70,7 +71,8 @@
                                       omic2_data = omic2_data,
                                       omic3_data = omic3_data,
                                       gen_name = gen_name,
-                                      omics_data_label = omics_data_label)
+                                      omics_data_label = omics_data_label,
+                                      scaling = scaling)
 
             bayes_para <-  bayes_parameter_check(nIter = nIter,
                                                  burnIn = burnIn,

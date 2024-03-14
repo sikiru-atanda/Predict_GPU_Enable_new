@@ -69,7 +69,7 @@ omic_to_model <- function(omic_data = NULL,
       }
     } else if (is.null(train_omic_data) && !is.null(test_omic_data)) {
       # Check if only test_omic_data is provided
-      if (message) {
+      if (isTRUE(message)) {
         message(paste(msg, 'Only test_omic_data is provided'))
       }
 

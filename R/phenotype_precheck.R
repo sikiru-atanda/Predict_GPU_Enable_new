@@ -1,3 +1,18 @@
+
+# Validate terms in fixed and random effects are present in pheno_data
+validate_terms <- function(term, data, term_type, gen_name) {
+  msg <- "==================================================\n"
+  term_vars <- all.vars(term)
+  if (!all(term_vars %in% names(data))) {
+    stop(msg, "All variables indicated in argument ", term_type, " should be present in phenotypic data.")
+  }
+  if(length(data[[gen_name]]) > length(unique(data[[gen_name]]))){
+    missing_factors <- term_vars[!sapply(data[term_vars], is.factor)]
+    data[missing_factors] <- lapply(data[missing_factors], factor)
+
+  }
+}
+
 #' Title
 #'
 #' @param pheno_data
@@ -27,7 +42,7 @@ phenotype_precheck <- function(pheno_data = NULL,
 
   # Ensure pheno_data is a data frame
   if (!inherits(pheno_data, 'data.frame')) {
-    if (message) warning(msg, "'pheno_data' is not of class 'data.frame'. Converting it to a data frame.")
+    if (isTRUE(message)) warning(msg, "'pheno_data' is not of class 'data.frame'. Converting it to a data frame.")
     pheno_data <- as.data.frame(pheno_data)
   }
 
@@ -61,21 +76,10 @@ phenotype_precheck <- function(pheno_data = NULL,
   # Check for zero variance in response variables
   zero_variance_responses <- response[sapply(pheno_data[response], function(x) var(x, na.rm = TRUE) == 0)]
   if (length(zero_variance_responses) > 0) {
-    stop(msg, paste(zero_variance_responses, "variable(s) have zero variance. These traits cannot be used for prediction model. Check the raw data and model that generate the BLUEs."))
+    msg <- "The following variable(s) have zero variance and cannot be used for prediction model: "
+    stop(msg, paste(zero_variance_responses, collapse=", "), ". Check the raw data and model that generate the estimates.")
   }
 
-  # Validate terms in fixed and random effects are present in pheno_data
-  validate_terms <- function(term, data, term_type, gen_name) {
-    term_vars <- all.vars(term)
-    if (!all(term_vars %in% names(data))) {
-      stop(msg, "All variables indicated in argument ", term_type, " should be present in phenotypic data.")
-    }
-    if(length(data[[gen_name]]) > length(unique(data[[gen_name]]))){
-      missing_factors <- term_vars[!sapply(data[term_vars], is.factor)]
-      data[missing_factors] <- lapply(data[missing_factors], factor)
-
-    }
-  }
 
   if (!is.null(fixed)) {
     validate_terms(fixed, pheno_data, "fixed", gen_name)

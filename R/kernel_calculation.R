@@ -27,7 +27,8 @@
 #'
 kernel_calculation <- function(
     M_matrix_clean = NULL,
-    scale=TRUE,
+    scaling = FALSE,
+    centering = TRUE,
     theta = NULL,
     alpha = 0.5,
     gamma = 1,
@@ -74,17 +75,33 @@ kernel_calculation <- function(
     stop(message(paste(msg,' Missing value is not expected.')), call. = FALSE)
     }
 
-  if(isFALSE(scale)){
-    if(isTRUE(message)) message(insight::print_color(paste(msg,paste("If data is not previously centered.It is recommend you center the data.")), "blue"))
+  ##Scaling: Prior to applying the Gaussian kernel,
+  ## scaling (and possibly centering) the data might still be beneficial
+  ## to ensure that all features contribute equally to the distance calculations.
+  ## This is particularly true if the SNP data is combined with other omic data
+  ## that might have different scales or units.
+  if(isFALSE(scaling)){
+    if(isTRUE(message)) message(insight::print_color(paste(msg,paste("If data is not previously scaled.It is recommend you scale the data.")), "blue"))
     }
 
-  if(isTRUE(scale) && !method%in%(c("Normalized_laplacian_kernel",
-                                     "spectral_kernel_matrix"
-                                     #"Matern_kernel_matrix"
-                                     ))){
+  if(isTRUE(scaling)){
 
     M_matrix_clean = scale(x = M_matrix_clean,center = TRUE,scale = TRUE)
+  }else {
+    if(isTRUE(centering)){
+
+      M_matrix_clean = scale(x = M_matrix_clean,center = TRUE,scale = FALSE)
+    }
   }
+
+
+  # if(isTRUE(scale) && !method%in%(c("Normalized_laplacian_kernel",
+  #                                    "spectral_kernel_matrix"
+  #                                    #"Matern_kernel_matrix"
+  #                                    ))){
+  #
+  #   M_matrix_clean = scale(x = M_matrix_clean,center = FALSE,scale = TRUE)
+  # }
   Gaussian_kernel <- function(M_matrix_clean, theta){
 
     dist<-as.matrix(stats::dist(M_matrix_clean))^2

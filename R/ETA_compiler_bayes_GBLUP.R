@@ -44,7 +44,7 @@ ETA_compiler_bayes_GBLUP <- function(
     heter_groups = NULL,
     ...
 ){
-#browser()
+##browser()
   ### Create empty list for ETA
 
   #rm(ZE, ZEZE, Zg, K1, K2, ETA)
@@ -118,6 +118,12 @@ ETA_compiler_bayes_GBLUP <- function(
 
   }
 
+  if (length(inter_gen_pos_mod)>=1){
+    if (length(pheno_data[,gen_name]) ==length(unique(pheno_data[,gen_name]))){
+      stop(print(paste(msg, "Phenotypic data contain single environment but you specify multi-environment analysis.")), call. = FALSE)
+    }
+
+  }
   #########
   #### When the genotype are present in more than one environment/location
   if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){

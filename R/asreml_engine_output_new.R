@@ -489,8 +489,8 @@ asreml_mod_output_new <- function(
 
   if(!is.null(Zg)){
     genotype_means <- pheno |>
-      dplyr::group_by(!!dplyr::sym(gen_name)) |>
-      dplyr::summarise(mean_value = mean(!!dplyr::sym(response), na.rm = TRUE))
+      dplyr::group_by(!!rlang::sym(gen_name)) |>
+      dplyr::summarise(mean_value = mean(!!rlang::sym(response), na.rm = TRUE))
     genotype_means <-  as.data.frame(genotype_means)
     # Reorder genotype_means based on name in predicted_value
     genotype_means <- genotype_means[match(predicted_value[, gen_name], genotype_means[[gen_name]]), ]
@@ -522,6 +522,7 @@ asreml_mod_output_new <- function(
   }
   gc()
   ################
+
   if (is.null(heter_groups) & is.null(var_cov_str)){inter_gen_pos <-  NULL}
   if(length(gen_pos) == length(rand_term)){inter_gen_pos <- NULL}
   if(!is.null(inter_gen_pos)){
@@ -553,7 +554,7 @@ asreml_mod_output_new <- function(
       },
     error = function(e) {
       # Handle the error, you can print a message or take other actions
-      cat("Error in across prediction", conditionMessage(e), "\n")
+      cat(paste("Error in across", heter_groups, "prediction:", conditionMessage(e), "\n"))
       return(NULL)  # Return NULL or an appropriate value to indicate the failure
     }
     )
@@ -607,6 +608,7 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
   stop(paste(msg, "Different names were provided."), call. = FALSE)
 }
 
+  ## Intialize step to calculate EBV across environment for each omics
   for (i in seq_along(datasets)) {
     dataset <- datasets[[i]]
     if (!is.null(dataset)) {
@@ -617,6 +619,7 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
       })
 
     }
+      ## This function calcuate EBV for each omics
       coefficients_list[[paste("coefficient",dataset_names[i], sep = "_")]] <- cal_coeff_asreml(gmatrix = if(!is.null(Zg)) ZgZg else dataset,
                                                                                                 ebv = estimated_breeding_value_list[[i]][, "BLUP"],
                                                                                                 heter_groups = heter_groups,

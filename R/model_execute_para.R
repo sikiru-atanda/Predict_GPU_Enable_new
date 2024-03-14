@@ -228,7 +228,6 @@ model_execute <- function(
     test_omics_label = list(test_omic1_data = NULL,
                             test_omic2_data = NULL,
                             test_omic3_data = NULL),
-    cross_validation = FALSE,
     coefficient_1 = NULL,
     coefficient_2 = NULL,
     coefficient_3 = NULL,
@@ -253,10 +252,10 @@ model_execute <- function(
     eval_metrics = NULL,
     fixed_term_model_bayesian = 'FIXED',
     rand_term_model_bayesian = NULL,
-    core = NULL,
+    #core = NULL,
     engine = NULL,
-    scale = TRUE,
-    #scaled = TRUE,
+    scaling = TRUE,
+    centering = FALSE,
     workspace = 1e08,
     pworkspace= 1e06,
     maxit = 50,
@@ -307,11 +306,30 @@ model_execute <- function(
     rr_paras_tunning = NULL,
     dpl_paras_tunning = NULL,
     AI_cv_nfolds = 5,
+    cross_validation = FALSE,
+    GS_model_cv = NULL,
+    nfolds = NULL,
+    sampling_method = NULL,
+    num_cores = NULL,
+    replication = NULL,
+    test_size = NULL,
+    cross_validation_meth = "Stratified_Hold_Out",
+    random_state = 123,
     ...
 ) {
 
-#browser()
+##browser()
     msg <- sprintf("==================================================\n")
+
+    eval_metrics_available <- c("accuracy", "mean_squared_error", "bias",
+                                "root_mean_squared_error", "relative_squared_error",
+                                "mean_absolute_error", "mean_absolute_percent_error")
+    if(!is.null(eval_metrics)){
+      if (!all(eval_metrics %in% eval_metrics_available)) {
+        stop("Invalid evaluation metrics for the model. Choose from: ",
+             paste(eval_metrics_available, collapse = ", "), call. = FALSE)
+      }
+    }
 
     # Define available models and variance structures
     var_cov_str_available <- c("us","corgh","corgv",
@@ -325,6 +343,57 @@ model_execute <- function(
     bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
 
     asreml_model <- "GBLUP"
+    all_models_avail <- c(AI_valid_models, bayes_valid_models,
+                          bayes_gblup_valid_models, asreml_model)
+
+#####
+    holds_out_methods_avail <- c("Hold_Out",
+                                 "Stratified_Hold_Out",
+                                 "Repeated_Hold_Out",
+                                 "Repeated_Stratified_Hold_Out",
+                                 "Leave_one_Out")
+
+    Kfolds_methods_avail <- c("K-Folds",
+                              "Stratified_K-Folds",
+                              "Repeated_K-Folds",
+                              "Repeated_Stratified_K-Folds")
+
+    CVs_multi_envs_methods_avail <- c("CV1",
+                                      "CV2",
+                                      "Repeated_CV1",
+                                      "Repeated_CV2")
+    all_cv_methods_avail <- c(holds_out_methods_avail,
+                              Kfolds_methods_avail,
+                              CVs_multi_envs_methods_avail)
+
+    ### Check for executing cross_validation
+    if(isTRUE(cross_validation)) {
+      if(is.null(GS_model_cv) || is.null(cross_validation_meth)) {
+        stop("GS_model_cv and cross_validation_meth cannot be null when cross_validation is TRUE")
+      }
+
+        if(!all(GS_model_cv%in%all_models_avail)){
+          stop("Invalid model. Choose from: ",
+               paste(all_models_avail, collapse = ", "), call. = FALSE)
+        }
+
+      if(length(cross_validation_meth)>1){
+        stop('use only one cross_validation method at a time')
+      }
+
+      if(!cross_validation_meth%in%all_cv_methods_avail){
+        stop("Invalid cross validation method. Choose from: ",
+             paste(all_cv_methods_avail, collapse = ", "), call. = FALSE)
+      }
+
+      if(is.null(eval_metrics)){
+        stop("Provide evaluation metrics for models comparison. Choose from: ",
+             paste(eval_metrics_available, collapse = ", "), call. = FALSE)
+      }
+
+    }
+
+
 
     # if(!is.null(var_cov_str)){
     # if (!(var_cov_str %in% var_cov_str_available)) {
@@ -334,15 +403,7 @@ model_execute <- function(
     # }
 #######################################
 
-    eval_metrics_available <- c("accuracy", "mean_squared_error", "bias",
-                                "root_mean_squared_error", "relative_squared_error",
-                                "mean_absolute_error", "mean_absolute_percent_error")
-    if(!is.null(eval_metrics)){
-    if (!(eval_metrics %in% eval_metrics_available)) {
-      stop("Invalid evaluation metrics for the model. Choose from: ",
-           paste(eval_metrics_available, collapse = ", "), call. = FALSE)
-      }
-    }
+
 
     kernel_method_avaliable <- c("Gaussian_kernel",
                                  "Linear_kernel",
@@ -482,7 +543,10 @@ model_execute <- function(
                                    train_set = train_set,
                                    test_set = test_set,
                                    response = response,
-                                   gen_name = gen_name)
+                                   gen_name = gen_name,
+                                   heter_groups = heter_groups,
+                                   random = random,
+                                   fixed = fixed)
 
  #if(length(pheno_clean)==0) stop("pheno is null")
 ## pheno_clean is a list that can have one or two elements
@@ -554,7 +618,8 @@ model_execute <- function(
                                    snp_call_rate_threshold = snp_call_rate_threshold,
                                    impute = impute,
                                    qc_filtering = qc_filtering,
-                                   message = message)
+                                   message = message,
+                                   heter_groups = heter_groups)
 
  } else {
      geno_res <-  list()
@@ -570,7 +635,8 @@ model_execute <- function(
                                 gen_name = gen_name,
                                 test_set = test_set,
                                 train_set = train_set,
-                                message = message)
+                                message = message,
+                                heter_groups = heter_groups)
 
  # Process omic2 data
  omic2_res <- process_omic_data(omic_data = omic2_data,
@@ -581,7 +647,8 @@ model_execute <- function(
                                 gen_name = gen_name,
                                 test_set = test_set,
                                 train_set = train_set,
-                                message = message)
+                                message = message,
+                                heter_groups = heter_groups)
 
  # Process omic3 data
  omic3_res <- process_omic_data(omic_data = omic3_data,
@@ -592,7 +659,8 @@ model_execute <- function(
                                 gen_name = gen_name,
                                 test_set = test_set,
                                 train_set = train_set,
-                                message = message)
+                                message = message,
+                                heter_groups = heter_groups)
  #################
  geno_omic_model_ready_list <- list()
  gmatrix_kernel_model_ready_list <- list()
@@ -720,23 +788,84 @@ model_execute <- function(
 
  }
 ### Concatenation of omics for ML
+ # When calling the function, pass the external variables as arguments
+ if (!is.null(GS_model) && is.null(GS_model_cv)) {
+   ml_dat_res <- AI_process_ml_data_if_valid(model_check = GS_model %in% AI_valid_models, geno_omic_model_ready_list, pheno_clean, response, gen_name)
 
- if (GS_model %in% AI_valid_models) {
-
-   ml_dat_res <- ML_data_processing(pheno_clean = pheno_clean,
-                                    response = response,
-                                    gen_name = gen_name,
-                                    geno_clean = if ("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
-                                    omic_clean = if (!"geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL
-   )
-
-
+ } else if (!is.null(GS_model_cv) && (is.null(GS_model) || !is.null(GS_model))) {
+   ml_dat_res <- AI_process_ml_data_if_valid(model_check = any(GS_model_cv %in% AI_valid_models), geno_omic_model_ready_list, pheno_clean, response, gen_name)
+ } else {
+   ml_dat_res <- list()
  }
+
+
 
  ### Ends
 #################################################################
 ############# Cross-Validation Start
+ if(isTRUE(cross_validation)){
+   model_prep_all_bayes_cv <-  NULL
 
+   if(any(GS_model_cv%in% c(bayes_valid_models, bayes_gblup_valid_models))){
+ model_prep_all_bayes_cv <- model_prep_bayes_cv(fixed = fixed,
+                                               random = random,
+                                               GS_model_cv = GS_model_cv,
+                                               response = response,
+                                               gen_name = gen_name,
+                                               pheno_data = pheno_clean[["pheno_clean_data"]],
+                                               weights = weights,
+                                               fixed_term_model_bayesian = fixed_term_model_bayesian,
+                                               rand_term_model_bayesian = rand_term_model_bayesian,
+                                               nIter = nIter,
+                                               burnIn = burnIn,
+                                               thin = thin,
+                                               geno_data = if("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
+                                               omic1_data = if("omic1_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic1_model_ready"]] else NULL,
+                                               omic2_data = if("omic2_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic2_model_ready"]] else NULL,
+                                               omic3_data = if("omic3_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic3_model_ready"]] else NULL,
+                                               omics_data_label = omics_data_label,
+                                               gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
+                                               omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
+                                               omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
+                                               omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
+                                               heter_groups = heter_groups,
+                                               omics_kernel_label = omics_kernel_label,
+                                               cross_validation = cross_validation)
+
+   }
+
+   cv_results <- models_execute_crossval(pheno_data = pheno_clean[["pheno_clean_data"]],
+                                        response = response,
+                                        gen_name = gen_name,
+                                        test_size = test_size,
+                                        random_state = random_state,
+                                        replication = replication,
+                                        heter_groups = heter_groups,
+                                        cross_validation_meth = cross_validation_meth,
+                                        nfolds = nfolds,
+                                        sampling_method = sampling_method,
+                                        model_prep_all_bayes_cv = model_prep_all_bayes_cv,
+                                        ml_dat_res = ml_dat_res,
+                                        GS_model_cv = GS_model_cv,
+                                        num_cores = num_cores,
+                                        eval_metrics = eval_metrics)
+
+if(cross_validation_meth%in%c("CV1",
+                              "CV2",
+                              "Repeated_CV1",
+                              "Repeated_CV2")){
+cv_results_processed <- cv1_cv2_and_across_env_result_plot_process(cv_results_data=cv_results,
+                                                                   eval_metrics = eval_metrics)
+
+} else {
+
+cv_results_processed <- cv_single_loc_result_plot_process(cv_results_data=cv_results,
+                                                          eval_metrics = eval_metrics)
+
+}
+
+
+ }
 
 
 ###############################################################
@@ -785,18 +914,18 @@ model_execute <- function(
                                                   nIter = nIter,
                                                   burnIn = burnIn,
                                                   thin = thin,
-                                                  omics_data_label = omics_data_label
-         )
+                                                  omics_data_label = omics_data_label,
+                                                  scaling = scaling)
 
      # Compute summary statistics and plot accuracy
      res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]], eval_metrics = eval_metrics)
-     res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
+     #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
      res_model_output <- res_model_output[["bayes_result"]]
 
      return(results_handling(GS_model = GS_model,
                              res_model_output = res_model_output,
                              res_summary_stat = res_summary_stat,
-                             res_plot = res_plot,
+                             res_plot = NULL,
                              geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
                              system_database = system_database))
 
@@ -850,7 +979,7 @@ model_execute <- function(
 
          # Compute summary statistics and plot accuracy
          res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]], eval_metrics = eval_metrics)
-         res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
+         #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
          res_model_output <- res_model_output[["bayes_result"]]
          ### This part is for GBLUP_BRR
          if(exists("GS_modeluse")){
@@ -860,7 +989,7 @@ model_execute <- function(
          return(results_handling(GS_model = GS_model,
                                  res_model_output = res_model_output,
                                  res_summary_stat = res_summary_stat,
-                                 res_plot = res_plot,
+                                 res_plot = NULL,
                                  geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
                                  system_database = system_database))
 
@@ -885,7 +1014,6 @@ model_execute <- function(
                               heter_resid = heter_resid,
                               var_cov_str = var_cov_str,
                               weights = weights,
-                              core = core,
                               pworkspace = pworkspace,
                               workspace = workspace,
                               maxit = maxit,
@@ -988,11 +1116,13 @@ model_execute <- function(
                 "Xgboost" = {
                     res_model_output <- AI_Xgb(pheno_object = ml_dat_res[["pheno_clean_data"]],
                                                response = response,
-                                               geno_omic_object = ml_dat_res[["merged_data"]],
-                                               geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                                               geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                                               geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
                                                message = message,
                                                gen_name = gen_name,
-                                               scale = scale,
+                                               scaling = scaling,
+                                               centering = centering,
+                                               omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                                                AI_cv_nfolds = AI_cv_nfolds,
                                                para_tunning = para_tunning,
                                                xgb_paras_tunning = xgb_paras_tunning
@@ -1001,11 +1131,13 @@ model_execute <- function(
                 "RandomForest" = {
                     res_model_output <- AI_randomForest(pheno_object = ml_dat_res[["pheno_clean_data"]],
                                                         response = response,
-                                                        geno_omic_object = ml_dat_res[["merged_data"]],
-                                                        geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                                                        geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                                                        geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
                                                         message = message,
                                                         gen_name = gen_name,
-                                                        scale = scale,
+                                                        scaling = scaling,
+                                                        centering = centering,
+                                                        omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                                                         AI_cv_nfolds = AI_cv_nfolds,
                                                         para_tunning = para_tunning,
                                                         rf_paras_tunning = rf_paras_tunning
@@ -1014,22 +1146,26 @@ model_execute <- function(
                 "PartialLeastSquare" = {
                     res_model_output <-  AI_pls(pheno_object = ml_dat_res[["pheno_clean_data"]],
                                                 response = response,
-                                                geno_omic_object = ml_dat_res[["merged_data"]],
-                                                geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                                                geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                                                geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
                                                 message = message,
                                                 gen_name = gen_name,
-                                                scale = scale,
+                                                scaling = scaling,
+                                                centering = centering,
+                                                omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                                                 para_tunning = para_tunning,
                                                 pls_paras_tunning = pls_paras_tunning)
                 },
                 "SupportVectorMachine" = {
                     res_model_output <- AI_svm(pheno_object = ml_dat_res[["pheno_clean_data"]],
                                                response = response,
-                                               geno_omic_object = ml_dat_res[["merged_data"]],
-                                               geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                                               geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                                               geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
                                                message = message,
                                                gen_name = gen_name,
-                                               scale = scale,
+                                               scaling = scaling,
+                                               centering = centering,
+                                               omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                                                AI_cv_nfolds = AI_cv_nfolds,
                                                para_tunning = para_tunning,
                                                svm_paras_tunning = svm_paras_tunning
@@ -1038,11 +1174,13 @@ model_execute <- function(
                 "K-NearestNeighbors" = {
                     res_model_output <- AI_knn(pheno_object = ml_dat_res[["pheno_clean_data"]],
                                                response = response,
-                                               geno_omic_object = ml_dat_res[["merged_data"]],
-                                               geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                                               geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                                               geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
                                                message = message,
                                                gen_name = gen_name,
-                                               scale = scale,
+                                               scaling = scaling,
+                                               centering = centering,
+                                               omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                                                AI_cv_nfolds = AI_cv_nfolds,
                                                para_tunning = para_tunning,
                                                knn_paras_tunning = knn_paras_tunning
@@ -1052,14 +1190,16 @@ model_execute <- function(
                     res_model_output <- AI_RidgeRegression_Lasso(
                         pheno_object = ml_dat_res[["pheno_clean_data"]],
                         response = response,
-                        geno_omic_object = ml_dat_res[["merged_data"]],
-                        geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                        geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                        geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
                         gen_name = gen_name,
                         para_tunning = para_tunning,
                         AI_cv_nfolds = AI_cv_nfolds,
                         lasso_paras_tunning = lasso_paras_tunning,
                         message = message,
-                        scale = scale,
+                        scaling = scaling,
+                        centering = centering,
+                        omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                         GS_model = GS_model
                     )
                 },
@@ -1067,14 +1207,16 @@ model_execute <- function(
                     res_model_output <- AI_RidgeRegression_Lasso(
                         pheno_object = ml_dat_res[["pheno_clean_data"]],
                         response = response,
-                        geno_omic_object = ml_dat_res[["merged_data"]],
-                        geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                        geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                        geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
                         gen_name = gen_name,
                         para_tunning = para_tunning,
                         AI_cv_nfolds = AI_cv_nfolds,
                         lasso_paras_tunning = rr_paras_tunning,
                         message = message,
-                        scale = scale,
+                        scaling = scaling,
+                        centering = centering,
+                        omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                         GS_model = GS_model,
                     )
                 },
@@ -1082,8 +1224,8 @@ model_execute <- function(
 
                     res_model_output <- deep_learning_model(
                         pheno_object=ml_dat_res[["pheno_clean_data"]],
-                        geno_omic_object = ml_dat_res[["merged_data"]],
-                        geno_omic_test_object = ml_dat_res[["merged_data_test"]],
+                        geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                        geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
                         response=response,
                         gen_name=gen_name,
                         num_hidden_layers = num_hidden_layers,
@@ -1094,7 +1236,9 @@ model_execute <- function(
                         validation_split = validation_split,
                         early_stop = early_stop,
                         message = message,
-                        scale = scale,
+                        scaling = scaling,
+                        centering = centering,
+                        omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                         para_tunning = para_tunning,
                         param_grid = dpl_paras_tunning
                     )
@@ -1105,7 +1249,7 @@ model_execute <- function(
                 }
          )
 
-#browser()
+##browser()
 #View(res_model_output[["predicted_values"]])
          res_summary_stat <- summary_statistics_AI(predicted_object = res_model_output[["predicted_values"]],
                                                    pheno_object = ml_dat_res[["pheno_clean_data"]],
@@ -1117,12 +1261,12 @@ model_execute <- function(
                                                    GS_model = GS_model
          )
 
-         res_plot <- plot_acc_AI(mod = res_model_output,
-                                 pheno_object = ml_dat_res[["pheno_clean_data"]],
-                                 response = response,
-                                 test_set = ml_dat_res[["test_set"]],
-                                 GS_model = GS_model
-         )
+         # res_plot <- plot_acc_AI(mod = res_model_output,
+         #                         pheno_object = ml_dat_res[["pheno_clean_data"]],
+         #                         response = response,
+         #                         test_set = ml_dat_res[["test_set"]],
+         #                         GS_model = GS_model
+         # )
 
          return(results_handling(GS_model = GS_model,
                                  res_model_output = res_model_output,

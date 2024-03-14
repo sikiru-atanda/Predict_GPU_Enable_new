@@ -27,9 +27,6 @@ CV1_CV2_for_multi_environment <- function(
 
   msg <- sprintf("==================================================\n")
 
-
-
-
   if (is.null(heter_groups)){stop(message(paste(msg,"Provide the a pointer (heter_groups) to the column contaning the environments")), call. = FALSE)}
   if(CV>2){stop(message(paste(msg,"CV must be 1 or 2")), call. = FALSE)}
   if(is.null(nfolds)){stop(message(paste(msg,"Provide value the number of desired folds")), call. = FALSE)}
@@ -41,8 +38,6 @@ CV1_CV2_for_multi_environment <- function(
 
   ID_GIDs = as.character(unique(pheno_data[, gen_name]))
   Envs_ID_GIDs = as.character(pheno_data[, gen_name])
-
-
 
   if(length(ID_GIDs)==length(Envs_ID_GIDs)){stop(message(paste(msg,'CV1 and CV2 works when number of environment is greater than 1')), call. = FALSE)}
 
@@ -80,7 +75,6 @@ CV1_CV2_for_multi_environment <- function(
   }
 
   if (CV == 2) {
-
 
     for (r in 1:replication) {
 

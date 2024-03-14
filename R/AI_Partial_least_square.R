@@ -27,18 +27,32 @@ AI_pls <- function(pheno_object=NULL,
                    response=NULL,
                    gen_name=NULL,
                    message = TRUE,
-                   scale = TRUE,
+                   scaling = TRUE,
+                   centering = FALSE,
+                   omic_count = NULL,
                    para_tunning = FALSE,
                    ncomp = 3,
                    pls_paras_tunning= c(ncomp = 10), # number of components
                    resample_method_tune = "cv", # c("cv","boot")
                    N_feature_impo = 10,
-                   core = NULL,
                    ...
 
 ){
   msg <- sprintf("==================================================\n")
+## Standardizing features is beneficial in PLS to
+## ensure that variables with larger scales do not dominate the model
+  if(!is.null(geno_omic_object) & !is.null(pheno_object)) {
+    if(isTRUE(scaling) || isFALSE(scaling)){
+      geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = TRUE)
+    }
 
+  }
+  if(!is.null(geno_omic_test_object)){
+    if(isTRUE(scaling) || isFALSE(scaling)){
+      geno_omic_test_object <- scale(geno_omic_test_object, center = TRUE, scale = TRUE)
+    }
+
+  }
   # Define cross-validation control
   cv <- caret::trainControl(method = resample_method_tune, number = 10)
 

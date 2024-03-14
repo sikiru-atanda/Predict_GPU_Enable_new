@@ -25,9 +25,10 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
                    geno_omic_test_object = NULL,
                    response=NULL,
                    gen_name=NULL,
-                   core = NULL,
                    message = TRUE,
-                   scale = TRUE,
+                   scaling = TRUE,
+                   centering = FALSE,
+                   omic_count = NULL,
                    AI_cv_nfolds = 5,
                    para_tunning = FALSE,
                    lasso_paras_tunning= c(lambda_tune=NULL),
@@ -38,6 +39,18 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
 
 ){
 
+  if(!is.null(geno_omic_object) & !is.null(pheno_object)) {
+    if(isTRUE(scaling) || isFALSE(scaling)){
+      geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = TRUE)
+    }
+
+  }
+  if(!is.null(geno_omic_test_object)){
+    if(isTRUE(scaling) || isFALSE(scaling)){
+      geno_omic_test_object <- scale(geno_omic_test_object, center = TRUE, scale = TRUE)
+    }
+
+  }
   #msg <- sprintf("==================================================\n")
   #####################################################################
   if (is.null(lambda) & !inherits(lambda, 'numeric')){

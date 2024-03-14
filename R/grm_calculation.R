@@ -62,10 +62,10 @@ grm_calculation <- function(
   ## order in the geno_clean data
 
   # Validate input
-  if(!is.matrix(geno_data)) stop(msg, "geno_data must be a matrix.")
+  if(!is.matrix(geno_clean)) stop(msg, "snp/marker data must be a matrix.")
   if(!is.null(weight) && !is.matrix(weight)) stop("weight must be a matrix if provided.")
-  if(!is.null(weight) && !all(rownames(weight) %in% colnames(geno_data))) {
-    stop("Not all SNPs in weight are present in geno_data.")
+  if(!is.null(weight) && !all(rownames(weight) %in% colnames(geno_clean))) {
+    stop("Not all SNPs in weight are present in snp/marker data.")
   }
 
   gmatrix_method_available <- c("VanRaden",
@@ -82,8 +82,8 @@ grm_calculation <- function(
 
   if(!is.null(weight)){
 
-    weight <- weight[match(colnames(geno_data), rownames(weight)), , drop = FALSE]
-    if(!identical(colnames(geno_data), rownames(weight))) stop("SNP order in weight does not match geno_data.")
+    weight <- weight[match(colnames(geno_clean), rownames(weight)), , drop = FALSE]
+    if(!identical(colnames(geno_clean), rownames(weight))) stop("SNP order in weight does not match geno_clean.")
     #weight <- diag(as.vector(weight))
 
     # Literature
@@ -106,12 +106,12 @@ grm_calculation <- function(
    #
    # }
    # ## This check if the snp name and that in the weight did not match or not the same order.
-   # if (!identical(colnames(geno_clean), rownames(weight))) stop(print(paste(msg, 'Snp marker should be equivalent in both weight geno_data.')), call. = FALSE)
+   # if (!identical(colnames(geno_clean), rownames(weight))) stop(print(paste(msg, 'Snp marker should be equivalent in both weight geno_clean.')), call. = FALSE)
  }
   #if(class(geno_clean)[1]!= "matrix") stop(print(paste(msg, 'object geno_clean must be matrix.')), call. = FALSE)
 
   freq <- colMeans(geno_clean)/2
-  if (any(is.na(geno_clean) | freq == 0 | freq == 1)) geno_clean= Remove_NA_Mono_SNP(geno_clean= geno_clean)
+  if (any(is.na(geno_clean) | freq == 0 | freq == 1)) geno_clean <- Remove_NA_Mono_SNP(geno_clean= geno_clean)
 
   ## Check if SNP data is coded 0, 1, 2
 

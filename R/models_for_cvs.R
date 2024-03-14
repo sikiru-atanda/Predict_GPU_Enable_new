@@ -27,11 +27,18 @@ AI_xgboost_cv <- function(y,
                           eta = 0.001,
                           nrounds = 5000,
                           max_depth = 6,
-                          scale = TRUE,
+                          scaling = FALSE,
+                          centering = TRUE,
+                          omic_count,
                           gamma = 4,
                           subsample = 0.5,
                           colsample_bytree = 1){
 
+  if(!is.null(omics)) {
+    if(isTRUE(scaling) || !is.null(omic_count)){
+      omics <- scale(omics, center = TRUE, scale = TRUE)
+    }
+  }
   ### Set the paramters and hyper parameters for extreme graident boosting
   suppressWarnings({
   xgb_params <- list(
@@ -74,7 +81,15 @@ AI_pls_cv <- function(y,
                       omics,
                       tst,
                       ncomp = 3,
-                      scale = TRUE){
+                      scaling = FALSE,
+                      centering = TRUE,
+                      omic_count){
+
+  if(!is.null(omics)) {
+    if(isTRUE(scaling) || isFALSE(scaling)){
+      omics <- scale(omics, center = TRUE, scale = TRUE)
+    }
+  }
 
   pls_model <- pls::plsr(y~ omics,
                          scale = FALSE,
@@ -106,12 +121,19 @@ AI_pls_cv <- function(y,
 }
 ######
 AI_randomforest_cv <- function(y,
-                     omics,
-                     tst,
-                     ntree = 500,
-                     scale = TRUE){
+                               omics,
+                               tst,
+                               ntree = 500,
+                               scaling = FALSE,
+                               centering = TRUE,
+                               omic_count){
 
-  fit = randomForest::randomForest(x = omics[-tst, ],
+  if(!is.null(omics)) {
+    if(isTRUE(scaling) || !is.null(omic_count)){
+      omics <- scale(omics, center = TRUE, scale = TRUE)
+    }
+  }
+  fit <- randomForest::randomForest(x = omics[-tst, ],
                                    y = y[-tst],
                                    ntree = ntree,
                                    importance = TRUE)
@@ -129,8 +151,15 @@ AI_randomforest_cv <- function(y,
 AI_ridge_regression_cv <- function(y,
                                    omics,
                                    tst,
-                                   scale = TRUE){
+                                   scaling = FALSE,
+                                   centering = TRUE,
+                                   omic_count){
 
+  if(!is.null(omics)) {
+    if(isTRUE(scaling) || isFALSE(scaling)){
+      omics <- scale(omics, center = TRUE, scale = TRUE)
+    }
+  }
   fit_CV<-glmnet::cv.glmnet(x= omics[-tst, ],
                             y = y[-tst],
                             nfolds = 5,
@@ -139,10 +168,10 @@ AI_ridge_regression_cv <- function(y,
                             lambda = seq(0.000001,0.9,length.out=100)^4)
 
   fit <-  glmnet::glmnet(x=omics[-tst, ],
-                       y = y[-tst],
-                       alpha = 0,
-                       standardize = FALSE,
-                       lambda =fit_CV$lambda.min)
+                         y = y[-tst],
+                         alpha = 0,
+                         standardize = FALSE,
+                         lambda =fit_CV$lambda.min)
 
   preds <- stats::predict(fit,
                           omics[tst, ],
@@ -158,8 +187,15 @@ AI_ridge_regression_cv <- function(y,
 AI_lasso_cv <- function(y,
                         omics,
                         tst,
-                        scale = TRUE){
+                        scaling = FALSE,
+                        centering = TRUE,
+                        omic_count){
 
+  if(!is.null(omics)) {
+    if(isTRUE(scaling) || isFALSE(scaling)){
+      omics <- scale(omics, center = TRUE, scale = TRUE)
+    }
+  }
   fit_CV<-glmnet::cv.glmnet(x= omics[-tst, ],
                             y= y[-tst],
                             nfolds = 5,
@@ -168,10 +204,10 @@ AI_lasso_cv <- function(y,
                             lambda = seq(0.000001,0.9,length.out=100)^4)
 
   fit <-  glmnet::glmnet(x= omics[-tst, ],
-                       y = y[-tst],
-                       alpha = 1,
-                       standardize = FALSE,
-                       lambda =fit_CV$lambda.min)
+                         y = y[-tst],
+                         alpha = 1,
+                         standardize = FALSE,
+                         lambda =fit_CV$lambda.min)
 
   preds <- stats::predict(fit,
                           omics[tst, ],
@@ -187,12 +223,20 @@ AI_lasso_cv <- function(y,
 AI_knn_cv <- function(y,
                       omics,
                       tst,
-                      scale = TRUE,
+                      scaling = FALSE,
+                      centering = TRUE,
+                      omic_count,
                       k = 5){
 
+  if(!is.null(omics)) {
+    if(isTRUE(scaling) || isFALSE(scaling)){
+      omics <- scale(omics, center = TRUE, scale = TRUE)
+    }
+  }
+
      fit <-  caret::knnreg(x = omics[-tst, ],
-                         y = y[-tst],
-                         k = k)
+                           y = y[-tst],
+                           k = k)
 
 
   preds <- stats::predict(fit,
@@ -211,14 +255,22 @@ AI_knn_cv <- function(y,
 AI_svm_cv <- function(y,
                       omics,
                       tst,
-                      scale = TRUE,
+                      scaling = FALSE,
+                      centering = TRUE,
+                      omic_count,
                       c = 1){
 
+  if(!is.null(omics)) {
+    if(isTRUE(scaling) || isFALSE(scaling)){
+      omics <- scale(omics, center = TRUE, scale = TRUE)
+    }
+  }
+
   fit <-  kernlab::ksvm(x = omics[-tst, ],
-                      y = y[-tst],
-                      scaled  = FALSE,
-                      type = "nu-svr",
-                      C = c)
+                        y = y[-tst],
+                        scaled  = FALSE,
+                        type = "nu-svr",
+                        C = c)
 
   preds <- kernlab::predict(fit,
                             omics[tst, ])

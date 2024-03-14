@@ -39,10 +39,13 @@ phenotype_to_model <- function(
                               test_set = NULL,
                               response=NULL,
                               gen_name=NULL,
+                              heter_groups = NULL,
+                              random = NULL,
+                              fixed = NULL,
                               ...
                           ) {
 
-      msg <- sprintf("==================================================\n")
+msg <- sprintf("==================================================\n")
 
 
   ## Check availability of pheno_datatypic data (training and testing set). This
@@ -54,7 +57,10 @@ phenotype_to_model <- function(
 
     pheno_data <- phenotype_precheck(pheno_data= pheno_data,
                                      gen_name = gen_name,
-                                      response = response)
+                                     response = response,
+                                     heter_groups = heter_groups,
+                                     random = random,
+                                     fixed, fixed)
 
     if(!is.null(test_set)){
 
@@ -152,7 +158,10 @@ phenotype_to_model <- function(
 
       pheno_data_train_ <- phenotype_precheck(pheno_data= pheno_data_train,
                                               gen_name = gen_name,
-                                              response = response)
+                                              response = response,
+                                              heter_groups = heter_groups,
+                                              random = random,
+                                              fixed, fixed)
 
       if(attr(pheno_data_train_, "cleared")!="pass") {
 

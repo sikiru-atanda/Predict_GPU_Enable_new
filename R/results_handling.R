@@ -1,3 +1,11 @@
+save_ggplot <- function(plot, filename = "Yield", extension = "jpeg",
+                        width = 17, height = 12, units = "in", dpi = 300) {
+  # save plot plot with user defined name and parameters
+  ggplot2::ggsave(filename = paste0(filename, ".", extension),
+         plot = plot,
+         width = width, height = height, units = units, dpi = dpi)
+}
+
 #' Title
 #'
 #' @param GS_model
@@ -42,7 +50,7 @@ results_handling <-  function(GS_model = NULL,
     zip(file.path(pathout, zip_name), files = geno_omic_files, flags = "-q")
   }
 
-  saveOutput <- function(res_model_output, res_summary_stat,  pathout, GS_model) {
+  saveOutput <- function(res_model_output, res_summary_stat,  pathout, GS_model, res_plot = NULL) {
     for (i in 1:length(res_model_output)) {
 
       for(i in 1:length(res_model_output)){
@@ -135,13 +143,15 @@ results_handling <-  function(GS_model = NULL,
         write.csv(res_summary_stat[[s]],
                   file.path(pathout,paste(names(res_summary_stat)[s], "csv", sep = ".")),
                   row.names = FALSE)
-
       }
-
-
     }
   }
-  }
+  ####
+    if(!is.null(res_plot)){
+      save_ggplot(res_plot)
+    }
+
+}
 
   processMMatrixModelReady <- function(pathout) {
     files_in_directory <- list.files()

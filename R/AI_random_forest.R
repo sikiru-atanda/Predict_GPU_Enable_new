@@ -28,9 +28,10 @@ AI_randomForest <- function(pheno_object=NULL,
                    response=NULL,
                    gen_name=NULL,
                    AI_cv_nfolds = 5,
-                   core = NULL,
                    message = TRUE,
-                   scale = TRUE,
+                   scaling = TRUE,
+                   centering = FALSE,
+                   omic_count = NULL,
                    para_tunning = FALSE,
                    rf_paras_tunning= c(mtry_tune=NULL),
                    ntree=500,
@@ -42,7 +43,26 @@ AI_randomForest <- function(pheno_object=NULL,
 ){
 
   #msg <- sprintf("==================================================\n")
-## when length of response variable is 1
+
+  if(!is.null(geno_omic_object)){
+    if(isTRUE(scaling)){
+      geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = TRUE)
+    } else{
+      if(isTRUE(centering) && !is.null(omic_count)){
+        geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = FALSE)
+      }
+    }
+  }
+
+  if(!is.null(geno_omic_test_object)){
+    if(isTRUE(scaling)){
+      geno_omic_test_object <- scale(geno_omic_test_object, center = TRUE, scale = TRUE)
+    } else{
+      if(isTRUE(centering) && !is.null(omic_count)){
+        geno_omic_test_object <- scale(geno_omic_test_object, center = TRUE, scale = FALSE)
+      }
+    }
+  }
 #########################
 
      if(isTRUE(para_tunning)){

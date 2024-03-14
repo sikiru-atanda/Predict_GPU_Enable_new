@@ -15,7 +15,7 @@ omic_precheck <- function(object = NULL,
     if(inherits(object, "character")) stop(print(paste(msg,'Omic data should be data.frame or matrix not character.')), call. = FALSE)
     #if(class(object)[[1]]!="matrix"){
     if(!inherits(object, "matrix")){
-      if (message){
+      if(isTRUE(message)){
       message(paste(msg,"The data is not class matrix: we fix it." ))
       }
 
@@ -34,7 +34,7 @@ omic_precheck <- function(object = NULL,
 
     object <- object[ , -Na_col.omit]
 
-    if (message){
+    if (isTRUE(message)){
       message("A total of ", length(Na_col.omit),
               " variable(s) / sample(s) were removed from due to missing value")
 

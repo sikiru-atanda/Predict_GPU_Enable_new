@@ -33,6 +33,7 @@ Imports:
     matrixcalc,
     parallel,
     randomForest,
+    rlang,
     sommer,
     stats,
     stringr,

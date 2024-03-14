@@ -34,7 +34,8 @@ process_geno_data <- function(geno_data = NULL,
                               gen_name = NULL,
                               kernel_method = NULL,
                               gmatrix_method = NULL,
-                              scale = NULL,
+                              scale = FALSE,
+                              center = TRUE,
                               map_data = NULL,
                               maf_threshold = NULL,
                               het_threshold = NULL,
@@ -42,7 +43,8 @@ process_geno_data <- function(geno_data = NULL,
                               snp_call_rate_threshold = NULL,
                               impute = NULL,
                               qc_filtering = NULL,
-                              message = NULL,
+                              message = TRUE,
+                              heter_groups = heter_groups,
                               ...) {
 
   msg <- sprintf("==================================================\n")
@@ -86,6 +88,7 @@ process_geno_data <- function(geno_data = NULL,
                                     gen_name = gen_name,
                                     test_set = test_set,
                                     train_set = train_set,
+                                    heter_groups = heter_groups,
                                     message = message)
 
     if (length(pheno_match) > 1) {
@@ -106,6 +109,7 @@ process_geno_data <- function(geno_data = NULL,
   if (!is.null(kernel_method)) {
     kernel <- kernel_calculation(M_matrix_clean = cleaned_data[["snps_matrix"]],
                                  scale = scale,
+                                 center = center,
                                  method = kernel_method,
                                  message = message)
 
@@ -149,7 +153,13 @@ process_omic_data <- function(omic_data = NULL,
                               gen_name = NULL,
                               test_set = NULL,
                               train_set = NULL,
+                              heter_groups = NULL,
+                              center = TRUE,
+                              scale = FALSE,
+                              message = message,
                               ...) {
+
+  ##browser()
   msg <- sprintf("==================================================\n")
   if(isFALSE(((is.null(omic_data) & is.null(train_omic_data)) & is.null(test_omic_data)))){
     #if (!is.null(data) && !is.null(train_data) && !is.null(test_data)) {
@@ -169,6 +179,7 @@ process_omic_data <- function(omic_data = NULL,
                                       gen_name = gen_name,
                                       test_set = test_set,
                                       train_set = train_set,
+                                      heter_groups = heter_groups,
                                       message = message)
 
       if (length(pheno_match) > 1) {
@@ -189,6 +200,7 @@ process_omic_data <- function(omic_data = NULL,
     if (!is.null(kernel_method)) {
       kernel <- kernel_calculation(M_matrix_clean = cleaned_dataa,
                                    scale = scale,
+                                   center = center,
                                    method = kernel_method,
                                    message = message)
       #rm(cleaned_data)
