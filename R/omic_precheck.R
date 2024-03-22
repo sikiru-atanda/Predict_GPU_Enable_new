@@ -9,7 +9,8 @@
 #'
 #' @examples
 omic_precheck <- function(object = NULL,
-                          message = TRUE){
+                          message = TRUE,
+                          impute = FALSE){
   msg <- sprintf("==================================================\n")
   if(!is.null(object)){
     if(inherits(object, "character")) stop(print(paste(msg,'Omic data should be data.frame or matrix not character.')), call. = FALSE)
@@ -31,6 +32,19 @@ omic_precheck <- function(object = NULL,
 
     if (length(Na_col.omit)!=0){
     #object = object[ , colSums(is.na(object))==0]
+      if(isTRUE(impute)){
+        object <- apply(object, 2, function(coll) {
+          col_mean <- mean(coll, na.rm = TRUE)  # Calculate mean excluding NA
+          coll[is.na(coll)] <- round(col_mean)  # Replace NA with the rounded mean
+          return(coll)
+        })
+
+        if (isTRUE(message)){
+          message("A total of ", length(Na_col.omit),
+                  " variable(s) / sample(s) were detected with missing value and imputed.\n If you wish to remove set impute to False")
+
+        }
+      } else {
 
     object <- object[ , -Na_col.omit]
 
@@ -40,6 +54,7 @@ omic_precheck <- function(object = NULL,
 
     }
 
+      }
     }
 
     #if (any(is.na(object))) {stop(print(paste(msg,'object contains Missing value')), call. = FALSE)}

@@ -45,6 +45,9 @@ phenotype_to_model <- function(
                               ...
                           ) {
 
+  pheno_data_train_ <-  NULL
+
+  pheno_data_test_ <- NULL
 msg <- sprintf("==================================================\n")
 
 
@@ -66,12 +69,12 @@ msg <- sprintf("==================================================\n")
 
       if(is.data.frame(test_set) | is.matrix(test_set)){
 
-       test_set = test_set[, 1]
+       test_set <-  test_set[, 1]
 
 
       } else if (!is.list(test_set)){
 
-        test_set = test_set
+        test_set <-  test_set
 
       } else {
         if(is.list(test_set)){
@@ -88,9 +91,9 @@ msg <- sprintf("==================================================\n")
       pheno_data[, response] <- ifelse(pheno_data[, gen_name]%in%test_set, NA,
                                        pheno_data[, response])
 
-      test_set_ = test_set
-
-      rm(test_set)
+      # test_set_ = test_set
+      #
+      # rm(test_set)
 
     } else{
 
@@ -100,7 +103,7 @@ msg <- sprintf("==================================================\n")
 
         } else if (!is.list(train_set)){
 
-          train_set = train_set
+          train_set <-  train_set
         } else {
           if(is.list(train_set)){
 
@@ -112,12 +115,12 @@ msg <- sprintf("==================================================\n")
         pheno_data[, response] <- ifelse(!pheno_data[, gen_name]%in%train_set, NA,
                                          pheno_data[, response])
 
-        test_set_ <- data.frame(name = as.character(unique(pheno[!pheno_data[, gen_name]%in%train_set, gen_name])), stringsAsFactors = FALSE)
-        names(test_set) = gen_name
+        test_set <- data.frame(name = as.character(unique(pheno[!pheno_data[, gen_name]%in%train_set, gen_name])), stringsAsFactors = FALSE)
+        names(test_set) <- gen_name
 
-        if(nrow(test_set_)==0){
+        if(nrow(test_set)==0){
 
-          rm(test_set_)
+          #rm(test_set_)
 
           message(paste( insight::print_color("WARNINGS\n", "blue"),
                          insight::print_color(paste(msg,paste("The training set size is the same size as the unique genotypes in the pheno_data.")), "blue")))
@@ -201,7 +204,7 @@ msg <- sprintf("==================================================\n")
 
     #### if both pheno_data_train and pheno_data_test are provided
 
-    if ((exists("pheno_data_train_") & exists("pheno_data_test_")) & is.null(pheno_data)){
+    if ((!is.null(pheno_data_train_) & !is.null(pheno_data_test_)) & is.null(pheno_data)){
 
       if (!identical(colnames(pheno_data_train_), colnames(pheno_data_test_))){
         stop(message(paste(msg,'Columns name in the pheno_data_train not the same as pheno_data_test.')), call. = FALSE)
@@ -210,8 +213,8 @@ msg <- sprintf("==================================================\n")
 
         pheno_data <- rbind(pheno_data_train, pheno_data_test)
 
-        test_set_ <- data.frame(name = as.character(unique(pheno_data_test[, gen_name])), stringsAsFactors = FALSE)
-        names(test_set) = gen_name
+        test_set <- data.frame(name = as.character(unique(pheno_data_test[, gen_name])), stringsAsFactors = FALSE)
+        names(test_set) <- gen_name
 
         ### The result object has to pass the test attribute before it can be stored
 
@@ -234,17 +237,12 @@ msg <- sprintf("==================================================\n")
 
   #if(!is.null(pheno_data) & (!is.null(test_set) && !is.null(train_set))){
 
-  if(!is.null(pheno_data) & exists('test_set_')){
+  if(!is.null(pheno_data) & !is.null(test_set)){
 
-    if(!is.null(test_set_)){
+
 
     output <- list(pheno_clean_data = pheno_data,
-                   test_set = test_set_)
-
-
-    #names(output) <- c("pheno_data", "test_set")
-
-    }
+                   test_set = test_set)
 
     #rm(pheno_data, test_set)
 
@@ -259,10 +257,10 @@ msg <- sprintf("==================================================\n")
   } else {
 
 
-    if (exists("pheno_data_train_") & exists("pheno_data_test_")){
+    if (!is.null(pheno_data_train_) & !is.null(pheno_data_test_)){
 
     output <-   list(pheno_clean_data = pheno_data,
-                   test_set = test_set_)
+                     test_set = test_set)
 
     #names(output) <- c("pheno_data", "test_set")
 
@@ -274,3 +272,5 @@ msg <- sprintf("==================================================\n")
 
   return(output)
 }
+
+

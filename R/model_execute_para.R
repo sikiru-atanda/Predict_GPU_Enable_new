@@ -228,6 +228,7 @@ model_execute <- function(
     test_omics_label = list(test_omic1_data = NULL,
                             test_omic2_data = NULL,
                             test_omic3_data = NULL),
+    impute_omic = FALSE,
     coefficient_1 = NULL,
     coefficient_2 = NULL,
     coefficient_3 = NULL,
@@ -308,17 +309,23 @@ model_execute <- function(
     AI_cv_nfolds = 5,
     cross_validation = FALSE,
     GS_model_cv = NULL,
-    nfolds = NULL,
+    nfolds = 5,
     sampling_method = NULL,
     num_cores = NULL,
-    replication = NULL,
-    test_size = NULL,
+    replication = 1,
+    test_size = 0.3,
     cross_validation_meth = "Stratified_Hold_Out",
     random_state = 123,
+    metric_for_ranking = "accuracy",
+    plot_extension = "jpeg",
+    plot_width = 17,
+    plot_height = 12,
+    plot_units = "in",
+    plot_dpi = 300,
     ...
 ) {
 
-##browser()
+
     msg <- sprintf("==================================================\n")
 
     eval_metrics_available <- c("accuracy", "mean_squared_error", "bias",
@@ -391,6 +398,31 @@ model_execute <- function(
              paste(eval_metrics_available, collapse = ", "), call. = FALSE)
       }
 
+      ###
+      ## forget to choose sampling stratgy or replication is not defined.
+      patterns <- c("stratified", "Repeated")
+
+      # Use sapply to apply grep to each pattern and return a named logical vector indicating presence.
+      if(is.null(sampling_method) | is.null(replication)){
+        matche_strings <- sapply(patterns, function(pattern) {
+          length(grep(pattern, cross_validation_meth, ignore.case = TRUE)) > 0
+        }, simplify = FALSE)
+
+        # Name the list elements with the patterns.
+        names(matche_strings) <- patterns
+
+        # Filter to get only the patterns that were found.
+        present_patterns <- names(matche_strings)[unlist(matche_strings)]
+
+        if("stratified"%in%present_patterns) sampling_method <- "stratified"
+
+        if("Repeated"%in%present_patterns) {
+          stop("You select repeated cross-validation provide number of replications.\n For example, replication = 2")
+        }
+
+
+      }
+
     }
 
 
@@ -431,11 +463,12 @@ model_execute <- function(
       }
     }
     #############################
-    if(is.null(GS_model)){
+    if(is.null(GS_model) & isFALSE(cross_validation)){
       stop(paste(msg, "Genomic prediction model is missing."), call. = FALSE)
 
     }else{
-      if (!(GS_model %in% c(bayes_valid_models,
+      if(!isFALSE(cross_validation)){
+      if (!any(GS_model_cv %in% c(bayes_valid_models,
                             bayes_gblup_valid_models,
                             asreml_model,
                             AI_valid_models))) {
@@ -445,6 +478,20 @@ model_execute <- function(
                                                                       AI_valid_models), collapse = ", "),
            call. = FALSE)
       }
+      } else {
+      if(!is.null(GS_model) & isFALSE(cross_validation)){
+        if (!any(GS_model %in% c(bayes_valid_models,
+                                 bayes_gblup_valid_models,
+                                 asreml_model,
+                                 AI_valid_models))) {
+          stop("Invalid genomic prediction model. Choose from:\n", paste(c(bayes_valid_models,
+                                                                           bayes_gblup_valid_models,
+                                                                           asreml_model,
+                                                                           AI_valid_models), collapse = ", "),
+               call. = FALSE)
+        }
+      }
+    }
 
     }
 
@@ -462,77 +509,104 @@ model_execute <- function(
     ###################
 
     # Check for ASReml requirement for GBLUP
-    if(!is.null(engine)){
-    if (GS_model == "GBLUP" && engine != "asreml") {
-      stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
-    }
-
-    } else {
-
-      if(is.null(engine) & GS_model == "GBLUP"){
-        stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
-      }
-    }
+    # if(!is.null(engine)){
+    # if(isFALSE(cross_validation)){
+    # if (GS_model == "GBLUP" && engine != "asreml") {
+    #   stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
+    #  }
+    # } else {
+    #   if ("GBLUP" %in%GS_model_cv && engine != "asreml") {
+    #     stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
+    #   }
+    # }
+    #
+    # } else {
+    #  if(isFALSE(cross_validation)){
+    #   if(is.null(engine) & GS_model == "GBLUP"){
+    #     stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
+    #   }
+    #
+    #  } else {
+    #    if(is.null(engine) & "GBLUP" %in%GS_model_cv){
+    #      stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
+    #    }
+    #  }
+    # }
 
     # Check for multi-environment structure and required inputs for GBLUP
-    if (length(pheno_data[,gen_name]) > length(unique(pheno_data[,gen_name]))){
-      if( is.null(heter_groups)){
-        stop(paste(msg, "Your phenotypic data has a multi-environment structure,\n but the column containing the environment/location is missing.\n Please provide heter_groups parameter.\n For example: heter_groups = 'locations'.\n If you have location as column name in your phenotypic data."), call. = FALSE)
-      }
-
-      ### This is important for asreml for multi-environment analysis
-      if (GS_model %in% "GBLUP") {
-        if ((!is.null(heter_groups) & !is.null(heter_resid)) & is.null(var_cov_str)) {
-          stop(msg, "Your data suggest multi-environment but variance-covariance structure is missing.Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
-        } else if ((!is.null(heter_groups) & is.null(heter_resid)) & !is.null(var_cov_str)){
-          stop(msg, "Your data suggest multi-environment but variance-covariance structure. heter_resid must be TRUE.", call. = FALSE)
-          } else {
-          if (!(var_cov_str %in% var_cov_str_available)) {
-            stop(msg, "Invalid output variance-covariance structure. Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
-          }
-        }
-      }
-      # Check for required inputs for multi-environment GBLUP
-      # Check if condition1 is true
-      if (GS_model %in% c(bayes_gblup_valid_models, "GBLUP")){
-        if (condition1!=condition1_1 & isTRUE(condition2)) {
-          #print('ok')
-          stop(paste(msg, "To fit a Bayesian or ASReml multi-environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
-        }
-
-      }
-
-    } else {
-
-    # Check for single environment GBLUP and Bayesian models
-    if (length(pheno_data[,gen_name]) == length(unique(pheno_data[,gen_name]))){
- #### In case user erroneously provide this while it is a single location
-      if(!is.null(heter_groups)) heter_groups <- NULL
-      if(!is.null(heter_resid)) heter_resid <- NULL
-      if(!is.null(var_cov_str)) var_cov_str <- NULL
-      # Check for required inputs for Bayesian or ASReml single environment GBLUP models
-      if (GS_model %in% c(bayes_gblup_valid_models, "GBLUP")){
-        if (condition1!=condition1_1 & isTRUE(condition2)) {
-          #print('ok')
-          stop(paste(msg, "To fit a Bayesian or ASReml single environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
-        }
-
-      }
-
-
-      # Check for required inputs for Bayesian models
-      if (GS_model %in% c(bayes_valid_models, AI_valid_models)){
-        if (isTRUE(condition1)) {
-          #print('ok')
-          stop(paste(msg, "To fit a Bayesian or machine learning model, provide genomic or omics data."), call. = FALSE)
-        }
-
-      }
-
-    }
-
-    }
+ #    if (length(pheno_data[,gen_name]) > length(unique(pheno_data[,gen_name]))){
+ #      if( is.null(heter_groups)){
+ #        stop(paste(msg, "Your phenotypic data has a multi-environment structure,\n but the column containing the environment/location is missing.\n Please provide heter_groups parameter.\n For example: heter_groups = 'locations'.\n If you have location as column name in your phenotypic data."), call. = FALSE)
+ #      }
+ #
+ #      ### This is important for asreml for multi-environment analysis
+ #      if (GS_model %in% "GBLUP") {
+ #        if ((!is.null(heter_groups) & !is.null(heter_resid)) & is.null(var_cov_str)) {
+ #          stop(msg, "Your data suggest multi-environment but variance-covariance structure is missing.Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
+ #        } else if ((!is.null(heter_groups) & is.null(heter_resid)) & !is.null(var_cov_str)){
+ #          stop(msg, "Your data suggest multi-environment but variance-covariance structure. heter_resid must be TRUE.", call. = FALSE)
+ #          } else {
+ #          if (!(var_cov_str %in% var_cov_str_available)) {
+ #            stop(msg, "Invalid output variance-covariance structure. Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
+ #          }
+ #        }
+ #      }
+ #      # Check for required inputs for multi-environment GBLUP
+ #      # Check if condition1 is true
+ #      if (GS_model %in% c(bayes_gblup_valid_models, "GBLUP")){
+ #        if (condition1!=condition1_1 & isTRUE(condition2)) {
+ #          #print('ok')
+ #          stop(paste(msg, "To fit a Bayesian or ASReml multi-environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
+ #        }
+ #
+ #      }
+ #
+ #    } else {
+ #
+ #    # Check for single environment GBLUP and Bayesian models
+ #    if (length(pheno_data[,gen_name]) == length(unique(pheno_data[,gen_name]))){
+ # #### In case user erroneously provide this while it is a single location
+ #      if(!is.null(heter_groups)) heter_groups <- NULL
+ #      if(!is.null(heter_resid)) heter_resid <- NULL
+ #      if(!is.null(var_cov_str)) var_cov_str <- NULL
+ #      # Check for required inputs for Bayesian or ASReml single environment GBLUP models
+ #      if (GS_model %in% c(bayes_gblup_valid_models, "GBLUP")){
+ #        if (condition1!=condition1_1 & isTRUE(condition2)) {
+ #          #print('ok')
+ #          stop(paste(msg, "To fit a Bayesian or ASReml single environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
+ #        }
+ #
+ #      }
+ #
+ #
+ #      # Check for required inputs for Bayesian models
+ #      if(isTRUE(cross_validation)){
+ #        if(GS_model_cv%in%c(bayes_valid_models, AI_valid_models))
+ #          if (isTRUE(condition1)) {
+ #            #print('ok')
+ #            stop(paste(msg, "To fit a Bayesian or machine learning model, provide genomic or omics data."), call. = FALSE)
+ #          }
+ #      } else{
+ #      if (GS_model %in% c(bayes_valid_models, AI_valid_models)){
+ #        if (isTRUE(condition1)) {
+ #          #print('ok')
+ #          stop(paste(msg, "To fit a Bayesian or machine learning model, provide genomic or omics data."), call. = FALSE)
+ #        }
+ #
+ #      }
+ #
+ #    }
+ #
+ #    }
+ #
+ #    }
     ##
+
+    # Main Script
+    checkForASReml(engine, GS_model, GS_model_cv, cross_validation, msg)
+    validateMultiEnvironment(pheno_data, gen_name, heter_groups, heter_resid, var_cov_str, GS_model, var_cov_str_available,cross_validation, GS_model_cv, msg)
+    validateModelRequirements(GS_model, GS_model_cv, bayes_gblup_valid_models, condition1, condition1_1, condition2, cross_validation, msg)
+
 ### Check phenotype_to_model for details
  #    This serve as gateway between phenotype-precheck function and readiness of
  #    the phenotypic data for model fitting.
@@ -636,7 +710,8 @@ model_execute <- function(
                                 test_set = test_set,
                                 train_set = train_set,
                                 message = message,
-                                heter_groups = heter_groups)
+                                heter_groups = heter_groups,
+                                impute_omic = impute_omic)
 
  # Process omic2 data
  omic2_res <- process_omic_data(omic_data = omic2_data,
@@ -648,7 +723,8 @@ model_execute <- function(
                                 test_set = test_set,
                                 train_set = train_set,
                                 message = message,
-                                heter_groups = heter_groups)
+                                heter_groups = heter_groups,
+                                impute_omic = impute_omic)
 
  # Process omic3 data
  omic3_res <- process_omic_data(omic_data = omic3_data,
@@ -660,7 +736,8 @@ model_execute <- function(
                                 test_set = test_set,
                                 train_set = train_set,
                                 message = message,
-                                heter_groups = heter_groups)
+                                heter_groups = heter_groups,
+                                impute_omic = impute_omic)
  #################
  geno_omic_model_ready_list <- list()
  gmatrix_kernel_model_ready_list <- list()
@@ -668,11 +745,15 @@ model_execute <- function(
  if (length(geno_res)!=0 && all(c("gmatrix", "geno_model_ready") %in% names(geno_res))) {
    gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- geno_res[["gmatrix"]]
    geno_omic_model_ready_list[["geno_model_ready"]] <- geno_res[["geno_model_ready"]]
- } else if (length(geno_res)!=0 && "geno_model_ready" %in% names(geno_res)) {
-   geno_omic_model_ready_list[["geno_model_ready"]] <- geno_res[["geno_model_ready"]]
- } else if(!is.null(gmatrix)){
+ } else {
+   if (length(geno_res)!=0 && "geno_model_ready" %in% names(geno_res)) {
+     geno_omic_model_ready_list[["geno_model_ready"]] <- geno_res[["geno_model_ready"]]
+   }
+ }
+ ##
+ if(!is.null(gmatrix)){
    gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- gmatrix
-  } else {
+ } else {
    if (!is.null(gkernel)) {
      gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- gkernel
    }
@@ -799,12 +880,29 @@ model_execute <- function(
  }
 
 
-
  ### Ends
 #################################################################
 ############# Cross-Validation Start
+
+ best_models <-  NULL
+ best_models_ggplot_rep <- NULL
+ best_models_ggplot_mean <- NULL
+ cv_results_processed <-  NULL
+ model_prep_all_bayes_cv <-  NULL
+
  if(isTRUE(cross_validation)){
-   model_prep_all_bayes_cv <-  NULL
+   #model_prep_all_bayes_cv <-  NULL
+   test_set <-  if("test_set"%in%names(pheno_clean)) pheno_clean[["test_set"]] else NULL
+
+   if(!is.null(test_set)){
+     if(is.data.frame(test_set) | is.matrix(test_set)){
+       test_set <-  test_set[, 1]
+       test_set <-  unique(test_set) ## incase of MET pheno data
+     }
+
+   }
+   pheno_data <-  pheno_clean[["pheno_clean_data"]]
+   if(!is.null(test_set)) pheno_data[pheno_data[[gen_name]] %in% test_set, ] else pheno_data
 
    if(any(GS_model_cv%in% c(bayes_valid_models, bayes_gblup_valid_models))){
  model_prep_all_bayes_cv <- model_prep_bayes_cv(fixed = fixed,
@@ -812,7 +910,8 @@ model_execute <- function(
                                                GS_model_cv = GS_model_cv,
                                                response = response,
                                                gen_name = gen_name,
-                                               pheno_data = pheno_clean[["pheno_clean_data"]],
+                                               pheno_data = pheno_data,
+                                               test_set = test_set,
                                                weights = weights,
                                                fixed_term_model_bayesian = fixed_term_model_bayesian,
                                                rand_term_model_bayesian = rand_term_model_bayesian,
@@ -834,7 +933,8 @@ model_execute <- function(
 
    }
 
-   cv_results <- models_execute_crossval(pheno_data = pheno_clean[["pheno_clean_data"]],
+   cv_results <- models_execute_crossval(pheno_data = pheno_data,
+                                        test_set = test_set,
                                         response = response,
                                         gen_name = gen_name,
                                         test_size = test_size,
@@ -857,13 +957,25 @@ if(cross_validation_meth%in%c("CV1",
 cv_results_processed <- cv1_cv2_and_across_env_result_plot_process(cv_results_data=cv_results,
                                                                    eval_metrics = eval_metrics)
 
+best_models <- cv_results_processed[["best_models_list"]][[metric_for_ranking]]
+
+best_models_ggplot_rep <- cv_results_processed[["plot_reps_list"]][[metric_for_ranking]][["ggplot_boxplot_reps"]]
+
+best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_ranking]][["ggplot_lineplot_mean"]]
+
+
 } else {
 
 cv_results_processed <- cv_single_loc_result_plot_process(cv_results_data=cv_results,
                                                           eval_metrics = eval_metrics)
 
-}
+best_models <- cv_results_processed[["best_models_list"]][[metric_for_ranking]]
 
+best_models_ggplot_rep <- cv_results_processed[["plot_reps_list"]][[metric_for_ranking]][["ggplot_boxplot_reps"]]
+
+best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_ranking]][["ggplot_lineplot_mean"]]
+
+  }
 
  }
 
@@ -878,166 +990,197 @@ cv_results_processed <- cv_single_loc_result_plot_process(cv_results_data=cv_res
  ##########################################################################
  #######################################################################
 
+ ## sik ############################################################################################ sik
 
-    ### Model BRR for single location
- #if(((GS_model=="BRR") & is.null(rand_term_model_bayesian)) || ((is.null(GS_model) & (rand_term_model_bayesian=="BRR")))){
 
-    # if((isTRUE(GS_model== "BRR" | GS_model== "BayesA"|  GS_model== "BayesB"| GS_model== "BayesC" | GS_model== "BL") & is.null(rand_term_model_bayesian)) |
-    #    ((is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL"))))) |
-    #    ((!is.null(GS_model) & isTRUE(all(rand_term_model_bayesian%in%c("BRR", "BayesA", "BayesB", "BayesC", "BL")))))){
+ geno_qc_stat <- if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL
 
- #### These models only works with one environment/location
- if(length(pheno_clean[["pheno_clean_data"]][,gen_name])==length(unique(pheno_clean[["pheno_clean_data"]][,gen_name]))){
+ #is this correct?
+ if(!is.null(best_models)){
+   n_trait <- length(best_models[["trait"]])
+   n_model <- length(best_models[["model"]])
+
+ } else {
+   if (length(GS_model) > 1) {
+     if (length(GS_model) != length(response)) {
+       stop("When the number of models is more than one, the number of models should be the same as the number of traits.")
+     }
+   }
+
+   task <- data.frame(model = GS_model, trait = response, stringsAsFactors = FALSE)
+   n_trait <-  length(response)
+   n_model <- length(GS_model)
+ }
+ # Main logic
+ sys_name <- Sys.info()["sysname"]
+ if (!is.null(num_cores) && num_cores > 1) {
+   #sys_name <- Sys.info()["sysname"]
+   set_parallel_plan(n_trait = n_trait, n_model = n_model,
+                     sys_name = sys_name)
+ } else {
+   # Automatically determine the number of cores and use half of them
+   detected_cores <- parallel::detectCores(logical = TRUE)
+   # For non-Windows systems, consider physical cores only
+   num_cores <- round(detected_cores * 0.5)
+
+   set_parallel_plan(n_trait= n_trait, n_model = n_model,num_cores = num_cores,
+                     sys_name = sys_name)
+ }
+
+ #results_use = results
+
+ results <- future.apply::future_lapply(seq_len(nrow(best_models)), function(i) {
+   task_row <- best_models[i, ]
+
+   response <- as.character(task_row$trait)
+   GS_model <- as.character(task_row$model)
+
+   #### These models only works with one environment/location
+   if(length(pheno_clean[["pheno_clean_data"]][,gen_name])==length(unique(pheno_clean[["pheno_clean_data"]][,gen_name]))){
 
      if ((GS_model %in% bayes_valid_models && is.null(rand_term_model_bayesian)) ||
          (is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_valid_models)) ||
          (!is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_valid_models))) {
 
-
-       # if(is.null(geno_omic_model_ready_list[["geno_model_ready"]])){
-       #
-       #   stop("geno is null")
-       # }
        res_model_output <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-                                                  random = random,
-                                                  GS_model = GS_model,
-                                                  response = response,
-                                                  weights = weights,
-                                                  fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                  rand_term_model_bayesian = rand_term_model_bayesian,
-                                                  pheno_data = pheno_clean[["pheno_clean_data"]],
-                                                  geno_data = if("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
-                                                  omic1_data = if("omic1_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic1_model_ready"]] else NULL,
-                                                  omic2_data = if("omic2_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic2_model_ready"]] else NULL,
-                                                  omic3_data = if("omic3_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic3_model_ready"]] else NULL,
-                                                  gen_name = gen_name,
-                                                  nIter = nIter,
-                                                  burnIn = burnIn,
-                                                  thin = thin,
-                                                  omics_data_label = omics_data_label,
-                                                  scaling = scaling)
+                                                       random = random,
+                                                       GS_model = GS_model,
+                                                       response = response,
+                                                       weights = weights,
+                                                       fixed_term_model_bayesian = fixed_term_model_bayesian,
+                                                       rand_term_model_bayesian = rand_term_model_bayesian,
+                                                       pheno_data = pheno_clean[["pheno_clean_data"]],
+                                                       geno_data = if("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
+                                                       omic1_data = if("omic1_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic1_model_ready"]] else NULL,
+                                                       omic2_data = if("omic2_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic2_model_ready"]] else NULL,
+                                                       omic3_data = if("omic3_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic3_model_ready"]] else NULL,
+                                                       gen_name = gen_name,
+                                                       nIter = nIter,
+                                                       burnIn = burnIn,
+                                                       thin = thin,
+                                                       omics_data_label = omics_data_label,
+                                                       scaling = scaling)
 
-     # Compute summary statistics and plot accuracy
-     res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]], eval_metrics = eval_metrics)
-     #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
-     res_model_output <- res_model_output[["bayes_result"]]
+       # Compute summary statistics and plot accuracy
+       res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]],
+                                                    eval_metrics = eval_metrics,
+                                                    GS_model = GS_model)
+       #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
+       res_model_output <- res_model_output[["bayes_result"]]
 
-     return(results_handling(GS_model = GS_model,
-                             res_model_output = res_model_output,
-                             res_summary_stat = res_summary_stat,
-                             res_plot = NULL,
-                             geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
-                             system_database = system_database))
+       # output <- list(GS_model = GS_model,
+       #                res_model_output = res_model_output,
+       #                res_summary_stat = res_summary_stat,
+       #                geno_qc_stat =geno_qc_stat
+       # )
 
- }
-} ## End of  Bayes A, B, C, BRR, BL
+     }
+   } ## End of  Bayes A, B, C, BRR, BL
 
- ##########################################################################
- #########################################################################
- ## Start of Reproducing Kernel Hilbert Spaces Regression RKHS,         ##
- ## (BRR- Bayesian GBLUP ) and GBLUP (asreml) Model                     ##
- ## for Single Location and multiple loc                                ##
- ##                                                                     ##
- ##                                                                     ##
- ##########################################################################
- #######################################################################
+   ##########################################################################
+   #########################################################################
+   ## Start of Reproducing Kernel Hilbert Spaces Regression RKHS,         ##
+   ## (BRR- Bayesian GBLUP ) and GBLUP (asreml) Model                     ##
+   ## for Single Location and multiple loc                                ##
+   ##                                                                     ##
+   ##                                                                     ##
+   ##########################################################################
+   #######################################################################
 
- ## NOTE
- ## BRR is chaneg to G-BRR
- ## This is to make distinction between BRR for marker matrix and GBLUP
- # Check conditions for GS_model and rand_term_model_bayesian
- if ((GS_model %in% c("RKHS", "GBLUP_BRR", "GBLUP") && is.null(rand_term_model_bayesian)) ||
-     (is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_gblup_valid_models)) ||
-     (!is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_gblup_valid_models))) {
+   ## NOTE
+   ## BRR is changed to G-BRR to make distinction between BRR for marker matrix and GBLUP
+   # Check conditions for GS_model and rand_term_model_bayesian
+   if ((GS_model %in% c("RKHS", "GBLUP_BRR", "GBLUP") && is.null(rand_term_model_bayesian)) ||
+       (is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_gblup_valid_models)) ||
+       (!is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_gblup_valid_models))) {
 
      # Rename GS_model for GBLUP_BRR case
      if (GS_model == "GBLUP_BRR") {
-         GS_modeluse <- GS_model
-         GS_model <- "BRR"
+       GS_modeluse <- GS_model
+       GS_model <- "BRR"
      }
 
      if (GS_model %in% c("BRR", "RKHS")) {
-         # Run Bayesian model for BRR and RKHS
+       # Run Bayesian model for BRR and RKHS
        res_model_output <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-                                                   random = random,
-                                                   GS_model = GS_model,
-                                                   response = response,
-                                                   weights = weights,
-                                                   fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                                   rand_term_model_bayesian = rand_term_model_bayesian,
-                                                   pheno_data = pheno_clean[["pheno_clean_data"]],
-                                                   gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
-                                                   omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
-                                                   omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
-                                                   omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
-                                                   gen_name = gen_name,
-                                                   nIter = nIter,
-                                                   burnIn = burnIn,
-                                                   thin = thin,
-                                                   heter_groups = heter_groups,
-                                                   omics_kernel_label = omics_kernel_label)
+                                                        random = random,
+                                                        GS_model = GS_model,
+                                                        response = response,
+                                                        weights = weights,
+                                                        fixed_term_model_bayesian = fixed_term_model_bayesian,
+                                                        rand_term_model_bayesian = rand_term_model_bayesian,
+                                                        pheno_data = pheno_clean[["pheno_clean_data"]],
+                                                        gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
+                                                        omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
+                                                        omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
+                                                        omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
+                                                        gen_name = gen_name,
+                                                        nIter = nIter,
+                                                        burnIn = burnIn,
+                                                        thin = thin,
+                                                        heter_groups = heter_groups,
+                                                        omics_kernel_label = omics_kernel_label)
 
-         # Compute summary statistics and plot accuracy
-         res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]], eval_metrics = eval_metrics)
-         #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
-         res_model_output <- res_model_output[["bayes_result"]]
-         ### This part is for GBLUP_BRR
-         if(exists("GS_modeluse")){
-           GS_model <-  GS_modeluse
-         }
+       # Compute summary statistics and plot accuracy
+       res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]],
+                                                    eval_metrics = eval_metrics,
+                                                    GS_model = GS_model)
+       #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
+       res_model_output <- res_model_output[["bayes_result"]]
+       ### This part is for GBLUP_BRR
+       # if(exists("GS_modeluse")){
+       #   GS_model <-  GS_modeluse
+       # }
 
-         return(results_handling(GS_model = GS_model,
-                                 res_model_output = res_model_output,
-                                 res_summary_stat = res_summary_stat,
-                                 res_plot = NULL,
-                                 geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
-                                 system_database = system_database))
+       # output <- list(GS_model = GS_model,
+       #                res_model_output = res_model_output,
+       #                res_summary_stat = res_summary_stat,
+       #                geno_qc_stat =geno_qc_stat
+       # )
 
      } else {
        if (GS_model == "GBLUP" && engine == 'asreml') {
-       # gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL
-       # if(!matrixcalc::is.positive.definite(gmatrix)) stop("GRM issue")
 
-       #  # Run GBLUP model with ASReml
+         #  # Run GBLUP model with ASReml
          mod <- asreml_utilis_new(fixed = fixed,
-                              random = random,
-                              cova = cova,
-                              GS_model = GS_model,
-                              response = response,
-                              pheno_data = pheno_clean[["pheno_clean_data"]],
-                              gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
-                              omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
-                              omic2_kernel = if("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
-                              omic3_kernel = if("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
-                              gen_name = gen_name,
-                              heter_groups = heter_groups,
-                              heter_resid = heter_resid,
-                              var_cov_str = var_cov_str,
-                              weights = weights,
-                              pworkspace = pworkspace,
-                              workspace = workspace,
-                              maxit = maxit,
-                              inverse = inverse,
-                              epsilon = epsilon,
-                              engine = engine)
+                                  random = random,
+                                  cova = cova,
+                                  GS_model = GS_model,
+                                  response = response,
+                                  pheno_data = pheno_clean[["pheno_clean_data"]],
+                                  gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
+                                  omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
+                                  omic2_kernel = if("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
+                                  omic3_kernel = if("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
+                                  gen_name = gen_name,
+                                  heter_groups = heter_groups,
+                                  heter_resid = heter_resid,
+                                  var_cov_str = var_cov_str,
+                                  weights = weights,
+                                  pworkspace = pworkspace,
+                                  workspace = workspace,
+                                  maxit = maxit,
+                                  inverse = inverse,
+                                  epsilon = epsilon,
+                                  engine = engine)
 
          # Extract model output for ASReml
 
          res_model_output <- asreml_mod_output_new(
-             mod_asreml = mod,
-             pheno_data = pheno_clean[["pheno_clean_data"]],
-             gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
-             omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
-             omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
-             omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
-             heter_groups = heter_groups,
-             gen_name = gen_name,
-             response = response,
-             var_cov_str = var_cov_str,
-             heter_resid = heter_resid,
-             pworkspace = pworkspace,
-             workspace = workspace,
-             maxit = maxit
+           mod_asreml = mod,
+           pheno_data = pheno_clean[["pheno_clean_data"]],
+           gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
+           omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
+           omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
+           omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
+           heter_groups = heter_groups,
+           gen_name = gen_name,
+           response = response,
+           var_cov_str = var_cov_str,
+           heter_resid = heter_resid,
+           pworkspace = pworkspace,
+           workspace = workspace,
+           maxit = maxit
          )
 
 
@@ -1050,233 +1193,630 @@ cv_results_processed <- cv_single_loc_result_plot_process(cv_results_data=cv_res
                                                        variance_components = res_model_output[["Variance_components"]],
                                                        eval_metrics = eval_metrics)
 
-
-         # remove_from_global <- function(var_names) {
-         #   for (var_name in var_names) {
-         #     if(exists(var_name, envir = .GlobalEnv)) {
-         #       rm(list = var_name, envir = .GlobalEnv)
-         #       #print(paste("Object", var_name, "removed from global environment."))
-         #     } else {
-         #       #print(paste("Object", var_name, "not found in global environment."))
-         #     }
-         #   }
-         # }
-         #
-         # #rm inv_object
-         # my_variable <- c("G_inv", "omic1_inv", "omic2_inv", "omic3_inv")
-         # remove_from_global(my_variable)
-
-
-         return(results_handling(GS_model = GS_model,
-                                 res_model_output = res_model_output,
-                                 res_summary_stat = res_summary_stat,
-                                 res_plot =  NULL,
-                                 geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
-                                 system_database = system_database))
+         # output <- list(GS_model = GS_model,
+         #                res_model_output = res_model_output,
+         #                res_summary_stat = res_summary_stat,
+         #                geno_qc_stat =geno_qc_stat
+         # )
 
        }
      }
- }
- #### END GBLUP_RKHS, GBLUP_BRR and GBLUP (asreml)
+   }
+   #### END GBLUP_RKHS, GBLUP_BRR and GBLUP (asreml)
 
- ######################################################
- ######################################################
- ##                                                 ###
- ## Machine Learning Models                         ###
- ##                                                 ###
- ######################################################
- ######################################################
+   ######################################################
+   ######################################################
+   ##                                                 ###
+   ## Machine Learning Models                         ###
+   ##                                                 ###
+   ######################################################
+   ######################################################
 
- ###  Start ML Analysis
- ###
-
-
-     # AI_valid_models <- c("Xgboost",
-     #                      "RandomForest",
-     #                      "PartialLeastSquare",
-     #                      "SupportVectorMachine",
-     #                      "K-NearestNeighbors",
-     #                      "Lasso",
-     #                      "Ridge_Regression",
-     #                      "deep_learning_model")
-
-     if (GS_model %in% AI_valid_models) {
-         if (length(unique(pheno_clean[["pheno_clean_data"]][, gen_name])) > length(pheno_clean[["pheno_clean_data"]][, gen_name])) {
-             stop(paste(msg, GS_model, 'only works for single location/enviroment.'), call. = FALSE)
-         }
-
-         # ml_dat_res <- ML_data_processing(pheno_clean = pheno_clean,
-         #                                  response = response,
-         #                                  gen_name = gen_name,
-         #                                  geno_clean = if ("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
-         #                                  omic_clean = if (!"geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL
-         #                                  )
-
-         switch(GS_model,
-                "Xgboost" = {
-                    res_model_output <- AI_Xgb(pheno_object = ml_dat_res[["pheno_clean_data"]],
-                                               response = response,
-                                               geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                                               geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
-                                               message = message,
-                                               gen_name = gen_name,
-                                               scaling = scaling,
-                                               centering = centering,
-                                               omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
-                                               AI_cv_nfolds = AI_cv_nfolds,
-                                               para_tunning = para_tunning,
-                                               xgb_paras_tunning = xgb_paras_tunning
-                    )
-                },
-                "RandomForest" = {
-                    res_model_output <- AI_randomForest(pheno_object = ml_dat_res[["pheno_clean_data"]],
-                                                        response = response,
-                                                        geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                                                        geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
-                                                        message = message,
-                                                        gen_name = gen_name,
-                                                        scaling = scaling,
-                                                        centering = centering,
-                                                        omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
-                                                        AI_cv_nfolds = AI_cv_nfolds,
-                                                        para_tunning = para_tunning,
-                                                        rf_paras_tunning = rf_paras_tunning
-                    )
-                },
-                "PartialLeastSquare" = {
-                    res_model_output <-  AI_pls(pheno_object = ml_dat_res[["pheno_clean_data"]],
-                                                response = response,
-                                                geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                                                geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
-                                                message = message,
-                                                gen_name = gen_name,
-                                                scaling = scaling,
-                                                centering = centering,
-                                                omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
-                                                para_tunning = para_tunning,
-                                                pls_paras_tunning = pls_paras_tunning)
-                },
-                "SupportVectorMachine" = {
-                    res_model_output <- AI_svm(pheno_object = ml_dat_res[["pheno_clean_data"]],
-                                               response = response,
-                                               geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                                               geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
-                                               message = message,
-                                               gen_name = gen_name,
-                                               scaling = scaling,
-                                               centering = centering,
-                                               omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
-                                               AI_cv_nfolds = AI_cv_nfolds,
-                                               para_tunning = para_tunning,
-                                               svm_paras_tunning = svm_paras_tunning
-                    )
-                },
-                "K-NearestNeighbors" = {
-                    res_model_output <- AI_knn(pheno_object = ml_dat_res[["pheno_clean_data"]],
-                                               response = response,
-                                               geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                                               geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
-                                               message = message,
-                                               gen_name = gen_name,
-                                               scaling = scaling,
-                                               centering = centering,
-                                               omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
-                                               AI_cv_nfolds = AI_cv_nfolds,
-                                               para_tunning = para_tunning,
-                                               knn_paras_tunning = knn_paras_tunning
-                    )
-                },
-                "Lasso" = {
-                    res_model_output <- AI_RidgeRegression_Lasso(
-                        pheno_object = ml_dat_res[["pheno_clean_data"]],
-                        response = response,
-                        geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                        geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
-                        gen_name = gen_name,
-                        para_tunning = para_tunning,
-                        AI_cv_nfolds = AI_cv_nfolds,
-                        lasso_paras_tunning = lasso_paras_tunning,
-                        message = message,
-                        scaling = scaling,
-                        centering = centering,
-                        omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
-                        GS_model = GS_model
-                    )
-                },
-                "Ridge_Regression" = {
-                    res_model_output <- AI_RidgeRegression_Lasso(
-                        pheno_object = ml_dat_res[["pheno_clean_data"]],
-                        response = response,
-                        geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                        geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
-                        gen_name = gen_name,
-                        para_tunning = para_tunning,
-                        AI_cv_nfolds = AI_cv_nfolds,
-                        lasso_paras_tunning = rr_paras_tunning,
-                        message = message,
-                        scaling = scaling,
-                        centering = centering,
-                        omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
-                        GS_model = GS_model,
-                    )
-                },
-                "deep_learning_model" = {
-
-                    res_model_output <- deep_learning_model(
-                        pheno_object=ml_dat_res[["pheno_clean_data"]],
-                        geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                        geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
-                        response=response,
-                        gen_name=gen_name,
-                        num_hidden_layers = num_hidden_layers,
-                        neurons_per_layer = neurons_per_layer,
-                        learning_rate = learning_rate,
-                        epochs = epochs,
-                        batch_size = batch_size,
-                        validation_split = validation_split,
-                        early_stop = early_stop,
-                        message = message,
-                        scaling = scaling,
-                        centering = centering,
-                        omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
-                        para_tunning = para_tunning,
-                        param_grid = dpl_paras_tunning
-                    )
-
-                },
-                {
-                    stop(paste(msg, "Select method to calculate geno_cleanmic relationship matrix"), call. = FALSE)
-                }
-         )
-
-##browser()
-#View(res_model_output[["predicted_values"]])
-         res_summary_stat <- summary_statistics_AI(predicted_object = res_model_output[["predicted_values"]],
-                                                   pheno_object = ml_dat_res[["pheno_clean_data"]],
-                                                   response = response,
-                                                   test_set = ml_dat_res[["test_set"]],
-                                                   geno_omic_object = ml_dat_res[["merged_data"]],
-                                                   eval_metrics = eval_metrics,
-                                                   model_parameters = res_model_output[["model_parameters"]],
-                                                   GS_model = GS_model
-         )
-
-         # res_plot <- plot_acc_AI(mod = res_model_output,
-         #                         pheno_object = ml_dat_res[["pheno_clean_data"]],
-         #                         response = response,
-         #                         test_set = ml_dat_res[["test_set"]],
-         #                         GS_model = GS_model
-         # )
-
-         return(results_handling(GS_model = GS_model,
-                                 res_model_output = res_model_output,
-                                 res_summary_stat = res_summary_stat,
-                                 res_plot = NULL,
-                                 geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
-                                 system_database = system_database))
-
+   if (GS_model %in% AI_valid_models) {
+     if (length(unique(pheno_clean[["pheno_clean_data"]][, gen_name])) > length(pheno_clean[["pheno_clean_data"]][, gen_name])) {
+       stop(paste(msg, GS_model, 'only works for single location/enviroment.'), call. = FALSE)
      }
 
-  ### End machine learning
+     switch(GS_model,
+            "Xgboost" = {
+              res_model_output <- AI_Xgb(pheno_object = ml_dat_res[["pheno_clean_data"]],
+                                         response = response,
+                                         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                                         geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                         message = message,
+                                         gen_name = gen_name,
+                                         scaling = scaling,
+                                         centering = centering,
+                                         omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+                                         AI_cv_nfolds = AI_cv_nfolds,
+                                         para_tunning = para_tunning,
+                                         xgb_paras_tunning = xgb_paras_tunning
+              )
+            },
+            "RandomForest" = {
+              res_model_output <- AI_randomForest(pheno_object = ml_dat_res[["pheno_clean_data"]],
+                                                  response = response,
+                                                  geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                                                  geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                                  message = message,
+                                                  gen_name = gen_name,
+                                                  scaling = scaling,
+                                                  centering = centering,
+                                                  omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+                                                  AI_cv_nfolds = AI_cv_nfolds,
+                                                  para_tunning = para_tunning,
+                                                  rf_paras_tunning = rf_paras_tunning
+              )
+            },
+            "PartialLeastSquare" = {
+              res_model_output <-  AI_pls(pheno_object = ml_dat_res[["pheno_clean_data"]],
+                                          response = response,
+                                          geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                                          geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                          message = message,
+                                          gen_name = gen_name,
+                                          scaling = scaling,
+                                          centering = centering,
+                                          omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+                                          para_tunning = para_tunning,
+                                          pls_paras_tunning = pls_paras_tunning)
+            },
+            "SupportVectorMachine" = {
+              res_model_output <- AI_svm(pheno_object = ml_dat_res[["pheno_clean_data"]],
+                                         response = response,
+                                         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                                         geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                         message = message,
+                                         gen_name = gen_name,
+                                         scaling = scaling,
+                                         centering = centering,
+                                         omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+                                         AI_cv_nfolds = AI_cv_nfolds,
+                                         para_tunning = para_tunning,
+                                         svm_paras_tunning = svm_paras_tunning
+              )
+            },
+            "K-NearestNeighbors" = {
+              res_model_output <- AI_knn(pheno_object = ml_dat_res[["pheno_clean_data"]],
+                                         response = response,
+                                         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                                         geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                         message = message,
+                                         gen_name = gen_name,
+                                         scaling = scaling,
+                                         centering = centering,
+                                         omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+                                         AI_cv_nfolds = AI_cv_nfolds,
+                                         para_tunning = para_tunning,
+                                         knn_paras_tunning = knn_paras_tunning
+              )
+            },
+            "Lasso" = {
+              res_model_output <- AI_RidgeRegression_Lasso(
+                pheno_object = ml_dat_res[["pheno_clean_data"]],
+                response = response,
+                geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                gen_name = gen_name,
+                para_tunning = para_tunning,
+                AI_cv_nfolds = AI_cv_nfolds,
+                lasso_paras_tunning = lasso_paras_tunning,
+                message = message,
+                scaling = scaling,
+                centering = centering,
+                omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+                GS_model = GS_model
+              )
+            },
+            "Ridge_Regression" = {
+              res_model_output <- AI_RidgeRegression_Lasso(
+                pheno_object = ml_dat_res[["pheno_clean_data"]],
+                response = response,
+                geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                gen_name = gen_name,
+                para_tunning = para_tunning,
+                AI_cv_nfolds = AI_cv_nfolds,
+                lasso_paras_tunning = rr_paras_tunning,
+                message = message,
+                scaling = scaling,
+                centering = centering,
+                omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+                GS_model = GS_model,
+              )
+            },
+            "deep_learning_model" = {
+
+              res_model_output <- deep_learning_model(
+                pheno_object=ml_dat_res[["pheno_clean_data"]],
+                geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                response=response,
+                gen_name=gen_name,
+                num_hidden_layers = num_hidden_layers,
+                neurons_per_layer = neurons_per_layer,
+                learning_rate = learning_rate,
+                epochs = epochs,
+                batch_size = batch_size,
+                validation_split = validation_split,
+                early_stop = early_stop,
+                message = message,
+                scaling = scaling,
+                centering = centering,
+                omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+                para_tunning = para_tunning,
+                param_grid = dpl_paras_tunning
+              )
+
+            },
+            {
+              stop(paste(msg, "Select method to calculate geno_cleanmic relationship matrix"), call. = FALSE)
+            }
+     )
+
+     ##browser()
+     #View(res_model_output[["predicted_values"]])
+     res_summary_stat <- summary_statistics_AI(predicted_object = res_model_output[["predicted_values"]],
+                                               pheno_object = ml_dat_res[["pheno_clean_data"]],
+                                               response = response,
+                                               test_set = ml_dat_res[["test_set"]],
+                                               geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+                                               eval_metrics = eval_metrics,
+                                               model_parameters = res_model_output[["model_parameters"]],
+                                               GS_model = GS_model
+     )
+
+     # output <- list(GS_model = GS_model,
+     #                res_model_output = res_model_output,
+     #                res_summary_stat = res_summary_stat,
+     #                geno_qc_stat = geno_qc_stat
+     # )
+
+   }
+   ### End machine learning
+   list(GS_model = GS_model,res_model_output = res_model_output,
+        res_summary_stat = res_summary_stat, geno_qc_stat = geno_qc_stat)
+   #list(output =  output)
+ }, future.seed = TRUE)
+
+
+
+ if(!is.null(best_models)){
+   names(results) <- best_models[["trait"]]
+
+ } else {
+   names(results) <- response
+ }
+
+
+ # Initialize a list to hold the results if returning as a list when system_database is TRUE
+ all_results <- list()
+
+ for (res in seq_along(results)) {
+
+   #names(results[[1]])
+
+
+   processed_result <- results_handling(GS_model = if("GS_model" %in% names(results[[res]])) results[[res]][["GS_model"]] else NULL,
+                           res_model_output = if("res_model_output" %in% names(results[[res]])) results[[res]][["res_model_output"]] else NULL,
+                           res_summary_stat = if("res_summary_stat" %in% names(results[[res]])) results[[res]][["res_summary_stat"]] else NULL,
+                           res_plot = best_models_ggplot_rep,
+                           res_plot_mean = best_models_ggplot_mean,
+                           geno_qc_stat = geno_qc_stat,
+                           cv_results_processed = cv_results_processed,
+                           system_database = system_database,
+                           plot_filename = if(!is.null(names(results)[res])) names(results)[res] else paste("trait", res, sep = "_"),
+                           plot_extension = plot_extension,
+                           plot_width = plot_width,
+                           plot_height = plot_height,
+                           plot_units = plot_units,
+                           plot_dpi = plot_dpi)
+
+   # If returning as a list, append the processed result to the all_results list
+   if(isTRUE(system_database)) {
+     all_results[[length(all_results) + 1]] <- processed_result
+     names(all_results)[res] <- if(!is.null(names(results)[res])) names(results)[res] else paste("trait", res, sep = "_")
+   }
+   # Otherwise, the results_handling function handles file creation and saving
+ }
+
+ # Return the list of all results if system_database is TRUE
+ if(isTRUE(system_database)) {
+   return(all_results)
+ } else {
+   # system_database is TRUE is false,
+   ## implies If results are not being returned as a list,
+   # just return a success message or NULL for job done
+   return(invisible(TRUE))
+ }
+ # sik end###############################################################################################
+#if(is.null(best_models)){
+ #### These models only works with one environment/location
+#  if(length(pheno_clean[["pheno_clean_data"]][,gen_name])==length(unique(pheno_clean[["pheno_clean_data"]][,gen_name]))){
+#
+#      if ((GS_model %in% bayes_valid_models && is.null(rand_term_model_bayesian)) ||
+#          (is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_valid_models)) ||
+#          (!is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_valid_models))) {
+#
+#        res_model_output <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
+#                                                   random = random,
+#                                                   GS_model = GS_model,
+#                                                   response = response,
+#                                                   weights = weights,
+#                                                   fixed_term_model_bayesian = fixed_term_model_bayesian,
+#                                                   rand_term_model_bayesian = rand_term_model_bayesian,
+#                                                   pheno_data = pheno_clean[["pheno_clean_data"]],
+#                                                   geno_data = if("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
+#                                                   omic1_data = if("omic1_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic1_model_ready"]] else NULL,
+#                                                   omic2_data = if("omic2_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic2_model_ready"]] else NULL,
+#                                                   omic3_data = if("omic3_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic3_model_ready"]] else NULL,
+#                                                   gen_name = gen_name,
+#                                                   nIter = nIter,
+#                                                   burnIn = burnIn,
+#                                                   thin = thin,
+#                                                   omics_data_label = omics_data_label,
+#                                                   scaling = scaling)
+#
+#      # Compute summary statistics and plot accuracy
+#      res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]], eval_metrics = eval_metrics)
+#      #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
+#      res_model_output <- res_model_output[["bayes_result"]]
+#
+#      # return(results_handling(GS_model = GS_model,
+#      #                         res_model_output = res_model_output,
+#      #                         res_summary_stat = res_summary_stat,
+#      #                         res_plot = NULL,
+#      #                         geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
+#      #                         system_database = system_database))
+#
+#  }
+# } ## End of  Bayes A, B, C, BRR, BL
+#
+#  ##########################################################################
+#  #########################################################################
+#  ## Start of Reproducing Kernel Hilbert Spaces Regression RKHS,         ##
+#  ## (BRR- Bayesian GBLUP ) and GBLUP (asreml) Model                     ##
+#  ## for Single Location and multiple loc                                ##
+#  ##                                                                     ##
+#  ##                                                                     ##
+#  ##########################################################################
+#  #######################################################################
+#
+#  ## NOTE
+#  ## BRR is chaneg to G-BRR
+#  ## This is to make distinction between BRR for marker matrix and GBLUP
+#  # Check conditions for GS_model and rand_term_model_bayesian
+#  if ((GS_model %in% c("RKHS", "GBLUP_BRR", "GBLUP") && is.null(rand_term_model_bayesian)) ||
+#      (is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_gblup_valid_models)) ||
+#      (!is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_gblup_valid_models))) {
+#
+#      # Rename GS_model for GBLUP_BRR case
+#      if (GS_model == "GBLUP_BRR") {
+#          GS_modeluse <- GS_model
+#          GS_model <- "BRR"
+#      }
+#
+#      if (GS_model %in% c("BRR", "RKHS")) {
+#          # Run Bayesian model for BRR and RKHS
+#        res_model_output <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
+#                                                    random = random,
+#                                                    GS_model = GS_model,
+#                                                    response = response,
+#                                                    weights = weights,
+#                                                    fixed_term_model_bayesian = fixed_term_model_bayesian,
+#                                                    rand_term_model_bayesian = rand_term_model_bayesian,
+#                                                    pheno_data = pheno_clean[["pheno_clean_data"]],
+#                                                    gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
+#                                                    omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
+#                                                    omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
+#                                                    omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
+#                                                    gen_name = gen_name,
+#                                                    nIter = nIter,
+#                                                    burnIn = burnIn,
+#                                                    thin = thin,
+#                                                    heter_groups = heter_groups,
+#                                                    omics_kernel_label = omics_kernel_label)
+#
+#          # Compute summary statistics and plot accuracy
+#          res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]], eval_metrics = eval_metrics)
+#          #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
+#          res_model_output <- res_model_output[["bayes_result"]]
+#          ### This part is for GBLUP_BRR
+#          if(exists("GS_modeluse")){
+#            GS_model <-  GS_modeluse
+#          }
+#
+#          # return(results_handling(GS_model = GS_model,
+#          #                         res_model_output = res_model_output,
+#          #                         res_summary_stat = res_summary_stat,
+#          #                         res_plot = NULL,
+#          #                         geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
+#          #                         system_database = system_database))
+#
+#      } else {
+#        if (GS_model == "GBLUP" && engine == 'asreml') {
+#        # gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL
+#        # if(!matrixcalc::is.positive.definite(gmatrix)) stop("GRM issue")
+#
+#        #  # Run GBLUP model with ASReml
+#          mod <- asreml_utilis_new(fixed = fixed,
+#                               random = random,
+#                               cova = cova,
+#                               GS_model = GS_model,
+#                               response = response,
+#                               pheno_data = pheno_clean[["pheno_clean_data"]],
+#                               gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
+#                               omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
+#                               omic2_kernel = if("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
+#                               omic3_kernel = if("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
+#                               gen_name = gen_name,
+#                               heter_groups = heter_groups,
+#                               heter_resid = heter_resid,
+#                               var_cov_str = var_cov_str,
+#                               weights = weights,
+#                               pworkspace = pworkspace,
+#                               workspace = workspace,
+#                               maxit = maxit,
+#                               inverse = inverse,
+#                               epsilon = epsilon,
+#                               engine = engine)
+#
+#          # Extract model output for ASReml
+#
+#          res_model_output <- asreml_mod_output_new(
+#              mod_asreml = mod,
+#              pheno_data = pheno_clean[["pheno_clean_data"]],
+#              gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
+#              omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
+#              omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
+#              omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
+#              heter_groups = heter_groups,
+#              gen_name = gen_name,
+#              response = response,
+#              var_cov_str = var_cov_str,
+#              heter_resid = heter_resid,
+#              pworkspace = pworkspace,
+#              workspace = workspace,
+#              maxit = maxit
+#          )
+#
+#
+#          res_summary_stat <- summary_statistics_asreml(mod =  res_model_output[["Asreml_model"]],
+#                                                        response = response,
+#                                                        pheno_data = pheno_clean[["pheno_clean_data"]],
+#                                                        heter_groups = heter_groups,
+#                                                        predicted_value =  res_model_output[["Predicted_value"]],
+#                                                        pred_heter_groups = NULL,
+#                                                        variance_components = res_model_output[["Variance_components"]],
+#                                                        eval_metrics = eval_metrics)
+#
+#
+#          # remove_from_global <- function(var_names) {
+#          #   for (var_name in var_names) {
+#          #     if(exists(var_name, envir = .GlobalEnv)) {
+#          #       rm(list = var_name, envir = .GlobalEnv)
+#          #       #print(paste("Object", var_name, "removed from global environment."))
+#          #     } else {
+#          #       #print(paste("Object", var_name, "not found in global environment."))
+#          #     }
+#          #   }
+#          # }
+#          #
+#          # #rm inv_object
+#          # my_variable <- c("G_inv", "omic1_inv", "omic2_inv", "omic3_inv")
+#          # remove_from_global(my_variable)
+#
+#
+#          # return(results_handling(GS_model = GS_model,
+#          #                         res_model_output = res_model_output,
+#          #                         res_summary_stat = res_summary_stat,
+#          #                         res_plot =  NULL,
+#          #                         geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
+#          #                         system_database = system_database))
+#
+#        }
+#      }
+#  }
+#  #### END GBLUP_RKHS, GBLUP_BRR and GBLUP (asreml)
+#
+#  ######################################################
+#  ######################################################
+#  ##                                                 ###
+#  ## Machine Learning Models                         ###
+#  ##                                                 ###
+#  ######################################################
+#  ######################################################
+#
+#  ###  Start ML Analysis
+#  ###
+#
+#
+#      # AI_valid_models <- c("Xgboost",
+#      #                      "RandomForest",
+#      #                      "PartialLeastSquare",
+#      #                      "SupportVectorMachine",
+#      #                      "K-NearestNeighbors",
+#      #                      "Lasso",
+#      #                      "Ridge_Regression",
+#      #                      "deep_learning_model")
+#
+#      if (GS_model %in% AI_valid_models) {
+#          if (length(unique(pheno_clean[["pheno_clean_data"]][, gen_name])) > length(pheno_clean[["pheno_clean_data"]][, gen_name])) {
+#              stop(paste(msg, GS_model, 'only works for single location/enviroment.'), call. = FALSE)
+#          }
+#
+#          # ml_dat_res <- ML_data_processing(pheno_clean = pheno_clean,
+#          #                                  response = response,
+#          #                                  gen_name = gen_name,
+#          #                                  geno_clean = if ("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
+#          #                                  omic_clean = if (!"geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL
+#          #                                  )
+#
+#          switch(GS_model,
+#                 "Xgboost" = {
+#                     res_model_output <- AI_Xgb(pheno_object = ml_dat_res[["pheno_clean_data"]],
+#                                                response = response,
+#                                                geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+#                                                geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+#                                                message = message,
+#                                                gen_name = gen_name,
+#                                                scaling = scaling,
+#                                                centering = centering,
+#                                                omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+#                                                AI_cv_nfolds = AI_cv_nfolds,
+#                                                para_tunning = para_tunning,
+#                                                xgb_paras_tunning = xgb_paras_tunning
+#                     )
+#                 },
+#                 "RandomForest" = {
+#                     res_model_output <- AI_randomForest(pheno_object = ml_dat_res[["pheno_clean_data"]],
+#                                                         response = response,
+#                                                         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+#                                                         geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+#                                                         message = message,
+#                                                         gen_name = gen_name,
+#                                                         scaling = scaling,
+#                                                         centering = centering,
+#                                                         omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+#                                                         AI_cv_nfolds = AI_cv_nfolds,
+#                                                         para_tunning = para_tunning,
+#                                                         rf_paras_tunning = rf_paras_tunning
+#                     )
+#                 },
+#                 "PartialLeastSquare" = {
+#                     res_model_output <-  AI_pls(pheno_object = ml_dat_res[["pheno_clean_data"]],
+#                                                 response = response,
+#                                                 geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+#                                                 geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+#                                                 message = message,
+#                                                 gen_name = gen_name,
+#                                                 scaling = scaling,
+#                                                 centering = centering,
+#                                                 omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+#                                                 para_tunning = para_tunning,
+#                                                 pls_paras_tunning = pls_paras_tunning)
+#                 },
+#                 "SupportVectorMachine" = {
+#                     res_model_output <- AI_svm(pheno_object = ml_dat_res[["pheno_clean_data"]],
+#                                                response = response,
+#                                                geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+#                                                geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+#                                                message = message,
+#                                                gen_name = gen_name,
+#                                                scaling = scaling,
+#                                                centering = centering,
+#                                                omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+#                                                AI_cv_nfolds = AI_cv_nfolds,
+#                                                para_tunning = para_tunning,
+#                                                svm_paras_tunning = svm_paras_tunning
+#                     )
+#                 },
+#                 "K-NearestNeighbors" = {
+#                     res_model_output <- AI_knn(pheno_object = ml_dat_res[["pheno_clean_data"]],
+#                                                response = response,
+#                                                geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+#                                                geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+#                                                message = message,
+#                                                gen_name = gen_name,
+#                                                scaling = scaling,
+#                                                centering = centering,
+#                                                omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+#                                                AI_cv_nfolds = AI_cv_nfolds,
+#                                                para_tunning = para_tunning,
+#                                                knn_paras_tunning = knn_paras_tunning
+#                     )
+#                 },
+#                 "Lasso" = {
+#                     res_model_output <- AI_RidgeRegression_Lasso(
+#                         pheno_object = ml_dat_res[["pheno_clean_data"]],
+#                         response = response,
+#                         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+#                         geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+#                         gen_name = gen_name,
+#                         para_tunning = para_tunning,
+#                         AI_cv_nfolds = AI_cv_nfolds,
+#                         lasso_paras_tunning = lasso_paras_tunning,
+#                         message = message,
+#                         scaling = scaling,
+#                         centering = centering,
+#                         omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+#                         GS_model = GS_model
+#                     )
+#                 },
+#                 "Ridge_Regression" = {
+#                     res_model_output <- AI_RidgeRegression_Lasso(
+#                         pheno_object = ml_dat_res[["pheno_clean_data"]],
+#                         response = response,
+#                         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+#                         geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+#                         gen_name = gen_name,
+#                         para_tunning = para_tunning,
+#                         AI_cv_nfolds = AI_cv_nfolds,
+#                         lasso_paras_tunning = rr_paras_tunning,
+#                         message = message,
+#                         scaling = scaling,
+#                         centering = centering,
+#                         omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+#                         GS_model = GS_model,
+#                     )
+#                 },
+#                 "deep_learning_model" = {
+#
+#                     res_model_output <- deep_learning_model(
+#                         pheno_object=ml_dat_res[["pheno_clean_data"]],
+#                         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
+#                         geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+#                         response=response,
+#                         gen_name=gen_name,
+#                         num_hidden_layers = num_hidden_layers,
+#                         neurons_per_layer = neurons_per_layer,
+#                         learning_rate = learning_rate,
+#                         epochs = epochs,
+#                         batch_size = batch_size,
+#                         validation_split = validation_split,
+#                         early_stop = early_stop,
+#                         message = message,
+#                         scaling = scaling,
+#                         centering = centering,
+#                         omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
+#                         para_tunning = para_tunning,
+#                         param_grid = dpl_paras_tunning
+#                     )
+#
+#                 },
+#                 {
+#                     stop(paste(msg, "Select method to calculate geno_cleanmic relationship matrix"), call. = FALSE)
+#                 }
+#          )
+#
+# ##browser()
+# #View(res_model_output[["predicted_values"]])
+#          res_summary_stat <- summary_statistics_AI(predicted_object = res_model_output[["predicted_values"]],
+#                                                    pheno_object = ml_dat_res[["pheno_clean_data"]],
+#                                                    response = response,
+#                                                    test_set = ml_dat_res[["test_set"]],
+#                                                    geno_omic_object = ml_dat_res[["merged_data"]],
+#                                                    eval_metrics = eval_metrics,
+#                                                    model_parameters = res_model_output[["model_parameters"]],
+#                                                    GS_model = GS_model
+#          )
+#
+#          # res_plot <- plot_acc_AI(mod = res_model_output,
+#          #                         pheno_object = ml_dat_res[["pheno_clean_data"]],
+#          #                         response = response,
+#          #                         test_set = ml_dat_res[["test_set"]],
+#          #                         GS_model = GS_model
+#          # )
+#
+#          # return(results_handling(GS_model = GS_model,
+#          #                         res_model_output = res_model_output,
+#          #                         res_summary_stat = res_summary_stat,
+#          #                         res_plot = NULL,
+#          #                         geno_qc_stat =if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL,
+#          #                         system_database = system_database))
+#
+#      }
+#
+#   ### End machine learning
 
 } ## end of function

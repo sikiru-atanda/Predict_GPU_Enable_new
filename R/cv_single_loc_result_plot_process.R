@@ -102,9 +102,9 @@ cv_single_loc_result_plot_process <- function(cv_results_data = NULL,
   })
   names(plot_mean_list) <- eval_metrics
   ##### Initiate process for ranking of models per traits
-  aggregated_data_across_reps <- aggregated_data_list[["combined_df"]] |>
-    dplyr::group_by(trait, model) |>
-    dplyr::summarise(mean_metric = mean(!!rlang::sym(metric_for_ranking), na.rm = TRUE), .groups = "drop")
+  # aggregated_data_across_reps <- aggregated_data_list[["combined_df"]] |>
+  #   dplyr::group_by(trait, model) |>
+  #   dplyr::summarise(mean_metric = mean(!!rlang::sym(metric_for_ranking), na.rm = TRUE), .groups = "drop")
 
   # Step 2: Rank models for each trait based on the aggregated metric
  #  rankings <- aggregated_data_across_reps |>
@@ -119,7 +119,7 @@ cv_single_loc_result_plot_process <- function(cv_results_data = NULL,
  #    dplyr::select(trait, model, mean_metric)
  #
  # colnames(best_models)[3] <- metric_for_ranking
-  best_models_list <- lapply(eval_metrics, function(m) rank_models(aggregated_data_across_reps, m))
+  best_models_list <- lapply(eval_metrics, function(metric) rank_models(data = aggregated_data_list[["aggregated_across_reps"]], metric = metric))
 
   names(best_models_list) <- eval_metrics
 

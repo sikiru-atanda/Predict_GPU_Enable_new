@@ -68,6 +68,7 @@ bayes_finalize_RKHS_GBLUPBRR <- function(fixed = NULL,
                                     omic1_kernel = omic1_kernel,
                                     omic2_kernel = omic2_kernel,
                                     omic3_kernel = omic3_kernel,
+                                    heter_groups = heter_groups,
                                     gen_name = gen_name)
 
 

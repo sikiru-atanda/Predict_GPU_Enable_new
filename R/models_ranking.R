@@ -12,10 +12,12 @@ rank_models <- function(data, metric) {
                         "root_mean_squared_error", "relative_squared_error",
                         "mean_absolute_error", "mean_absolute_percent_error")
 
+  maximize_metrics <- c("accuracy")
+
   # Decide the ranking order based on the type of metric
   arrange_func <- if (metric %in% minimize_metrics) {
     dplyr::arrange(data, trait, !!dplyr::sym(metric))
-  } else if(metric %in% minimize_metrics) {
+  } else if(metric %in% maximize_metrics) {
     dplyr::arrange(data, trait, dplyr::desc(!!dplyr::sym(metric)))
   } else {
     stop("unknown metric")

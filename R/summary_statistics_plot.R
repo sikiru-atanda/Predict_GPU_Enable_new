@@ -10,6 +10,7 @@
 #' @examples
 summary_statistics_bayes <- function(mod=NULL,
                                      eval_metrics = NULL,
+                                     GS_model = NULL,
                                      ...){
 
   if(!is.null(eval_metrics)){
@@ -91,8 +92,8 @@ summary_statistics_bayes <- function(mod=NULL,
                                         Phenotype_Variance = var_trn,
                                         Residual_Variance = Res_trn,
                                         Number_TrainingSet = n_trn,
-                                        Number_TestingSet = n_tst
-                                        #GS_model = model
+                                        Number_TestingSet = n_tst,
+                                        GS_model = GS_model
   )))
   Stat_Res$stat <- rownames( Stat_Res)
   Stat_Res <- Stat_Res[, c(2,1)]

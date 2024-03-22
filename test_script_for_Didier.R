@@ -23,13 +23,26 @@ sik <- model_execute(pheno_data = pheno,
                      #omic2_data = COP,
                      omic3_data = COP,
                      random = ~GID,
+                     GS_model_cv = c("BRR","RandomForest", "BayesB", "Lasso"),
                      gen_name = "GID",
-                     response ="Yield",
-                     GS_model = "BRR",
+                     response =c("Yield","deBLUP","BLUE"),
+                     cross_validation = TRUE,
+                     metric_for_ranking = "accuracy",
+                     eval_metrics = c("accuracy", "mean_squared_error", "bias",
+                                      "root_mean_squared_error",
+                                      "relative_squared_error",
+                                      "mean_absolute_error",
+                                      "mean_absolute_percent_error"),
+                     replication = 1,
+                     cross_validation_meth = "Stratified_Hold_Out",
+
                      #iteration = 50,
                      ntree=50,
                      system_database = FALSE
 )
+
+
+#sik
 ###
 bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
 sik <- model_execute(pheno_data = pheno,

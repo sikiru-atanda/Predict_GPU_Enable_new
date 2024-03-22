@@ -1,8 +1,8 @@
 
 set_parallel_plan <- function(n_trait,
-                              n_model,
-                              replication,
-                              num_cores,
+                              n_model = 1,
+                              replication = 1,
+                              num_cores = 4,
                               sys_name) {
   # Define the plan based on the system
   plan_type <- ifelse(sys_name == "Windows", "multisession", "multicore")
@@ -58,6 +58,7 @@ predict_with_model <- function(model = NULL, y = NULL, omics_data = NULL, tst = 
 ###########################
 
 models_execute_crossval <- function(pheno_data = NULL,
+                                    test_set = NULL,
                                     response = NULL,
                                     gen_name = NULL,
                                     test_size = NULL,
@@ -88,7 +89,7 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     c = 1, ## svm
                                     ...){
 
-  ##browser()
+ # browser()
 
   if(!is.null(cross_validation_meth) & length(cross_validation_meth)>1){
     stop('use only one cross_validation method at a time')
@@ -147,9 +148,9 @@ models_execute_crossval <- function(pheno_data = NULL,
   #                 asreml_model)
 
   # Check if "GBLUP_BRR" is in the list and replace it with "BRR"
-  if("GBLUP_BRR" %in% GS_model_cv) {
-    GS_model_cv[GS_model_cv == "GBLUP_BRR"] <- "BRR"
-  }
+  # if("GBLUP_BRR" %in% GS_model_cv) {
+  #   GS_model_cv[GS_model_cv == "GBLUP_BRR"] <- "BRR"
+  # }
 
   n_trait <- length(response)
   n_model <- length(GS_model_cv)
@@ -178,18 +179,25 @@ models_execute_crossval <- function(pheno_data = NULL,
   sys_name <- Sys.info()["sysname"]
   if (!is.null(num_cores) && num_cores > 1) {
     #sys_name <- Sys.info()["sysname"]
-    set_parallel_plan(n_trait, n_model,replication,num_cores,sys_name)
+    set_parallel_plan(n_trait = n_trait, n_model = n_model,
+                      replication = replication,num_cores = num_cores,
+                      sys_name = sys_name)
   } else {
     # Automatically determine the number of cores and use half of them
     detected_cores <- parallel::detectCores(logical = TRUE)
     # For non-Windows systems, consider physical cores only
     num_cores <- round(detected_cores * 0.5)
 
-    set_parallel_plan(n_trait, n_model,replication,num_cores,sys_name)
+    set_parallel_plan(n_trait = n_trait,
+                      n_model= n_model,
+                      replication = replication,
+                      num_cores = num_cores,
+                      sys_name = sys_name)
   }
 
   # Create a list of all combinations of response variables and replications
-  tasks <- expand.grid(response = response, replication = seq_len(replication),
+  tasks <- expand.grid(response = response,
+                       replication = seq_len(replication),
                        modell = GS_model_cv,
                        stringsAsFactors = FALSE)
 
@@ -201,6 +209,7 @@ models_execute_crossval <- function(pheno_data = NULL,
     trait <- as.character(task_row$response)
     rep <- as.integer(task_row$replication)
     model <- as.character(task_row$modell)
+
 
     #print(c(trait, rep))  # For diagnostic purposes
 
@@ -335,8 +344,18 @@ models_execute_crossval <- function(pheno_data = NULL,
         if(model %in% c(bayes_valid_models, bayes_gblup_valid_models)) {
           #model_use <- model
           #model <- "Bayes" # Use a general term for Bayesian models for the switch function
-          additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
-          additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
+          if(model == "GBLUP_BRR") {
+            model_GBLUP <- "BRR"
+            additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
+            additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
+
+          } else{
+            additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
+            additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
+
+          }
+          # additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
+          # additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
 
           ypred_cv[tst, "yhat"] <- predict_with_model(model = "Bayes", y = yNA,
                                                       tst = tst, additional_params = additional_params)
@@ -344,7 +363,11 @@ models_execute_crossval <- function(pheno_data = NULL,
         }
 
         if(model %in% c(AI_valid_models)) {
-        ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = ml_dat_res[["merged_data"]][["merge_data"]],
+          omics_data <-  ml_dat_res[["merged_data"]][["merge_data"]]
+
+          if(!is.null(test_set)) omics_data[rownames(omics_data) %in% test_set, ] else omics_data
+
+        ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = omics_data,
                                                     tst = tst, additional_params = additional_params)
         }
 

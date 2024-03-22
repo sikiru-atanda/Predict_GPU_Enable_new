@@ -21,7 +21,7 @@ summary_statistics_AI <- function(predicted_object= NULL,
                                   model_parameters = NULL,
                                   eval_metrics = NULL,
                                   GS_model = NULL,
-                                                   ...){
+                                   ...){
 
 
   if(!is.null(eval_metrics)){
@@ -101,13 +101,21 @@ summary_statistics_AI <- function(predicted_object= NULL,
   Stat_Res$stat <- rownames( Stat_Res)
   Stat_Res <- Stat_Res[, c(2,1)]
   names(Stat_Res)[2] <- "summary"
-  if(!is.null(eval_metrics) & !is.null(Eval_met)){
-  Eval_met <- data.frame(Eval_met)
-  Eval_met$stat <- rownames(Eval_met)
-  Eval_met <- Eval_met[, c(2,1)]
-  names(Eval_met)[2] <- "summary"
+  rownames(Stat_Res) <- NULL
+  #####
+  if(!is.null(eval_metrics)){
+    Eval_met <- data.frame(Eval_met)
+    Eval_met$stat <- rownames(Eval_met)
+    Eval_met <- Eval_met[, c(2,1)]
+    names(Eval_met)[2] <- "summary"
+    rownames(Eval_met) <- NULL
 
-  Stat_Res <- rbind(Stat_Res, Eval_met)
+    ### This is specific where the pheno_data has missing value but no test_value for the
+    ## validation exercise. proper validation exercise should be done with validation fxn
+    Eval_met <- Eval_met[complete.cases(Eval_met), ]
+    ####
+    Stat_Res <- rbind(Stat_Res, Eval_met)
+
   }
 
   if(!is.null(model_parameters)){

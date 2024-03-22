@@ -1,34 +1,41 @@
 
 
 model_prep_bayes_cv<- function(fixed = NULL,
-                                   random = NULL,
-                                   GS_model_cv = NULL,
-                                   response = NULL,
-                                   gen_name = NULL,
-                                   pheno_data = NULL,
-                                   weights = NULL,
-                                   fixed_term_model_bayesian = NULL,
-                                   rand_term_model_bayesian = NULL,
-                                   nIter = NULL,
-                                   burnIn = NULL,
-                                   thin = NULL,
-                                   geno_data = NULL,
-                                   omic1_data = NULL,
-                                   omic2_data = NULL,
-                                   omic3_data = NULL,
-                                   omics_data_label = NULL,
-                                   gmatrix = NULL,
-                                   omic1_kernel = NULL,
-                                   omic2_kernel = NULL,
-                                   omic3_kernel = NULL,
-                                   heter_groups = NULL,
-                                   omics_kernel_label = NULL,
-                                   cross_validation = TRUE
+                               random = NULL,
+                               GS_model_cv = NULL,
+                               response = NULL,
+                               gen_name = NULL,
+                               pheno_data = NULL,
+                               weights = NULL,
+                               fixed_term_model_bayesian = NULL,
+                               rand_term_model_bayesian = NULL,
+                               test_set = NULL,
+                               nIter = NULL,
+                               burnIn = NULL,
+                               thin = NULL,
+                               geno_data = NULL,
+                               omic1_data = NULL,
+                               omic2_data = NULL,
+                               omic3_data = NULL,
+                               omics_data_label = NULL,
+                               gmatrix = NULL,
+                               omic1_kernel = NULL,
+                               omic2_kernel = NULL,
+                               omic3_kernel = NULL,
+                               heter_groups = NULL,
+                               omics_kernel_label = NULL,
+                               cross_validation = TRUE
                                    ){
 #browser()
   bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
   bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
   res_model_output_list <- list()
+  # if(!is.null(test_set)){
+  # if(is.data.frame(test_set) | is.matrix(test_set)){
+  #   test_set <-  test_set[, 1]
+  #  }
+  #
+  # }
 
   for (model in GS_model_cv) {
 
@@ -40,11 +47,12 @@ model_prep_bayes_cv<- function(fixed = NULL,
                                                   weights = weights,
                                                   fixed_term_model_bayesian = fixed_term_model_bayesian,
                                                   rand_term_model_bayesian = rand_term_model_bayesian,
+                                                  #pheno_data = if(!is.null(test_set)) pheno_data[pheno_data[[gen_name]] %in% test_set, ] else pheno_data,
                                                   pheno_data = pheno_data,
-                                                  geno_data = geno_data,
-                                                  omic1_data = omic1_data,
-                                                  omic2_data = omic2_data,
-                                                  omic3_data = omic3_data,
+                                                  geno_data = if(!is.null(test_set)) geno_data[rownames(geno_data) %in% test_set, ] else geno_data,
+                                                  omic1_data = if(!is.null(test_set)) omic1_data[rownames(omic1_data) %in% test_set, ] else omic1_data,
+                                                  omic2_data = if(!is.null(test_set)) omic2_data[rownames(omic2_data) %in% test_set, ] else omic2_data,
+                                                  omic3_data = if(!is.null(test_set)) omic3_data[rownames(omic3_data) %in% test_set, ] else omic3_data,
                                                   gen_name = gen_name,
                                                   nIter = nIter,
                                                   burnIn = burnIn,
@@ -66,11 +74,12 @@ model_prep_bayes_cv<- function(fixed = NULL,
                                                   weights = weights,
                                                   fixed_term_model_bayesian = fixed_term_model_bayesian,
                                                   rand_term_model_bayesian = rand_term_model_bayesian,
+                                                  #pheno_data = if(!is.null(test_set)) pheno_data[pheno_data[[gen_name]] %in% test_set, ] else pheno_data,
                                                   pheno_data = pheno_data,
-                                                  gmatrix = gmatrix,
-                                                  omic1_kernel = omic1_kernel,
-                                                  omic2_kernel = omic2_kernel,
-                                                  omic3_kernel = omic3_kernel,
+                                                  gmatrix = if(!is.null(test_set)) gmatrix[rownames(gmatrix) %in% test_set, colnames(gmatrix) %in% test_set] else gmatrix,
+                                                  omic1_kernel = if(!is.null(test_set)) omic1_kernel[rownames(omic1_kernel) %in% test_set, colnames(omic1_kernel) %in% test_set] else omic1_kernel,
+                                                  omic2_kernel = if(!is.null(test_set)) omic2_kernel[rownames(omic2_kernel) %in% test_set, colnames(omic2_kernel) %in% test_set] else omic2_kernel,
+                                                  omic3_kernel = if(!is.null(test_set)) omic3_kernel[rownames(omic3_kernel) %in% test_set, colnames(omic3_kernel) %in% test_set] else omic3_kernel,
                                                   gen_name = gen_name,
                                                   heter_groups = heter_groups,
                                                   nIter = nIter,

@@ -1,9 +1,14 @@
-save_ggplot <- function(plot, filename = "Yield", extension = "jpeg",
-                        width = 17, height = 12, units = "in", dpi = 300) {
+save_ggplot <- function(res_plot,
+                        plot_filename = "trait",
+                        plot_extension = "jpeg",
+                        plot_width = 17,
+                        plot_height = 12,
+                        plot_units = "in",
+                        plot_dpi = 300) {
   # save plot plot with user defined name and parameters
-  ggplot2::ggsave(filename = paste0(filename, ".", extension),
-         plot = plot,
-         width = width, height = height, units = units, dpi = dpi)
+  ggplot2::ggsave(filename = paste0(plot_filename, ".", plot_extension),
+         plot = res_plot,
+         width = plot_width, height = plot_height, units = plot_units, dpi = plot_dpi)
 }
 
 #' Title
@@ -18,18 +23,63 @@ save_ggplot <- function(plot, filename = "Yield", extension = "jpeg",
 #' @export
 #'
 #' @examples
+
+# results_handling_final <- function(results,
+#                                    best_models_ggplot_rep = NULL,
+#                                    best_models_ggplot_mean = NULL,
+#                                    cv_results_processed = NULL,
+#                                    geno_qc_stat = NULL,
+#                                    system_database = TRUE,
+#                                    plot_extension = "jpeg",
+#                                    plot_width = 17,
+#                                    plot_height = 12,
+#                                    plot_units = "in",
+#                                    plot_dpi = 300){
+#   for (res in 1:length(results)) {
+#
+#     #names(results[[1]])
+#
+#
+#     return(results_handling(GS_model = if("GS_model" %in% names(results[[res]])) results[[res]][["GS_model"]] else NULL,
+#                             res_model_output = if("res_model_output" %in% names(results[[res]])) results[[res]][["res_model_output"]] else NULL,
+#                             res_summary_stat = if("res_summary_stat" %in% names(results[[res]])) results[[res]][["res_summary_stat"]] else NULL,
+#                             res_plot = best_models_ggplot_rep,
+#                             res_plot_mean = best_models_ggplot_mean,
+#                             geno_qc_stat = geno_qc_stat,
+#                             cv_results_processed = cv_results_processed,
+#                             system_database = system_database,
+#                             plot_filename = if(!is.null(names(results)[res])) names(results)[res] else paste("trait", res, sep = "_"),
+#                             plot_extension = plot_extension,
+#                             plot_width = plot_width,
+#                             plot_height = plot_height,
+#                             plot_units = plot_units,
+#                             plot_dpi = plot_dpi))
+#
+#   }
+#
+#
+# }
+
 results_handling <-  function(GS_model = NULL,
                               res_model_output = NULL,
                               res_summary_stat = NULL,
                               res_plot = NULL,
+                              res_plot_mean = NULL,
+                              cv_results_processed = NULL,
                               geno_qc_stat = NULL,
-                              system_database = TRUE){
+                              system_database = TRUE,
+                              plot_filename = "trait",
+                              plot_extension = "jpeg",
+                              plot_width = 17,
+                              plot_height = 12,
+                              plot_units = "in",
+                              plot_dpi = 300){
 
-  if(!is.null(geno_qc_stat)){
-
-    res_model_output[["geno_qc_stat"]] <- geno_qc_stat
-
-  }
+  # if(!is.null(geno_qc_stat)){
+  #
+  #   res_model_output[["geno_qc_stat"]] <- geno_qc_stat
+  #
+  # }
 
   ############
 
@@ -50,7 +100,7 @@ results_handling <-  function(GS_model = NULL,
     zip(file.path(pathout, zip_name), files = geno_omic_files, flags = "-q")
   }
 
-  saveOutput <- function(res_model_output, res_summary_stat,  pathout, GS_model, res_plot = NULL) {
+  saveOutput <- function(res_model_output, res_summary_stat,  pathout, GS_model, res_plot) {
     for (i in 1:length(res_model_output)) {
 
       for(i in 1:length(res_model_output)){
@@ -148,7 +198,23 @@ results_handling <-  function(GS_model = NULL,
   }
   ####
     if(!is.null(res_plot)){
-      save_ggplot(res_plot)
+      save_ggplot(res_plot = res_plot,
+                  plot_filename = plot_filename,
+                  plot_extension = plot_extension,
+                  plot_width = plot_width,
+                  plot_height = plot_height,
+                  plot_units = plot_units,
+                  plot_dpi = plot_dpi)
+    }
+
+    if(!is.null(res_plot_mean)){
+      save_ggplot(res_plot = res_plot_mean,
+                  plot_filename = paste(plot_filename, "mean", sep = "_"),
+                  plot_extension = plot_extension,
+                  plot_width = plot_width,
+                  plot_height = plot_height,
+                  plot_units = plot_units,
+                  plot_dpi = plot_dpi)
     }
 
 }
@@ -163,12 +229,12 @@ results_handling <-  function(GS_model = NULL,
     }
   }
 
-  saveOutputAndZip <- function(res_model_output, res_summary_stat) {
+  saveOutputAndZip <- function(res_model_output, res_summary_stat, output_file_name) {
     mainDir <- getwd()
     systime <- format(Sys.time(), "%Y%m%d_%H%M%S")
     systime <- gsub("[-: ]", "_", systime)
-    subDir <- paste("output", systime, sep = "_")
-    subDir2 <- paste("outputNew", systime, sep = "_")
+    subDir <- paste(output_file_name, systime, sep = "_")
+    subDir2 <- paste(paste(output_file_name, "New", sep="_"), systime, sep = "_")
 
     if (!dir.exists(file.path(mainDir, subDir))) {
       dir.create(file.path(mainDir, subDir))
@@ -180,7 +246,7 @@ results_handling <-  function(GS_model = NULL,
 
     pathout <- getwd()
 
-    saveOutput(res_model_output, res_summary_stat,  pathout, GS_model)
+    saveOutput(res_model_output, res_summary_stat,  pathout, GS_model, res_plot)
     processMMatrixModelReady(pathout)
 
     setwd(mainDir)
@@ -192,7 +258,15 @@ results_handling <-  function(GS_model = NULL,
                           res_model_output,
                           res_summary_stat,
                           res_plot,
-                          system_database) {
+                          res_plot_mean,
+                          cv_results_processed,
+                          system_database,
+                          plot_filename,
+                          plot_extension,
+                          plot_width,
+                          plot_height,
+                          plot_units,
+                          plot_dpi) {
 
     # if (exists("GS_modeluse")) {
     #   GS_model <- GS_modeluse
@@ -209,10 +283,14 @@ results_handling <-  function(GS_model = NULL,
     #} else if (GS_model %in% c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS", "GBLUP_BRR", "GBLUP")) {
 
       if (isFALSE(system_database)) {
-        output <- saveOutputAndZip(res_model_output, res_summary_stat)
+        output <- saveOutputAndZip(res_model_output = res_model_output,
+                                   res_summary_stat = res_summary_stat,
+                                   output_file_name = plot_filename)
       } else {
         output <- list(model_results = res_model_output,
-                       summary_statistic = res_summary_stat
+                       summary_statistic = res_summary_stat,
+                       res_plot = res_plot,
+                       cv_results_processed = cv_results_processed
                        )
       }
       return(output)
@@ -225,7 +303,15 @@ results_handling <-  function(GS_model = NULL,
                      res_model_output = res_model_output,
                      res_summary_stat = res_summary_stat,
                      res_plot = res_plot,
-                     system_database = system_database))
+                     res_plot_mean = res_plot_mean,
+                     cv_results_processed = cv_results_processed,
+                     system_database = system_database,
+                     plot_filename = plot_filename,
+                     plot_extension = plot_extension,
+                     plot_width = plot_width,
+                     plot_height = plot_height,
+                     plot_units = plot_units,
+                     plot_dpi = plot_dpi))
 
   #out <-  list(res_model_output, res_summary_stat)
   #return(out)

@@ -44,7 +44,7 @@ ETA_compiler_bayes_GBLUP <- function(
     heter_groups = NULL,
     ...
 ){
-##browser()
+#browser()
   ### Create empty list for ETA
 
   #rm(ZE, ZEZE, Zg, K1, K2, ETA)

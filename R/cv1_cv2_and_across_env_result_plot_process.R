@@ -90,11 +90,11 @@ cv1_cv2_and_across_env_result_plot_process <- function(cv_results_data = NULL,
        ggplot_lineplot_mean = ggplot_lineplot_mean,
        plotly_lineplot_mean = plotly_lineplot_mean)
        })
-  names(plot_reps_list) <- eval_metrics
+  names(plot_mean_list) <- eval_metrics
   ########## Select best models for each trait
-  aggregated_data_across_env <- combined_df |>
-    dplyr::group_by(trait, model) |>
-    dplyr::summarise(mean_metric = mean(!!rlang::sym(metric_for_ranking), na.rm = TRUE), .groups = "drop")
+  # aggregated_data_across_env <- combined_df |>
+  #   dplyr::group_by(trait, model) |>
+  #   dplyr::summarise(mean_metric = mean(!!rlang::sym(metric_for_ranking), na.rm = TRUE), .groups = "drop")
 
   # Step 2: Rank models for each trait based on the aggregated metric
   # rankings <- aggregated_data_across_env |>
@@ -109,7 +109,7 @@ cv1_cv2_and_across_env_result_plot_process <- function(cv_results_data = NULL,
   #   dplyr::select(trait, model, mean_metric)
   # colnames(best_models)[3] <- metric_for_ranking
   #
-  best_models_list <- lapply(eval_metrics, function(m) rank_models(aggregated_data_across_env, m))
+  best_models_list <- lapply(eval_metrics, function(m) rank_models(aggregated_data_list[[m]][["aggregated_data_env_mean"]], m))
 
   names(best_models_list) <- eval_metrics
 

@@ -14,13 +14,15 @@ omic_to_model <- function(omic_data = NULL,
                           train_omic_data = NULL,
                           test_omic_data = NULL,
                           message = TRUE,
+                          impute_omic = FALSE,
                           ...) {
 
   msg <- sprintf("==================================================\n")
 
   # Check if omic_data is provided
   if (!is.null(omic_data)) {
-    omic_object <- omic_precheck(object = omic_data, message = message)
+    omic_object <- omic_precheck(object = omic_data, message = message,
+                                 impute = impute_omic)
 
     # Check if omic_object passed the checks and is of the correct class
     if (attr(omic_object, "cleared") != "pass" || !inherits(omic_object, c("matrix", "array"))) {

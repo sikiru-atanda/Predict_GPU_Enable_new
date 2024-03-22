@@ -157,6 +157,7 @@ process_omic_data <- function(omic_data = NULL,
                               center = TRUE,
                               scale = FALSE,
                               message = message,
+                              impute_omic = FALSE,
                               ...) {
 
   ##browser()
@@ -166,7 +167,8 @@ process_omic_data <- function(omic_data = NULL,
     cleaned_dataa <- omic_to_model(omic_data = omic_data,
                                    train_omic_data = train_omic_data,
                                    test_omic_data = test_omic_data,
-                                   message = message)
+                                   message = message,
+                                   impute_omic = impute_omic)
 
     if (attr(cleaned_dataa, "cleared") != "for_model_fit" && all(class(cleaned_dataa) != c("matrix", "array"))) {
       stop(print(paste(msg, 'Data is not fit for model')), call. = FALSE)

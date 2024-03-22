@@ -79,7 +79,7 @@ bayes_parameter_check <- function(
   }
 
   if(is.null(thin)){
-    if(message){
+    if(isTRUE(message)){
 
       message(insight::print_color(paste(msg,paste("Number of thining is missing. Default value of 10 was assigned. \n Check if this appropriate for your data.")), "blue"))
 

@@ -40,7 +40,7 @@ AI_xgboost_cv <- function(y,
     }
   }
   ### Set the paramters and hyper parameters for extreme graident boosting
-  suppressWarnings({
+  suppressMessages({
   xgb_params <- list(
     booster = "gblinear",
     eta = eta,
@@ -162,11 +162,13 @@ AI_ridge_regression_cv <- function(y,
   }
   fit_CV<-glmnet::cv.glmnet(x= omics[-tst, ],
                             y = y[-tst],
-                            nfolds = 5,
+                            #nfolds = 5,
                             alpha = 0,
-                            standardize = FALSE,
-                            lambda = seq(0.000001,0.9,length.out=100)^4)
+                            standardize = FALSE
+                            )
+  # Optimal lambda for Ridge
 
+  #lambda_1se_ridge <- cv_ridge$lambda.1se
   fit <-  glmnet::glmnet(x=omics[-tst, ],
                          y = y[-tst],
                          alpha = 0,
@@ -198,10 +200,9 @@ AI_lasso_cv <- function(y,
   }
   fit_CV<-glmnet::cv.glmnet(x= omics[-tst, ],
                             y= y[-tst],
-                            nfolds = 5,
+                            #nfolds = 5,
                             alpha = 1,
-                            standardize = FALSE,
-                            lambda = seq(0.000001,0.9,length.out=100)^4)
+                            standardize = FALSE)
 
   fit <-  glmnet::glmnet(x= omics[-tst, ],
                          y = y[-tst],
