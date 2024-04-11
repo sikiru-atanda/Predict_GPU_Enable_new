@@ -10,48 +10,6 @@
 #' @examples
 #'
 
-# merge_data <- function(geno_data, omic_data) {
-#   # Ensure omic_data is a list for consistency
-#   # if (!is.list(omic_data)) {
-#   #   stop("omic_data should be a list.")
-#   # }
-#
-#   # Check if both geno_data and omic_data are NULL or empty
-#   # if (is.null(geno_data) && length(omic_data) == 0) {
-#   #   stop("Both geno_data and omic_data are NULL or empty.")
-#   # }
-#
-#   # Initialize merged_data
-#   merged_data <- NULL
-#   omic_count <- length(omic_data)
-#
-#   # Merge geno_data if not NULL
-#   if (!is.null(geno_data)) {
-#     if(is.list(geno_data)){
-#       geno_data <- as.matrix(unlist(geno_data))
-#     }
-#     merged_data <- geno_data
-#     omic_count <- omic_count + 1  # Include geno_data in the count
-#   }
-#
-#   # Merge omic_data
-#   if (length(omic_data) > 0) {
-#     merged_data <- if (is.null(merged_data)) {
-#       do.call(cbind, omic_data)
-#     } else {
-#       do.call(cbind, c(list(merged_data), omic_data))
-#     }
-#   }
-#
-#   # Return merged data and omic_count if more than one source
-#   if (omic_count > 1) {
-#     return(list(merge_data = merged_data, omic_count = omic_count))
-#   } else {
-#     return(list(merge_data = merged_data))
-#   }
-# }
-
-
 merge_data <- function(geno_data,
                        omic_data) {
   # Check if both geno_data and omic_data are NULL
@@ -148,3 +106,45 @@ ML_data_processing <- function(pheno_clean = NULL,
 
   return(result)
 }
+
+
+# merge_data <- function(geno_data, omic_data) {
+#   # Ensure omic_data is a list for consistency
+#   # if (!is.list(omic_data)) {
+#   #   stop("omic_data should be a list.")
+#   # }
+#
+#   # Check if both geno_data and omic_data are NULL or empty
+#   # if (is.null(geno_data) && length(omic_data) == 0) {
+#   #   stop("Both geno_data and omic_data are NULL or empty.")
+#   # }
+#
+#   # Initialize merged_data
+#   merged_data <- NULL
+#   omic_count <- length(omic_data)
+#
+#   # Merge geno_data if not NULL
+#   if (!is.null(geno_data)) {
+#     if(is.list(geno_data)){
+#       geno_data <- as.matrix(unlist(geno_data))
+#     }
+#     merged_data <- geno_data
+#     omic_count <- omic_count + 1  # Include geno_data in the count
+#   }
+#
+#   # Merge omic_data
+#   if (length(omic_data) > 0) {
+#     merged_data <- if (is.null(merged_data)) {
+#       do.call(cbind, omic_data)
+#     } else {
+#       do.call(cbind, c(list(merged_data), omic_data))
+#     }
+#   }
+#
+#   # Return merged data and omic_count if more than one source
+#   if (omic_count > 1) {
+#     return(list(merge_data = merged_data, omic_count = omic_count))
+#   } else {
+#     return(list(merge_data = merged_data))
+#   }
+# }

@@ -995,7 +995,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
 
  geno_qc_stat <- if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL
 
- #is this correct?
+ #######
  if(!is.null(best_models)){
    n_trait <- length(best_models[["trait"]])
    n_model <- length(best_models[["model"]])
@@ -1007,7 +1007,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
      }
    }
 
-   task <- data.frame(model = GS_model, trait = response, stringsAsFactors = FALSE)
+   #task <- data.frame(model = GS_model, trait = response, stringsAsFactors = FALSE)
+   best_models <- data.frame(model = GS_model, trait = response, stringsAsFactors = FALSE)
    n_trait <-  length(response)
    n_model <- length(GS_model)
  }

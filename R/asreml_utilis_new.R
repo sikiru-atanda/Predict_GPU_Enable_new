@@ -386,6 +386,40 @@ asreml_utilis_new <- function(
   eval(parse(text=str_mod), envir=environment())
   if (!mod$converge) { eval(parse(text='mod<-asreml::update.asreml(mod)')) }
 
+  ###### Process if the model is not stable #######
+  specific_warning_occurred <- FALSE
+  error_occurred <- FALSE
+
+  repeat {
+    # Attempt to update the model and capture warnings
+    tryCatch({
+      # Assuming 'res' is your model object and update.asreml is the function you're using
+      mod <- asreml::update.asreml(mod)
+
+      # If update.asreml runs without warnings or errors, we assume the update was successful
+    }, warning = function(w) {
+      # Check if the warning message matches the specific warning you're concerned with
+      if(grepl("Some components changed by more than 1% on the last iteration", w$message)) {
+        specific_warning_occurred <- TRUE
+        # Log the occurrence of the specific warning for debugging
+        cat("Specific warning occurred, attempting to update the model again...\n")
+      }
+    }, error = function(e) {
+      error_occurred <- TRUE
+      # Log the error for debugging
+      cat("An error occurred: ", e$message, "\n")
+    })
+
+    # Break the loop if an error occurred or if the specific warning did not occur in this iteration
+    if (error_occurred || !specific_warning_occurred) {
+      break
+    }
+
+    # Reset the specific warning flag for the next iteration
+    specific_warning_occurred <- FALSE
+  }
+
+
   ###################################################
   ##### Start the process of processing the results
   ################################################

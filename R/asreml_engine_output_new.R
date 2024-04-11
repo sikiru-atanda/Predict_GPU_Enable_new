@@ -168,7 +168,7 @@ asreml_mod_output_new <- function(
   #mod = mod[[1]]
   ### if every variance component is stable the update will not run
   ## by default in asreml so it safe to keep it
-  mod <-  asreml::update.asreml(mod)
+  #mod <-  asreml::update.asreml(mod)
   str_mod <-  mod_asreml[["str_mod"]]
   gen_pos <-  mod_asreml[["gen_pos"]]
   inter_gen_pos <-  mod_asreml[["inter_gen_pos"]]

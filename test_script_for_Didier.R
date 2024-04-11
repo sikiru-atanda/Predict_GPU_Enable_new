@@ -18,27 +18,31 @@ library(PredictProR)
 bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
 AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare", "SupportVectorMachine", "K-NearestNeighbors", "Lasso", "Ridge_Regression", "deep_learning_model")
 sik <- model_execute(pheno_data = pheno,
-                     #geno_data = Geno.data,
-                     omic1_data = COP,
+                     geno_data = Geno.data,
+                     #omic1_data = COP,
                      #omic2_data = COP,
-                     omic3_data = COP,
+                     #omic3_data = COP,
                      random = ~GID,
+                     GS_model = "BRR",
                      GS_model_cv = c("BRR","RandomForest", "BayesB", "Lasso"),
                      gen_name = "GID",
-                     response =c("Yield","deBLUP","BLUE"),
-                     cross_validation = TRUE,
+                     response =c("Yield"),
+                     cross_validation = FALSE,
                      metric_for_ranking = "accuracy",
                      eval_metrics = c("accuracy", "mean_squared_error", "bias",
                                       "root_mean_squared_error",
                                       "relative_squared_error",
                                       "mean_absolute_error",
                                       "mean_absolute_percent_error"),
-                     replication = 1,
+                     replication = 3,
                      cross_validation_meth = "Stratified_Hold_Out",
+                     nIter = 1500,
+                     burnIn = 600,
+                     thin =
 
                      #iteration = 50,
                      ntree=50,
-                     system_database = FALSE
+                     system_database = TRUE
 )
 
 
@@ -58,6 +62,19 @@ sik <- model_execute(pheno_data = pheno,
                      system_database = FALSE
 )
 
+library(PredictProR)
+sik <- model_execute(pheno_data = pheno,
+                     geno_data = Geno.data,
+                     #omic1_kernel = COP,
+                     #omic2_kernel = COP,
+                     #omic3_kernel = COP,
+                     random = ~GID,
+                     gen_name = "GID",
+                     response ="Yield",
+                     GS_model = "BRR",
+                     #heter_groups = "Env",
+                     system_database = FALSE
+)
 ###
 library(PredictProR)
 asreml_model <- c("GBLUP")
