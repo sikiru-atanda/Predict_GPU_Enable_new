@@ -202,7 +202,7 @@ models_execute_crossval <- function(pheno_data = NULL,
                             eta = eta, nrounds = nrounds, max_depth = max_depth, gamma = gamma,
                             colsample_bytree = colsample_bytree, subsample = subsample, ntree = ntree,
                             ncomp = ncomp, c = c, k = k, omic_count = omic_count,
-                            asreml_models_prep_cv = asreml_models_prep_cv, gen_name,
+                            asreml_models_prep_cv = asreml_models_prep_cv, gen_name = gen_name,
                             pheno_data = pheno_data, response = response, heter_groups = heter_groups)
 
 

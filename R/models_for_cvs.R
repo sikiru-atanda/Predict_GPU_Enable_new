@@ -71,6 +71,7 @@ asreml_mod_cv <- function(pheno_data,
                           response,
                           tst){
 
+  #browser()
 asreml_tst_model_cv <- asreml_cv_model(pheno_dataa = pheno_data,
                                        response = response,
                                        #heter_groups = heter_groups,
@@ -90,6 +91,9 @@ if (length(random_index) > 0) {
   random_formula <- asreml_models_prep_cv$code_asr_fit[random_index]
   # Apply function and extract matches for the variance-covariance structure
   var_cov_str <- extract_var_cov_structures(random_formula, var_cov_str_available)
+
+  ## This is when var_cov_str return 0 rather than NULL when
+  if(length(var_cov_str)==0) var_cov_str <- NULL
 
 } else {
   var_cov_str <- NULL
@@ -213,7 +217,7 @@ if(is.null(var_cov_str) & !is.null(inter_gen_pos)){
       estimated_breeding_value_list[[bb]] <- estimated_breeding_value_list[[bb]][, c(1, 4, 2:3)]
       colnames(estimated_breeding_value_list[[bb]])[1:3] <- c(gen_name, heter_groups, "BLUP")
       #estimated_breeding_value_list[[bb]][, "Prediction_error_variance"] <-  estimated_breeding_value_list[[bb]][, "Standard_error"]^2
-      rownames(estimated_breeding_value_list[[bb]]) = NULL
+      rownames(estimated_breeding_value_list[[bb]]) <- NULL
     }
   }
 
@@ -235,6 +239,13 @@ if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
     estimated_breeding_value_list[[bb]] <- as.data.frame(estimated_breeding_value_list[[bb]])
     estimated_breeding_value_list[[bb]][, gen_name] <- as.character(stringr::str_split_fixed(rownames(estimated_breeding_value_list[[bb]]), "\\)_", 3)[,2])
     rownames(estimated_breeding_value_list[[bb]]) <-  NULL
+
+    # if(is.null(estimated_breeding_value_list[[bb]])){
+    #   stop("it null")
+    # }
+    #colnames( estimated_breeding_value_list[[bb]])
+    #message(gen_name)
+    #message(colnames(estimated_breeding_value_list[[bb]]))
     estimated_breeding_value_list[[bb]] <-   estimated_breeding_value_list[[bb]][, c(4, 1:2)]
     colnames(estimated_breeding_value_list[[bb]])[1:2] <- c(gen_name, "BLUP")
   }
