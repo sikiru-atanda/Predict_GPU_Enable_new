@@ -23,7 +23,7 @@ summary_statistics_AI <- function(predicted_object= NULL,
                                   GS_model = NULL,
                                    ...){
 
-
+#browser()
   if(!is.null(eval_metrics)){
     Eval_met <- matrix(NA, nrow = length(eval_metrics), ncol = 1)
 
@@ -47,18 +47,14 @@ summary_statistics_AI <- function(predicted_object= NULL,
 
   #n<-length(mod$model$y)
 
-  if(!is.null(test_set))
-  {
+  if(!is.null(test_set) & !is.null(eval_metrics)){
 
   ## Number of Traning
     n_trn <- n_pheno
-
     ## Number of Testing
     n_tst <- nrow(test_set)
 
-    #pred_acc <-  paste('Prediction Accuarcy =',round(cor(pheno_object[, response],yhat[,1]),3))
-
-    if(!is.null(eval_metrics)){
+    #if(!is.null(eval_metrics)){
     for (i in 1:length(eval_metrics)){
 
       Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_object[, response],
@@ -67,7 +63,7 @@ summary_statistics_AI <- function(predicted_object= NULL,
 
     }
 
-    }
+    #}
 
 
   }else{
@@ -78,11 +74,14 @@ summary_statistics_AI <- function(predicted_object= NULL,
 
     #pred_acc <- paste('Prediction Accu of Training =',round(cor(pheno_object[, response],yhat[, 1]),3))
 
+    if(!is.null(eval_metrics)){
     for (i in 1:length(eval_metrics)){
 
       Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_object[, response],
                                           y_predicted = yhat[, "Predicted_value"],
                                           eval_metrics = eval_metrics[i])
+
+    }
 
     }
 

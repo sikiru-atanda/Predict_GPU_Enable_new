@@ -1,4 +1,16 @@
 
+#' Title
+#'
+#' @param n_trait
+#' @param n_model
+#' @param replication
+#' @param num_cores
+#' @param sys_name
+#'
+#' @return
+#' @export
+#'
+#' @examples
 set_parallel_plan <- function(n_trait,
                               n_model = 1,
                               replication = 1,
@@ -16,7 +28,23 @@ set_parallel_plan <- function(n_trait,
 }
 
 
-predict_with_model <- function(model = NULL, y = NULL, omics_data = NULL, tst = NULL, additional_params = NULL) {
+#' Title
+#'
+#' @param model
+#' @param y
+#' @param omics_data
+#' @param tst
+#' @param additional_params
+#'
+#' @return
+#' @export
+#'
+#' @examples
+predict_with_model <- function(model = NULL,
+                               y = NULL,
+                               omics_data = NULL,
+                               tst = NULL,
+                               additional_params = NULL) {
   # Generalized function to handle predictions for various models
   # 'additional_params' is a list of additional parameters required for each model
 
@@ -50,6 +78,9 @@ predict_with_model <- function(model = NULL, y = NULL, omics_data = NULL, tst = 
                                           scaling = additional_params$scaling,
                                           centering = additional_params$centering, k = additional_params$k,
                                           omic_count = additional_params$omic_count),
+         "GBLUP" = asreml_mod_cv(asreml_models_prep_cv = additional_params$asreml_models_prep_cv, pheno_data = additional_params$pheno_data,
+                                    response = additional_params$response, heter_groups = additional_params$heter_groups,
+                                 gen_name = additional_params$gen_name, tst = tst),
          "Bayes" = bayes_mod_cv(y = y, ETA = additional_params$ETA, weights = additional_params$weights,
                                 bayes_para = additional_params$bayes_para, tst = tst)
   )
@@ -57,6 +88,45 @@ predict_with_model <- function(model = NULL, y = NULL, omics_data = NULL, tst = 
 
 ###########################
 
+#' Title
+#'
+#' @param pheno_data
+#' @param test_set
+#' @param response
+#' @param gen_name
+#' @param test_size
+#' @param random_state
+#' @param replication
+#' @param weights
+#' @param model_prep_all_bayes_cv
+#' @param asreml_models_prep_cv
+#' @param ml_dat_res
+#' @param heter_groups
+#' @param verbose
+#' @param num_cores
+#' @param nfolds
+#' @param cross_validation_meth
+#' @param sampling_method
+#' @param eval_metrics
+#' @param GS_model_cv
+#' @param scaling
+#' @param centering
+#' @param eta
+#' @param nrounds
+#' @param max_depth
+#' @param gamma
+#' @param subsample
+#' @param colsample_bytree
+#' @param ncomp
+#' @param ntree
+#' @param k
+#' @param c
+#' @param ...
+#'
+#' @return
+#' @export
+#'
+#' @examples
 models_execute_crossval <- function(pheno_data = NULL,
                                     test_set = NULL,
                                     response = NULL,
@@ -65,7 +135,9 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     random_state = NULL,
                                     replication = NULL,
                                     weights = NULL,
+                                    engine = NULL,
                                     model_prep_all_bayes_cv = NULL,
+                                    asreml_models_prep_cv = NULL,
                                     ml_dat_res = NULL,
                                     heter_groups = NULL,
                                     verbose = FALSE,
@@ -89,7 +161,7 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     c = 1, ## svm
                                     ...){
 
- # browser()
+ #browser()
 
   if(!is.null(cross_validation_meth) & length(cross_validation_meth)>1){
     stop('use only one cross_validation method at a time')
@@ -122,13 +194,16 @@ models_execute_crossval <- function(pheno_data = NULL,
   # Prepare additional parameters for model prediction
   ETA <-  NULL
   bayes_para <- NULL
+
   omic_count <- if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL
 
   additional_params <- list(ETA = ETA, weights = weights, bayes_para = bayes_para,
                             scaling = scaling,centering = centering,
                             eta = eta, nrounds = nrounds, max_depth = max_depth, gamma = gamma,
                             colsample_bytree = colsample_bytree, subsample = subsample, ntree = ntree,
-                            ncomp = ncomp, c = c, k = k, omic_count = omic_count)
+                            ncomp = ncomp, c = c, k = k, omic_count = omic_count,
+                            asreml_models_prep_cv = asreml_models_prep_cv, gen_name,
+                            pheno_data = pheno_data, response = response, heter_groups = heter_groups)
 
 
   AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare",
@@ -362,6 +437,15 @@ models_execute_crossval <- function(pheno_data = NULL,
           #model <- model_use
         }
 
+        if(!is.null(engine)){
+        if(model == "GBLUP" && engine == "asreml") {
+
+          ypred_cv[tst, "yhat"] <- predict_with_model(model = model, tst = tst, additional_params = additional_params)
+
+        }
+
+        }
+
         if(model %in% c(AI_valid_models)) {
           omics_data <-  ml_dat_res[["merged_data"]][["merge_data"]]
 
@@ -380,10 +464,27 @@ models_execute_crossval <- function(pheno_data = NULL,
 
       if(model %in% c(bayes_valid_models, bayes_gblup_valid_models)) {
         #model <- "Bayes" # Use a general term for Bayesian models for the switch function
-        additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
-        additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
+        if(model == "GBLUP_BRR") {
+          model_GBLUP <- "BRR"
+          additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
+          additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
+
+        } else{
+          additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
+          additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
+
+        }
         ypred_cv[tst, "yhat"] <- predict_with_model(model = "Bayes", y = yNA,
                                                     tst = tst, additional_params = additional_params)
+      }
+
+      if(!is.null(engine)){
+      if(model == "GBLUP" && engine == "asreml") {
+
+        ypred_cv[tst, "yhat"] <- predict_with_model(model = model, tst = tst, additional_params = additional_params)
+
+      }
+
       }
 
       if(model %in% c(AI_valid_models)) {

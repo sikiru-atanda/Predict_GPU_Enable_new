@@ -48,7 +48,14 @@ ETA_compiler_bayes_GBLUP <- function(
   ### Create empty list for ETA
 
   #rm(ZE, ZEZE, Zg, K1, K2, ETA)
-  ETA = list()
+
+  non_gen_inter_test <-  NULL
+
+  inter_gen_pos_mod <-  NULL
+
+  non_gen_pos_mod <-  NULL
+
+  ETA <- list()
 
   msg <- sprintf("==================================================\n")
   ### Get the random terms. Both no interaction and interaction terms if present in the random terms
@@ -71,10 +78,10 @@ ETA_compiler_bayes_GBLUP <- function(
   ################################################
   #### Check for Interaction and and non-interaction term
   ## No interaction term
-  rand_terms_no_inter = rand_terms[!grepl(":", rand_terms)]
+  rand_terms_no_inter <- rand_terms[!grepl(":", rand_terms)]
 
   ## Interaction term
-  check_rand_inter = rand_terms[grepl(":", rand_terms)]
+  check_rand_inter <- rand_terms[grepl(":", rand_terms)]
 
   ## Start with the No interaction terms
   if(length(rand_terms_no_inter)!=0){
@@ -83,36 +90,36 @@ ETA_compiler_bayes_GBLUP <- function(
     if(length(gen_pos_mod)==0){stop(print(paste(message(msg), paste(gen_name, "effect is missing"))), call. = FALSE)}
     if(length(gen_pos_mod)>1){stop(print(paste(message(msg), paste(gen_name, "effect should not be greater than 1"))), call. = FALSE)}
     ## Extract other terms from the rand_terms_no_inter  expect the gen_name
-    rand_terms_no_inter_no_gen = rand_terms_no_inter[!rand_terms_no_inter%in%gen_name]
+    rand_terms_no_inter_no_gen <- rand_terms_no_inter[!rand_terms_no_inter%in%gen_name]
     ## Get the position of other terms (No interaction) in the random that is not gen_name
-    non_gen_pos_mod = match(rand_terms_no_inter_no_gen, rand_terms)
+    non_gen_pos_mod <- match(rand_terms_no_inter_no_gen, rand_terms)
 
   } else {
-    non_gen_pos_mod = NULL
+    non_gen_pos_mod <-  NULL
   }
 
   ######## Initialize step For model adjustment for the random term with interaction
 
   if(length(check_rand_inter)!=0){
 
-    test_present_of_geno = grep(gen_name, check_rand_inter, value = TRUE)
+    test_present_of_geno <-  grep(gen_name, check_rand_inter, value = TRUE)
 
     if(length(test_present_of_geno)!=0 | !is.na(test_present_of_geno)){
 
-      inter_gen_pos_mod = match(test_present_of_geno, rand_terms)
+      inter_gen_pos_mod <-  match(test_present_of_geno, rand_terms)
 
-      non_gen_inter_test =  check_rand_inter[!check_rand_inter%in%test_present_of_geno]
+      non_gen_inter_test <- check_rand_inter[!check_rand_inter%in%test_present_of_geno]
 
     } else {
 
-      non_gen_inter_test = NULL
+      non_gen_inter_test <-  NULL
 
-      inter_gen_pos_mod = NULL
+      inter_gen_pos_mod <-  NULL
     }
 
     if(!is.null(non_gen_inter_test)){
 
-      inter_non_gen_pos_mod = match(non_gen_inter_test, rand_terms)
+      inter_non_gen_pos_mod <- match(non_gen_inter_test, rand_terms)
 
     }
 
@@ -132,7 +139,7 @@ ETA_compiler_bayes_GBLUP <- function(
 
     if(!is.null(heter_groups)){
       ZE <- model.matrix(~factor(pheno_data[,heter_groups])-1)
-      ZEZE<-tcrossprod(ZE)
+      ZEZE <-tcrossprod(ZE)
 
     }
 
@@ -143,12 +150,12 @@ ETA_compiler_bayes_GBLUP <- function(
     ZEZE <- NULL
   }
 
-  rand_model_copy = rand_model
+  rand_model_copy <- rand_model
   #####
   #####################################################
   for (ra in 1:length(rand_terms)){
 
-    rand_model = rand_model_copy[ra]
+    rand_model <- rand_model_copy[ra]
 
     ### start when no genotype
     if(is.null(non_gen_pos_mod)){

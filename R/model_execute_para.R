@@ -325,7 +325,7 @@ model_execute <- function(
     ...
 ) {
 
-
+#browser()
     msg <- sprintf("==================================================\n")
 
     eval_metrics_available <- c("accuracy", "mean_squared_error", "bias",
@@ -341,7 +341,7 @@ model_execute <- function(
     # Define available models and variance structures
     var_cov_str_available <- c("us","corgh","corgv",
                                "corh","corv","fa1","fa2", "fa3", "fa4",
-                               "rr1","rr2", "rr3", "rr4")  # reuced rank removed for now"rr1","rr2", "rr3", "rr4"
+                               "rr1","rr2", "rr3", "rr4")
 
     AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare",
                          "SupportVectorMachine", "K-NearestNeighbors", "Lasso",
@@ -889,6 +889,7 @@ model_execute <- function(
  best_models_ggplot_mean <- NULL
  cv_results_processed <-  NULL
  model_prep_all_bayes_cv <-  NULL
+ asreml_models_prep_cv <- NULL
 
  if(isTRUE(cross_validation)){
    #model_prep_all_bayes_cv <-  NULL
@@ -933,6 +934,32 @@ model_execute <- function(
 
    }
 
+   if(any(GS_model_cv%in% c("GBLUP"))){
+     asreml_models_prep_cv <- asreml_utilis_new( fixed = fixed,
+                                                 random = random,
+                                                 engine = engine,
+                                                 cova= cova,
+                                                 GS_model = "GBLUP",
+                                                 response = response,
+                                                 pheno_data = pheno_data,
+                                                 gmatrix = gmatrix,
+                                                 gkernel = gkernel,
+                                                 omic1_kernel = omic1_kernel,
+                                                 omic2_kernel = omic2_kernel,
+                                                 omic3_kernel = omic3_kernel,
+                                                 inverse = inverse,
+                                                 epsilon = epsilon,
+                                                 gen_name = gen_name,
+                                                 heter_groups = heter_groups,
+                                                 heter_resid = heter_resid,
+                                                 var_cov_str = var_cov_str,
+                                                 weights = weights,
+                                                 workspace = workspace,
+                                                 pworkspace= pworkspace,
+                                                 maxit = maxit,
+                                                 cross_validation = cross_validation)
+   }
+
    cv_results <- models_execute_crossval(pheno_data = pheno_data,
                                         test_set = test_set,
                                         response = response,
@@ -945,6 +972,8 @@ model_execute <- function(
                                         nfolds = nfolds,
                                         sampling_method = sampling_method,
                                         model_prep_all_bayes_cv = model_prep_all_bayes_cv,
+                                        asreml_models_prep_cv = asreml_models_prep_cv,
+                                        engine = engine,
                                         ml_dat_res = ml_dat_res,
                                         GS_model_cv = GS_model_cv,
                                         num_cores = num_cores,
@@ -1163,6 +1192,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                   maxit = maxit,
                                   inverse = inverse,
                                   epsilon = epsilon,
+                                  cross_validation = FALSE,
                                   engine = engine)
 
          # Extract model output for ASReml

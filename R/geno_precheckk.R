@@ -58,18 +58,30 @@ geno_precheck <- function(object_geno = NULL,
    } else if(AA=="SNP (-1, 0, 1)"){
      object_geno <- object_geno + 1
      if(isTRUE(message)) {
-       message(insight::print_color(paste(msg, "The allele dosages are not in 0, 1, 2.\n We Fix it to required format to calculate GRM using Yang or VanRadan"), "blue"))
+       message(insight::print_color(paste(msg, "The allele dosages are not in 0, 1, 2.\n We Fix it to required format."), "blue"))
 
      }
-   } else{
+     gc()
+     }else if(AA=="SNP (0, 0.5, 1)"){
+       # Convert 0.5 to 1, and 1 to 2
+       object_geno[object_geno == 1] <- 2
+       object_geno[object_geno == 0.5] <- 1
+
+       if(isTRUE(message)) {
+         message(insight::print_color(paste(msg, "The allele dosages are not in 0, 1, 2.\n We Fix it to required format."), "blue"))
+
+       }
+       gc()
+     } else{
      if(AA=="Presence/Absence (0, 1)"){
        # Convert 1s to 2s
        object_geno[object_geno == 1] <- 2
        if(isTRUE(message)) {
-         message(insight::print_color(paste(msg, "The allele dosages are not in 0, 2.\n We Fix it to required format to calculate GRM using Yang or VanRadan"), "blue"))
+         message(insight::print_color(paste(msg, "The allele dosages are not in 0, 2.\n We Fix it to required format."), "blue"))
        }
 
      }
+       gc()
    }
     # Check if allele dosage are not in  0, 1, 2 format but -1, 0, 1 format
   #   check_geno <- which(object_geno == -1)

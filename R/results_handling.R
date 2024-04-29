@@ -101,6 +101,7 @@ results_handling <-  function(GS_model = NULL,
   }
 
   saveOutput <- function(res_model_output, res_summary_stat,  pathout, GS_model, res_plot) {
+    #browser()
     for (i in 1:length(res_model_output)) {
 
       for(i in 1:length(res_model_output)){
@@ -267,7 +268,7 @@ results_handling <-  function(GS_model = NULL,
                           plot_height,
                           plot_units,
                           plot_dpi) {
-
+#browser()
     # if (exists("GS_modeluse")) {
     #   GS_model <- GS_modeluse
     # }

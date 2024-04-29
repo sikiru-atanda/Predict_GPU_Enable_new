@@ -36,7 +36,8 @@ detect_genomic_coding <- function(object_geno = NULL) {
     "Presence/Absence (0, 2)" = c(0, 2),
     "SNP (-1, 0, 1)" = c(-1, 0, 1),
     "SNP (0, 1, 2, -1)" = c(0, 1, 2, -1),
-    "SNP (0, 1, 2)" = c(0, 1, 2)
+    "SNP (0, 1, 2)" = c(0, 1, 2),
+    "SNP (0, 0.5, 1)" = c(0, 0.5, 1)
   )
 
 

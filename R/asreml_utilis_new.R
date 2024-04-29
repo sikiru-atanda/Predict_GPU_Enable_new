@@ -88,6 +88,14 @@ compute_inverse_and_sparse <- function(kernel = NULL,
   return(sparse)
 }
 
+# Function to check if current order of rownames or colnames is the same as unique_GIDs
+## in pheno_data
+is_in_correct_order <- function(names, order) {
+  if (length(names) != length(order)) {
+    return(FALSE)  # Different lengths mean they are not in the same order
+  }
+  all(names == order)
+}
 
 #' Adjust Random Terms for ASReml Model Fitting
 #'
@@ -160,6 +168,7 @@ asreml_utilis_new <- function(
     engine = NULL,
     pworkspace= 1e06,
     maxit = 50,
+    cross_validation = FALSE,
     ...
 ) {
 
@@ -179,6 +188,25 @@ asreml_utilis_new <- function(
   datasets_index <- which(!sapply(datasets, is.null))
   datasets <-  datasets[datasets_index]
   dataset_names <- dataset_names[datasets_index]
+
+  # Extract unique GIDs from pheno_data to determine the row order
+  unique_GIDs <- as.character(unique(pheno_data[[gen_name]]))
+
+  # Reorder the rownames and colnames of each dataset based on unique_GIDs if necessary
+  datasets <- lapply(datasets, function(mat) {
+    correct_row_order <- is_in_correct_order(rownames(mat), unique_GIDs[unique_GIDs %in% rownames(mat)])
+    correct_col_order <- is_in_correct_order(colnames(mat), unique_GIDs[unique_GIDs %in% colnames(mat)])
+
+    if (!correct_row_order || !correct_col_order) {
+      # Reorder rows and columns if either is not in the correct order
+      ordered_indices <- unique_GIDs[unique_GIDs %in% rownames(mat)]
+      mat <- mat[ordered_indices, ordered_indices]
+      message("Matrix reordered based on unique_GIDs.")
+    } else {
+      message("Matrix is already in the correct order; no changes made.")
+    }
+    return(mat)
+  })
 
 
   inv_list <- list()
@@ -345,7 +373,18 @@ asreml_utilis_new <- function(
 
   #code.asr[1] <-  gsub(response[trait-1], response[trait], code.asr[1])
   #}
+  if(isTRUE(cross_validation)){
 
+    output <- list(code_asr_fit = code_asr_fit,
+                   names_in_inv_list = names_in_inv_list ,
+                   gen_pos = gen_pos,
+                   inter_gen_pos = inter_gen_pos,
+                   rand_term = rand_term,
+                   inv_list = inv_list)
+
+
+    return(output)
+  }
 
   if(is.null(weights)){
     #code.asr[4] <- 'na.action=list(x="include",y="include"),data=pheno_data)'
@@ -382,42 +421,56 @@ asreml_utilis_new <- function(
   #code.asr[1] <- paste('mod<-', code.asr[1], sep='')
   code_asr_fit[1] <- paste('mod<-', code_asr_fit[1], sep='')
   str_mod <- paste(code_asr_fit[1],code_asr_fit[2],code_asr_fit[3],code_asr_fit[4],sep=',')
+  if(isTRUE(cross_validation)){
+    return(str_mod)
+  }
   ## Calls the current environment for evaluation
   eval(parse(text=str_mod), envir=environment())
-  if (!mod$converge) { eval(parse(text='mod<-asreml::update.asreml(mod)')) }
+  #if (!mod$converge) { eval(parse(text='mod<-asreml::update.asreml(mod)')) }
+  # Assuming `mod` is your initial model object
+  for (i in 1:3) {
+    if (!mod$converge) {
 
-  ###### Process if the model is not stable #######
-  specific_warning_occurred <- FALSE
-  error_occurred <- FALSE
-
-  repeat {
-    # Attempt to update the model and capture warnings
-    tryCatch({
-      # Assuming 'res' is your model object and update.asreml is the function you're using
-      mod <- asreml::update.asreml(mod)
-
-      # If update.asreml runs without warnings or errors, we assume the update was successful
-    }, warning = function(w) {
-      # Check if the warning message matches the specific warning you're concerned with
-      if(grepl("Some components changed by more than 1% on the last iteration", w$message)) {
-        specific_warning_occurred <- TRUE
-        # Log the occurrence of the specific warning for debugging
-        cat("Specific warning occurred, attempting to update the model again...\n")
-      }
-    }, error = function(e) {
-      error_occurred <- TRUE
-      # Log the error for debugging
-      cat("An error occurred: ", e$message, "\n")
-    })
-
-    # Break the loop if an error occurred or if the specific warning did not occur in this iteration
-    if (error_occurred || !specific_warning_occurred) {
+      eval(parse(text='mod<-asreml::update.asreml(mod)'))
+      }else {
+      # Exit the loop if model has converged
       break
     }
-
-    # Reset the specific warning flag for the next iteration
-    specific_warning_occurred <- FALSE
   }
+
+
+  ###### Process if the model is not stable #######
+  # specific_warning_occurred <- FALSE
+  # error_occurred <- FALSE
+  #
+  # repeat {
+  #   # Attempt to update the model and capture warnings
+  #   tryCatch({
+  #     # Assuming 'res' is your model object and update.asreml is the function you're using
+  #     mod <- asreml::update.asreml(mod)
+  #
+  #     # If update.asreml runs without warnings or errors, we assume the update was successful
+  #   }, warning = function(w) {
+  #     # Check if the warning message matches the specific warning you're concerned with
+  #     if(grepl("Some components changed by more than 1% on the last iteration", w$message)) {
+  #       specific_warning_occurred <- TRUE
+  #       # Log the occurrence of the specific warning for debugging
+  #       cat("Specific warning occurred, attempting to update the model again...\n")
+  #     }
+  #   }, error = function(e) {
+  #     error_occurred <- TRUE
+  #     # Log the error for debugging
+  #     cat("An error occurred: ", e$message, "\n")
+  #   })
+  #
+  #   # Break the loop if an error occurred or if the specific warning did not occur in this iteration
+  #   if (error_occurred || !specific_warning_occurred) {
+  #     break
+  #   }
+  #
+  #   # Reset the specific warning flag for the next iteration
+  #   specific_warning_occurred <- FALSE
+  # }
 
 
   ###################################################

@@ -1,5 +1,37 @@
 
 
+#' Title
+#'
+#' @param fixed
+#' @param random
+#' @param GS_model_cv
+#' @param response
+#' @param gen_name
+#' @param pheno_data
+#' @param weights
+#' @param fixed_term_model_bayesian
+#' @param rand_term_model_bayesian
+#' @param test_set
+#' @param nIter
+#' @param burnIn
+#' @param thin
+#' @param geno_data
+#' @param omic1_data
+#' @param omic2_data
+#' @param omic3_data
+#' @param omics_data_label
+#' @param gmatrix
+#' @param omic1_kernel
+#' @param omic2_kernel
+#' @param omic3_kernel
+#' @param heter_groups
+#' @param omics_kernel_label
+#' @param cross_validation
+#'
+#' @return
+#' @export
+#'
+#' @examples
 model_prep_bayes_cv<- function(fixed = NULL,
                                random = NULL,
                                GS_model_cv = NULL,
@@ -65,7 +97,7 @@ model_prep_bayes_cv<- function(fixed = NULL,
   if (model %in% bayes_gblup_valid_models) {
 
     if (model == "GBLUP_BRR") {
-      model <- "BRR"
+        model <- "BRR"
     }
   res_model_output <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
                                                   random = random,
