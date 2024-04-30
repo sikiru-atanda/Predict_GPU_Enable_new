@@ -33,7 +33,10 @@ AI_randomForest <- function(pheno_object=NULL,
                    centering = FALSE,
                    omic_count = NULL,
                    para_tunning = FALSE,
-                   rf_paras_tunning= c(mtry_tune=NULL),
+                   rf_paras_tunning= list(mtry = TRUE,
+                                          ntree = c(500, 1000, 1500),
+                                          nodesize = c(1, 5, 10),
+                                          maxnodes = c(30, 50, NULL)),  # NULL means no limit),
                    ntree=500,
                    mtry = NULL,
                    maxnodes = NULL,
@@ -67,11 +70,20 @@ AI_randomForest <- function(pheno_object=NULL,
 
      if(isTRUE(para_tunning)){
        # create hyperparameter grid
+
        n_features = ncol(geno_omic_object)
 
-       AI_grid <- expand.grid(
-         mtry = floor(n_features * rf_paras_tunning$mtry_tune)
+       if(isTRUE(mtry)){
+         mtry <- c(sqrt(ncol(geno_omic_object)), sqrt(ncol(geno_omic_object))/2, ncol(geno_omic_object)/3)
+       } else {
+         stop("set mtry_true")
+       }
 
+       AI_grid <- expand.grid(
+         mtry = mtry,
+         ntree = para_tunning$ntree,
+         nodesize = para_tunning$nodesize,
+         maxnodes = para_tunning$maxnodes  # NULL means no limit
        )
 
        AI_trcontrol = caret::trainControl(method = "cv",

@@ -32,7 +32,7 @@ AI_pls <- function(pheno_object=NULL,
                    omic_count = NULL,
                    para_tunning = FALSE,
                    ncomp = 3,
-                   pls_paras_tunning= c(ncomp = 10), # number of components
+                   pls_paras_tunning= list(ncomp = 10), # number of components
                    resample_method_tune = "cv", # c("cv","boot")
                    N_feature_impo = 10,
                    ...

@@ -291,21 +291,64 @@ model_execute <- function(
     system_database = FALSE,
     num_hidden_layers = 1,
     neurons_per_layer = NULL,
-    learning_rate = 0.001,
     epochs = 10,
     batch_size = 32 ,
     para_tunning = FALSE,
     param_grid = NULL,
     validation_split = 0.2,
     early_stop = TRUE,
-    xgb_paras_tunning = NULL,
-    rf_paras_tunning = NULL,
-    pls_paras_tunning = NULL,
-    svm_paras_tunning = NULL,
-    knn_paras_tunning = NULL,
+    xgb_paras_tunning= list(Iter_tune = seq(500, 5000, 500), # number of boosting iterations
+                         learning_rate_tune = c(0.01, 0.05, 0.1), # learning rate, low value means model is more robust to overfitting
+                         max_depth = c(3, 6, 9),
+                         gamma = c(0, 0.01, 0.1),
+                         colsample_bytree = c(0.5, 0.75, 1),
+                         min_child_weight = c(1, 3, 5),
+                         subsample = c(0.5, 0.75, 1),
+                         L2_tune = c(0, 0.5, 1), #  for linear gbL2 Regularization (Ridge Regression)
+                         L1_tune = c(0, 0.5, 1)),
+    rf_paras_tunning = list(mtry = TRUE,
+                            ntree = c(500, 1000, 1500),
+                            nodesize = c(1, 5, 10),
+                            maxnodes = c(30, 50, NULL)),
+    pls_paras_tunning= list(ncomp = 10),
+    svm_paras_tunning= list(
+      kernel = c("radial", "linear", "polynomial"),
+      #cost = 10^seq(-2, 2, by = 1),
+      sigma = c(0.01, 0.05, 0.1),
+      C = c(1, 10, 100), ## for radial kernel
+      degree = c(2, 3, 4),  # Default values, used only for polynomial
+      scale = c(0.1, 1) # used only for polynomial
+    ),
+    knn_paras_tunning = list(k = seq(3, 21, by = 2),
+                             weight = c("uniform", "distance"),
+                             metric = c("euclidean", "manhattan")),
     lasso_paras_tunning = NULL,
     rr_paras_tunning = NULL,
     dpl_paras_tunning = NULL,
+    learning_rate = 0.001, #xgboost
+    max_depth = 6, #xgboost
+    subsample = 0.5, #xgboost
+    xgb_booster =  "gbtree", # #xgboost "gblinear",
+    iteration = 5000, #xgboost
+    N_feature_impo = 10, #xgboost
+    resample_method_tune = "cv", # c("cv","boot") #xgboost
+    number_of_fold_tune = 5, #xgboost
+    min_child_weight = 1, # xgboost,
+    eta = 0.001, ## xgboost
+    nrounds = 5000, ## xgboost
+    colsample_bytree = 1, ## xgboost
+    alpha = 0.001, ## xgboost linear
+    ntree=500, ## RF
+    mtry = NULL, ## RF
+    maxnodes = NULL, ## RF
+    importance=TRUE, ## RF
+    ncomp = ncomp, # pls
+    svm_kernel = "Gaussian", #svm "Gaussian", "Linear","Hyperbolic_tangent", "Polynomial"
+    sigma_value  = 0.1,       #svm Default sigma value for RBF kernel
+    C_value  = 1,             #svm Default cost parameter
+    degree_value = 3,        #svm Default degree for polynomial kernel
+    scale_value  = 1,         #svm Default scale for polynomial kernel
+    offset_value = 1,
     AI_cv_nfolds = 5,
     cross_validation = FALSE,
     GS_model_cv = NULL,
@@ -977,7 +1020,28 @@ model_execute <- function(
                                         ml_dat_res = ml_dat_res,
                                         GS_model_cv = GS_model_cv,
                                         num_cores = num_cores,
-                                        eval_metrics = eval_metrics)
+                                        eval_metrics = eval_metrics,
+                                        scaling = scaling,
+                                        centering =centering,
+                                        eta = eta, ## xgboost
+                                        nrounds = nrounds, ## xgboost
+                                        max_depth = max_depth, ## xgboost
+                                        gamma = gamma, ## xgboost
+                                        subsample = subsample, ## xgboost
+                                        colsample_bytree = colsample_bytree, ## xgboost
+                                        alpha = alpha, ## xgboost linear
+                                        lambda = lambda, ## xgboost linear
+                                        min_child_weight = min_child_weight, ## xgboost
+                                        xgb_booster = xgb_booster,
+                                        ncomp = ncomp, #### pls
+                                        ntree = ntree, ### random forest
+                                        k = k, ## for knn
+                                        svm_kernel = svm_kernel, # "Gaussian", "Linear","Hyperbolic_tangent", "Polynomial"
+                                        sigma_value  = sigma_value,       # Default sigma value for RBF kernel
+                                        C_value  = C_value,             # Default cost parameter
+                                        degree_value = degree_value,        # Default degree for polynomial kernel
+                                        scale_value  = scale_value,         # Default scale for polynomial kernel
+                                        offset_value = offset_value)
 
 if(cross_validation_meth%in%c("CV1",
                               "CV2",
@@ -1261,7 +1325,15 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                          omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                                          AI_cv_nfolds = AI_cv_nfolds,
                                          para_tunning = para_tunning,
-                                         xgb_paras_tunning = xgb_paras_tunning
+                                         xgb_paras_tunning = xgb_paras_tunning,
+                                         resample_method_tune = resample_method_tune, # c("cv","boot")
+                                         number_of_fold_tune = number_of_fold_tune,
+                                         learning_rate = learning_rate,
+                                         max_depth = max_depth,
+                                         subsample = subsample,
+                                         xgb_booster =  xgb_booster, # "gblinear",
+                                         iteration = iteration,
+                                         N_feature_impo = N_feature_impo,
               )
             },
             "RandomForest" = {
@@ -1276,7 +1348,11 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                                   omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                                                   AI_cv_nfolds = AI_cv_nfolds,
                                                   para_tunning = para_tunning,
-                                                  rf_paras_tunning = rf_paras_tunning
+                                                  rf_paras_tunning = rf_paras_tunning,
+                                                  ntree=ntree,
+                                                  mtry = mtry,
+                                                  maxnodes = maxnodes,
+                                                  importance=importance
               )
             },
             "PartialLeastSquare" = {
@@ -1290,6 +1366,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                           centering = centering,
                                           omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                                           para_tunning = para_tunning,
+                                          ncomp = ncomp,
                                           pls_paras_tunning = pls_paras_tunning)
             },
             "SupportVectorMachine" = {
@@ -1304,7 +1381,13 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                          omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                                          AI_cv_nfolds = AI_cv_nfolds,
                                          para_tunning = para_tunning,
-                                         svm_paras_tunning = svm_paras_tunning
+                                         svm_paras_tunning = svm_paras_tunning,
+                                         svm_kernel = svm_kernel, # "Gaussian", "Linear","Hyperbolic_tangent", "Polynomial"
+                                         sigma_value  = sigma_value,       # Default sigma value for RBF kernel
+                                         C_value  = C_value,             # Default cost parameter
+                                         degree_value = degree_value,        # Default degree for polynomial kernel
+                                         scale_value  = scale_value,         # Default scale for polynomial kernel
+                                         offset_value = offset_value,
               )
             },
             "K-NearestNeighbors" = {

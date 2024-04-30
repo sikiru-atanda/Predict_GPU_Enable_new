@@ -54,7 +54,9 @@ predict_with_model <- function(model = NULL,
                                    scaling = additional_params$scaling, omic_count = additional_params$omic_count,
                                    centering = additional_params$centering, gamma = additional_params$gamma,
                                    colsample_bytree = additional_params$colsample_bytree,
-                                   subsample = additional_params$subsample),
+                                   subsample = additional_params$subsample, min_child_weight = additional_params$min_child_weight,
+                                   alpha = additional_params$alpha, lambda = additional_params$lambda,
+                                   xgb_booster = additional_params$xgb_booster),
          "RandomForest" = AI_randomforest_cv(y = y, omics = omics_data, tst = tst,
                                              scaling = additional_params$scaling,
                                              centering = additional_params$centering, ntree = additional_params$ntree,
@@ -72,7 +74,11 @@ predict_with_model <- function(model = NULL,
                                omic_count = additional_params$omic_count),
          "SupportVectorMachine" = AI_svm_cv(y = y, omics = omics_data, tst = tst,
                                             scaling = additional_params$scaling,
-                                            centering = additional_params$centering, c = additional_params$c,
+                                            centering = additional_params$centering,
+                                            C_value = additional_params$C_value,
+                                            degree_value = additional_params$degree_value,
+                                            scale_value = additional_params$scale_value,
+                                            offset_value = additional_params$offset_value,
                                             omic_count = additional_params$omic_count),
          "K-NearestNeighbors" = AI_knn_cv(y = y, omics = omics_data, tst = tst,
                                           scaling = additional_params$scaling,
@@ -155,10 +161,19 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     gamma = 4, ## xgboost
                                     subsample = 0.5, ## xgboost
                                     colsample_bytree = 1, ## xgboost
+                                    alpha = 0.001, ## xgboost linear
+                                    lambda = 1, ## xgboost linear
+                                    min_child_weight = 1, ## xgboost
+                                    xgb_booster = "gblinear",
                                     ncomp = 3, #### pls
                                     ntree = 500, ### random forest
                                     k = 5, ## for knn
-                                    c = 1, ## svm
+                                    svm_kernel = "Gaussian", # "Gaussian", "Linear","Hyperbolic_tangent", "Polynomial"
+                                    sigma_value  = 0.1,       # Default sigma value for RBF kernel
+                                    C_value  = 1,             # Default cost parameter
+                                    degree_value = 3,        # Default degree for polynomial kernel
+                                    scale_value  = 1,         # Default scale for polynomial kernel
+                                    offset_value = 1,
                                     ...){
 
  #browser()
@@ -201,7 +216,11 @@ models_execute_crossval <- function(pheno_data = NULL,
                             scaling = scaling,centering = centering,
                             eta = eta, nrounds = nrounds, max_depth = max_depth, gamma = gamma,
                             colsample_bytree = colsample_bytree, subsample = subsample, ntree = ntree,
-                            ncomp = ncomp, c = c, k = k, omic_count = omic_count,
+                            alpha = alpha, lambda = lambda, min_child_weight = min_child_weight,
+                            xgb_booster = xgb_booster,
+                            ncomp = ncomp, C_value = C_value,degree_value = degree_value,
+                            scale_value = scale_value, offset_value = offset_value,
+                            k = k, omic_count = omic_count,
                             asreml_models_prep_cv = asreml_models_prep_cv, gen_name = gen_name,
                             pheno_data = pheno_data, response = response, heter_groups = heter_groups)
 

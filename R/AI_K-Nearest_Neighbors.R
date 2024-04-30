@@ -30,7 +30,9 @@ AI_knn <- function(pheno_object=NULL,
                    centering = FALSE,
                    omic_count = NULL,
                    para_tunning = FALSE,
-                   knn_paras_tunning= c(k_tune=NULL),
+                   knn_paras_tunning= list(k = seq(3, 21, by = 2),
+                                           weight = c("uniform", "distance"),
+                                           metric = c("euclidean", "manhattan")),
                    k = 5,
                    ...
 
@@ -57,9 +59,10 @@ AI_knn <- function(pheno_object=NULL,
        # create hyperparameter grid
 
        AI_grid <- expand.grid(
-         #k = data.frame(k = seq(11,85,by = 2)))
-
-         k = data.frame(k = k_tune)
+         k = data.frame(k = seq(3, 21, by = 2)),
+         weight = c("uniform", "distance"),
+         metric = c("euclidean", "manhattan")
+         #k = data.frame(k = k_tune)
 
        )
 

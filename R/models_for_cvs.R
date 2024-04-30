@@ -290,6 +290,7 @@ if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
 AI_xgboost_cv <- function(y,
                           omics,
                           tst,
+                          xgb_booster = "gblinear",
                           eta = 0.001,
                           nrounds = 5000,
                           max_depth = 6,
@@ -297,8 +298,12 @@ AI_xgboost_cv <- function(y,
                           centering = TRUE,
                           omic_count,
                           gamma = 4,
+                          min_child_weight = 1,
                           subsample = 0.5,
-                          colsample_bytree = 1){
+                          colsample_bytree = 1,
+                          alpha = 0.001, ## gblinear
+                          lambda = 1.0 # gblinear
+                          ){
 
   if(!is.null(omics)) {
     if(isTRUE(scaling) || !is.null(omic_count)){
@@ -306,20 +311,29 @@ AI_xgboost_cv <- function(y,
     }
   }
   ### Set the paramters and hyper parameters for extreme graident boosting
-  suppressMessages({
+  if(xgb_booster == "gblinear"){
   xgb_params <- list(
     booster = "gblinear",
     eta = eta,
-    max_depth = max_depth, #This indicates how deep the built tree can be.
-    #The deeper the tree, the more splits it has and it captures more
-    #information about how the data. We fit a decision tree with depths
-    #ranging from 1 to 32 and plot the training and test errors
-    gamma = gamma,
-    subsample = subsample,
-    colsample_bytree = colsample_bytree,
+    alpha = 0.001,
+    lambda = 1.0,
     objective = "reg:squarederror",
     eval_metric = c("rmse", "rmsle", "mape")
   )
+  } else {
+
+    if(xgb_booster == "gbtree"){
+      xgb_params <- list(
+        booster = "gbtree",
+        objective = "reg:squarederror",
+        eta = eta,
+        max_depth = max_depth,
+        min_child_weight = min_child_weight,
+        subsample = subsample,
+        colsample_bytree = colsample_bytree
+      )
+    }
+}
 
   omics_Xgb <- xgboost::xgb.DMatrix(data = omics[-tst, ],
                                     label = y[-tst])
@@ -335,7 +349,7 @@ AI_xgboost_cv <- function(y,
                           omics[tst, ],
                           reshape = TRUE)
 
-  })
+
 
   preds <- as.data.frame(preds)
   return(preds[, 1])
@@ -608,19 +622,56 @@ AI_svm_cv <- function(y,
                       scaling = FALSE,
                       centering = TRUE,
                       omic_count,
-                      c = 1){
+                      svm_kernel = "Gaussian", # "Gaussian", "Linear","Hyperbolic_tangent", "Polynomial"
+                      sigma_value  = 0.1,       # Default sigma value for RBF kernel
+                      C_value  = 1,             # Default cost parameter
+                      degree_value = 3,        # Default degree for polynomial kernel
+                      scale_value  = 1,         # Default scale for polynomial kernel
+                      offset_value = 1) {       # Default offset for polynomial kernel
 
+  # Translate user-friendly kernel names to `kernlab` kernel function names
+  kernel_type <- switch(svm_kernel,
+                        Gaussian = "rbfdot",         # Radial Basis Function kernel
+                        Polynomial = "polydot",      # Polynomial kernel
+                        Linear = "vanilladot",       # Linear kernel
+                        Hyperbolic_tangent = "tanhdot"  # Sigmoid kernel
+  )
+  # Create a list to store kernel-specific parameters
+  kernel_params <- list()
+
+  # Set kernel parameters based on user input or defaults
+  switch(kernel_type,
+         rbfdot = {kernel_params <- list(sigma = sigma_value)},
+         polydot = {kernel_params <- list(degree = degree_value, scale = scale_value, offset = offset_value)},
+         #vanilladot = {kernel_params <- list(C = C_value)},  # Linear kernel
+         tanhdot = {kernel_params <- list(scale = scale_value, offset = offset_value)}  # Sigmoid kernel
+  )
   if(!is.null(omics)) {
     if(isTRUE(scaling) || isFALSE(scaling)){
       omics <- scale(omics, center = TRUE, scale = TRUE)
     }
   }
-
+  if(kernel_type!="vanilladot"){
   fit <-  kernlab::ksvm(x = omics[-tst, ],
                         y = y[-tst],
-                        scaled  = FALSE,
+                        kernel = kernel_type,
+                        scaled = FALSE,
                         type = "nu-svr",
-                        C = c)
+                        C = C_value,
+                        kpar = kernel_params)
+
+  } else {
+    if(kernel_type=="vanilladot"){
+      AI_fit = kernlab::ksvm(x = omics[-tst, ],
+                             y = y[-tst],
+                             kernel = kernel_type,
+                             scaled = FALSE,
+                             type = "nu-svr",
+                             C = C_value
+      )
+    }
+
+  }
 
   preds <- kernlab::predict(fit,
                             omics[tst, ])
