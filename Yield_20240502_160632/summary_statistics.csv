@@ -1,0 +1,14 @@
+"stat","summary"
+"Min",4.957
+"Max",7.476
+"Phenotype_Variance",0.232
+"Residual_Variance",0.197
+"Number_TrainingSet",281
+"Number_TestingSet",0
+"accuracy",0.741568022305761
+"mean_squared_error",0.171138126475762
+"bias",-5.28171152554649e-15
+"root_mean_squared_error",0.413688441312737
+"relative_squared_error",0.741150584128964
+"mean_absolute_error",0.336960258920651
+"mean_absolute_percent_error",5.43707310690513
