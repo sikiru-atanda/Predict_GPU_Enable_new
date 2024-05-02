@@ -62,9 +62,11 @@ AI_Xgb <- function(pheno_object=NULL,
                    max_depth = 6,
                    subsample = 0.5,
                    xgb_booster =  "gbtree", # "gblinear",
-                   alpha = 0.001, ## xgboost linear
-                   lambda = 1.0,  # xgboost linear
+                   xgb_alpha = 0.001, ## xgboost linear
+                   xgb_lambda = 1.0,  # xgboost linear
+                   xgb_gamma = 0.01, #it acts as a regularization parameter for controlling tree complexity
                    iteration = 5000,
+                   early_stopping_rounds_xgb = TRUE,
                    N_feature_impo = 10,
                    colsample_bytree = 1,
                    ...
@@ -146,14 +148,14 @@ if(xgb_booster=="gblinear"){
 
       GID <- rownames(geno_omic_object)
       if(!is.null(xgb_grid_linear)){
-   xgb_fit = caret::train(x = geno_omic_object,
+   xgb_fit <-  caret::train(x = geno_omic_object,
                    y = pheno_object[, response],
                    trControl = xgb_trcontrol,
                    tuneGrid = xgb_grid_linear,
                    method = "xgbLinear")
       } else {
         if(!is.null(xgb_grid_tree)){
-          xgb_fit = caret::train(x = geno_omic_object,
+          xgb_fit <-  caret::train(x = geno_omic_object,
                                  y = pheno_object[, response],
                                  trControl = xgb_trcontrol,
                                  tuneGrid = xgb_grid_tree,
@@ -192,22 +194,11 @@ if(xgb_booster=="gblinear"){
 
    bestTune <- c(xgb_fit$bestTune, xgb_fit$method)
 
-   if (xgb_booster == "gbtree"){
-     res_feature <-  xgboost::xgb.importance(feature_names = colnames(geno_omic_object), model = xgb_fit)
 
-     res_feature <- res_feature[order(-res_feature$Gain), ]
-     res_feature <- res_feature[1:N_feature_impo, ]
-
-   }
-
-   if (xgb_booster == "gblinear"){
-   res_feature <- xgboost::feature_impo_xgb(xgb_fit = xgb_fit,
+   res_feature <- feature_impo_xgb(xgb_fit = xgb_fit,
                                    X_train = geno_omic_object,
-                                   N_feature_impo = N_feature_impo)
-
-   res_feature <- res_feature$feature_weight
-   }
-    #} else {
+                                   N_feature_impo = N_feature_impo,
+                                   xgb_booster = xgb_booster)
 
     } else {
 
@@ -217,12 +208,13 @@ if(xgb_booster=="gblinear"){
     ####### Start when their is no need for tunning
     } else {
 
+
       if (xgb_booster == "gbtree") {
           xgb_params <- list(
           booster = xgb_booster,
           eta = learning_rate,
           max_depth = max_depth,
-          gamma = gamma,
+          gamma = xgb_gamma,
           subsample = subsample,
           colsample_bytree = colsample_bytree,
           objective = "reg:squarederror",
@@ -231,8 +223,8 @@ if(xgb_booster=="gblinear"){
       } else if (xgb_booster == "gblinear") {
         xgb_params <- list(
           booster = xgb_booster,
-          alpha = alpha,
-          lambda = lambda,
+          alpha = xgb_alpha,
+          lambda = xgb_lambda,
           eta = learning_rate,
           objective = "reg:squarederror",
           eval_metric = c("rmse", "rmsle", "mape")
@@ -254,23 +246,59 @@ if(xgb_booster=="gblinear"){
 
 
     if(!is.null(geno_omic_object) & !is.null(pheno_object)) {
+
       #View(geno_omic_object[1:5, 1:5])
       #View(pheno_object[1:5, response])
       GID <- rownames(geno_omic_object)
 
       geno_omic_object_train <- xgboost::xgb.DMatrix(data = geno_omic_object,
-                                              label = pheno_object[, response])
+                                                     label = pheno_object[, response])
 
-      #watchlist <- list(train = geno_omic_object_train, eval = geno_omic_object)
-      xgb_fit <- xgboost::xgb.train(
-        params = xgb_params,
-        data = geno_omic_object_train,
-        nrounds = iteration,
-        #early_stopping_rounds = 200,
-        #watchlist = watchlist,
-        #maximize = FALSE, ##since these areeval_metric = c("rmse", "rmsle", "mape")
-        verbose = 0
-      )
+
+      if(isTRUE(early_stopping_rounds_xgb)){
+        pheno_object <- pheno_object |>
+          dplyr::mutate(bin = dplyr::ntile(!!dplyr::sym(response), 10))  # Creating 10 bins based on quantiles
+
+        #set.seed(123)
+        train_indices <- caret::createDataPartition(pheno_object$bin, p = 0.8, list = FALSE)
+        training <- pheno_object[train_indices, ]
+        validation <- pheno_object[-train_indices, ]
+
+        train_geno <- geno_omic_object[rownames(geno_omic_object)%in%training[[gen_name]], ]
+        val_geno <- geno_omic_object[rownames(geno_omic_object)%in%validation[[gen_name]], ]
+
+        early_stopping_fraction <- 0.2  # 10% of iterations
+        early_stopping_rounds <- max(50, floor(iteration * early_stopping_fraction))  # At least 50 rounds
+
+        # Creating DMatrix objects
+        train_dmatrix <- xgboost::xgb.DMatrix(data = train_geno, label = training[[response]])
+        eval_dmatrix <- xgboost::xgb.DMatrix(data = val_geno, label = validation[[response]])
+
+
+        watchlist <- list(train = train_dmatrix, eval = eval_dmatrix)
+
+        xgb_fit <- xgboost::xgb.train(
+          params = xgb_params,
+          data = geno_omic_object_train,
+          nrounds = iteration,
+          early_stopping_rounds = early_stopping_rounds,
+          watchlist = watchlist,
+          maximize = FALSE, ##since these areeval_metric = c("rmse", "rmsle", "mape")
+          verbose = 0
+        )
+
+      } else {
+
+        xgb_fit <- xgboost::xgb.train(
+          params = xgb_params,
+          data = geno_omic_object_train,
+          nrounds = iteration,
+          #early_stopping_rounds = early_stopping_rounds,
+          #watchlist = watchlist,
+          #maximize = FALSE, ##since these areeval_metric = c("rmse", "rmsle", "mape")
+          verbose = 0
+        )
+      }
 if(!is.null(geno_omic_test_object)){
   GID <- rownames(geno_omic_test_object)
   AI_preds <- stats::predict(xgb_fit,
@@ -299,22 +327,11 @@ if(!is.null(geno_omic_test_object)){
 #View(AI_preds)
       names(AI_preds)[1:2] <-  c(gen_name, "Predicted_value")
 
-      if (xgb_booster == "gblinear"){
-        res_feature <- xgboost::feature_impo_xgb(xgb_fit = xgb_fit,
+
+        res_feature <- feature_impo_xgb(xgb_fit = xgb_fit,
                                         X_train = geno_omic_object,
-                                        N_feature_impo = N_feature_impo)
-
-        res_feature <- res_feature$feature_weight
-      }
-
-      if (xgb_booster == "gbtree"){
-      res_feature <-  xgboost::xgb.importance(feature_names = colnames(geno_omic_object), model = xgb_fit)
-
-      res_feature <- res_feature[order(-res_feature$Gain), ]
-      res_feature <- res_feature[1:N_feature_impo, ]
-
-      }
-
+                                        N_feature_impo = N_feature_impo,
+                                        xgb_booster = xgb_booster)
 
     } else {
 

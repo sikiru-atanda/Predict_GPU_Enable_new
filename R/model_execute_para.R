@@ -336,12 +336,13 @@ model_execute <- function(
     number_of_fold_tune = 5, #xgboost
     min_child_weight = 1, # xgboost,
     #eta = 0.001, ## xgboost
-    nrounds = 5000, ## xgboost
+    #nrounds = 5000, ## xgboost
     colsample_bytree = 1, ## xgboost
-    alpha = 0.001, ## xgboost linear
-    gamma = 0.01, ## xgboost it acts as a regularization parameter for controlling tree complexity
+    xgb_alpha = 0.001, ## xgboost linear
+    xgb_gamma = 0.01, ## xgboost it acts as a regularization parameter for controlling tree complexity
     lambda_rr = NULL,
-    lambda = 1.0,  # xgboost linear
+    xgb_lambda = 1.0,  # xgboost linear
+    early_stopping_rounds_xgb = TRUE,
     ntree=500, ## RF
     mtry = NULL, ## RF
     maxnodes = NULL, ## RF
@@ -1028,7 +1029,7 @@ model_execute <- function(
                                         scaling = scaling,
                                         centering =centering,
                                         eta = learning_rate, ## xgboost
-                                        nrounds = nrounds, ## xgboost
+                                        nrounds = iteration, ## xgboost
                                         max_depth = max_depth, ## xgboost
                                         gamma = gamma, ## xgboost
                                         subsample = subsample, ## xgboost
@@ -1036,6 +1037,7 @@ model_execute <- function(
                                         alpha = alpha, ## xgboost linear
                                         lambda = lambda, ## xgboost linear
                                         min_child_weight = min_child_weight, ## xgboost
+                                        early_stopping_rounds_xgb = early_stopping_rounds_xgb, ## xgboost
                                         xgb_booster = xgb_booster,
                                         ncomp = ncomp, #### pls
                                         ntree = ntree, ### random forest
@@ -1344,7 +1346,9 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                          resample_method_tune = resample_method_tune, # c("cv","boot")
                                          number_of_fold_tune = number_of_fold_tune,
                                          learning_rate = learning_rate,
-                                         gamma = gamma,
+                                         xgb_gamma = xgb_gamma,
+                                         xgb_lambda = xgb_lambda,
+                                         xgb_alpha = xgb_alpha,
                                          max_depth = max_depth,
                                          subsample = subsample,
                                          xgb_booster =  xgb_booster, # "gblinear",
@@ -1352,6 +1356,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                          alpha = alpha, ## xgboost linear
                                          lambda = lambda, ## xgboost linear
                                          iteration = iteration,
+                                         early_stopping_rounds_xgb = early_stopping_rounds_xgb,
                                          N_feature_impo = N_feature_impo
               )
             },

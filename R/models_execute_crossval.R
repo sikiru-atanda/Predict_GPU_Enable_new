@@ -52,11 +52,12 @@ predict_with_model <- function(model = NULL,
          "Xgboost" = AI_xgboost_cv(y = y, omics = omics_data, tst = tst, eta = additional_params$eta,
                                    nrounds = additional_params$nrounds, max_depth = additional_params$max_depth,
                                    scaling = additional_params$scaling, omic_count = additional_params$omic_count,
-                                   centering = additional_params$centering, gamma = additional_params$gamma,
+                                   centering = additional_params$centering, xgb_gamma = additional_params$xgb_gamma,
                                    colsample_bytree = additional_params$colsample_bytree,
                                    subsample = additional_params$subsample, min_child_weight = additional_params$min_child_weight,
-                                   alpha = additional_params$alpha, lambda = additional_params$lambda,
-                                   xgb_booster = additional_params$xgb_booster),
+                                   xgb_alpha = additional_params$xgb_alpha, xgb_lambda = additional_params$xgb_lambda,
+                                   xgb_booster = additional_params$xgb_booster,
+                                   early_stopping_rounds_xgb = additional_params$early_stopping_rounds_xgb),
          "RandomForest" = AI_randomforest_cv(y = y, omics = omics_data, tst = tst,
                                              scaling = additional_params$scaling,
                                              centering = additional_params$centering, ntree = additional_params$ntree,
@@ -160,13 +161,14 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     eta = 0.001, ## xgboost
                                     nrounds = 5000, ## xgboost
                                     max_depth = 6, ## xgboost
-                                    gamma = 4, ## xgboost
+                                    xgb_gamma = 4, ## xgboost
                                     subsample = 0.5, ## xgboost
                                     colsample_bytree = 1, ## xgboost
-                                    alpha = 0.001, ## xgboost linear
-                                    lambda = 1, ## xgboost linear
+                                    xgb_alpha = 0.001, ## xgboost linear
+                                    xgb_lambda = 1, ## xgboost linear
                                     min_child_weight = 1, ## xgboost
-                                    xgb_booster = "gblinear",
+                                    early_stopping_rounds_xgb = TRUE,
+                                    xgb_booster = "gbtree",
                                     ncomp = 3, #### pls
                                     ntree = 500, ### random forest
                                     k = 5, ## for knn
@@ -219,9 +221,12 @@ models_execute_crossval <- function(pheno_data = NULL,
   additional_params <- list(ETA = ETA, weights = weights, bayes_para = bayes_para,
                             bayes_model = bayes_model, bayes_trait = bayes_trait,
                             scaling = scaling,centering = centering,
-                            eta = eta, nrounds = nrounds, max_depth = max_depth, gamma = gamma,
+                            eta = eta, nrounds = nrounds,
+                            max_depth = max_depth, xgb_gamma = xgb_gamma,
+                            early_stopping_rounds_xgb = early_stopping_rounds_xgb,
                             colsample_bytree = colsample_bytree, subsample = subsample, ntree = ntree,
-                            alpha = alpha, lambda = lambda, min_child_weight = min_child_weight,
+                            xgb_alpha = xgb_alpha, xgb_lambda = xgb_lambda,
+                            min_child_weight = min_child_weight,
                             xgb_booster = xgb_booster,
                             ncomp = ncomp, C_value = C_value,degree_value = degree_value,
                             scale_value = scale_value, offset_value = offset_value,

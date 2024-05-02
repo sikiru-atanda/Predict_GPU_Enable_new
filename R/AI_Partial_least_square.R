@@ -78,11 +78,25 @@ AI_pls <- function(pheno_object=NULL,
     pls_model <- pls::plsr(yy~ geno_omic_object,
                            scale = FALSE,
                            center = FALSE,
-                           ncomp = optimal_components,
+                           #ncomp = optimal_components,
                            validation = "none")
     cumulative_explained_variance <- cumsum(pls::explvar(pls_model))
     # Find the number of components explaining at least 90% of the variance
     num_components <- which(cumulative_explained_variance >= 90)[1]
+    # Handle case where no components meet the criterion
+    if (is.na(num_components) | length(num_components)==0) {
+      num_components <- which(cumulative_explained_variance >= 50)[1]
+      if (is.na(num_components) | length(num_components)==0) {
+        num_components <- length(cumulative_explained_variance)
+      }
+      #num_components <- length(cumulative_explained_variance)  # Use max number of components or some default
+      message("No components explain at least 90% of the variance.")
+    }
+
+    if (is.null(ncomp) | !is.numeric(ncomp)) {
+      ncomp <- num_components  # Default to using 'num_components' if 'ncomp' is not defined
+    }
+
     if(ncomp< num_components){
       optimal_components <- num_components
   message(paste(msg, "The number of component provided explain less than 90% of the variance. We make adjustment as this might affect final result."))

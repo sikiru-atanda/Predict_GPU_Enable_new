@@ -23,11 +23,13 @@ sik <- model_execute(pheno_data = pheno,
                      #omic2_data = COP,
                      #omic3_data = COP,
                      random = ~GID,
-                     GS_model = c("BayesA", "BayesB"),
-                     #GS_model_cv = c("BRR","RandomForest", "Xgboost"),
+                     #GS_model = c("BayesA", "BayesB"),
+                     GS_model_cv = c("PartialLeastSquare", "BRR","RandomForest", "Xgboost", "BayesB",
+                                     "SupportVectorMachine", "K-NearestNeighbors"
+                                     ),
                      gen_name = "GID",
-                     response =c("Yield", "deBLUP"),
-                     cross_validation = FALSE,
+                     response =c("Yield", "BLUE"),
+                     cross_validation = TRUE,
                      metric_for_ranking = "accuracy",
                      eval_metrics = c("accuracy", "mean_squared_error", "bias",
                                       "root_mean_squared_error",
@@ -49,7 +51,14 @@ sik <- model_execute(pheno_data = pheno,
 sik = AI_Xgb(geno_omic_object = Geno.data[, 1:100],
                       pheno_object = pheno,
                       gen_name = "GID",
-                      response = "Yield")
+                      response = "Yield",
+                xgb_booster= "gtree")
+
+library(PredictProR)
+sik= AI_pls(pheno_object = pheno,
+            geno_omic_object = Geno.data[, 1:100],
+            response = "Yield",
+            gen_name = "GID")
 
 sik = BGLR::BGLR(y= pheno[, "Yield"],
            ETA = list(list(X=Geno.data[, 1:00],

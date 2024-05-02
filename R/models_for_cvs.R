@@ -301,19 +301,20 @@ if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
 AI_xgboost_cv <- function(y,
                           omics,
                           tst,
-                          xgb_booster = "gblinear",
+                          xgb_booster = "gtree", #
                           eta = 0.001,
                           nrounds = 5000,
                           max_depth = 6,
                           scaling = FALSE,
                           centering = TRUE,
                           omic_count,
-                          gamma = 4,
+                          xgb_gamma = 4,
                           min_child_weight = 1,
                           subsample = 0.5,
                           colsample_bytree = 1,
-                          alpha = 0.001, ## gblinear
-                          lambda = 1.0 # gblinear
+                          xgb_alpha = 0.001, ## gblinear
+                          xgb_lambda = 1.0, # gblinear,
+                          early_stopping_rounds_xgb = TRUE
                           ){
 
   if(!is.null(omics)) {
@@ -326,8 +327,8 @@ AI_xgboost_cv <- function(y,
   xgb_params <- list(
     booster = "gblinear",
     eta = eta,
-    alpha =alpha,
-    lambda = lambda,
+    alpha = xgb_alpha,
+    lambda = xgb_lambda,
     objective = "reg:squarederror",
     eval_metric = c("rmse", "rmsle", "mape")
   )
@@ -349,12 +350,53 @@ AI_xgboost_cv <- function(y,
   omics_Xgb <- xgboost::xgb.DMatrix(data = omics[-tst, ],
                                     label = y[-tst])
 
-  fit <- xgboost::xgb.train(
-    params = xgb_params,
-    data =  omics_Xgb,
-    nrounds = nrounds,
-    verbose = 0
-  )
+  if(isTRUE(early_stopping_rounds_xgb)){
+
+    yy <- y[-tst]
+    omics_yy <- omics[-tst, ]
+    indices <- dplyr::ntile(yy, 10)  # Creating 10 bins based on quantiles
+
+    #set.seed(123)
+    train_indices <- caret::createDataPartition(indices, p = 0.8, list = FALSE)
+    training <- yy[train_indices]
+    validation <- yy[-train_indices]
+
+    train_geno <- omics_yy[train_indices, ]
+    val_geno <- omics_yy[-train_indices, ]
+
+    early_stopping_fraction <- 0.2  # 10% of iterations
+    early_stopping_rounds <- max(50, floor(nrounds * early_stopping_fraction))  # At least 50 rounds
+
+    # Creating DMatrix objects
+    train_dmatrix <- xgboost::xgb.DMatrix(data = train_geno, label = training)
+    eval_dmatrix <- xgboost::xgb.DMatrix(data = val_geno, label = validation)
+
+
+    watchlist <- list(train = train_dmatrix, eval = eval_dmatrix)
+
+    fit <- xgboost::xgb.train(
+      params = xgb_params,
+      data = omics_Xgb,
+      nrounds = nrounds,
+      early_stopping_rounds = early_stopping_rounds,
+      watchlist = watchlist,
+      maximize = FALSE, ##since these areeval_metric = c("rmse", "rmsle", "mape")
+      verbose = 0
+    )
+
+  } else {
+
+    fit <- xgboost::xgb.train(
+      params = xgb_params,
+      data = omics_Xgb,
+      nrounds = nrounds,
+      #early_stopping_rounds = early_stopping_rounds,
+      #watchlist = watchlist,
+      #maximize = FALSE, ##since these areeval_metric = c("rmse", "rmsle", "mape")
+      verbose = 0
+    )
+  }
+
 
   preds <- stats::predict(fit,
                           omics[tst, ],
@@ -396,7 +438,7 @@ AI_pls_cv <- function(y,
       omics <- scale(omics, center = TRUE, scale = TRUE)
     }
   }
-
+if(is.null(ncomp) | !is.numeric(ncomp)) ncomp <- 3
   pls_model <- pls::plsr(y~ omics,
                          scale = FALSE,
                          center = FALSE,
@@ -405,10 +447,19 @@ AI_pls_cv <- function(y,
   cumulative_explained_variance <- cumsum(pls::explvar(pls_model))
   # Find the number of components explaining at least 90% of the variance
   num_components <- which(cumulative_explained_variance >= 90)[1]
-  if(ncomp< num_components){
-    ncomp <- num_components
-    message(paste(msg, "The number of component provided explain less than 90% of the variance. We make adjustment as this might affect final result."))
+  if (is.na(num_components) | length(num_components)==0) {
+    num_components <- which(cumulative_explained_variance >= 50)[1]
+    if (is.na(num_components) | length(num_components)==0) {
+      num_components <- length(cumulative_explained_variance)
+    }
+    #num_components <- length(cumulative_explained_variance)  # Use max number of components or some default
+    message("No components explain at least 90% of the variance.")
   }
+
+  if (is.null(ncomp) | !is.numeric(ncomp)) {
+    ncomp <- num_components  # Default to using 'num_components' if 'ncomp' is not defined
+  }
+
 
   pls_model <- pls::plsr(y[-tst]~ omics[-tst, ],
                          scale = FALSE,
