@@ -88,7 +88,8 @@
                                       weights = weights,
                                       ETA = ETA[["ETA"]],
                                       bayes_para = bayes_para,
-                                      verbose = FALSE
+                                      verbose = FALSE,
+                                      GS_model = GS_model
                                       #files_key = "files_key"
             )
 

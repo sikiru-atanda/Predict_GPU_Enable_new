@@ -322,7 +322,8 @@ model_execute <- function(
     knn_paras_tunning = list(k = seq(3, 21, by = 2),
                              weight = c("uniform", "distance"),
                              metric = c("euclidean", "manhattan")),
-    lasso_paras_tunning = NULL,
+    k = 5,
+    lasso_paras_tunning= list(lambda_tune=seq(0.000001,0.9,length.out=100)^4),
     rr_paras_tunning = NULL,
     dpl_paras_tunning = NULL,
     learning_rate = 0.001, #xgboost
@@ -334,15 +335,18 @@ model_execute <- function(
     resample_method_tune = "cv", # c("cv","boot") #xgboost
     number_of_fold_tune = 5, #xgboost
     min_child_weight = 1, # xgboost,
-    eta = 0.001, ## xgboost
+    #eta = 0.001, ## xgboost
     nrounds = 5000, ## xgboost
     colsample_bytree = 1, ## xgboost
     alpha = 0.001, ## xgboost linear
+    gamma = 0.01, ## xgboost it acts as a regularization parameter for controlling tree complexity
+    lambda_rr = NULL,
+    lambda = 1.0,  # xgboost linear
     ntree=500, ## RF
     mtry = NULL, ## RF
     maxnodes = NULL, ## RF
     importance=TRUE, ## RF
-    ncomp = ncomp, # pls
+    ncomp = 3, # pls
     svm_kernel = "Gaussian", #svm "Gaussian", "Linear","Hyperbolic_tangent", "Polynomial"
     sigma_value  = 0.1,       #svm Default sigma value for RBF kernel
     C_value  = 1,             #svm Default cost parameter
@@ -913,8 +917,8 @@ model_execute <- function(
  }
 ### Concatenation of omics for ML
  # When calling the function, pass the external variables as arguments
- if (!is.null(GS_model) && is.null(GS_model_cv)) {
-   ml_dat_res <- AI_process_ml_data_if_valid(model_check = GS_model %in% AI_valid_models, geno_omic_model_ready_list, pheno_clean, response, gen_name)
+ if (!is.null(GS_model) & is.null(GS_model_cv)) {
+   ml_dat_res <- AI_process_ml_data_if_valid(model_check = any(GS_model %in% AI_valid_models), geno_omic_model_ready_list, pheno_clean, response, gen_name)
 
  } else if (!is.null(GS_model_cv) && (is.null(GS_model) || !is.null(GS_model))) {
    ml_dat_res <- AI_process_ml_data_if_valid(model_check = any(GS_model_cv %in% AI_valid_models), geno_omic_model_ready_list, pheno_clean, response, gen_name)
@@ -1023,7 +1027,7 @@ model_execute <- function(
                                         eval_metrics = eval_metrics,
                                         scaling = scaling,
                                         centering =centering,
-                                        eta = eta, ## xgboost
+                                        eta = learning_rate, ## xgboost
                                         nrounds = nrounds, ## xgboost
                                         max_depth = max_depth, ## xgboost
                                         gamma = gamma, ## xgboost
@@ -1312,6 +1316,17 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
        stop(paste(msg, GS_model, 'only works for single location/enviroment.'), call. = FALSE)
      }
 
+     # print(names(ml_dat_res))
+     # if (!"merged_data" %in% names(ml_dat_res) || is.null(ml_dat_res[["merged_data"]][["merge_data"]])) {
+     #   stop("merge_data is missing from ml_dat_res")
+     # }
+     #
+     # # Check if the required data is present and correctly formatted
+     # if (!"pheno_clean_data" %in% names(ml_dat_res) || is.null(ml_dat_res[["pheno_clean_data"]])) {
+     #   stop("pheno_clean_data is missing from ml_dat_res")
+     # }
+
+
      switch(GS_model,
             "Xgboost" = {
               res_model_output <- AI_Xgb(pheno_object = ml_dat_res[["pheno_clean_data"]],
@@ -1329,11 +1344,15 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                          resample_method_tune = resample_method_tune, # c("cv","boot")
                                          number_of_fold_tune = number_of_fold_tune,
                                          learning_rate = learning_rate,
+                                         gamma = gamma,
                                          max_depth = max_depth,
                                          subsample = subsample,
                                          xgb_booster =  xgb_booster, # "gblinear",
+                                         colsample_bytree = colsample_bytree, ## xgboost
+                                         alpha = alpha, ## xgboost linear
+                                         lambda = lambda, ## xgboost linear
                                          iteration = iteration,
-                                         N_feature_impo = N_feature_impo,
+                                         N_feature_impo = N_feature_impo
               )
             },
             "RandomForest" = {
@@ -1419,7 +1438,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                 scaling = scaling,
                 centering = centering,
                 omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
-                GS_model = GS_model
+                GS_model = GS_model,
+                lambda_rr = lambda_rr
               )
             },
             "Ridge_Regression" = {
@@ -1437,6 +1457,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                 centering = centering,
                 omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                 GS_model = GS_model,
+                lambda_rr = lambda_rr
               )
             },
             "deep_learning_model" = {

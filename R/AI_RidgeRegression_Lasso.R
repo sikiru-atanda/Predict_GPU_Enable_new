@@ -31,8 +31,8 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
                    omic_count = NULL,
                    AI_cv_nfolds = 5,
                    para_tunning = FALSE,
-                   lasso_paras_tunning= c(lambda_tune=NULL),
-                   lambda = NULL,
+                   lasso_paras_tunning= list(lambda_tune=seq(0.000001,0.9,length.out=100)^4),
+                   lambda_rr = NULL,
                    GS_model = c("Lasso",
                               "Ridge_Regression"),
                    ...
@@ -53,19 +53,19 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
   }
   #msg <- sprintf("==================================================\n")
   #####################################################################
-  if (is.null(lambda) & !inherits(lambda, 'numeric')){
+  if (is.null(lambda_rr) & !inherits(lambda_rr, 'numeric')){
 
-    lambda = seq(0.000001,0.9,length.out=100)^4
+    lambda <-  seq(0.000001,0.9,length.out=100)^4
   }
 
   if(GS_model=="Ridge_Regression"){
 
-    alpha = 0
+    alpha <-  0
   }
 
   if(GS_model=="Lasso"){
 
-    alpha = 1
+    alpha <-  1
   }
 
 
@@ -80,7 +80,7 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
 
        )
 
-       AI_trcontrol = caret::trainControl(method = "cv",
+       AI_trcontrol <- caret::trainControl(method = "cv",
                                           number = AI_cv_nfolds,
                                           verboseIter = TRUE,
                                           returnData = FALSE,
@@ -89,7 +89,7 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
 
        if(!is.null(geno_omic_object) & !is.null(pheno_object)) {
          GID <- rownames(geno_omic_object)
-         AI_fit = caret::train(x = geno_omic_object,
+         AI_fit <-  caret::train(x = geno_omic_object,
                                y = pheno_object[, response],
                                trControl = AI_trcontrol,
                                tuneGrid = AI_grid,
@@ -116,7 +116,7 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
                                 PEV = NA,
                                 Reliability = NA,
                                 stringsAsFactors = FALSE)
-         names(AI_preds)[1:2] = c(gen_name, "Predicted_value")
+         names(AI_preds)[1:2] <-  c(gen_name, "Predicted_value")
 
          bestTune <- c(AI_fit$bestTune, AI_fit$GS_model)
 
@@ -137,11 +137,11 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
                                       standardize = FALSE,
                                       lambda = lambda)
 
-         AI_fit=  glmnet::glmnet(x=geno_omic_object,
-                                 y=pheno_object[, response],
-                                 alpha = alpha,
-                                 standardize = FALSE,
-                                 lambda =AI_fit_CV$lambda.min)
+         AI_fit <-   glmnet::glmnet(x=geno_omic_object,
+                                   y=pheno_object[, response],
+                                   alpha = alpha,
+                                   standardize = FALSE,
+                                   lambda =AI_fit_CV$lambda.min)
 
          if(!is.null(geno_omic_test_object)){
            GID <- rownames(geno_omic_test_object)
@@ -166,7 +166,7 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
                                 PEV = NA,
                                 Reliability = NA,
                                 stringsAsFactors = FALSE)
-         names(AI_preds)[1:2] = c(gen_name, "Predicted_value")
+         names(AI_preds)[1:2] <-  c(gen_name, "Predicted_value")
 
 
 
@@ -185,12 +185,12 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
 
      colnames(model_para)[1:2] <- c("stat", "summary")
 
-     output = list(model_para,
+     output <-  list(model_para,
                    AI_preds,
                    AI_fit)
 
 
-     names(output) = c("model_parameters",
+     names(output) <-  c("model_parameters",
                        "predicted_values",
                         "trained_model")
 

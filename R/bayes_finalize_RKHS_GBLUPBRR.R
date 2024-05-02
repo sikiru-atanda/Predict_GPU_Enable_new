@@ -85,7 +85,9 @@ mod <-  bayes_mod_execute(pheno_data = ETA[["pheno_data"]],
                           response = response,
                           weights = weights,
                           ETA = ETA[["ETA"]],
-                          bayes_para = bayes_para
+                          bayes_para = bayes_para,
+                          GS_model = GS_model
+
 )
 
 

@@ -16,8 +16,13 @@ ML_undefined_test_train <- function(object_pheno = NULL,
 
       object_pheno = object_pheno[["pheno_clean_data"]]
 
-      if(anyNA(object_pheno[, response])){
-        Na_testing <- which(is.na(object_pheno[, response]))
+      # if(anyNA(object_pheno[, response])){
+      #   Na_testing <- which(is.na(object_pheno[, response]))
+      #
+      # }
+      if(any(is.na(object_pheno[, response]))) {
+        # Get row indices where any of the specified columns have NAs
+        Na_testing <- which(rowSums(is.na(object_pheno[, response])) > 0)
 
       }
 
@@ -29,7 +34,7 @@ ML_undefined_test_train <- function(object_pheno = NULL,
 
       } else {
 
-        test_set = NULL
+        test_set <-  NULL
       }
 
 

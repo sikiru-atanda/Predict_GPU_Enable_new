@@ -61,7 +61,7 @@ mod_output_bayes <- function(mod=NULL,
                              GS_model = NULL,
                              ...){
 
-
+#browser()
 msg <- sprintf("==================================================\n")
 ### Check if the user provide lable/name for the omics data
 

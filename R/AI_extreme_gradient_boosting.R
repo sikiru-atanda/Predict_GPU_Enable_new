@@ -35,7 +35,7 @@
 #' @export
 #'
 #' @examples
-#' @importFrom foreach %dopar%
+
 AI_Xgb <- function(pheno_object=NULL,
                    geno_omic_object = NULL,
                    geno_omic_test_object = NULL,
@@ -62,12 +62,15 @@ AI_Xgb <- function(pheno_object=NULL,
                    max_depth = 6,
                    subsample = 0.5,
                    xgb_booster =  "gbtree", # "gblinear",
+                   alpha = 0.001, ## xgboost linear
+                   lambda = 1.0,  # xgboost linear
                    iteration = 5000,
                    N_feature_impo = 10,
+                   colsample_bytree = 1,
                    ...
 
 ){
-
+#browser()
   if(!is.null(geno_omic_object)){
     if(isTRUE(scaling)){
       geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = TRUE)
@@ -189,11 +192,21 @@ if(xgb_booster=="gblinear"){
 
    bestTune <- c(xgb_fit$bestTune, xgb_fit$method)
 
-   res_feature <- feature_impo_xgb(xgb_fit = xgb_fit,
+   if (xgb_booster == "gbtree"){
+     res_feature <-  xgboost::xgb.importance(feature_names = colnames(geno_omic_object), model = xgb_fit)
+
+     res_feature <- res_feature[order(-res_feature$Gain), ]
+     res_feature <- res_feature[1:N_feature_impo, ]
+
+   }
+
+   if (xgb_booster == "gblinear"){
+   res_feature <- xgboost::feature_impo_xgb(xgb_fit = xgb_fit,
                                    X_train = geno_omic_object,
                                    N_feature_impo = N_feature_impo)
 
    res_feature <- res_feature$feature_weight
+   }
     #} else {
 
     } else {
@@ -204,20 +217,22 @@ if(xgb_booster=="gblinear"){
     ####### Start when their is no need for tunning
     } else {
 
-      if (booster == "gbtree") {
-        xgb_params <- list(
-          booster = booster,
+      if (xgb_booster == "gbtree") {
+          xgb_params <- list(
+          booster = xgb_booster,
           eta = learning_rate,
           max_depth = max_depth,
-          gamma = 4,
+          gamma = gamma,
           subsample = subsample,
-          colsample_bytree = 1,
+          colsample_bytree = colsample_bytree,
           objective = "reg:squarederror",
           eval_metric = c("rmse", "rmsle", "mape")
         )
-      } else if (booster == "gblinear") {
+      } else if (xgb_booster == "gblinear") {
         xgb_params <- list(
-          booster = booster,
+          booster = xgb_booster,
+          alpha = alpha,
+          lambda = lambda,
           eta = learning_rate,
           objective = "reg:squarederror",
           eval_metric = c("rmse", "rmsle", "mape")
@@ -239,15 +254,21 @@ if(xgb_booster=="gblinear"){
 
 
     if(!is.null(geno_omic_object) & !is.null(pheno_object)) {
-
+      #View(geno_omic_object[1:5, 1:5])
+      #View(pheno_object[1:5, response])
       GID <- rownames(geno_omic_object)
-      geno_omic_object <- xgboost::xgb.DMatrix(data = geno_omic_object,
+
+      geno_omic_object_train <- xgboost::xgb.DMatrix(data = geno_omic_object,
                                               label = pheno_object[, response])
 
+      #watchlist <- list(train = geno_omic_object_train, eval = geno_omic_object)
       xgb_fit <- xgboost::xgb.train(
         params = xgb_params,
-        data = geno_omic_object,
+        data = geno_omic_object_train,
         nrounds = iteration,
+        #early_stopping_rounds = 200,
+        #watchlist = watchlist,
+        #maximize = FALSE, ##since these areeval_metric = c("rmse", "rmsle", "mape")
         verbose = 0
       )
 if(!is.null(geno_omic_test_object)){
@@ -278,12 +299,23 @@ if(!is.null(geno_omic_test_object)){
 #View(AI_preds)
       names(AI_preds)[1:2] <-  c(gen_name, "Predicted_value")
 
-      res_feature <- feature_impo_xgb(xgb_fit = xgb_fit,
-                                      X_train = geno_omic_object,
-                                      N_feature_impo = N_feature_impo)
+      if (xgb_booster == "gblinear"){
+        res_feature <- xgboost::feature_impo_xgb(xgb_fit = xgb_fit,
+                                        X_train = geno_omic_object,
+                                        N_feature_impo = N_feature_impo)
+
+        res_feature <- res_feature$feature_weight
+      }
+
+      if (xgb_booster == "gbtree"){
+      res_feature <-  xgboost::xgb.importance(feature_names = colnames(geno_omic_object), model = xgb_fit)
+
+      res_feature <- res_feature[order(-res_feature$Gain), ]
+      res_feature <- res_feature[1:N_feature_impo, ]
+
+      }
 
 
-      res_feature <- res_feature$feature_weight
     } else {
 
       stop("training data missing")

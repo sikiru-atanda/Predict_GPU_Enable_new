@@ -36,11 +36,13 @@ bayes_mod_execute <- function(pheno_data = NULL,
                               bayes_para = NULL,
                               verbose = FALSE,
                               core = NULL,
+                              GS_model = NULL,
                               ...){
 
 
   systime <- format(Sys.time(), "%Y%m%d_%H%M%S")
   systime <- gsub("[-: ]", "_", systime)
+  systime <- paste(GS_model, response, systime, sep= "_")
 
 
         fm <- BGLR::BGLR(

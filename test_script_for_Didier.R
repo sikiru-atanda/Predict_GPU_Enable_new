@@ -18,15 +18,15 @@ library(PredictProR)
 bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
 AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare", "SupportVectorMachine", "K-NearestNeighbors", "Lasso", "Ridge_Regression", "deep_learning_model")
 sik <- model_execute(pheno_data = pheno,
-                     geno_data = Geno.data,
+                     geno_data = Geno.data[, 1:100],
                      #omic1_data = COP,
                      #omic2_data = COP,
                      #omic3_data = COP,
                      random = ~GID,
-                     GS_model = "BRR",
-                     GS_model_cv = c("BRR","RandomForest", "BayesB", "Lasso"),
+                     GS_model = c("BayesA", "BayesB"),
+                     #GS_model_cv = c("BRR","RandomForest", "Xgboost"),
                      gen_name = "GID",
-                     response =c("Yield"),
+                     response =c("Yield", "deBLUP"),
                      cross_validation = FALSE,
                      metric_for_ranking = "accuracy",
                      eval_metrics = c("accuracy", "mean_squared_error", "bias",
@@ -34,17 +34,28 @@ sik <- model_execute(pheno_data = pheno,
                                       "relative_squared_error",
                                       "mean_absolute_error",
                                       "mean_absolute_percent_error"),
-                     replication = 3,
+                     replication = 2,
                      cross_validation_meth = "Stratified_Hold_Out",
                      nIter = 1500,
                      burnIn = 600,
-                     thin =
+                     thin = 10,
+
 
                      #iteration = 50,
                      ntree=50,
-                     system_database = TRUE
+                     system_database = FALSE
 )
 
+sik = AI_Xgb(geno_omic_object = Geno.data[, 1:100],
+                      pheno_object = pheno,
+                      gen_name = "GID",
+                      response = "Yield")
+
+sik = BGLR::BGLR(y= pheno[, "Yield"],
+           ETA = list(list(X=Geno.data[, 1:00],
+                           model = "BayesB")))
+
+varB_files <- mod[["output_files_names"]][grepl(paste(GS_model, "dat", sep = "."), mod[["output_files_names"]])]
 
 #sik
 ###

@@ -88,7 +88,8 @@ predict_with_model <- function(model = NULL,
                                     response = additional_params$response, heter_groups = additional_params$heter_groups,
                                  gen_name = additional_params$gen_name, tst = tst),
          "Bayes" = bayes_mod_cv(y = y, ETA = additional_params$ETA, weights = additional_params$weights,
-                                bayes_para = additional_params$bayes_para, tst = tst)
+                                bayes_para = additional_params$bayes_para, tst = tst,
+                                bayes_model = additional_params$bayes_model, bayes_trait = additional_params$bayes_trait)
   )
 }
 
@@ -152,6 +153,7 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     cross_validation_meth = NULL, ## this handle th ETA for bayes model
                                     sampling_method = NULL,
                                     eval_metrics = NULL,
+                                    bayes_model = NULL,
                                     GS_model_cv = NULL,
                                     scaling = FALSE,
                                     centering = TRUE,
@@ -208,11 +210,14 @@ models_execute_crossval <- function(pheno_data = NULL,
 
   # Prepare additional parameters for model prediction
   ETA <-  NULL
+  bayes_model <- NULL
+  bayes_trait <- NULL
   bayes_para <- NULL
 
   omic_count <- if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL
 
   additional_params <- list(ETA = ETA, weights = weights, bayes_para = bayes_para,
+                            bayes_model = bayes_model, bayes_trait = bayes_trait,
                             scaling = scaling,centering = centering,
                             eta = eta, nrounds = nrounds, max_depth = max_depth, gamma = gamma,
                             colsample_bytree = colsample_bytree, subsample = subsample, ntree = ntree,
@@ -440,10 +445,14 @@ models_execute_crossval <- function(pheno_data = NULL,
           #model <- "Bayes" # Use a general term for Bayesian models for the switch function
           if(model == "GBLUP_BRR") {
             model_GBLUP <- "BRR"
+            additional_params$bayes_model <- model
+            additional_params$bayes_trait <- trait
             additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
             additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
 
           } else{
+            additional_params$bayes_model <- model
+            additional_params$bayes_trait <- trait
             additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
             additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
 
@@ -485,10 +494,14 @@ models_execute_crossval <- function(pheno_data = NULL,
         #model <- "Bayes" # Use a general term for Bayesian models for the switch function
         if(model == "GBLUP_BRR") {
           model_GBLUP <- "BRR"
+          additional_params$bayes_model <- model
+          additional_params$bayes_trait <- trait
           additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
           additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
 
         } else{
+          additional_params$bayes_model <- model
+          additional_params$bayes_trait <- trait
           additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
           additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
 

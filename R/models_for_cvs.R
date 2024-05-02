@@ -33,7 +33,13 @@ bayes_mod_cv <- function(y,
                         ETA,
                         weights,
                         bayes_para,
-                        tst){
+                        tst,
+                        bayes_model,
+                        bayes_trait){
+
+  systime <- format(Sys.time(), "%Y%m%d_%H%M%S")
+  systime <- gsub("[-: ]", "_", systime)
+  systime <- paste(bayes_model, bayes_trait, systime, sep= "_")
 
   fit <- BGLR::BGLR(
     y=y,
@@ -42,9 +48,14 @@ bayes_mod_cv <- function(y,
     nIter = bayes_para[["nIter"]],
     burnIn =  bayes_para[["burnIn"]],
     thin =  bayes_para[["thin"]],
-    verbose = FALSE
-    #saveAt =systime
+    verbose = FALSE,
+    saveAt =systime
   )
+
+  ## Get the name of all files stored by BGLR using the current name and time the analysis was performed
+  output_files_names = list.files(pattern=systime)
+
+  unlink(output_files_names)
 
  return(fit$yHat[tst])
 
@@ -315,8 +326,8 @@ AI_xgboost_cv <- function(y,
   xgb_params <- list(
     booster = "gblinear",
     eta = eta,
-    alpha = 0.001,
-    lambda = 1.0,
+    alpha =alpha,
+    lambda = lambda,
     objective = "reg:squarederror",
     eval_metric = c("rmse", "rmsle", "mape")
   )
