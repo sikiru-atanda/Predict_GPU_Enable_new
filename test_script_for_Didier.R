@@ -26,7 +26,7 @@ sik <- model_execute(pheno_data = pheno,
                      engine = "asreml",
                      random = ~GID,
                      #GS_model = c("GBLUP"),
-                     GS_model_cv = c("GBLUP", "PartialLeastSquare", "BRR","Xgboost", "BayesB",
+                     GS_model_cv = c("BL","GBLUP", "PartialLeastSquare", "BRR","Xgboost", "BayesB",
                                      "SupportVectorMachine"
                                      ),
                      gen_name = "GID",
