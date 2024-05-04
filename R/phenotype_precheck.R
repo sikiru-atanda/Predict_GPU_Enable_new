@@ -6,11 +6,12 @@ validate_terms <- function(term, data, term_type, gen_name) {
   if (!all(term_vars %in% names(data))) {
     stop(msg, "All variables indicated in argument ", term_type, " should be present in phenotypic data.")
   }
-  if(length(data[[gen_name]]) > length(unique(data[[gen_name]]))){
+  #if(length(data[[gen_name]]) > length(unique(data[[gen_name]]))){
     missing_factors <- term_vars[!sapply(data[term_vars], is.factor)]
     data[missing_factors] <- lapply(data[missing_factors], factor)
 
-  }
+  #}
+    return(data)
 }
 
 #' Title
@@ -82,11 +83,11 @@ phenotype_precheck <- function(pheno_data = NULL,
 
 
   if (!is.null(fixed)) {
-    validate_terms(fixed, pheno_data, "fixed", gen_name)
+    pheno_data <- validate_terms(fixed, pheno_data, "fixed", gen_name)
   }
 
   if (!is.null(random)) {
-    validate_terms(random, pheno_data, "random", gen_name)
+    pheno_data <- validate_terms(random, pheno_data, "random", gen_name)
   }
 
   attr(pheno_data, "cleared") <- "pass"

@@ -12,6 +12,12 @@ load('WheatPhenoGeno.Rdata')
 COP = as.matrix(COP)
 gen_name = "GID"
 
+pheno$GID = as.character(pheno$GID)
+
+sik = phenotype_precheck(pheno_data = pheno,
+                         gen_name = "GID",
+                         response = "Yield",
+                         random = ~GID)
 pheno = droplevels(pheno.data[pheno.data$Env%in%c("F5I"), ])
 
 library(PredictProR)

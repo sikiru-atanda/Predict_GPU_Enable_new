@@ -989,7 +989,7 @@ model_execute <- function(
                                                  cova= cova,
                                                  GS_model = "GBLUP",
                                                  response = response,
-                                                 pheno_data = pheno_clean[["pheno_clean_data"]],
+                                                 pheno_data = pheno_data,
                                                  gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
                                                  omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
                                                  omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
