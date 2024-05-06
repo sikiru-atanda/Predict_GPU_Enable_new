@@ -1291,7 +1291,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                                        predicted_value =  res_model_output[["Predicted_value"]],
                                                        pred_heter_groups = NULL,
                                                        variance_components = res_model_output[["Variance_components"]],
-                                                       eval_metrics = eval_metrics)
+                                                       eval_metrics = eval_metrics,
+                                                       gen_name = gen_name)
 
          # output <- list(GS_model = GS_model,
          #                res_model_output = res_model_output,

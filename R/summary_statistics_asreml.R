@@ -16,6 +16,7 @@ summary_statistics_asreml <- function(mod=NULL,
                                       predicted_value = NULL,
                                       pred_heter_groups = NULL,
                                       variance_components = NULL,
+                                      gen_name = NULL,
                                      ...){
 
 ##browser()
