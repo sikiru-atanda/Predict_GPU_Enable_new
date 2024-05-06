@@ -19,6 +19,7 @@ asreml_cv_model <- function(pheno_dataa = NULL,
                             tst = NULL
                              ){
 
+  asreml::asreml.options(trace=FALSE)
   names_in_inv_list <-  asreml_models_prep_cv[["names_in_inv_list"]]
   code_asr_fit_cv <-  asreml_models_prep_cv[["code_asr_fit"]]
   pheno_dataa[tst, response] <- NA

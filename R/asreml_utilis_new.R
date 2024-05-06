@@ -416,7 +416,7 @@ asreml_utilis_new <- function(
   }
 
 
-
+  asreml::asreml.options(trace=FALSE)
   ####
   #code.asr[1] <- paste('mod<-', code.asr[1], sep='')
   code_asr_fit[1] <- paste('mod<-', code_asr_fit[1], sep='')
