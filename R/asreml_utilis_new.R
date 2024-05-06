@@ -90,12 +90,12 @@ compute_inverse_and_sparse <- function(kernel = NULL,
 
 # Function to check if current order of rownames or colnames is the same as unique_GIDs
 ## in pheno_data
-is_in_correct_order <- function(names, order) {
-  if (length(names) != length(order)) {
-    return(FALSE)  # Different lengths mean they are not in the same order
-  }
-  all(names == order)
-}
+# is_in_correct_order <- function(names, order) {
+#   if (length(names) != length(order)) {
+#     return(FALSE)  # Different lengths mean they are not in the same order
+#   }
+#   all(names == order)
+# }
 
 #' Adjust Random Terms for ASReml Model Fitting
 #'
@@ -193,20 +193,20 @@ asreml_utilis_new <- function(
   unique_GIDs <- as.character(unique(pheno_data[[gen_name]]))
 
   # Reorder the rownames and colnames of each dataset based on unique_GIDs if necessary
-  datasets <- lapply(datasets, function(mat) {
-    correct_row_order <- is_in_correct_order(rownames(mat), unique_GIDs[unique_GIDs %in% rownames(mat)])
-    correct_col_order <- is_in_correct_order(colnames(mat), unique_GIDs[unique_GIDs %in% colnames(mat)])
-
-    if (!correct_row_order || !correct_col_order) {
-      # Reorder rows and columns if either is not in the correct order
-      ordered_indices <- unique_GIDs[unique_GIDs %in% rownames(mat)]
-      mat <- mat[ordered_indices, ordered_indices]
-      message("Matrix reordered based on unique_GIDs.")
-    } else {
-      message("Matrix is already in the correct order; no changes made.")
-    }
-    return(mat)
-  })
+  # datasets <- lapply(datasets, function(mat) {
+  #   correct_row_order <- is_in_correct_order(rownames(mat), unique_GIDs[unique_GIDs %in% rownames(mat)])
+  #   correct_col_order <- is_in_correct_order(colnames(mat), unique_GIDs[unique_GIDs %in% colnames(mat)])
+  #
+  #   if (!correct_row_order || !correct_col_order) {
+  #     # Reorder rows and columns if either is not in the correct order
+  #     ordered_indices <- unique_GIDs[unique_GIDs %in% rownames(mat)]
+  #     mat <- mat[ordered_indices, ordered_indices]
+  #     message("Matrix reordered based on unique_GIDs.")
+  #   } else {
+  #     message("Matrix is already in the correct order; no changes made.")
+  #   }
+  #   return(mat)
+  # })
 
 
   inv_list <- list()
