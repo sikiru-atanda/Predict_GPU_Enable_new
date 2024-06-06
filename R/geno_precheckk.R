@@ -120,7 +120,7 @@ geno_precheck <- function(object_geno = NULL,
         message(insight::print_color(paste(msg, paste("Removing monomorphic markers:", length(monomorphic_markers))), "blue"))
       }
       
-      if ( "data.table" %in% class(object_geno) {
+      if ( "data.table" %in% class(object_geno)) {
         object_geno <- object_geno[, -monomorphic_markers, ]
       } else  object_geno <- object_geno[, -monomorphic_markers]
         
