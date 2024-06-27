@@ -1,3 +1,59 @@
+
+handle_missing_values <- function(data, na_threshold = 0.2) {
+
+  # Check if the input has row names
+  if (is.null(rownames(data))) {
+    stop("The feature matrix or data.frame must have row names.")
+  }
+
+  # Check for NA values in row names
+  if (any(is.na(rownames(data)))) {
+    stop("The feature matrix or data.frame row names must not contain NA values.")
+  }
+  # Check if the input is a matrix or a data frame
+  is_matrix <- is.matrix(data)
+
+  # Convert matrix to data frame for easier handling
+  if (is_matrix) {
+    data <- as.data.frame(data)
+  }
+
+  # Calculate the proportion of NA values in each column
+  na_proportion <- colMeans(is.na(data))
+
+  # Identify columns to remove (proportion of NAs > threshold)
+  cols_to_remove <- na_proportion > na_threshold
+
+  if (any(cols_to_remove)) {
+    sapply(names(na_proportion[cols_to_remove]), function(col) {
+      cat(sprintf("Column '%s' has %.2f%% NAs, which is above the threshold. Removing column.\n",
+                  col, na_proportion[col] * 100))
+    })
+  }
+
+  # Remove the columns with high proportion of NAs
+  data <- data[, !cols_to_remove, drop = FALSE]
+
+  # Impute remaining NAs with column medians
+  cols_to_impute <- names(na_proportion[!cols_to_remove & na_proportion > 0])
+  if (length(cols_to_impute) > 0) {
+    sapply(cols_to_impute, function(col) {
+      cat(sprintf("Column '%s' has %.2f%% NAs, which is within the threshold. Imputing NAs with median.\n",
+                  col, na_proportion[col] * 100))
+      data[[col]][is.na(data[[col]])] <- median(data[[col]], na.rm = TRUE)
+    })
+  }
+
+  # Convert back to matrix if the original input was a matrix
+  if (is_matrix) {
+    data <- as.matrix(data)
+  }
+
+  return(data)
+}
+
+
+
 #' Quality Control for Genomic Data
 #'
 #' This function applies quality control (QC) filters to genomic data. It checks and adjusts SNP coding, removes monomorphic markers, and filters markers based on minor allele frequency (MAF), heterozygosity, and call rates for both individuals and SNPs.
@@ -41,6 +97,9 @@ geno_precheck <- function(object_geno = NULL,
   # ... (input validation, if necessary)
   msg <- sprintf("==================================================\n")
   if (!is.null(object_geno)) {
+    if("data.table" %in% class(object_geno)){
+      stop(print(paste(msg,'Genomic data must be data.frame or matrix not character.')), call. = FALSE)
+    }
     if(inherits(object_geno, "character")) stop(print(paste(msg,'Genomic data should be data.frame or matrix not character.')), call. = FALSE)
     if (!is.matrix(object_geno)) {
       object_geno <- as.matrix(object_geno)
@@ -82,6 +141,13 @@ geno_precheck <- function(object_geno = NULL,
 
      }
        gc()
+     }
+
+   all_numeric <- all(apply(object_geno, c(1, 2), is.numeric))
+
+   # Stop execution if any element is not numeric
+   if (!all_numeric) {
+     stop('The geno data contains non-numeric values', call. = FALSE)
    }
     # Check if allele dosage are not in  0, 1, 2 format but -1, 0, 1 format
   #   check_geno <- which(object_geno == -1)
@@ -119,7 +185,9 @@ geno_precheck <- function(object_geno = NULL,
       if(isTRUE(message)) {
         message(insight::print_color(paste(msg, paste("Removing monomorphic markers:", length(monomorphic_markers))), "blue"))
       }
-      object_geno <- object_geno[, -monomorphic_markers, ]
+
+        object_geno <- object_geno[, -monomorphic_markers]
+
       #map_data <- map_data[-monomorphic_markers, ]
       total_mono <-  length(monomorphic_markers)
       rm(monomorphic_markers); gc()
@@ -238,6 +306,7 @@ geno_precheck <- function(object_geno = NULL,
 
   }
 
+  object_geno <- handle_missing_values(data = object_geno)
   #### Aggregate all the maker data
   #########################
   summary_stat_snp= data.frame(

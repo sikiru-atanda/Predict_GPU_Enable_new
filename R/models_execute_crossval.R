@@ -14,13 +14,18 @@
 set_parallel_plan <- function(n_trait,
                               n_model = 1,
                               replication = 1,
-                              num_cores = 4,
+                              num_cores = NULL,
                               sys_name) {
   # Define the plan based on the system
   plan_type <- ifelse(sys_name == "Windows", "multisession", "multicore")
 
   # Check if parallel execution is beneficial
   if (n_trait > 1 || n_model > 1 || replication > 1) {
+    if(is.null(num_cores)){
+
+      num_cores <-  parallel::detectCores()
+      num_cores <- num_cores*0.7
+    }
     future::plan(plan_type, workers = num_cores)
   } else {
     future::plan("sequential")
@@ -57,7 +62,10 @@ predict_with_model <- function(model = NULL,
                                    subsample = additional_params$subsample, min_child_weight = additional_params$min_child_weight,
                                    xgb_alpha = additional_params$xgb_alpha, xgb_lambda = additional_params$xgb_lambda,
                                    xgb_booster = additional_params$xgb_booster,
-                                   early_stopping_rounds_xgb = additional_params$early_stopping_rounds_xgb),
+                                   xgb_rate_drop = additional_params$xgb_rate_drop,xgb_skip_drop = additional_params$xgb_skip_drop,
+                                   xgb_objective = additional_params$xgb_objective,xgb_sample_type = additional_params$xgb_sample_type,
+                                   xgb_normalize_type = additional_params$xgb_normalize_type,
+                                   early_stop_for_iteration_xgb = additional_params$early_stop_for_iteration_xgb),
          "RandomForest" = AI_randomforest_cv(y = y, omics = omics_data, tst = tst,
                                              scaling = additional_params$scaling,
                                              centering = additional_params$centering, ntree = additional_params$ntree,
@@ -158,8 +166,8 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     GS_model_cv = NULL,
                                     scaling = FALSE,
                                     centering = TRUE,
-                                    eta = 0.001, ## xgboost
-                                    nrounds = 5000, ## xgboost
+                                    eta = 0.1, ## xgboost
+                                    nrounds = 100, ## xgboost
                                     max_depth = 6, ## xgboost
                                     xgb_gamma = 4, ## xgboost
                                     subsample = 0.5, ## xgboost
@@ -167,8 +175,13 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     xgb_alpha = 0.001, ## xgboost linear
                                     xgb_lambda = 1, ## xgboost linear
                                     min_child_weight = 1, ## xgboost
-                                    early_stopping_rounds_xgb = TRUE,
-                                    xgb_booster = "gbtree",
+                                    early_stop_for_iteration_xgb = TRUE,
+                                    xgb_booster = "dart", #"gbtree",
+                                    xgb_rate_drop = 0.1,
+                                    xgb_skip_drop = 0.5,
+                                    xgb_objective = "reg:squarederror",
+                                    xgb_sample_type = "uniform",
+                                    xgb_normalize_type = "tree",
                                     ncomp = 3, #### pls
                                     ntree = 500, ### random forest
                                     k = 5, ## for knn
@@ -223,11 +236,15 @@ models_execute_crossval <- function(pheno_data = NULL,
                             scaling = scaling,centering = centering,
                             eta = eta, nrounds = nrounds,
                             max_depth = max_depth, xgb_gamma = xgb_gamma,
-                            early_stopping_rounds_xgb = early_stopping_rounds_xgb,
+                            early_stop_for_iteration_xgb = early_stop_for_iteration_xgb,
                             colsample_bytree = colsample_bytree, subsample = subsample, ntree = ntree,
                             xgb_alpha = xgb_alpha, xgb_lambda = xgb_lambda,
                             min_child_weight = min_child_weight,
-                            xgb_booster = xgb_booster,
+                            xgb_booster = xgb_booster, xgb_rate_drop = xgb_rate_drop,
+                            xgb_skip_drop = xgb_skip_drop,
+                            xgb_objective = xgb_objective,
+                            xgb_sample_type = xgb_sample_type,
+                            xgb_normalize_type = xgb_normalize_type,
                             ncomp = ncomp, C_value = C_value,degree_value = degree_value,
                             scale_value = scale_value, offset_value = offset_value,
                             k = k, omic_count = omic_count,
@@ -264,13 +281,36 @@ models_execute_crossval <- function(pheno_data = NULL,
   holds_out_methods_avail <- c("Hold_Out",
                                "Stratified_Hold_Out",
                                "Repeated_Hold_Out",
-                               "Repeated_Stratified_Hold_Out",
-                               "Leave_one_Out")
+                               "Repeated_Stratified_Hold_Out"
+                               #"Leave_one_Out"
+                               )
 
   Kfolds_methods_avail <- c("K-Folds",
                             "Stratified_K-Folds",
                             "Repeated_K-Folds",
                             "Repeated_Stratified_K-Folds")
+
+
+  # Create a named vector to map hold-out methods to K-folds methods
+  method_mapping <- setNames(Kfolds_methods_avail, holds_out_methods_avail)
+
+  # Function to convert hold-out method to K-folds method
+  convert_to_kfolds <- function(method) {
+    if (method %in% names(method_mapping)) {
+      return(method_mapping[method])
+    } else {
+      stop("Provided method is not available in hold-out methods.")
+    }
+  }
+
+  if(cross_validation_meth %in% holds_out_methods_avail){
+
+    cross_validation_meth <- as.character(convert_to_kfolds(cross_validation_meth))
+
+    if(is.null(nfolds)) nfolds <- 5
+
+  }
+
 
   CVs_multi_envs_methods_avail <- c("CV1",
                                     "CV2",
@@ -278,6 +318,7 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     "Repeated_CV2")
 
 
+  #ypred_cv_Reps_all <- list()
   ###############################################################
   # Main logic
   sys_name <- Sys.info()["sysname"]
@@ -314,10 +355,14 @@ models_execute_crossval <- function(pheno_data = NULL,
     rep <- as.integer(task_row$replication)
     model <- as.character(task_row$modell)
 
+    y_scaler <- caret::preProcess(as.data.frame(as.matrix(pheno_data[[trait]])), method = c("center", "scale"))
+
+    # Predict on the training data and get the scaled values
+    pheno_data[, trait] <- stats::predict(y_scaler, as.data.frame(as.matrix(pheno_data[[trait]])))[, 1]
 
     #print(c(trait, rep))  # For diagnostic purposes
 
-    repp = 1
+    repp <- 1
     #######
     # Check if a seed was provided and calculate a new seed based on the replication number
     if (!is.null(random_state) && is.numeric(random_state) && length(random_state) == 1) {
@@ -491,6 +536,7 @@ models_execute_crossval <- function(pheno_data = NULL,
       } ### Ends folds
 
     } else {
+      if(cross_validation_meth %in%holds_out_methods_avail){
       tst <-  test_set_val[[repp]]
       yNA <- y
       yNA[tst] <- NA
@@ -529,8 +575,9 @@ models_execute_crossval <- function(pheno_data = NULL,
                                                     tst = tst, additional_params = additional_params)
       }
 
+      }
 
-    }## End
+}## End
 
     if (cross_validation_meth %in%CVs_multi_envs_methods_avail){
       ypred_cv = as.data.frame(ypred_cv)
@@ -561,6 +608,7 @@ models_execute_crossval <- function(pheno_data = NULL,
 
     }
 
+
     #} ### End Replication
 
     ### Check if some value are not double or numeric and convert it
@@ -570,7 +618,8 @@ models_execute_crossval <- function(pheno_data = NULL,
                function(x) as.double(as.character(x)))
     }
 
-    list(trait = trait, rep = rep, model = model, eval_metrics_reps = results_eval_metrics_reps)
+    list(trait = trait, rep = rep, model = model, eval_metrics_reps = results_eval_metrics_reps,
+         ypred_cv_Reps_all = ypred_cv)
   }, future.seed = TRUE)
 
 

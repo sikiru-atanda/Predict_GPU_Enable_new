@@ -22,7 +22,7 @@
 #'
 #' @examples
 #' @importFrom foreach %dopar%
-AI_randomForest <- function(pheno_object=NULL,
+AI_randomForestOLD <- function(pheno_object=NULL,
                    geno_omic_object = NULL,
                    geno_omic_test_object = NULL,
                    response=NULL,
@@ -41,6 +41,16 @@ AI_randomForest <- function(pheno_object=NULL,
                    mtry = NULL,
                    maxnodes = NULL,
                    importance=TRUE,
+                   CI_width_thresholds = c(0.33, 0.66),
+                   high_reliability_thres = 0.9,
+                   low_reliability_thres = 0.5,
+                   n_components = 20,
+                   threshold = 100,
+                   target = "test_set",
+                   iqr_multiplier = 1.5,
+                   interval_width_high_threshold = NULL,
+                   interval_width_moderate_threshold = NULL,
+                   n_bootstrap = 100,
                    ...
 
 ){

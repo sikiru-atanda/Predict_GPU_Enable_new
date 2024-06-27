@@ -82,9 +82,13 @@ pheno_geno_match <- function(object_geno = NULL,
 # check whether geno_omic data or grm/kernel ------------------------------
 
       if(nrow(object_geno)==ncol(object_geno)){
-      object_geno <- object_geno[c(ID_pheno, test_set), c(ID_pheno, test_set)]
+      #object_geno <- object_geno[c(ID_pheno, test_set), c(ID_pheno, test_set)]
+      object_geno <- object_geno[rownames(object_geno)%in%c(ID_pheno, test_set), colnames(object_geno)%in%c(ID_pheno, test_set)]
+      object_geno <-  object_geno[match(c(ID_pheno, test_set), rownames(object_geno)), match(c(ID_pheno, test_set), colnames(object_geno))]
       } else {
-        object_geno <- object_geno[c(ID_pheno, test_set), ]
+        #object_geno <- object_geno[c(ID_pheno, test_set), ]
+        object_geno <- object_geno[rownames(object_geno)%in%c(ID_pheno, test_set), ]
+        object_geno <-  object_geno[match(c(ID_pheno, test_set), rownames(object_geno)), ]
       }
       attr(object_geno, "cleared") <- "model_ready_use"
       return(list(geno_pheno_match_data = object_geno,
@@ -97,9 +101,13 @@ pheno_geno_match <- function(object_geno = NULL,
 
         if (!is.null(test_set)) {
           if(nrow(object_geno)==ncol(object_geno)){
-            object_geno <- object_geno[c(ID_pheno, test_set), c(ID_pheno, test_set)]
+            #object_geno <- object_geno[c(ID_pheno, test_set), c(ID_pheno, test_set)]
+            object_geno <- object_geno[rownames(object_geno)%in%c(ID_pheno, test_set), colnames(object_geno)%in%c(ID_pheno, test_set)]
+            object_geno <-  object_geno[match(c(ID_pheno, test_set), rownames(object_geno)), match(c(ID_pheno, test_set), colnames(object_geno))]
           } else {
-            object_geno <- object_geno[c(ID_pheno, test_set), ]
+            #object_geno <- object_geno[c(ID_pheno, test_set), ]
+            object_geno <- object_geno[rownames(object_geno)%in%c(ID_pheno, test_set), ]
+            object_geno <-  object_geno[match(c(ID_pheno, test_set), rownames(object_geno)), ]
           }
           attr(object_geno, "cleared") <- "model_ready_use"
           return(list(geno_pheno_match_data = object_geno,
@@ -109,9 +117,13 @@ pheno_geno_match <- function(object_geno = NULL,
     }
   } else {
     if(nrow(object_geno)==ncol(object_geno)){
-      object_geno <- object_geno[ID_pheno, ID_pheno]
+      #object_geno <- object_geno[ID_pheno, ID_pheno]
+      object_geno <- object_geno[rownames(object_geno)%in%c(ID_pheno), colnames(object_geno)%in%c(ID_pheno)]
+      object_geno <-  object_geno[match(c(ID_pheno), rownames(object_geno)), match(c(ID_pheno), colnames(object_geno))]
     } else {
-      object_geno <- object_geno[ID_pheno,  ]
+      #object_geno <- object_geno[ID_pheno,  ]
+      object_geno <- object_geno[rownames(object_geno)%in%c(ID_pheno), ]
+      object_geno <-  object_geno[match(c(ID_pheno), rownames(object_geno)), ]
     }
     attr(object_geno, "cleared") <- "model_ready_use"
     return(list(geno_pheno_match_data = object_geno

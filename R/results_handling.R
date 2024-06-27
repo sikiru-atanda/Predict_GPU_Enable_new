@@ -1,15 +1,68 @@
+#' Title
+#'
+#' @param res_plot
+#' @param plot_filename
+#' @param plot_extension
+#' @param plot_width
+#' @param plot_height
+#' @param plot_units
+#' @param plot_dpi
+#'
+#' @return
+#' @export
+#'
+#' @examples
 save_ggplot <- function(res_plot,
                         plot_filename = "trait",
-                        plot_extension = "jpeg",
+                        plot_extension = "pdf",
                         plot_width = 17,
                         plot_height = 12,
                         plot_units = "in",
                         plot_dpi = 300) {
+
+
   # save plot plot with user defined name and parameters
-  ggplot2::ggsave(filename = paste0(plot_filename, ".", plot_extension),
-         plot = res_plot,
-         width = plot_width, height = plot_height, units = plot_units, dpi = plot_dpi)
+  if(is.null(plot_filename)) plot_filename <- "trait"
+  plot_name <- paste(plot_filename,plot_extension, sep = ".")
+
+       ggplot2::ggsave(filename = plot_name,
+                       plot = res_plot,
+                       width = plot_width,
+                       height = plot_height,
+                       units = plot_units,
+                       dpi = plot_dpi)
+
+
 }
+
+
+#' Title
+#'
+#' @param pathout
+#' @param geno_omic_files
+#'
+#' @return
+#' @export
+#'
+#' @examples
+zipMMatrixModelReady <- function(pathout,
+                                 geno_omic_files) {
+  is_geno <- grepl("Geno", geno_omic_files, ignore.case = TRUE)
+  is_omic <- grepl("Omic", geno_omic_files, ignore.case = TRUE)
+
+  zip_name <- if (any(is_geno) && any(is_omic)) {
+    "Geno_Omics_Clean_data.zip"
+  } else if (any(is_geno)) {
+    "Geno_Clean_data.zip"
+  } else if (any(is_omic)) {
+    "Omic_Clean_data.zip"
+  } else {
+    "X_variables_Clean_data.zip"
+  }
+
+  zip(file.path(pathout, zip_name), files = geno_omic_files, flags = "-q")
+}
+
 
 #' Title
 #'
@@ -60,20 +113,52 @@ save_ggplot <- function(res_plot,
 #
 # }
 
+#' Title
+#'
+#' @param GS_model
+#' @param res_model_output
+#' @param res_summary_stat
+#' @param res_plot
+#' @param res_plot_mean
+#' @param res_plot_result_diagnostic
+#' @param test_diagonistic_plots
+#' @param res_mod_results_cv_per_trait_model
+#' @param res_plot_result_diagnostic_cv_only
+#' @param cv_results_processed
+#' @param geno_qc_stat
+#' @param system_database
+#' @param plot_filename
+#' @param plot_extension
+#' @param plot_width
+#' @param plot_height
+#' @param plot_units
+#' @param plot_dpi
+#'
+#' @return
+#' @export
+#'
+#' @examples
 results_handling <-  function(GS_model = NULL,
                               res_model_output = NULL,
                               res_summary_stat = NULL,
                               res_plot = NULL,
                               res_plot_mean = NULL,
+                              res_plot_result_diagnostic = NULL,
+                              test_diagonistic_plots = NULL,
+                              res_mod_results_cv_per_trait_model = NULL,
+                              res_plot_result_diagnostic_cv_only = NULL,
                               cv_results_processed = NULL,
                               geno_qc_stat = NULL,
                               system_database = TRUE,
                               plot_filename = "trait",
-                              plot_extension = "jpeg",
+                              #Plot_name_result_diagnostic = "result_diagnostic",
+                              plot_extension = "pdf",
                               plot_width = 17,
                               plot_height = 12,
                               plot_units = "in",
-                              plot_dpi = 300){
+                              plot_dpi = 300
+                              ){
+
 
   # if(!is.null(geno_qc_stat)){
   #
@@ -83,25 +168,17 @@ results_handling <-  function(GS_model = NULL,
 
   ############
 
-  zipMMatrixModelReady <- function(pathout, geno_omic_files) {
-    is_geno <- grepl("Geno", geno_omic_files, ignore.case = TRUE)
-    is_omic <- grepl("Omic", geno_omic_files, ignore.case = TRUE)
 
-    zip_name <- if (any(is_geno) && any(is_omic)) {
-      "Geno_Omics_Clean_data.zip"
-    } else if (any(is_geno)) {
-      "Geno_Clean_data.zip"
-    } else if (any(is_omic)) {
-      "Omic_Clean_data.zip"
-    } else {
-      "X_variables_Clean_data.zip"
-    }
-
-    zip(file.path(pathout, zip_name), files = geno_omic_files, flags = "-q")
-  }
-
-  saveOutput <- function(res_model_output, res_summary_stat,  pathout, GS_model, res_plot) {
+  saveOutput <- function(res_model_output,
+                         res_summary_stat,
+                         pathout,
+                         GS_model,
+                         res_plot, res_plot_mean,
+                         res_plot_result_diagnostic,
+                         test_diagonistic_plots,
+                         res_plot_result_diagnostic_cv_only) {
     #browser()
+    if(!is.null(res_model_output)){
     for (i in 1:length(res_model_output)) {
 
       for(i in 1:length(res_model_output)){
@@ -187,6 +264,10 @@ results_handling <-  function(GS_model = NULL,
       }
 
     }
+
+    }
+
+    if(!is.null(res_summary_stat)){
     if(!is.null(res_summary_stat)){
     for(s in 1:length(res_summary_stat)){
 
@@ -196,7 +277,9 @@ results_handling <-  function(GS_model = NULL,
                   row.names = FALSE)
       }
     }
-  }
+    }
+
+    }
   ####
     if(!is.null(res_plot)){
       save_ggplot(res_plot = res_plot,
@@ -218,6 +301,83 @@ results_handling <-  function(GS_model = NULL,
                   plot_dpi = plot_dpi)
     }
 
+    if(!is.null(test_diagonistic_plots)){
+      if(inherits(test_diagonistic_plots, "gtable")){
+      save_ggplot(res_plot = test_diagonistic_plots,
+                  plot_filename = paste("test_diagonistic_plots", "GS_model", sep = "_"),
+                  plot_extension = plot_extension,
+                  plot_width = plot_width,
+                  plot_height = plot_height,
+                  plot_units = plot_units,
+                  plot_dpi = plot_dpi)
+      }
+
+    }
+
+
+    if(!is.null(res_plot_result_diagnostic)){
+      #traits <- names(res_plot_result_diagnostic)
+
+      #for (trait in traits) {
+
+
+        models <-   names(res_plot_result_diagnostic$predicted_vs_observed_plots)
+
+        for (mod in models) {
+
+          combined_plot <- res_plot_result_diagnostic$predicted_vs_observed_plots[[mod]]
+
+          name_plot <- paste("Cross_validation_diagonistic_plots", mod, sep = "_")
+
+if(inherits(combined_plot, "gtable")){
+          save_ggplot(res_plot = combined_plot,
+                      plot_filename = name_plot,
+                      plot_extension = plot_extension,
+                      plot_width = plot_width,
+                      plot_height = plot_height,
+                      plot_units = plot_units,
+                      plot_dpi = plot_dpi)
+
+}
+
+        }
+
+
+      }
+
+    #######
+    if(!is.null(res_plot_result_diagnostic_cv_only)){
+      traits <- names(res_plot_result_diagnostic_cv_only)
+
+      for (trait in traits) {
+
+       res_plot_cv <-  res_plot_result_diagnostic_cv_only[[trait]]
+      models <-   names(res_plot_cv$predicted_vs_observed_plots)
+
+      for (mod in models) {
+
+        combined_plot <- res_plot_cv$predicted_vs_observed_plots[[mod]]
+
+        name_plot <- paste(paste("Cross_validation_diagonistic_plots",  trait, sep = "_"), mod, sep = "_")
+
+        if(inherits(combined_plot, "gtable")){
+          save_ggplot(res_plot = combined_plot,
+                      plot_filename = name_plot,
+                      plot_extension = plot_extension,
+                      plot_width = plot_width,
+                      plot_height = plot_height,
+                      plot_units = plot_units,
+                      plot_dpi = plot_dpi)
+
+        }
+
+      }
+
+
+    }
+
+  }
+
 }
 
   processMMatrixModelReady <- function(pathout) {
@@ -230,7 +390,11 @@ results_handling <-  function(GS_model = NULL,
     }
   }
 
-  saveOutputAndZip <- function(res_model_output, res_summary_stat, output_file_name) {
+  saveOutputAndZip <- function(res_model_output, res_summary_stat, output_file_name,
+                               #pathout,
+                               GS_model, res_plot, res_plot_mean,
+                               test_diagonistic_plots, res_plot_result_diagnostic,
+                               res_plot_result_diagnostic_cv_only) {
     mainDir <- getwd()
     systime <- format(Sys.time(), "%Y%m%d_%H%M%S")
     systime <- gsub("[-: ]", "_", systime)
@@ -247,19 +411,29 @@ results_handling <-  function(GS_model = NULL,
 
     pathout <- getwd()
 
-    saveOutput(res_model_output, res_summary_stat,  pathout, GS_model, res_plot)
+    saveOutput(res_model_output = res_model_output, res_summary_stat = res_summary_stat,
+               pathout = pathout,
+               GS_model = GS_model, res_plot = res_plot,
+               res_plot_mean = res_plot_mean, test_diagonistic_plots = test_diagonistic_plots,
+               res_plot_result_diagnostic = res_plot_result_diagnostic,
+               res_plot_result_diagnostic_cv_only = res_plot_result_diagnostic_cv_only)
     processMMatrixModelReady(pathout)
 
     setwd(mainDir)
 
-    return(NULL)
+    return("Successful")
   }
 
   processData <- function(GS_model,
                           res_model_output,
                           res_summary_stat,
                           res_plot,
+                          #pathout,
                           res_plot_mean,
+                          test_diagonistic_plots,
+                          res_plot_result_diagnostic,
+                          res_plot_result_diagnostic_cv_only,
+                          res_mod_results_cv_per_trait_model,
                           cv_results_processed,
                           system_database,
                           plot_filename,
@@ -286,12 +460,21 @@ results_handling <-  function(GS_model = NULL,
       if (isFALSE(system_database)) {
         output <- saveOutputAndZip(res_model_output = res_model_output,
                                    res_summary_stat = res_summary_stat,
-                                   output_file_name = plot_filename)
+                                   output_file_name = plot_filename,
+                                   #pathout = pathout,
+                                   GS_model = GS_model,
+                                   res_plot_result_diagnostic_cv_only = res_plot_result_diagnostic_cv_only,
+                                   res_plot = res_plot, res_plot_mean = res_plot_mean,
+                                   test_diagonistic_plots = test_diagonistic_plots,
+                                   res_plot_result_diagnostic = res_plot_result_diagnostic)
       } else {
         output <- list(model_results = res_model_output,
                        summary_statistic = res_summary_stat,
                        res_plot = res_plot,
-                       cv_results_processed = cv_results_processed
+                       cv_results_processed = cv_results_processed,
+                       res_plot_result_diagnostic = res_plot_result_diagnostic,
+                       test_diagonistic_plots = test_diagonistic_plots,
+                       res_mod_results_cv_per_trait_model = res_mod_results_cv_per_trait_model
                        )
       }
       return(output)
@@ -304,10 +487,16 @@ results_handling <-  function(GS_model = NULL,
                      res_model_output = res_model_output,
                      res_summary_stat = res_summary_stat,
                      res_plot = res_plot,
+                     #pathout = pathout,
                      res_plot_mean = res_plot_mean,
+                     test_diagonistic_plots = test_diagonistic_plots,
+                     res_plot_result_diagnostic_cv_only = res_plot_result_diagnostic_cv_only,
+                     res_plot_result_diagnostic = res_plot_result_diagnostic,
+                     res_mod_results_cv_per_trait_model = res_mod_results_cv_per_trait_model,
                      cv_results_processed = cv_results_processed,
                      system_database = system_database,
                      plot_filename = plot_filename,
+                     #Plot_name_result_diagnostic = Plot_name_result_diagnostic,
                      plot_extension = plot_extension,
                      plot_width = plot_width,
                      plot_height = plot_height,

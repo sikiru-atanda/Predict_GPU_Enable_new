@@ -192,7 +192,7 @@ asreml_utilis_new <- function(
   # Extract unique GIDs from pheno_data to determine the row order
   unique_GIDs <- as.character(unique(pheno_data[[gen_name]]))
 
-  # Reorder the rownames and colnames of each dataset based on unique_GIDs if necessary
+  # # Reorder the rownames and colnames of each dataset based on unique_GIDs if necessary
   # datasets <- lapply(datasets, function(mat) {
   #   correct_row_order <- is_in_correct_order(rownames(mat), unique_GIDs[unique_GIDs %in% rownames(mat)])
   #   correct_col_order <- is_in_correct_order(colnames(mat), unique_GIDs[unique_GIDs %in% colnames(mat)])

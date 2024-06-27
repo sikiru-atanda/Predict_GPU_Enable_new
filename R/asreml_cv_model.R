@@ -14,6 +14,7 @@
 #' @examples
 asreml_cv_model <- function(pheno_dataa = NULL,
                             response = NULL,
+                            gen_name = NULL,
                             #heter_groups = NULL,
                             asreml_models_prep_cv = NULL,
                             tst = NULL
@@ -23,6 +24,7 @@ asreml_cv_model <- function(pheno_dataa = NULL,
   names_in_inv_list <-  asreml_models_prep_cv[["names_in_inv_list"]]
   code_asr_fit_cv <-  asreml_models_prep_cv[["code_asr_fit"]]
   pheno_dataa[tst, response] <- NA
+  #gen_tst <- pheno_dataa[tst, gen_name]
   code_asr_fit_cv[4] <- 'na.action=list(x="include",y="include"),data=pheno_dataa)'
   inv_list <- asreml_models_prep_cv[["inv_list"]]
   ####
@@ -92,7 +94,9 @@ asreml_cv_model <- function(pheno_dataa = NULL,
 
 
   output <- list(model_cv = mod_cv,
-                 asreml_models_prep_cv = asreml_models_prep_cv)
+                 asreml_models_prep_cv = asreml_models_prep_cv
+                 #gen_tst = gen_tst
+                 )
 
 
   return(output)

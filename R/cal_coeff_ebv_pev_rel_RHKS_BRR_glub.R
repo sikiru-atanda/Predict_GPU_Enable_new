@@ -90,23 +90,35 @@ cal_coeff_ebv_pev_rel_RHKS_glub <- function(mod = NULL,
   colnames(EBV)[1] <- gen_name
 
   ### Calculate the SEP, PEV and Reliability
-  sep_pev_rel <- sep_pev_rel_gblup(geno_object = gmatrix,
-                                   va = var_u,
-                                   ve = var_E)
+  # sep_pev_rel <- sep_pev_rel_gblup(geno_object = gmatrix,
+  #                                  va = var_u,
+  #                                  ve = var_E)
 
+  # EBV <- EBV |>
+  #   dplyr::mutate(Standard_error = sep_pev_rel$sep,
+  #                 Prediction_error_variance = sep_pev_rel$pev,
+  #                 Reliability = sep_pev_rel$rel)
+  Standard_error = mod$model$SD.yHat
+  PEV <- (mod$model$SD.yHat)^2
+
+  Reliability <- 1 - (PEV/var(mod$model$yHat))
   EBV <- EBV |>
-    dplyr::mutate(Standard_error = sep_pev_rel$sep,
-                  Prediction_error_variance = sep_pev_rel$pev,
-                  Reliability = sep_pev_rel$rel)
+    dplyr::mutate(Standard_error = Standard_error,
+                  Prediction_error_variance = PEV,
+                  Reliability = Reliability)
 
 
-  output <- list(coeffRaw, Coeff, EBV, sep_pev_rel$pev, sep_pev_rel$rel)
+  output <- list(Posterior = coeffRaw, Coefficient = Coeff,
+                 Estimated_breeding_value = EBV, PEV = PEV,
+                 Reliability = Reliability,
+                 Standard_error = Standard_error)
 
-  names(output) <- c('Posterior',
-                     "Coefficient",
-                     "Estimated_breeding_value",
-                     "PEV",
-                     "Reliability")
+  # names(output) <- c('Posterior',
+  #                    "Coefficient",
+  #                    "Estimated_breeding_value",
+  #                    "PEV",
+  #                    "Reliability",
+  #                    "Standard_error")
 
   return(output)
 

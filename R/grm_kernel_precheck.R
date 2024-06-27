@@ -72,7 +72,12 @@ if (!is.null(grm_kernel_data)){
   if (is.null(colnames(grm_kernel_data))){
     stop(message(paste(msg,'Colnames containing individuals in the matrix is missing')), call. = FALSE)
   }
+  all_numeric <- all(apply(grm_kernel_data, c(1, 2), is.numeric))
 
+  # Stop execution if any element is not numeric
+  if (!all_numeric) {
+    stop('The data contains non-numeric values', call. = FALSE)
+  }
   ### Check if the matrix is in class matrix if not convert to class matrix
   if (!is.matrix(grm_kernel_data)) grm_kernel_data <- as.matrix(grm_kernel_data)
   ### Check if colname and rownames in grm/kernel matrix is the same

@@ -326,15 +326,15 @@ model_execute <- function(
     lasso_paras_tunning= list(lambda_tune=seq(0.000001,0.9,length.out=100)^4),
     rr_paras_tunning = NULL,
     dpl_paras_tunning = NULL,
-    learning_rate = 0.001, #xgboost
+    learning_rate = 0.01, #xgboost
     max_depth = 6, #xgboost
     subsample = 0.5, #xgboost
-    xgb_booster =  "gbtree", # #xgboost "gblinear",
-    iteration = 5000, #xgboost
+    xgb_booster =  "dart", #"gbtree", # #xgboost "gblinear",
+    iteration = 1000, #xgboost
     N_feature_impo = 10, #xgboost
     resample_method_tune = "cv", # c("cv","boot") #xgboost
     number_of_fold_tune = 5, #xgboost
-    min_child_weight = 1, # xgboost,
+    min_child_weight = 0.8, # xgboost,
     #eta = 0.001, ## xgboost
     #nrounds = 5000, ## xgboost
     colsample_bytree = 1, ## xgboost
@@ -342,20 +342,40 @@ model_execute <- function(
     xgb_gamma = 0.01, ## xgboost it acts as a regularization parameter for controlling tree complexity
     lambda_rr = NULL,
     xgb_lambda = 1.0,  # xgboost linear
-    early_stopping_rounds_xgb = TRUE,
+    xgb_rate_drop = 0.1,
+    xgb_skip_drop = 0.5,
+    xgb_objective = "reg:squarederror",
+    xgb_sample_type = "uniform",
+    xgb_normalize_type = "tree",
     ntree=500, ## RF
     mtry = NULL, ## RF
     maxnodes = NULL, ## RF
     importance=TRUE, ## RF
     ncomp = 3, # pls
     svm_kernel = "Gaussian", #svm "Gaussian", "Linear","Hyperbolic_tangent", "Polynomial"
+    svm_type = "eps-regression",
     sigma_value  = 0.1,       #svm Default sigma value for RBF kernel
     C_value  = 1,             #svm Default cost parameter
     degree_value = 3,        #svm Default degree for polynomial kernel
     scale_value  = 1,         #svm Default scale for polynomial kernel
-    offset_value = 1,
+    offset_value = 0,
     AI_cv_nfolds = 5,
+    n_bootstrap = 100,
+    early_stop_for_iteration_xgb = FALSE,
+    CI_width_thresholds = c(0.33, 0.66),
+    confidence_level = 0.95,
+    high_reliability_thres = 0.9,
+    low_reliability_thres = 0.5,
+    abs_very_close_threshold = 0.01,
+    abs_close_threshold = 0.05,
+    n_components = 20,
+    threshold = 100,
+    iqr_multiplier = 1.5,
+    interval_width_high_threshold = NULL,
+    interval_width_moderate_threshold = NULL,
+    interval_width_low_threshold = NULL,
     cross_validation = FALSE,
+    cv_evaluation_only = TRUE,
     GS_model_cv = NULL,
     nfolds = 5,
     sampling_method = NULL,
@@ -365,11 +385,14 @@ model_execute <- function(
     cross_validation_meth = "Stratified_Hold_Out",
     random_state = 123,
     metric_for_ranking = "accuracy",
-    plot_extension = "jpeg",
+    plot_extension = "pdf",
     plot_width = 17,
     plot_height = 12,
     plot_units = "in",
     plot_dpi = 300,
+    plot_filename = "trait",
+    Plot_name_result_diagnostic = NULL,
+
     ...
 ) {
 
@@ -378,11 +401,11 @@ model_execute <- function(
 
     eval_metrics_available <- c("accuracy", "mean_squared_error", "bias",
                                 "root_mean_squared_error", "relative_squared_error",
-                                "mean_absolute_error", "mean_absolute_percent_error")
+                                "mean_absolute_error", "mean_absolute_percent_error", "kendalls_tau")
     if(!is.null(eval_metrics)){
       if (!all(eval_metrics %in% eval_metrics_available)) {
-        stop("Invalid evaluation metrics for the model. Choose from: ",
-             paste(eval_metrics_available, collapse = ", "), call. = FALSE)
+        stop(paste(msg, "Invalid evaluation metrics for the model. Choose from: ",
+             paste(eval_metrics_available, collapse = ", ")), call. = FALSE)
       }
     }
 
@@ -398,6 +421,8 @@ model_execute <- function(
     bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
 
     asreml_model <- "GBLUP"
+
+
     all_models_avail <- c(AI_valid_models, bayes_valid_models,
                           bayes_gblup_valid_models, asreml_model)
 
@@ -424,26 +449,26 @@ model_execute <- function(
     ### Check for executing cross_validation
     if(isTRUE(cross_validation)) {
       if(is.null(GS_model_cv) || is.null(cross_validation_meth)) {
-        stop("GS_model_cv and cross_validation_meth cannot be null when cross_validation is TRUE")
+        stop(paste(msg, "GS_model_cv and cross_validation_meth cannot be null when cross_validation is TRUE"), call. = FALSE)
       }
 
         if(!all(GS_model_cv%in%all_models_avail)){
-          stop("Invalid model. Choose from: ",
-               paste(all_models_avail, collapse = ", "), call. = FALSE)
+          stop(paste(msg,"Invalid model. Choose from: ",
+               paste(all_models_avail, collapse = ", ")), call. = FALSE)
         }
 
       if(length(cross_validation_meth)>1){
-        stop('use only one cross_validation method at a time')
+        stop(paste(msg,'use only one cross_validation method at a time'), call. = FALSE)
       }
 
       if(!cross_validation_meth%in%all_cv_methods_avail){
-        stop("Invalid cross validation method. Choose from: ",
-             paste(all_cv_methods_avail, collapse = ", "), call. = FALSE)
+        stop(paste(msg,"Invalid cross validation method. Choose from: ",
+             paste(all_cv_methods_avail, collapse = ", ")), call. = FALSE)
       }
 
       if(is.null(eval_metrics)){
-        stop("Provide evaluation metrics for models comparison. Choose from: ",
-             paste(eval_metrics_available, collapse = ", "), call. = FALSE)
+        stop(paste(msg,"Provide evaluation metrics for models comparison. Choose from: ",
+             paste(eval_metrics_available, collapse = ", ")), call. = FALSE)
       }
 
       ###
@@ -465,7 +490,7 @@ model_execute <- function(
         if("stratified"%in%present_patterns) sampling_method <- "stratified"
 
         if("Repeated"%in%present_patterns) {
-          stop("You select repeated cross-validation provide number of replications.\n For example, replication = 2")
+          stop(paste(msg,"You select repeated cross-validation provide number of replications.\n For example, replication = 2"), call. = FALSE)
         }
 
 
@@ -494,8 +519,8 @@ model_execute <- function(
 
     if(!is.null(kernel_method)){
       if (!(kernel_method %in% kernel_method_avaliable)) {
-        stop("Invalid kernel method. Choose from: ",
-             paste(kernel_method_avaliable, collapse = ", "), call. = FALSE)
+        stop(paste(msg,"Invalid kernel method. Choose from: ",
+             paste(kernel_method_avaliable, collapse = ", ")), call. = FALSE)
       }
     }
 
@@ -506,8 +531,8 @@ model_execute <- function(
 
     if(!is.null(gmatrix_method)){
       if (!(gmatrix_method %in% gmatrix_method_available)) {
-        stop("Invalid genomic relationship method. Choose from: ",
-             paste(gmatrix_method_available, collapse = ", "), call. = FALSE)
+        stop(paste(msg,"Invalid genomic relationship method. Choose from: ",
+             paste(gmatrix_method_available, collapse = ", ")), call. = FALSE)
       }
     }
     #############################
@@ -520,10 +545,10 @@ model_execute <- function(
                             bayes_gblup_valid_models,
                             asreml_model,
                             AI_valid_models))) {
-      stop("Invalid genomic prediction model. Choose from:\n", paste(c(bayes_valid_models,
+        stop(paste(msg,"Invalid genomic prediction model. Choose from:\n", paste(c(bayes_valid_models,
                                                                       bayes_gblup_valid_models,
                                                                       asreml_model,
-                                                                      AI_valid_models), collapse = ", "),
+                                                                      AI_valid_models), collapse = ", ")),
            call. = FALSE)
       }
       } else {
@@ -532,10 +557,10 @@ model_execute <- function(
                                  bayes_gblup_valid_models,
                                  asreml_model,
                                  AI_valid_models))) {
-          stop("Invalid genomic prediction model. Choose from:\n", paste(c(bayes_valid_models,
+          stop(paste(msg,"Invalid genomic prediction model. Choose from:\n", paste(c(bayes_valid_models,
                                                                            bayes_gblup_valid_models,
                                                                            asreml_model,
-                                                                           AI_valid_models), collapse = ", "),
+                                                                           AI_valid_models), collapse = ", ")),
                call. = FALSE)
         }
       }
@@ -544,116 +569,248 @@ model_execute <- function(
     }
 
     # Check for mandatory phenotypic data
-    if (is.null(pheno_data)){
-      stop(paste(msg, "Phenotypic data is missing."), call. = FALSE)
+    if (is.null(pheno_data)) {
+      if (is.null(pheno_data_train) && is.null(pheno_data_test)) {
+        stop(paste(msg, "Phenotypic data is missing."), call. = FALSE)
+      } else if (!is.null(pheno_data_train) && is.null(pheno_data_test)) {
+        stop(paste(msg, "Provide dataframe of phenotypic data for the testing set with NA in the response variable(s)."), call. = FALSE)
+      } else if (is.null(pheno_data_train) && !is.null(pheno_data_test)) {
+        stop(paste(msg, "Provide dataframe of phenotypic data for the training set."), call. = FALSE)
+      }
     }
 
+
+    ## Check for scenrio where user provide pheno_train and pheno_test.
+    ## Corresponding train and test geno or omic data must be provided
+
+    # Define the error message
+    error_message <- "When providing both pheno_data_train and pheno_data_test, at least one of the following pairs must be provided:
+                  (train_geno_data and test_geno_data),
+                  (train_omic1_data and test_omic1_data),
+                  (train_omic2_data and test_omic2_data),
+                  (train_omic3_data and test_omic3_data)."
+
+    # Check if GS_model or GS_model_cv contains valid models
+    valid_models_using_X_variables <- c(AI_valid_models, bayes_valid_models)
+    if ((!is.null(GS_model) && any(GS_model %in% valid_models_using_X_variables)) ||
+        (!is.null(GS_model_cv) && any(GS_model_cv %in% valid_models_using_X_variables))) {
+
+      # Check if pheno_data_train and pheno_data_test are provided
+      if (!is.null(pheno_data_train) && !is.null(pheno_data_test)) {
+
+        # Check if at least one of the required pairs is provided
+        conditions_met <- sum(
+          !is.null(train_geno_data) && !is.null(test_geno_data),
+          !is.null(train_omic1_data) && !is.null(test_omic1_data),
+          !is.null(train_omic2_data) && !is.null(test_omic2_data),
+          !is.null(train_omic3_data) && !is.null(test_omic3_data)
+        )
+
+        # If none of the pairs are provided, stop with an error message
+        if (conditions_met < 1) {
+          stop(paste(msg,error_message), call. = FALSE)
+        }
+      }
+    } ### End
+
+    ## Check for when both train and test set data are present in single file
     ##############
     # Define conditions
-    condition1 <- ((is.null(geno_data) & is.null(omic1_data)) & (is.null(omic2_data) & is.null(omic3_data)))
-    condition1_1 <- (is.null(gmatrix_method) & (is.null(kernel_method)))
+    condition1 <- is.null(geno_data) && is.null(omic1_data) && is.null(omic2_data) && is.null(omic3_data)
+    condition1_1 <- is.null(gmatrix_method) && is.null(kernel_method)
 
-    condition2 <- ((is.null(gmatrix) & is.null(gkernel)) & ((is.null(omic1_kernel) & is.null(omic2_kernel)) & is.null(omic3_kernel)))
+    condition2 <- is.null(gmatrix) && is.null(gkernel) && is.null(omic1_kernel) && is.null(omic2_kernel) && is.null(omic3_kernel)
+
+    ####
+    # Check if all required data sets are null
+    condition11 <- is.null(geno_data) && is.null(train_geno_data) && is.null(test_geno_data)
+    condition12 <- is.null(omic1_data) && is.null(train_omic1_data) && is.null(test_omic1_data)
+    condition13 <- is.null(omic2_data) && is.null(train_omic2_data) && is.null(test_omic2_data)
+    condition14 <- is.null(omic3_data) && is.null(train_omic3_data) && is.null(test_omic3_data)
+
+    error_message <- paste(msg, "Bayes Alphabets and machine learning models require omics or geno data.")
+    # Check if GS_model is not null and belongs to valid models
+    if (!is.null(GS_model) && any(GS_model %in% c(AI_valid_models, bayes_valid_models))) {
+      # Check if all conditions are true
+      if (condition11 && condition12 && condition13 && condition14) {
+        stop(paste(msg,error_message), call. = FALSE)
+      }
+    }
+
+    if (!is.null(GS_model_cv) && any(GS_model_cv %in% c(AI_valid_models, bayes_valid_models))) {
+      # Check if all conditions are true
+      if (condition11 && condition12 && condition13 && condition14) {
+        stop(error_message, call. = FALSE)
+      }
+    }
     ###################
 
     # Check for ASReml requirement for GBLUP
-    # if(!is.null(engine)){
-    # if(isFALSE(cross_validation)){
-    # if (GS_model == "GBLUP" && engine != "asreml") {
-    #   stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
-    #  }
-    # } else {
-    #   if ("GBLUP" %in%GS_model_cv && engine != "asreml") {
-    #     stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
-    #   }
-    # }
-    #
-    # } else {
-    #  if(isFALSE(cross_validation)){
-    #   if(is.null(engine) & GS_model == "GBLUP"){
-    #     stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
-    #   }
-    #
-    #  } else {
-    #    if(is.null(engine) & "GBLUP" %in%GS_model_cv){
-    #      stop(paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment."), call. = FALSE)
-    #    }
-    #  }
-    # }
+    ## Define error message
+    error_message <- paste(msg, "ASReml software is required to fit GBLUP for single or multi-environment.")
+
+    if(!is.null(engine)){
+    if(isFALSE(cross_validation) & !is.null(GS_model)){
+    if (any(GS_model == "GBLUP") && engine != "asreml") {
+      stop(paste(msg,error_message), call. = FALSE)
+     }
+    } else {
+      if(!is.null(GS_model_cv)){
+      if ("GBLUP" %in%GS_model_cv && engine != "asreml") {
+        stop(paste(msg,error_message), call. = FALSE)
+      }
+      }
+    }
+
+    } else {
+     if(isFALSE(cross_validation) & !is.null(GS_model)){
+      if(is.null(engine) & any(GS_model == "GBLUP")){
+        stop(paste(msg,error_message), call. = FALSE)
+      }
+
+     } else {
+       if(!is.null(GS_model_cv)){
+       if(is.null(engine) & "GBLUP" %in%GS_model_cv){
+         stop(paste(msg,error_message), call. = FALSE)
+       }
+       }
+     }
+    }
+
+    # Check for gen_name presence
+    if (!gen_name %in% colnames(pheno_data)) {
+      stop(paste(msg, sprintf("The specified column '%s' in the pheno_data did not match with your data. Please check and use appropriately.", gen_name)), call. = FALSE)
+    }
 
     # Check for multi-environment structure and required inputs for GBLUP
- #    if (length(pheno_data[,gen_name]) > length(unique(pheno_data[,gen_name]))){
- #      if( is.null(heter_groups)){
- #        stop(paste(msg, "Your phenotypic data has a multi-environment structure,\n but the column containing the environment/location is missing.\n Please provide heter_groups parameter.\n For example: heter_groups = 'locations'.\n If you have location as column name in your phenotypic data."), call. = FALSE)
- #      }
- #
- #      ### This is important for asreml for multi-environment analysis
- #      if (GS_model %in% "GBLUP") {
- #        if ((!is.null(heter_groups) & !is.null(heter_resid)) & is.null(var_cov_str)) {
- #          stop(msg, "Your data suggest multi-environment but variance-covariance structure is missing.Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
- #        } else if ((!is.null(heter_groups) & is.null(heter_resid)) & !is.null(var_cov_str)){
- #          stop(msg, "Your data suggest multi-environment but variance-covariance structure. heter_resid must be TRUE.", call. = FALSE)
- #          } else {
- #          if (!(var_cov_str %in% var_cov_str_available)) {
- #            stop(msg, "Invalid output variance-covariance structure. Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
- #          }
- #        }
- #      }
- #      # Check for required inputs for multi-environment GBLUP
- #      # Check if condition1 is true
- #      if (GS_model %in% c(bayes_gblup_valid_models, "GBLUP")){
- #        if (condition1!=condition1_1 & isTRUE(condition2)) {
- #          #print('ok')
- #          stop(paste(msg, "To fit a Bayesian or ASReml multi-environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
- #        }
- #
- #      }
- #
- #    } else {
- #
- #    # Check for single environment GBLUP and Bayesian models
- #    if (length(pheno_data[,gen_name]) == length(unique(pheno_data[,gen_name]))){
- # #### In case user erroneously provide this while it is a single location
- #      if(!is.null(heter_groups)) heter_groups <- NULL
- #      if(!is.null(heter_resid)) heter_resid <- NULL
- #      if(!is.null(var_cov_str)) var_cov_str <- NULL
- #      # Check for required inputs for Bayesian or ASReml single environment GBLUP models
- #      if (GS_model %in% c(bayes_gblup_valid_models, "GBLUP")){
- #        if (condition1!=condition1_1 & isTRUE(condition2)) {
- #          #print('ok')
- #          stop(paste(msg, "To fit a Bayesian or ASReml single environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
- #        }
- #
- #      }
- #
- #
- #      # Check for required inputs for Bayesian models
- #      if(isTRUE(cross_validation)){
- #        if(GS_model_cv%in%c(bayes_valid_models, AI_valid_models))
- #          if (isTRUE(condition1)) {
- #            #print('ok')
- #            stop(paste(msg, "To fit a Bayesian or machine learning model, provide genomic or omics data."), call. = FALSE)
- #          }
- #      } else{
- #      if (GS_model %in% c(bayes_valid_models, AI_valid_models)){
- #        if (isTRUE(condition1)) {
- #          #print('ok')
- #          stop(paste(msg, "To fit a Bayesian or machine learning model, provide genomic or omics data."), call. = FALSE)
- #        }
- #
- #      }
- #
- #    }
- #
- #    }
- #
- #    }
+    if (length(pheno_data[,gen_name]) > length(unique(pheno_data[,gen_name]))){
+      if( is.null(heter_groups)){
+        stop(paste(msg, "Your phenotypic data has a multi-environment structure,\n but the column containing the environment/location is missing.\n Please provide heter_groups parameter.\n For example: heter_groups = 'locations'.\n If you have location as column name in your phenotypic data."), call. = FALSE)
+      }
+
+      ### This is important for asreml for multi-environment analysis
+      # Define the error messages
+      missing_var_cov_str_msg <- paste(msg, "Your data suggest multi-environment but variance-covariance structure is missing. Choose from:", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
+      missing_heter_resid_msg <- paste(msg, "Your data suggest multi-environment but variance-covariance structure. heter_resid must be TRUE.", call. = FALSE)
+      invalid_var_cov_str_msg <- paste(msg, "Invalid output variance-covariance structure. Choose from:", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
+
+      # Check GS_model
+      if (!is.null(GS_model) && any(GS_model %in% c("GBLUP"))||
+          !is.null(GS_model_cv) && any(GS_model_cv %in% c("GBLUP"))) {
+        if (!is.null(heter_groups) && !is.null(heter_resid) && is.null(var_cov_str)) {
+          stop(missing_var_cov_str_msg)
+        } else if (!is.null(heter_groups) && is.null(heter_resid) && !is.null(var_cov_str)) {
+          stop(missing_heter_resid_msg)
+        } else if (!is.null(var_cov_str) && !(var_cov_str %in% var_cov_str_available)) {
+          stop(invalid_var_cov_str_msg)
+        }
+      }
+
+      # Check GS_model_cv for cross-validation
+      if (isTRUE(cross_validation) && !is.null(GS_model_cv) && any(GS_model_cv %in% c("GBLUP"))) {
+        if (!is.null(heter_groups) && !is.null(heter_resid) && is.null(var_cov_str)) {
+          stop(missing_var_cov_str_msg)
+        } else if (!is.null(heter_groups) && is.null(heter_resid) && !is.null(var_cov_str)) {
+          stop(missing_heter_resid_msg)
+        } else if (!is.null(var_cov_str) && !(var_cov_str %in% var_cov_str_available)) {
+          stop(invalid_var_cov_str_msg)
+        }
+      }
+
+      # Check for required inputs for multi-environment GBLUP
+      # Check if condition1 is true
+      # Define the error message
+      error_messagee <- paste(
+        msg,
+        "To fit a Bayesian or ASReml multi-environment GBLUP model,",
+        "you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel),",
+        "or an omics kernel. Additionally, you can provide genomic or omics data.",
+        "Ensure you provide instructions on the genomic relationship matrix method",
+        "or kernel method to calculate the relationship matrix."
+      )
+
+      # Check GS_model
+      if (!is.null(GS_model) && any(GS_model %in% c(bayes_gblup_valid_models, "GBLUP"))) {
+        if (condition1 != condition1_1 && isTRUE(condition2)) {
+          stop(error_messagee, call. = FALSE)
+        }
+      }
+
+      # Check GS_model_cv for cross-validation
+      if (isTRUE(cross_validation) && !is.null(GS_model_cv) && any(GS_model_cv %in% c(bayes_gblup_valid_models, "GBLUP"))) {
+        if (condition1 != condition1_1 && isTRUE(condition2)) {
+          stop(error_messagee, call. = FALSE)
+        }
+      }
+
+      # if (GS_model | GS_model_cv %in% c(bayes_gblup_valid_models, "GBLUP")){
+      #   if (condition1!=condition1_1 & isTRUE(condition2)) {
+      #     #print('ok')
+      #     stop(paste(msg, "To fit a Bayesian or ASReml multi-environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
+      #   }
+      #
+      # }
+
+    } else {
+
+    # Check for single environment GBLUP and Bayesian models
+    if (length(pheno_data[,gen_name]) == length(unique(pheno_data[,gen_name]))){
+ #### In case user erroneously provide this while it is a single location
+      if(!is.null(heter_groups)) heter_groups <- NULL
+      if(!is.null(heter_resid)) heter_resid <- NULL
+      if(!is.null(var_cov_str)) var_cov_str <- NULL
+      # Check for required inputs for Bayesian or ASReml single environment GBLUP models
+      # Define the error message
+      error_messagee <- paste(
+        msg,
+        "To fit a Bayesian or ASReml single-environment GBLUP model,",
+        "you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel),",
+        "or an omics kernel. Additionally, you can provide genomic or omics data.",
+        "Ensure you provide instructions on the genomic relationship matrix method",
+        "or kernel method to calculate the relationship matrix."
+      )
+
+      # Check GS_model
+      if (!is.null(GS_model) && any(GS_model %in% c(bayes_gblup_valid_models, "GBLUP"))) {
+        if (condition1 != condition1_1 && isTRUE(condition2)) {
+          stop(error_messagee, call. = FALSE)
+        }
+      }
+
+      # Check GS_model_cv for cross-validation
+      if (isTRUE(cross_validation) && !is.null(GS_model_cv) && any(GS_model_cv %in% c(bayes_gblup_valid_models, "GBLUP"))) {
+        if (condition1 != condition1_1 && isTRUE(condition2)) {
+          stop(error_messagee, call. = FALSE)
+        }
+      }
+
+      # Check for required inputs for Bayesian models
+      if(isTRUE(cross_validation)){
+        if(any(GS_model_cv%in%c(bayes_valid_models, AI_valid_models)))
+          if (isTRUE(condition1)) {
+            #print('ok')
+            stop(paste(msg, "To fit a Bayesian or machine learning model, provide genomic or omics data."), call. = FALSE)
+          }
+      } else{
+      if (any(GS_model %in% c(bayes_valid_models, AI_valid_models))){
+        if (isTRUE(condition1)) {
+          #print('ok')
+          stop(paste(msg, "To fit a Bayesian or machine learning model, provide genomic or omics data."), call. = FALSE)
+        }
+
+      }
+
+    }
+
+    }
+
+    }
     ##
 
-    # Main Script
-    checkForASReml(engine, GS_model, GS_model_cv, cross_validation, msg)
-    validateMultiEnvironment(pheno_data, gen_name, heter_groups, heter_resid, var_cov_str, GS_model, var_cov_str_available,cross_validation, GS_model_cv, msg)
-    validateModelRequirements(GS_model, GS_model_cv, bayes_gblup_valid_models, condition1, condition1_1, condition2, cross_validation, msg)
+    # Main Script Not use again remove main scripts
+    # checkForASReml(engine, GS_model, GS_model_cv, cross_validation, msg)
+    # validateMultiEnvironment(pheno_data, gen_name, heter_groups, heter_resid, var_cov_str, GS_model, var_cov_str_available,cross_validation, GS_model_cv, msg)
+    # validateModelRequirements(GS_model, GS_model_cv, bayes_gblup_valid_models, condition1, condition1_1, condition2, cross_validation, msg)
 
 ### Check phenotype_to_model for details
  #    This serve as gateway between phenotype-precheck function and readiness of
@@ -938,6 +1095,11 @@ model_execute <- function(
  cv_results_processed <-  NULL
  model_prep_all_bayes_cv <-  NULL
  asreml_models_prep_cv <- NULL
+ res_plot_result_diagnostic <-  NULL
+ res_mod_results_cv_per_trait_model <-  NULL
+ cv_results_predicted_vs_observed <- NULL
+ res_plot_result_diagnostic_cv_only <- NULL
+ diagnostic_plots <- NULL
 
  if(isTRUE(cross_validation)){
    #model_prep_all_bayes_cv <-  NULL
@@ -1036,7 +1198,7 @@ model_execute <- function(
                                         xgb_alpha = xgb_alpha, ## xgboost linear
                                         xgb_lambda = xgb_lambda, ## xgboost linear
                                         min_child_weight = min_child_weight, ## xgboost
-                                        early_stopping_rounds_xgb = early_stopping_rounds_xgb, ## xgboost
+                                        early_stop_for_iteration_xgb = early_stop_for_iteration_xgb, ## xgboost
                                         xgb_booster = xgb_booster,
                                         ncomp = ncomp, #### pls
                                         ntree = ntree, ### random forest
@@ -1064,6 +1226,11 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
 
 } else {
 
+  cv_results_predicted_vs_observed <- single_predicted_vs_observed_result_plots_process(results = cv_results,
+                                                                                        pheno_data = pheno_data,
+                                                                                        abs_very_close_threshold = abs_very_close_threshold,
+                                                                                        abs_close_threshold = abs_close_threshold)
+
 cv_results_processed <- cv_single_loc_result_plot_process(cv_results_data=cv_results,
                                                           eval_metrics = eval_metrics)
 
@@ -1073,7 +1240,35 @@ best_models_ggplot_rep <- cv_results_processed[["plot_reps_list"]][[metric_for_r
 
 best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_ranking]][["ggplot_lineplot_mean"]]
 
+
   }
+
+ }
+
+ geno_qc_stat <- if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL
+
+
+ if(isTRUE(cv_evaluation_only) && isTRUE(cross_validation)){
+
+   return(results_handling(GS_model =  NULL,
+                           res_model_output =  NULL,
+                           res_summary_stat =  NULL,
+                           res_plot = best_models_ggplot_rep,
+                           res_plot_mean = best_models_ggplot_mean,
+                           res_plot_result_diagnostic = NULL,
+                           test_diagonistic_plots = NULL,
+                           res_plot_result_diagnostic_cv_only = cv_results_predicted_vs_observed$predicted_vs_observed_plots,
+                           res_mod_results_cv_per_trait_model = cv_results_predicted_vs_observed$mod_res_per_trait_per_model,
+                           geno_qc_stat = geno_qc_stat,
+                           cv_results_processed = cv_results_processed,
+                           system_database = system_database,
+                           plot_filename = "CV_results",
+                           #Plot_name_result_diagnostic = if(!is.null(names(res_mod_results_cv_per_trait_model)[res])) names(results)[res] else paste("trait_diganostic", res, sep = "_"),
+                           plot_extension = plot_extension,
+                           plot_width = plot_width,
+                           plot_height = plot_height,
+                           plot_units = plot_units,
+                           plot_dpi = plot_dpi))
 
  }
 
@@ -1091,7 +1286,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
  ## sik ############################################################################################ sik
 
 
- geno_qc_stat <- if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL
+ # geno_qc_stat <- if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL
 
  #######
  if(!is.null(best_models)){
@@ -1134,6 +1329,12 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
    response <- as.character(task_row$trait)
    GS_model <- as.character(task_row$model)
 
+   if(!GS_model%in%AI_valid_models) {
+     model_for_CI_cal <-"Bayes"
+   } else{
+     model_for_CI_cal <- "ML"
+   }
+
    #### These models only works with one environment/location
    if(length(pheno_clean[["pheno_clean_data"]][,gen_name])==length(unique(pheno_clean[["pheno_clean_data"]][,gen_name]))){
 
@@ -1158,14 +1359,37 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                                        burnIn = burnIn,
                                                        thin = thin,
                                                        omics_data_label = omics_data_label,
-                                                       scaling = scaling)
+                                                       scaling = scaling,
+                                                       CI_width_thresholds = CI_width_thresholds,
+                                                       confidence_level = confidence_level,
+                                                       high_reliability_thres = high_reliability_thres,
+                                                       low_reliability_thres = low_reliability_thres,
+                                                       n_components = n_components,
+                                                       threshold = threshold,
+                                                       target = "test_set",
+                                                       confidence_level = confidence_level,
+                                                       #iqr_multiplier = iqr_multiplier,
+                                                       interval_width_high_threshold = interval_width_high_threshold,
+                                                       interval_width_low_threshold = interval_width_low_threshold,
+                                                       interval_width_moderate_threshold = interval_width_moderate_threshold)
 
        # Compute summary statistics and plot accuracy
        res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]],
                                                     eval_metrics = eval_metrics,
-                                                    GS_model = GS_model)
+                                                    model_result = res_model_output[["bayes_result"]],
+                                                    GS_model = GS_model,
+                                                    gen_name = gen_name,
+                                                    CI_width_thresholds = CI_width_thresholds,
+                                                    confidence_level = confidence_level,
+                                                    high_reliability_thres = high_reliability_thres,
+                                                    low_reliability_thres = low_reliability_thres,
+                                                    system_database = system_database)
        #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
        res_model_output <- res_model_output[["bayes_result"]]
+       res_model_output[["diagnostic_plots"]] <- res_summary_stat[["diagnostic_tst_plot"]]
+
+       res_summary_stat <- res_summary_stat[!names(res_summary_stat) %in% "diagnostic_tst_plot"]
+
 
        # output <- list(GS_model = GS_model,
        #                res_model_output = res_model_output,
@@ -1218,14 +1442,37 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                                         burnIn = burnIn,
                                                         thin = thin,
                                                         heter_groups = heter_groups,
-                                                        omics_kernel_label = omics_kernel_label)
+                                                        omics_kernel_label = omics_kernel_label,
+                                                        CI_width_thresholds = CI_width_thresholds,
+                                                        confidence_level = confidence_level,
+                                                        high_reliability_thres = high_reliability_thres,
+                                                        low_reliability_thres = low_reliability_thres,
+                                                        n_components = n_components,
+                                                        threshold = threshold,
+                                                        target = "test_set",
+                                                        confidence_level = confidence_level,
+                                                        #iqr_multiplier = iqr_multiplier,
+                                                        interval_width_low_threshold = interval_width_low_threshold,
+                                                        interval_width_high_threshold = interval_width_high_threshold,
+                                                        interval_width_moderate_threshold = interval_width_moderate_threshold)
 
        # Compute summary statistics and plot accuracy
        res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]],
                                                     eval_metrics = eval_metrics,
-                                                    GS_model = GS_model)
+                                                    model_result = res_model_output[["bayes_result"]],
+                                                    GS_model = GS_model,
+                                                    gen_name = gen_name,
+                                                    CI_width_thresholds = CI_width_thresholds,
+                                                    confidence_level = confidence_level,
+                                                    high_reliability_thres = high_reliability_thres,
+                                                    low_reliability_thres = low_reliability_thres,
+                                                    system_database = system_database)
        #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
        res_model_output <- res_model_output[["bayes_result"]]
+       res_model_output[["diagnostic_plots"]] <- res_summary_stat[["diagnostic_tst_plot"]]
+
+       res_summary_stat <- res_summary_stat[!names(res_summary_stat) %in% "diagnostic_tst_plot"]
+
        ### This part is for GBLUP_BRR
        # if(exists("GS_modeluse")){
        #   GS_model <-  GS_modeluse
@@ -1288,11 +1535,20 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                                        response = response,
                                                        pheno_data = pheno_clean[["pheno_clean_data"]],
                                                        heter_groups = heter_groups,
+                                                       GID_names = res_model_output[["Predicted_value"]][gen_name],
                                                        predicted_value =  res_model_output[["Predicted_value"]],
+                                                       standard_errors = res_model_output[["Predicted_value"]]["Standard_error"],
+                                                       prediction_error_var = res_model_output[["Predicted_value"]]["Prediction_error_variance"],
+                                                       genetic_var = var(res_model_output[["Predicted_value"]]["Predicted_value"]),
                                                        pred_heter_groups = NULL,
                                                        variance_components = res_model_output[["Variance_components"]],
                                                        eval_metrics = eval_metrics,
-                                                       gen_name = gen_name)
+                                                       gen_name = gen_name,
+                                                       CI_width_thresholds = CI_width_thresholds,
+                                                       confidence_level = confidence_level,
+                                                       high_reliability_thres = high_reliability_thres,
+                                                       low_reliability_thres = low_reliability_thres,
+                                                       system_database = system_database)
 
          # output <- list(GS_model = GS_model,
          #                res_model_output = res_model_output,
@@ -1356,8 +1612,24 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                          alpha = alpha, ## xgboost linear
                                          lambda = lambda, ## xgboost linear
                                          iteration = iteration,
-                                         early_stopping_rounds_xgb = early_stopping_rounds_xgb,
-                                         N_feature_impo = N_feature_impo
+                                         xgb_rate_drop = xgb_rate_drop,
+                                         xgb_skip_drop = xgb_skip_drop,
+                                         xgb_objective = xgb_objective,
+                                         xgb_sample_type = xgb_sample_type,
+                                         xgb_normalize_type = xgb_normalize_type,
+                                         early_stop_for_iteration_xgb = early_stop_for_iteration_xgb,
+                                         N_feature_impo = N_feature_impo,
+                                         CI_width_thresholds = CI_width_thresholds,
+                                         high_reliability_thres = high_reliability_thres,
+                                         low_reliability_thres = low_reliability_thres,
+                                         n_components = n_components,
+                                         threshold = threshold,
+                                         target = "test_set",
+                                         #iqr_multiplier = iqr_multiplier,
+                                         interval_width_low_threshold = interval_width_low_threshold,
+                                         interval_width_high_threshold = interval_width_high_threshold,
+                                         interval_width_moderate_threshold = interval_width_moderate_threshold,
+                                         n_bootstrap = n_bootstrap
               )
             },
             "RandomForest" = {
@@ -1376,7 +1648,18 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                                   ntree=ntree,
                                                   mtry = mtry,
                                                   maxnodes = maxnodes,
-                                                  importance=importance
+                                                  importance=importance,
+                                                  CI_width_thresholds = CI_width_thresholds,
+                                                  high_reliability_thres = high_reliability_thres,
+                                                  low_reliability_thres = low_reliability_thres,
+                                                  n_components = n_components,
+                                                  threshold = threshold,
+                                                  target = "test_set",
+                                                  #iqr_multiplier = iqr_multiplier,
+                                                  interval_width_low_threshold = interval_width_low_threshold,
+                                                  interval_width_high_threshold = interval_width_high_threshold,
+                                                  interval_width_moderate_threshold = interval_width_moderate_threshold,
+                                                  n_bootstrap = n_bootstrap
               )
             },
             "PartialLeastSquare" = {
@@ -1391,7 +1674,20 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                           omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                                           para_tunning = para_tunning,
                                           ncomp = ncomp,
-                                          pls_paras_tunning = pls_paras_tunning)
+                                          pls_paras_tunning = pls_paras_tunning,
+                                          resample_method_tune = resample_method_tune,
+                                          N_feature_impo = N_feature_impo,
+                                          CI_width_thresholds = CI_width_thresholds,
+                                          high_reliability_thres = high_reliability_thres,
+                                          low_reliability_thres = low_reliability_thres,
+                                          n_components = n_components,
+                                          threshold = threshold,
+                                          target = "test_set",
+                                          #iqr_multiplier = iqr_multiplier,
+                                          interval_width_low_threshold = interval_width_low_threshold,
+                                          interval_width_high_threshold = interval_width_high_threshold,
+                                          interval_width_moderate_threshold = interval_width_moderate_threshold,
+                                          n_bootstrap = n_bootstrap)
             },
             "SupportVectorMachine" = {
               res_model_output <- AI_svm(pheno_object = ml_dat_res[["pheno_clean_data"]],
@@ -1406,12 +1702,25 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                          AI_cv_nfolds = AI_cv_nfolds,
                                          para_tunning = para_tunning,
                                          svm_paras_tunning = svm_paras_tunning,
+                                         svm_type = svm_type,
                                          svm_kernel = svm_kernel, # "Gaussian", "Linear","Hyperbolic_tangent", "Polynomial"
                                          sigma_value  = sigma_value,       # Default sigma value for RBF kernel
                                          C_value  = C_value,             # Default cost parameter
                                          degree_value = degree_value,        # Default degree for polynomial kernel
                                          scale_value  = scale_value,         # Default scale for polynomial kernel
                                          offset_value = offset_value,
+                                         gamma_value = gamma_value,
+                                         CI_width_thresholds = CI_width_thresholds,
+                                         high_reliability_thres = high_reliability_thres,
+                                         low_reliability_thres = low_reliability_thres,
+                                         n_components = n_components,
+                                         threshold = threshold,
+                                         target = "test_set",
+                                         #iqr_multiplier = iqr_multiplier,
+                                         interval_width_low_threshold = interval_width_low_threshold,
+                                         interval_width_high_threshold = interval_width_high_threshold,
+                                         interval_width_moderate_threshold = interval_width_moderate_threshold,
+                                         n_bootstrap = n_bootstrap
               )
             },
             "K-NearestNeighbors" = {
@@ -1426,7 +1735,19 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                          omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                                          AI_cv_nfolds = AI_cv_nfolds,
                                          para_tunning = para_tunning,
-                                         knn_paras_tunning = knn_paras_tunning
+                                         knn_paras_tunning = knn_paras_tunning,
+                                         k = k,
+                                         CI_width_thresholds = CI_width_thresholds,
+                                         high_reliability_thres = high_reliability_thres,
+                                         low_reliability_thres = low_reliability_thres,
+                                         n_components = n_components,
+                                         threshold = threshold,
+                                         target = "test_set",
+                                         #iqr_multiplier = iqr_multiplier,
+                                         interval_width_low_threshold = interval_width_low_threshold,
+                                         interval_width_high_threshold = interval_width_high_threshold,
+                                         interval_width_moderate_threshold = interval_width_moderate_threshold,
+                                         n_bootstrap = n_bootstrap
               )
             },
             "Lasso" = {
@@ -1444,7 +1765,18 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                 centering = centering,
                 omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                 GS_model = GS_model,
-                lambda_rr = lambda_rr
+                lambda_rr = lambda_rr,
+                CI_width_thresholds = CI_width_thresholds,
+                high_reliability_thres = high_reliability_thres,
+                low_reliability_thres = low_reliability_thres,
+                n_components = n_components,
+                threshold = threshold,
+                target = "test_set",
+                #iqr_multiplier = iqr_multiplier,
+                interval_width_low_threshold = interval_width_low_threshold,
+                interval_width_high_threshold = interval_width_high_threshold,
+                interval_width_moderate_threshold = interval_width_moderate_threshold,
+                n_bootstrap = n_bootstrap
               )
             },
             "Ridge_Regression" = {
@@ -1462,7 +1794,18 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                 centering = centering,
                 omic_count = if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL,
                 GS_model = GS_model,
-                lambda_rr = lambda_rr
+                lambda_rr = lambda_rr,
+                CI_width_thresholds = CI_width_thresholds,
+                high_reliability_thres = high_reliability_thres,
+                low_reliability_thres = low_reliability_thres,
+                n_components = n_components,
+                threshold = threshold,
+                target = "test_set",
+                #iqr_multiplier = iqr_multiplier,
+                interval_width_low_threshold = interval_width_low_threshold,
+                interval_width_high_threshold = interval_width_high_threshold,
+                interval_width_moderate_threshold = interval_width_moderate_threshold,
+                n_bootstrap = n_bootstrap
               )
             },
             "deep_learning_model" = {
@@ -1542,10 +1885,15 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                            res_summary_stat = if("res_summary_stat" %in% names(results[[res]])) results[[res]][["res_summary_stat"]] else NULL,
                            res_plot = best_models_ggplot_rep,
                            res_plot_mean = best_models_ggplot_mean,
+                           res_plot_result_diagnostic = cv_results_predicted_vs_observed$predicted_vs_observed_plots[[res]],
+                           test_diagonistic_plots = results[[res]]$res_model_output$diagnostic_plots,
+                           res_mod_results_cv_per_trait_model = cv_results_predicted_vs_observed$mod_res_per_trait_per_model,
                            geno_qc_stat = geno_qc_stat,
+                           res_plot_result_diagnostic_cv_only = NULL,
                            cv_results_processed = cv_results_processed,
                            system_database = system_database,
                            plot_filename = if(!is.null(names(results)[res])) names(results)[res] else paste("trait", res, sep = "_"),
+                           #Plot_name_result_diagnostic = if(!is.null(names(res_mod_results_cv_per_trait_model)[res])) names(results)[res] else paste("trait_diganostic", res, sep = "_"),
                            plot_extension = plot_extension,
                            plot_width = plot_width,
                            plot_height = plot_height,

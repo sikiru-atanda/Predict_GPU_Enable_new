@@ -54,15 +54,18 @@ phenotype_precheck <- function(pheno_data = NULL,
   }
 
   # Order by heter_groups if specified and present
-  if (!is.null(heter_groups) && heter_groups %in% colnames(pheno_data)) {
-    pheno_data <- pheno_data[order(pheno_data[[heter_groups]]), ]
-  } else if (!is.null(heter_groups)) {
-    stop(msg, "The specified heterogeneity groups '", heter_groups, "' did not match with your data. Please check and use appropriately.")
+  if (!is.null(heter_groups)) {
+    missing_heter_grps <- heter_groups[!heter_groups %in% colnames(pheno_data)]
+    if (length(missing_heter_grps) > 0) {
+      stop(msg, "The variable '", paste(missing_heter_grps, collapse = "', '"), "' did not match with your data. Please check and use appropriately.")
+    } else {
+      pheno_data <- pheno_data[order(pheno_data[[heter_groups]]), ]
+    }
   }
 
   # Check for gen_name presence
   if (!gen_name %in% colnames(pheno_data)) {
-    stop(msg, "The specified column '", gen_name, "' in the pheno_data did not match with your data. Please check and use appropriately.")
+    stop(sprintf("The specified column '%s' in the pheno_data did not match with your data. Please check and use appropriately.", gen_name))
   }
 
   # Check for NA in gen_name column

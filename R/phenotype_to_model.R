@@ -69,12 +69,12 @@ msg <- sprintf("==================================================\n")
 
       if(is.data.frame(test_set) | is.matrix(test_set)){
 
-       test_set <-  test_set[, 1]
+       test_set <-  as.character(test_set[, 1])
 
 
       } else if (!is.list(test_set)){
 
-        test_set <-  test_set
+        test_set <-  as.character(test_set)
 
       } else {
         if(is.list(test_set)){
@@ -88,8 +88,12 @@ msg <- sprintf("==================================================\n")
         stop(message(paste(msg, "The testing set size should be less than the unique genotypes in the pheno_data.")), call. = FALSE)
       }
 
-      pheno_data[, response] <- ifelse(pheno_data[, gen_name]%in%test_set, NA,
-                                       pheno_data[, response])
+      # pheno_data[, response] <- ifelse(pheno_data[, gen_name]%in%test_set, NA,
+      #                                  pheno_data[, response])
+      # Loop through each column name in response and apply the ifelse function
+      for (col in response) {
+        pheno_data[, col] <- ifelse(pheno_data[, gen_name] %in% test_set, NA, pheno_data[, col])
+      }
 
       # test_set_ = test_set
       #
@@ -216,6 +220,7 @@ msg <- sprintf("==================================================\n")
         test_set <- data.frame(name = as.character(unique(pheno_data_test[, gen_name])), stringsAsFactors = FALSE)
         names(test_set) <- gen_name
 
+
         ### The result object has to pass the test attribute before it can be stored
 
           # Assign appropriate class.
@@ -239,14 +244,14 @@ msg <- sprintf("==================================================\n")
 
   if(!is.null(pheno_data) & !is.null(test_set)){
 
-
-
     output <- list(pheno_clean_data = pheno_data,
                    test_set = test_set)
 
     #rm(pheno_data, test_set)
 
     }else if (!is.null(pheno_data) & (is.null(pheno_data_train) & is.null(pheno_data_test))){
+
+      ### Check to ensure the response variable are in numeric
 
       output <- list(pheno_clean_data = pheno_data)
 
@@ -258,6 +263,7 @@ msg <- sprintf("==================================================\n")
 
 
     if (!is.null(pheno_data_train_) & !is.null(pheno_data_test_)){
+
 
     output <-   list(pheno_clean_data = pheno_data,
                      test_set = test_set)

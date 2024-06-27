@@ -23,7 +23,8 @@ standard_deviation <- function(x ){
 #' @examples
 process_var_u <- function(file, posindex, GS_model) {
   if(GS_model%in%c("BRR", "RKHS")){
-    var_u <- scan(file, what = numeric(), sep = "\n", quiet = TRUE)[posindex]
+    #var_u <- scan(file, what = numeric(), sep = "\n", quiet = TRUE)[posindex]
+    var_u <- scan(file, what = numeric(), sep = "\n", quiet = TRUE)
 
   }else {
     if(GS_model%in%c("BayesA", "BayesC", "lambda")){
@@ -35,7 +36,8 @@ process_var_u <- function(file, posindex, GS_model) {
       }
 
     }
-    var_u <- as.data.frame(tidyr::separate_rows(var_u))[posindex, 1]
+    #var_u <- as.data.frame(tidyr::separate_rows(var_u))[posindex, 1]
+    var_u <- as.data.frame(tidyr::separate_rows(var_u))[, 1]
 
   }
   #Var_U_Se_omics <- standard_deviation(Var_U)
@@ -59,18 +61,38 @@ mod_output_bayes <- function(mod=NULL,
                                                      omic3_data = NULL),
                              bayes_para = NULL,
                              GS_model = NULL,
+                             CI_width_thresholds = c(0.33, 0.66),
+                             confidence_level = 0.95,
+                             high_reliability_thres = 0.9,
+                             low_reliability_thres = 0.5,
+                             n_components = 20,
+                             threshold = 100,
+                             target = "test_set",
+                             iqr_multiplier = 1.5,
+                             interval_width_high_threshold = NULL,
+                             interval_width_low_threshold = NULL,
+                             interval_width_moderate_threshold = NULL,
+                             system_database = FALSE,
                              ...){
 
-#browser()
+  #browser()
+  # Standard_error = mod$model$SD.yHat
+  # PEV <- (mod$model$SD.yHat)^2
+  # Reliability <- 1 - (PEV/var(mod$model$yHat))
+
+
 msg <- sprintf("==================================================\n")
 ### Check if the user provide lable/name for the omics data
+
+diagnostic_plots <- NULL
+tst <- NULL
 
 if(inherits(omics_data_label, 'list')){
   if(!all(sapply(omics_data_label, function(x){ is.null(x)}))!=FALSE){
 
     label <-  which(sapply(omics_data_label, function(x) !is.null(x)))
 
-    print_lable <-  omics_data_label[label]
+    print_lable <- omics_data_label[label]
 
   } else {
     print_lable <-  NULL
@@ -93,6 +115,20 @@ if(GS_model == "BL") {
   GS_model <- "lambda"
 }
 
+datasets <- list(geno_data, omic1_data, omic2_data, omic3_data)
+dataset_names <- c("geno_data", "omic1_data", "omic2_data", "omic3_data")
+datasets_index <- which(!sapply(datasets, is.null))
+datasets <-  datasets[datasets_index]
+dataset_names <- dataset_names[datasets_index]
+
+if(length(datasets)>1){
+  datasets <- do.call(cbind, datasets)
+  datasets <- scale(datasets)
+} else{
+  datasets <- unlist(datasets)
+}
+
+tst <- which(is.na(mod$model$y))
 ### Check bayes_parameter_check function in bayesians_preprocess for details
 nIter <- bayes_para[["nIter"]]
 burnIn <- bayes_para[["burnIn"]]
@@ -103,12 +139,113 @@ posindex <- (burnIn + 1):nIter
 ## The residual value dataframe also contain predicted value for two reasons
 #1) For ease of plotting
 #2) When testing set is present in the real world it is expected to be
+
+if(length(tst)>1){
+
+  result_rel_MPIW <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
+                                                         predictions = mod$model$yHat[tst],
+                                                         standard_errors = mod$model$SD.yHat[tst],
+                                                         confidence_level = confidence_level,
+                                                         model_for_CI_cal = "Bayes",
+                                                         boot_results = NULL)
+
+result_rel <-  reliability_thresholds(prediction_error_var = (mod$model$SD.yHat[tst])^2,
+                                      genetic_var = var(mod$model$yHat[tst]),
+                                      high_reliability_thres = high_reliability_thres,
+                                      low_reliability_thres = low_reliability_thres)
+
+composite_reliability <- composite_reliability_tst(geno_trn = datasets[-tst, ],
+                                                   geno_tst = datasets[tst, ],
+                                                   geno_tst_trn = NULL,
+                                                   names_tst = NULL,
+                                                   names_trn = NULL,
+                                                   n_components = n_components,
+                                                   threshold = threshold,
+                                                   target = target,
+                                                   interval_width = result_rel_MPIW$Uncertainty,
+                                                   CI_width_thresholds = CI_width_thresholds,
+                                                   interval_width_high_threshold = interval_width_high_threshold,
+                                                   interval_width_low_threshold = interval_width_low_threshold,
+                                                   apply_pca = TRUE)
+
+diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
+                                                    GID_names = rownames(datasets)[tst],
+                                                    CI_width_thresholds = CI_width_thresholds,
+                                                    predictions = mod$model$yHat[tst],
+                                                    standard_errors = mod$model$SD.yHat[tst],
+                                                    prediction_error_var = (mod$model$SD.yHat[tst])^2,
+                                                    genetic_var = var(mod$model$yHat[tst]),
+                                                    confidence_level = confidence_level,
+                                                    model_for_CI_cal = "ML",
+                                                    composite_reliability_score = composite_reliability$reliability_score,
+                                                    composite_reliability = composite_reliability$trustworthiness,
+                                                    composite_reliability_percentage = composite_reliability$reliability_percentage,
+                                                    #threshold = NULL,
+                                                    high_reliability_thres = high_reliability_thres,
+                                                    low_reliability_thres = low_reliability_thres,
+                                                    system_database = system_database)
+
+} else{
+
+result_rel_MPIW <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
+                                              predictions = mod$model$yHat,
+                                              standard_errors = mod$model$SD.yHat,
+                                              confidence_level = confidence_level,
+                                              model_for_CI_cal = "Bayes",
+                                              boot_results = NULL)
+
+result_rel <-  reliability_thresholds(prediction_error_var = (mod$model$SD.yHat)^2,
+                                      genetic_var = var(mod$model$yHat),
+                                      high_reliability_thres = high_reliability_thres,
+                                      low_reliability_thres = low_reliability_thres)
+
+composite_reliability <- composite_reliability_tst(geno_trn = datasets,
+                                                   geno_tst = NULL,
+                                                   geno_tst_trn = NULL,
+                                                   names_tst = NULL,
+                                                   names_trn = NULL,
+                                                   n_components = n_components,
+                                                   threshold = threshold,
+                                                   target = target,
+                                                   interval_width = result_rel_MPIW$Uncertainty,
+                                                   CI_width_thresholds = CI_width_thresholds,
+                                                   interval_width_high_threshold = interval_width_high_threshold,
+                                                   interval_width_low_threshold = interval_width_low_threshold,
+                                                   apply_pca = TRUE)
+
+}
+
+# AI_preds <- data.frame(name = GID,
+#                        Predicted_value = AI_preds,
+#                        Standard_error = pred_SE,
+#                        PEV = pred_variances,
+#                        lower_bound = result_rel_MPIW$lower_bound,
+#                        upper_bound = result_rel_MPIW$upper_bound,
+#                        Uncertainty = result_rel_MPIW$Uncertainty,
+#                        Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
+#                        Reliability = result_rel$reliability,
+#                        Reliability_remarks = result_rel$remarks,
+#                        stringsAsFactors = FALSE)
+
+
 predicted_value <- data.frame(name = NA,
                               Predicted_value = mod$model$yHat,
+                              Standard_error = mod$model$SD.yHat,
+                              PEV = (mod$model$SD.yHat)^2,
+                              lower_bound = result_rel_MPIW$lower_bound,
+                              upper_bound = result_rel_MPIW$upper_bound,
+                              Uncertainty = result_rel_MPIW$Uncertainty,
+                              Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
+                              Reliability = result_rel$reliability,
+                              Reliability_remarks = result_rel$remarks,
+                              Reliability_percentage = result_rel$reliability_percentage,
+                              Composite_reliability = composite_reliability$trustworthiness,
+                              Composite_reliability_percentage = composite_reliability$reliability_percentage,
                               stringsAsFactors = FALSE)
+
 colnames(predicted_value)[1] <- gen_name
 ### Residual value is only estimable for response value without NA
-tst <- which(is.na(mod$model$y))
+
 if(length(tst)!=0){
   residual_value <- data.frame(name = NA,
                                Predicted_value = mod$model$yHat[tst],
@@ -127,8 +264,8 @@ BIN <- mod[["output_files_names"]][grepl("bin", mod[["output_files_names"]])]
 var_residual <- scan(mod[["output_files_names"]][grepl("varE.dat", mod[["output_files_names"]])],
               what = numeric(),
               sep = "\n", quiet =TRUE)
-var_residual <- var_residual[posindex]
-
+#var_residual <- var_residual[posindex]
+var_residual <- var_residual
 se_var_residual <- standard_deviation(var_residual)
 #########
   if (GS_model == "BRR") {
@@ -183,7 +320,8 @@ for (i in seq_along(datasets)) {
                                                               x_variable = dataset,
                                                               gen_name = gen_name,
                                                               var_u = mean(var_u_omics),
-                                                              gid_name =rownames(dataset))
+                                                              gid_name =rownames(dataset),
+                                                              mod =  mod)
     var_u_mean_omics_list[[dataset_names[i]]] <- mean(var_u_omics)
     se_var_u_omics_list[[dataset_names[i]]] <- standard_deviation(var_u_omics)
     coefficients_list[[paste("coefficient",dataset_names[i], sep = "_")]] <- res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["Coefficient"]]
@@ -196,10 +334,12 @@ for (i in seq_along(datasets)) {
     if(length(datasets)==1){
       predicted_value[, 1] <- rownames(dataset)
       #PEV <- apply(g_ebv, 1, var)
-      predicted_value <- predicted_value |>
-        dplyr::mutate(Standard_error = sqrt(res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["PEV"]]),
-                      Prediction_error_variance = res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["PEV"]],
-                      Reliability = res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["Reliability"]])
+      # predicted_value <- predicted_value |>
+      #   dplyr::mutate(
+      #                 #Standard_error = sqrt(res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["PEV"]]),
+      #                 Standard_error = res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["Standard_error"]],
+      #                 Prediction_error_variance = res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["PEV"]],
+      #                 Reliability = res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["Reliability"]])
 
       sum_ebv <- data.frame(name = rownames(dataset),
                             Estimated_breeding_value = sum_estimated_breeding_value,
@@ -207,7 +347,9 @@ for (i in seq_along(datasets)) {
 
       colnames(sum_ebv)[1] <- gen_name
       sum_ebv <- sum_ebv |>
-        dplyr::mutate(Standard_error = sqrt(res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["PEV"]]),
+        dplyr::mutate(
+                      #Standard_error = sqrt(res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["PEV"]]),
+                      Standard_error = res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["Standard_error"]],
                       Prediction_error_variance = res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["PEV"]],
                       Reliability = res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["Reliability"]])
 
@@ -227,9 +369,13 @@ for (i in seq_along(datasets)) {
         residual_value[, 1] <- gid_name
         ##### Treat sum_EBV
         if(i==length(datasets)){
-        pev <- apply(sum_posterior, 1, var)
-        rel <- 1 - (pev / mean(var_u_total))
-        rel <- ifelse(rel<0, NA, rel)
+        #pev <- apply(sum_posterior, 1, var)
+          Standard_error = mod$model$SD.yHat
+          pev <- (mod$model$SD.yHat)^2
+          #rel <- 1 - (pev / mean(var_u_total))
+          rel <- 1 - (pev / var(mod$model$yHat))
+
+          #rel <- ifelse(rel<0, NA, rel)
 
         sum_ebv <- data.frame(name = gid_name,
                               Estimated_breeding_value = sum_estimated_breeding_value,
@@ -237,14 +383,18 @@ for (i in seq_along(datasets)) {
 
         colnames(sum_ebv)[1] <- gen_name
         sum_ebv <- sum_ebv |>
-          dplyr::mutate(Standard_error = sqrt(pev),
+          dplyr::mutate(
+                        #Standard_error = sqrt(pev),
+                        Standard_error = Standard_error,
                         Prediction_error_variance = pev,
                         Reliability = rel)
 
-        predicted_value <- predicted_value |>
-          dplyr::mutate(Standard_error = sqrt(pev),
-                        Prediction_error_variance = pev,
-                        Reliability = rel)
+        # predicted_value <- predicted_value |>
+        #   dplyr::mutate(
+        #                 #Standard_error = sqrt(pev),
+        #                 Standard_error = Standard_error,
+        #                 Prediction_error_variance = pev,
+        #                 Reliability = rel)
 
         }
       }
@@ -336,7 +486,7 @@ if(!is.null(print_lable)){
 }
 
 
-
+if(is.null(tst) | length(tst)==0){
 
   res <- list(Coefficients = coefficients_list,
               Estimated_breeding_value = estimated_breeding_value_list,
@@ -345,8 +495,30 @@ if(!is.null(print_lable)){
               Residual_value = residual_value,
               Variance_components = variance_components,
               M_matrix_model_ready =  m_matrix_model_ready_list
+
   )
 
+} else {
+  if(!is.null(diagnostic_plots)){
+  res <- list(Coefficients = coefficients_list,
+              Estimated_breeding_value = estimated_breeding_value_list,
+              Total_estimated_breeding_value = sum_ebv,
+              Predicted_value =  predicted_value,
+              Residual_value = residual_value,
+              Variance_components = variance_components,
+              M_matrix_model_ready =  m_matrix_model_ready_list,
+              diagnostic_plots  = diagnostic_plots)
+  } else {
+    res <- list(Coefficients = coefficients_list,
+                Estimated_breeding_value = estimated_breeding_value_list,
+                Total_estimated_breeding_value = sum_ebv,
+                Predicted_value =  predicted_value,
+                Residual_value = residual_value,
+                Variance_components = variance_components,
+                M_matrix_model_ready =  m_matrix_model_ready_list
+                )
+  }
+}
  ### remove the generated output files from the working directory
  unlink(mod[["output_files_names"]])
 return(res)

@@ -1,48 +1,48 @@
-
-# Function to dynamically select the best model based on available metrics
-#' Title
 #'
-#' @param model_list
-#' @param preferred_metrics
+#' # Function to dynamically select the best model based on available metrics
+#' #' Title
+#' #'
+#' #' @param model_list
+#' #' @param preferred_metrics
+#' #'
+#' #' @return
+#' #' @export
+#' #'
+#' #' @examples
+#' select_best_model <- function(model_list,
+#'                               preferred_metrics=c("RMSE", "Accuracy", "MAE")) {
 #'
-#' @return
-#' @export
+#'   scores <- lapply(model_list, function(model) {
+#'     available_metrics <- intersect(names(model$results), preferred_metrics)
+#'     if (length(available_metrics) > 0) {
+#'       # Assuming lower values are better for selected metrics, flip if needed
+#'       metric_scores <- sapply(available_metrics, function(metric) {
+#'         if (metric == "Accuracy") {
+#'           max(model$results[[metric]])  # Higher is better
+#'         } else if(metric == "MAE"){
+#'           min(model$results[[metric]])
+#'         }else {
+#'           if(metric == "RMSE"){
+#'             min(model$results[[metric]])
+#'           }
+#'         }
+#'         # Lower is better for RMSE
+#'       })
+#'       c(BestScore=min(metric_scores), BestMetric=names(metric_scores)[which.min(metric_scores)])
+#'     } else {
+#'       c(BestScore=NA, BestMetric=NA)
+#'     }
+#'   })
 #'
-#' @examples
-select_best_model <- function(model_list,
-                              preferred_metrics=c("RMSE", "Accuracy", "MAE")) {
-
-  scores <- lapply(model_list, function(model) {
-    available_metrics <- intersect(names(model$results), preferred_metrics)
-    if (length(available_metrics) > 0) {
-      # Assuming lower values are better for selected metrics, flip if needed
-      metric_scores <- sapply(available_metrics, function(metric) {
-        if (metric == "Accuracy") {
-          max(model$results[[metric]])  # Higher is better
-        } else if(metric == "MAE"){
-          min(model$results[[metric]])
-        }else {
-          if(metric == "RMSE"){
-            min(model$results[[metric]])
-          }
-        }
-        # Lower is better for RMSE
-      })
-      c(BestScore=min(metric_scores), BestMetric=names(metric_scores)[which.min(metric_scores)])
-    } else {
-      c(BestScore=NA, BestMetric=NA)
-    }
-  })
-
-  # Remove models without any of the preferred metrics
-  scores <- scores[!sapply(scores, function(x) is.na(x["BestScore"]))]
-
-  # Identify the model with the best overall score
-  best_model_index <- which.min(sapply(scores, function(x) x["BestScore"]))
-  best_model_name <- names(scores)[best_model_index]
-
-  list(BestModel=model_list[[best_model_name]], BestModelName=best_model_name, Metrics=scores[[best_model_index]])
-}
+#'   # Remove models without any of the preferred metrics
+#'   scores <- scores[!sapply(scores, function(x) is.na(x["BestScore"]))]
+#'
+#'   # Identify the model with the best overall score
+#'   best_model_index <- which.min(sapply(scores, function(x) x["BestScore"]))
+#'   best_model_name <- names(scores)[best_model_index]
+#'
+#'   list(BestModel=model_list[[best_model_name]], BestModelName=best_model_name, Metrics=scores[[best_model_index]])
+#' }
 
 
 #' Title
@@ -65,7 +65,7 @@ select_best_model <- function(model_list,
 #'
 #' @examples
 #' @importFrom foreach %dopar%
-AI_svm <- function(pheno_object=NULL,
+AI_svmOLD <- function(pheno_object=NULL,
                    geno_omic_object = NULL,
                    geno_omic_test_object = NULL,
                    response=NULL,

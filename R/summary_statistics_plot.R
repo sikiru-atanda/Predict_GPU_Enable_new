@@ -11,7 +11,15 @@
 summary_statistics_bayes <- function(mod=NULL,
                                      eval_metrics = NULL,
                                      GS_model = NULL,
+                                     model_result = NULL,
+                                     gen_name = NULL,
+                                     CI_width_thresholds = c(0.33, 0.66),
+                                     confidence_level = 0.95,
+                                     high_reliability_thres = 0.7,
+                                     low_reliability_thres = 0.4,
+                                     system_database = FALSE,
                                      ...){
+
 
   if(!is.null(eval_metrics)){
   Eval_met <- matrix(NA, nrow = length(eval_metrics), ncol = 1)
@@ -48,7 +56,20 @@ summary_statistics_bayes <- function(mod=NULL,
     }
 
     }
+    if(isFALSE(anyNA(model_result[["Predicted_value"]]["Standard_error"]))){
+ diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = model_result[["Predicted_value"]][gen_name][tst, 1],
+                                                        CI_width_thresholds = CI_width_thresholds,
+                                                        predictions = as.double(model_result[["Predicted_value"]]["Predicted_value"][tst, 1]),
+                                                        standard_errors = as.double(model_result[["Predicted_value"]]["Standard_error"][tst, 1]),
+                                                        prediction_error_var = as.double(model_result[["Predicted_value"]]["PEV"][tst, 1]),
+                                                        genetic_var = as.double(var(model_result[["Predicted_value"]]["Predicted_value"][tst, 1])),
+                                                        confidence_level = confidence_level,
+                                                        model_for_CI_cal = "Bayes",
+                                                        #threshold = NULL,
+                                                        high_reliability_thres = high_reliability_thres,
+                                                        low_reliability_thres = low_reliability_thres)
 
+    }
 
   }else{
 
@@ -64,6 +85,21 @@ summary_statistics_bayes <- function(mod=NULL,
                                           eval_metrics = eval_metrics[i])
 
      }
+
+    }
+    if(isFALSE(anyNA(model_result[["Predicted_value"]]["Standard_error"]))){
+    diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = model_result[["Predicted_value"]][gen_name][,1],
+                                                           CI_width_thresholds = CI_width_thresholds,
+                                                           predictions = as.double(model_result[["Predicted_value"]]["Predicted_value"][, 1]),
+                                                           standard_errors = as.double(model_result[["Predicted_value"]]["Standard_error"][, 1]),
+                                                           prediction_error_var = as.double(model_result[["Predicted_value"]]["PEV"][, 1]),
+                                                           genetic_var = as.double(var(model_result[["Predicted_value"]]["Predicted_value"])),
+                                                           confidence_level = confidence_level,
+                                                           model_for_CI_cal = "Bayes",
+                                                           #threshold = NULL,
+                                                           high_reliability_thres = high_reliability_thres,
+                                                           low_reliability_thres = low_reliability_thres)
+
 
     }
 
@@ -115,9 +151,10 @@ summary_statistics_bayes <- function(mod=NULL,
 
   }
 
-  output <-  list(Stat_Res)
+  output <-  list(summary_statistics = Stat_Res,
+                  diagnostic_tst_plot = diagnostic_tst_plot
+                  )
 
-  names(output) <- "summary_statistics"
 
   return(output)
 

@@ -10,14 +10,23 @@
 #' @examples
 summary_statistics_asreml <- function(mod=NULL,
                                       response = NULL,
+                                      GID_names = NULL,
                                       pheno_data = NULL,
                                       eval_metrics = NULL,
                                       heter_groups = NULL,
                                       predicted_value = NULL,
                                       pred_heter_groups = NULL,
                                       variance_components = NULL,
+                                      standard_errors = NULL,
+                                      prediction_error_var = NULL,
+                                      genetic_var = NULL,
                                       gen_name = NULL,
-                                     ...){
+                                      CI_width_thresholds = c(0.33, 0.66),
+                                      confidence_level = 0.95,
+                                      high_reliability_thres = 0.7,
+                                      low_reliability_thres = 0.4,
+                                      system_database = FALSE,
+                                      ...){
 
 ##browser()
   if(!is.null(eval_metrics)){
@@ -68,12 +77,40 @@ summary_statistics_asreml <- function(mod=NULL,
 
     }
 
+    if(isFALSE(anyNA(standard_errors))){
+    diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = GID_names[tst],
+                                                           CI_width_thresholds = CI_width_thresholds,
+                                                           predictions = predicted_value[tst],
+                                                           standard_errors = standard_errors[tst],
+                                                           prediction_error_var = prediction_error_var[tst],
+                                                           genetic_var = genetic_var,
+                                                           confidence_level = confidence_level,
+                                                           model_for_CI_cal = "GBLUP",
+                                                           #threshold = NULL,
+                                                           high_reliability_thres = high_reliability_thres,
+                                                           low_reliability_thres = low_reliability_thres)
+
+    }
 
   }else{
 
     n_trn <- n
 
     n_tst <- 0
+    if(isFALSE(anyNA(standard_errors))){
+      diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = GID_names,
+                                                             CI_width_thresholds = CI_width_thresholds,
+                                                             predictions = predicted_value,
+                                                             standard_errors = standard_errors,
+                                                             prediction_error_var = prediction_error_var,
+                                                             genetic_var = genetic_var,
+                                                             confidence_level = confidence_level,
+                                                             model_for_CI_cal = "GBLUP",
+                                                             #threshold = NULL,
+                                                             high_reliability_thres = high_reliability_thres,
+                                                             low_reliability_thres = low_reliability_thres)
+
+    }
 ####
     if(!is.null(eval_metrics)){
       for (i in 1:length(eval_metrics)){
@@ -123,9 +160,11 @@ summary_statistics_asreml <- function(mod=NULL,
 
   }
 
-  output <-  list(Stat_Res)
 
-  names(output) <- "summary_statistics"
+  output <-  list(summary_statistics = Stat_Res,
+                  diagnostic_tst_plot = diagnostic_tst_plot
+  )
+
 
   return(output)
 

@@ -37,7 +37,7 @@ evaluation_metrics <- function(y_observed = NULL,
 
   eval_metrics_available <- c("accuracy", "mean_squared_error", "bias",
                               "root_mean_squared_error", "relative_squared_error",
-                              "mean_absolute_error", "mean_absolute_percent_error")
+                              "mean_absolute_error", "mean_absolute_percent_error", "kendalls_tau")
 
   metric_functions <- list(
     accuracy = function(y, y_hat) cor(y, y_hat),
@@ -46,7 +46,8 @@ evaluation_metrics <- function(y_observed = NULL,
     root_mean_squared_error = function(y, y_hat) sqrt(mean((y - y_hat)^2)),
     relative_squared_error = function(y, y_hat) sum((y - y_hat)^2) / sum((y - mean(y))^2),
     mean_absolute_error = function(y, y_hat) mean(abs(y - y_hat)),
-    mean_absolute_percent_error = function(y, y_hat) mean(abs((y - y_hat) / y)) * 100
+    mean_absolute_percent_error = function(y, y_hat) mean(abs((y - y_hat) / y)) * 100,
+    kendalls_tau = kendalls_tau
   )
 
   # Initialize an empty list to store results

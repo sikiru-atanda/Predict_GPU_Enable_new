@@ -118,7 +118,10 @@ summary_statistics_AI <- function(predicted_object= NULL,
   }
 
   if(!is.null(model_parameters)){
-    Stat_Res <- rbind(Stat_Res, model_parameters)
+    mm <-  data.frame(stat = names(model_parameters),
+                    summary = unlist(model_parameters))
+    rownames(mm) <- NULL
+    Stat_Res <- rbind(Stat_Res, mm)
   }
   #####
 

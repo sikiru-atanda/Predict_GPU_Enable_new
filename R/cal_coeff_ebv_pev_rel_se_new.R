@@ -45,6 +45,7 @@ cal_coeff_ebv_pev_rel_se_new <- function(beta,
                                      heter_groups = NULL,
                                      gid_name = NULL,
                                      GS_model = NULL,
+                                     mod = NULL,
                                      ...){
 
   # the breeding values (posterior)
@@ -102,30 +103,36 @@ cal_coeff_ebv_pev_rel_se_new <- function(beta,
   colnames(EBV)[1] = gen_name
   #GEBV = data.frame(rowMeans(ebv))
 
-  PEV <- apply(X_ebv, 1, var)
+  #PEV <- apply(X_ebv, 1, var)
+  Standard_error = mod$model$SD.yHat
+  PEV <- (mod$model$SD.yHat)^2
 
   # EBV$Std_error <- sqrt(PEV)
   # EBV$PEV <-  PEV
 
   ##Estimate of reliabilities
 
-  Reliability <- 1 - (PEV/var_u)
-  Reliability <- ifelse(Reliability<0, NA, Reliability)
+  #Reliability <- 1 - (PEV/var_u)
+  Reliability <- 1 - (PEV/var(mod$model$yHat))
+  #Reliability <- ifelse(Reliability<0, NA, Reliability)
 
   EBV <- EBV |>
-    dplyr::mutate(Standard_error = sqrt(PEV),
+    dplyr::mutate(Standard_error = Standard_error,
+                  #Standard_error = sqrt(PEV),
                   Prediction_error_variance = PEV,
                   Reliability =  Reliability)
 
   #EBV$Reliability <- Reliability
 
-  output <- list(X_ebv, Coeff, EBV, PEV, Reliability)
+  output <- list(Posterior = X_ebv, Coefficient = Coeff,
+                 Estimated_breeding_value = EBV, PEV = PEV,
+                 Reliability = Reliability, Standard_error = Standard_error)
 
-  names(output) <- c('Posterior',
-                     "Coefficient",
-                     "Estimated_breeding_value",
-                     "PEV",
-                     "Reliability")
+  # names(output) <- c('Posterior',
+  #                    "Coefficient",
+  #                    "Estimated_breeding_value",
+  #                    "PEV",
+  #                    "Reliability")
 
   return(output)
 

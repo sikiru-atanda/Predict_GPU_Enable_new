@@ -1,7 +1,7 @@
 Package: PredictProR
 Type: Package
 Title: What the Package Does (Title Case)
-Version: 0.17.7
+Version: 0.19.7
 Author: Who wrote it
 Maintainer: The package maintainer <yourself@somewhere.net>
 Description: More about what it does (maybe more than one line)
@@ -15,24 +15,22 @@ Enhances:
 Imports: 
     ASRgenomics,
     BGLR,
+    boot,
     caret,
+    corpcor,
     data.table,
     doBy,
-    doMPI,
-    doParallel,
-    doSNOW,
-    foreach,
+    dplyr,
     glmnet,
-    graphics,
-    grDevices,
+    gridExtra,
     insight,
     keras,
     kernlab,
-    magrittr,
     MASS,
     Matrix,
     matrixcalc,
     parallel,
+    patchwork,
     pls,
     randomForest,
     rlang,

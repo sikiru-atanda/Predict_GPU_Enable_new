@@ -113,6 +113,16 @@ process_geno_data <- function(geno_data = NULL,
                                  method = kernel_method,
                                  message = message)
 
+    pheno_match_kernel <- pheno_geno_match(object_pheno = pheno_clean_list[["pheno_clean_data"]],
+                                    object_geno = kernel,
+                                    gen_name = gen_name,
+                                    test_set = test_set,
+                                    train_set = train_set,
+                                    heter_groups = heter_groups,
+                                    message = message)
+
+    kernel <- pheno_match_kernel[["geno_pheno_match_data"]]
+
     return(list(gmatrix= kernel,
                 geno_model_ready = model_ready,
                 clean_geno_qcstat = cleaned_data))
@@ -122,6 +132,16 @@ process_geno_data <- function(geno_data = NULL,
   if (!is.null(gmatrix_method)) {
     gmatrix <- grm_calculation(geno_clean = cleaned_data[["snps_matrix"]],
                                method = gmatrix_method)
+
+    pheno_match_kernel <- pheno_geno_match(object_pheno = pheno_clean_list[["pheno_clean_data"]],
+                                           object_geno = gmatrix,
+                                           gen_name = gen_name,
+                                           test_set = test_set,
+                                           train_set = train_set,
+                                           heter_groups = heter_groups,
+                                           message = message)
+
+    gmatrix <- pheno_match_kernel[["geno_pheno_match_data"]]
 
     return(list(gmatrix= gmatrix,
                 geno_model_ready = model_ready,
@@ -206,6 +226,16 @@ process_omic_data <- function(omic_data = NULL,
                                    method = kernel_method,
                                    message = message)
       #rm(cleaned_data)
+
+      pheno_match_kernel <- pheno_geno_match(object_pheno = pheno_clean_list[["pheno_clean_data"]],
+                                             object_geno = kernel,
+                                             gen_name = gen_name,
+                                             test_set = test_set,
+                                             train_set = train_set,
+                                             heter_groups = heter_groups,
+                                             message = message)
+
+      kernel <- pheno_match_kernel[["geno_pheno_match_data"]]
       return(list(kernel= kernel,
                   clean_omic = cleaned_dataa,
                   omic_model_ready = model_ready))

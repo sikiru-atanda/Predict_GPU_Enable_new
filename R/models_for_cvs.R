@@ -85,6 +85,7 @@ asreml_mod_cv <- function(pheno_data,
   #browser()
 asreml_tst_model_cv <- asreml_cv_model(pheno_dataa = pheno_data,
                                        response = response,
+                                       #gen_name = gen_name,
                                        #heter_groups = heter_groups,
                                        asreml_models_prep_cv = asreml_models_prep_cv,
                                        tst = tst)
@@ -115,6 +116,26 @@ inter_gen_pos <-  asreml_models_prep_cv[["inter_gen_pos"]]
 names_in_inv_list <-  asreml_models_prep_cv[["names_in_inv_list"]]
 rand_term <-  asreml_models_prep_cv[["rand_term"]]
 
+result_met <-  tryCatch(
+  {
+if(is.null(heter_groups)){
+    predicted_value <- asreml::predict.asreml(asreml_tst_model_cv[["model_cv"]], classify=gen_name, sed=FALSE)$pvals
+
+} else {
+  if(is.null(heter_groups)){
+  predicted_value <- asreml::predict.asreml(asreml_tst_model_cv[["model_cv"]], classify= rand_term[[inter_gen_pos]], sed=FALSE)$pvals
+
+}
+  }
+  },
+  error = function(e) {
+    # Handle the error, you can print a message or take other actions
+    cat(paste("Error in prediction", conditionMessage(e), "\n"))
+    return(NULL)  # Return NULL or an appropriate value to indicate the failure
+  }
+)
+
+if(is.null(result_met)) {
 BLUP <- summary(asreml_tst_model_cv[["model_cv"]], coef=TRUE)$coef.random
 
 colnames(BLUP)[colnames(BLUP)%in%"std.error"] <- "Standard_error"
@@ -273,7 +294,10 @@ if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
 
 }
 
+} else {
 
+  return(predicted_value[tst, "predicted.value"])
+}
 
 
 
@@ -301,27 +325,37 @@ if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
 AI_xgboost_cv <- function(y,
                           omics,
                           tst,
-                          xgb_booster = "gtree", #
-                          eta = 0.001,
-                          nrounds = 5000,
+                          xgb_booster = "dart", #"gtree", #
+                          xgb_rate_drop = 0.1,
+                          xgb_skip_drop = 0.5,
+                          xgb_objective = "reg:squarederror",
+                          xgb_sample_type = "uniform",
+                          xgb_normalize_type = "tree",
+                          eta = 0.1,
+                          nrounds = 100,
                           max_depth = 6,
                           scaling = FALSE,
                           centering = TRUE,
                           omic_count,
-                          xgb_gamma = 4,
+                          xgb_gamma = 0.01, ## 4
                           min_child_weight = 1,
                           subsample = 0.5,
-                          colsample_bytree = 1,
+                          colsample_bytree = 0.8,
                           xgb_alpha = 0.001, ## gblinear
                           xgb_lambda = 1.0, # gblinear,
-                          early_stopping_rounds_xgb = TRUE
+                          early_stop_for_iteration_xgb = FALSE ## use when training set is large
                           ){
 
-  if(!is.null(omics)) {
-    if(isTRUE(scaling) || !is.null(omic_count)){
-      omics <- scale(omics, center = TRUE, scale = TRUE)
-    }
+  if(!is.null(omics)){
+    scaler <- caret::preProcess(omics, method = c("center", "scale"))
+    omics <- stats::predict(scaler, omics)
   }
+
+  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
+
+  # Predict on the training data and get the scaled values
+  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+
   ### Set the paramters and hyper parameters for extreme graident boosting
   if(xgb_booster == "gblinear"){
   xgb_params <- list(
@@ -345,12 +379,27 @@ AI_xgboost_cv <- function(y,
         colsample_bytree = colsample_bytree
       )
     }
+
+    if (xgb_booster == "dart") {
+      xgb_params <- list(
+        booster = xgb_booster,
+        sample_type = xgb_sample_type,
+        normalize_type = xgb_normalize_type,
+        rate_drop = xgb_rate_drop,
+        skip_drop = xgb_skip_drop,
+        alpha = xgb_alpha,
+        lambda = xgb_lambda,
+        eta = eta,
+        objective = "reg:squarederror",
+        eval_metric = c("rmse", "rmsle", "mape")
+      )
+    }
 }
 
   omics_Xgb <- xgboost::xgb.DMatrix(data = omics[-tst, ],
                                     label = y[-tst])
 
-  if(isTRUE(early_stopping_rounds_xgb)){
+  if(isTRUE(early_stop_for_iteration_xgb)){
 
     yy <- y[-tst]
     omics_yy <- omics[-tst, ]
@@ -433,43 +482,43 @@ AI_pls_cv <- function(y,
                       centering = TRUE,
                       omic_count){
 
-  if(!is.null(omics)) {
-    if(isTRUE(scaling) || isFALSE(scaling)){
-      omics <- scale(omics, center = TRUE, scale = TRUE)
-    }
+  if(!is.null(omics)){
+    scaler <- caret::preProcess(omics, method = c("center", "scale"))
+    omics <- stats::predict(scaler, omics)
   }
+
+  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
+
+  # Predict on the training data and get the scaled values
+  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+
 if(is.null(ncomp) | !is.numeric(ncomp)) ncomp <- 3
-  pls_model <- pls::plsr(y~ omics,
-                         scale = FALSE,
-                         center = FALSE,
-                         ncomp = ncomp,
-                         validation = "none")
-  cumulative_explained_variance <- cumsum(pls::explvar(pls_model))
-  # Find the number of components explaining at least 90% of the variance
-  num_components <- which(cumulative_explained_variance >= 90)[1]
-  if (is.na(num_components) | length(num_components)==0) {
-    num_components <- which(cumulative_explained_variance >= 50)[1]
-    if (is.na(num_components) | length(num_components)==0) {
-      num_components <- length(cumulative_explained_variance)
-    }
-    #num_components <- length(cumulative_explained_variance)  # Use max number of components or some default
-    message("No components explain at least 90% of the variance.")
-  }
+if(is.null(ncomp)){
+  pls_model <- pls::plsr(y ~ as.matrix(omics), validation = "CV", segments = 5)
 
-  if (is.null(ncomp) | !is.numeric(ncomp)) {
-    ncomp <- num_components  # Default to using 'num_components' if 'ncomp' is not defined
-  }
+  # Get the cross-validated RMSEP values
+  rmsep_values <- pls::RMSEP(pls_model)
 
+  # Extract the RMSEP values for cross-validation
+  rmsep_cv <- rmsep_values$val["CV", , ]
+
+  # Find the optimal number of components
+  optimal_components <- which.min(rmsep_cv)
+
+} else {
+  optimal_components <- ncomp
+}
 
   pls_model <- pls::plsr(y[-tst]~ omics[-tst, ],
                          scale = FALSE,
                          center = FALSE,
-                         ncomp = ncomp,
-                         validation = "none")
+                         ncomp = optimal_components
+                         #validation = "none"
+                         )
 
   preds <- stats::predict(pls_model,
                           newdata =omics[tst, ],
-                          ncomp = ncomp)
+                          ncomp = optimal_components)
 
   preds <- as.data.frame(preds)
   return(preds[, 1])
@@ -499,15 +548,27 @@ AI_randomforest_cv <- function(y,
                                centering = TRUE,
                                omic_count){
 
-  if(!is.null(omics)) {
-    if(isTRUE(scaling) || !is.null(omic_count)){
-      omics <- scale(omics, center = TRUE, scale = TRUE)
-    }
+  if(!is.null(omics)){
+    scaler <- caret::preProcess(omics, method = c("center", "scale"))
+    omics <- stats::predict(scaler, omics)
   }
+
+  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
+
+  # Predict on the training data and get the scaled values
+  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+
+  if(!is.null(ntree)){
+
   fit <- randomForest::randomForest(x = omics[-tst, ],
                                    y = y[-tst],
                                    ntree = ntree,
                                    importance = TRUE)
+  } else {
+    fit <- randomForest::randomForest(x = omics[-tst, ],
+                                      y = y[-tst],
+                                      importance = TRUE)
+  }
 
   preds <- stats::predict(fit,
                           omics[tst, ],
@@ -539,11 +600,16 @@ AI_ridge_regression_cv <- function(y,
                                    centering = TRUE,
                                    omic_count){
 
-  if(!is.null(omics)) {
-    if(isTRUE(scaling) || isFALSE(scaling)){
-      omics <- scale(omics, center = TRUE, scale = TRUE)
-    }
+  if(!is.null(omics)){
+    scaler <- caret::preProcess(omics, method = c("center", "scale"))
+    omics <- stats::predict(scaler, omics)
   }
+
+  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
+
+  # Predict on the training data and get the scaled values
+  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+
   fit_CV<-glmnet::cv.glmnet(x= omics[-tst, ],
                             y = y[-tst],
                             #nfolds = 5,
@@ -559,8 +625,9 @@ AI_ridge_regression_cv <- function(y,
                          standardize = FALSE,
                          lambda =fit_CV$lambda.min)
 
-  preds <- stats::predict(fit,
-                          omics[tst, ],
+  preds <- stats::predict(object = fit,
+                          s= fit_CV$lambda.min,
+                          newx = omics[tst, ],
                           reshape = TRUE)
 
   preds <- as.data.frame(preds)
@@ -590,16 +657,22 @@ AI_lasso_cv <- function(y,
                         centering = TRUE,
                         omic_count){
 
-  if(!is.null(omics)) {
-    if(isTRUE(scaling) || isFALSE(scaling)){
-      omics <- scale(omics, center = TRUE, scale = TRUE)
-    }
+  if(!is.null(omics)){
+    scaler <- caret::preProcess(omics, method = c("center", "scale"))
+    omics <- stats::predict(scaler, omics)
   }
+
+  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
+
+  # Predict on the training data and get the scaled values
+  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+
   fit_CV<-glmnet::cv.glmnet(x= omics[-tst, ],
                             y= y[-tst],
                             #nfolds = 5,
                             alpha = 1,
-                            standardize = FALSE)
+                            standardize = FALSE
+                            )
 
   fit <-  glmnet::glmnet(x= omics[-tst, ],
                          y = y[-tst],
@@ -607,8 +680,9 @@ AI_lasso_cv <- function(y,
                          standardize = FALSE,
                          lambda =fit_CV$lambda.min)
 
-  preds <- stats::predict(fit,
-                          omics[tst, ],
+  preds <- stats::predict(object = fit,
+                          s= fit_CV$lambda.min,
+                          newx = omics[tst, ],
                           reshape = TRUE)
 
   preds <- as.data.frame(preds)
@@ -637,19 +711,30 @@ AI_knn_cv <- function(y,
                       tst,
                       scaling = FALSE,
                       centering = TRUE,
-                      omic_count,
+                      omic_count = NULL,
                       k = 5){
 
-  if(!is.null(omics)) {
-    if(isTRUE(scaling) || isFALSE(scaling)){
-      omics <- scale(omics, center = TRUE, scale = TRUE)
-    }
+
+  if(!is.null(omics)){
+    scaler <- caret::preProcess(omics, method = c("center", "scale"))
+    omics <- stats::predict(scaler, omics)
   }
+
+  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
+
+  # Predict on the training data and get the scaled values
+  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+
+  # }
+  # if(!is.null(omic_count)) {
+  #   if(isTRUE(scaling) || isFALSE(scaling)){
+  #     omics <- scale(omics, center = TRUE, scale = TRUE)
+  #   }
+  # }
 
      fit <-  caret::knnreg(x = omics[-tst, ],
                            y = y[-tst],
                            k = k)
-
 
   preds <- stats::predict(fit,
                           omics[tst, ],
@@ -689,58 +774,110 @@ AI_svm_cv <- function(y,
                       C_value  = 1,             # Default cost parameter
                       degree_value = 3,        # Default degree for polynomial kernel
                       scale_value  = 1,         # Default scale for polynomial kernel
-                      offset_value = 1) {       # Default offset for polynomial kernel
+                      offset_value = 0,
+                      svm_type = "eps-regression") {       # Default offset for polynomial kernel
+## Scale is not used because it inherently
+
+  if(!is.null(omics)){
+    scaler <- caret::preProcess(omics, method = c("center", "scale"))
+    omics <- stats::predict(scaler, omics)
+  }
+
+  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
+
+  # Predict on the training data and get the scaled values
+  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
 
   # Translate user-friendly kernel names to `kernlab` kernel function names
   kernel_type <- switch(svm_kernel,
-                        Gaussian = "rbfdot",         # Radial Basis Function kernel
-                        Polynomial = "polydot",      # Polynomial kernel
-                        Linear = "vanilladot",       # Linear kernel
-                        Hyperbolic_tangent = "tanhdot"  # Sigmoid kernel
-  )
+                        Gaussian="radial",
+                        Polynomial="polynomial",
+                        Linear="linear",
+                        Hyperbolic_tangent="sigmoid")
   # Create a list to store kernel-specific parameters
   kernel_params <- list()
 
   # Set kernel parameters based on user input or defaults
   switch(kernel_type,
-         rbfdot = {kernel_params <- list(sigma = sigma_value)},
-         polydot = {kernel_params <- list(degree = degree_value, scale = scale_value, offset = offset_value)},
-         #vanilladot = {kernel_params <- list(C = C_value)},  # Linear kernel
-         tanhdot = {kernel_params <- list(scale = scale_value, offset = offset_value)}  # Sigmoid kernel
+         radial = {kernel_params <- list(cost = C_value)},
+         polynomial = {kernel_params <- list(cost = C_value, degree = degree_value)},
+         Linear = {kernel_params <- list(cost = C_value)},  # Linear kernel
+         sigmoid = {kernel_params <- list(cost = C_value, coef0 = offset_value)}  # Sigmoid kernel
   )
-  if(!is.null(omics)) {
-    if(isTRUE(scaling) || isFALSE(scaling)){
-      omics <- scale(omics, center = TRUE, scale = TRUE)
-    }
-  }
-  if(kernel_type!="vanilladot"){
-  fit <-  kernlab::ksvm(x = omics[-tst, ],
-                        y = y[-tst],
-                        kernel = kernel_type,
-                        scaled = FALSE,
-                        type = "nu-svr",
-                        C = C_value,
-                        kpar = kernel_params)
+
+  para_index <- which(!sapply(kernel_params, is.null))
+  if(length(para_index)!=0){
+    kernel_params <-  kernel_params[para_index]
 
   } else {
-    if(kernel_type=="vanilladot"){
-      AI_fit = kernlab::ksvm(x = omics[-tst, ],
-                             y = y[-tst],
-                             kernel = kernel_type,
-                             scaled = FALSE,
-                             type = "nu-svr",
-                             C = C_value
-      )
-    }
-
+    kernel_params <- list()
+    kernel_params[c("degree", "coef0", "cost")] <- c(3, 0, 1)
   }
 
-  preds <- kernlab::predict(fit,
-                            omics[tst, ])
+  para_names <- names(kernel_params)
 
-  preds <- as.data.frame(preds)
+  # Ensure default cost is set if not already specified
+  if (!"cost" %in% para_names) {
+    kernel_params$cost <- 1
+  }
 
-  return(preds[, 1])
+  if ("linear" %in% kernel_type) {
+    svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], kernel = kernel_type, cost = kernel_params$cost, scale = FALSE)
+  } else if ("radial" %in% kernel_type) {
+    if (!"gamma" %in% para_names) {
+      svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], cost = kernel_params$cost, scale = FALSE)
+    } else {
+      svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], cost = kernel_params$cost,
+                              gamma = kernel_params$gamma, scale = FALSE)
+    }
+  } else if ("polynomial" %in% kernel_type) {
+    if (all(c("cost", "degree") %in% para_names)) {
+      svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], cost = kernel_params$cost, degree = kernel_params$degree, scale = FALSE)
+    } else {
+      svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], scale = FALSE)
+    }
+  } else if ("sigmoid" %in% kernel_type) {
+    if ("coef0" %in% para_names) {
+      svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], cost = kernel_params$cost, coef0 = kernel_params$coef0, scale = FALSE)
+    } else {
+      svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], scale = FALSE)
+    }
+  }
+
+  return(stats::predict(svm_model, omics[tst, ]))
+  # if(!is.null(omics)) {
+  #   if(isTRUE(scaling) || isFALSE(scaling)){
+  #     omics <- scale(omics, center = TRUE, scale = TRUE)
+  #   }
+  # }
+  # if(kernel_type!="vanilladot"){
+  # fit <-  kernlab::ksvm(x = omics[-tst, ],
+  #                       y = y[-tst],
+  #                       kernel = kernel_type,
+  #                       scaled = FALSE,
+  #                       type = "nu-svr",
+  #                       C = C_value,
+  #                       kpar = kernel_params)
+  #
+  # } else {
+  #   if(kernel_type=="vanilladot"){
+  #     AI_fit = kernlab::ksvm(x = omics[-tst, ],
+  #                            y = y[-tst],
+  #                            kernel = kernel_type,
+  #                            scaled = FALSE,
+  #                            type = "nu-svr",
+  #                            C = C_value
+  #     )
+  #   }
+  #
+  # }
+  #
+  # preds <- kernlab::predict(fit,
+  #                           omics[tst, ])
+  #
+  # preds <- as.data.frame(preds)
+  #
+  # return(preds[, 1])
 
 
 }

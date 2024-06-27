@@ -180,9 +180,9 @@ asreml_mod_output_new <- function(
   ### !is.null(var_cov_str) & is.null(inter_gen_pos) incase user provide var_cov_str
   ## while the data is not MT in nature
   if(!is.null(var_cov_str) & is.null(inter_gen_pos)){
-    var_cov_str = NULL
-    heter_groups = NULL
-    heter_resid = NULL
+    var_cov_str <-  NULL
+    heter_groups <-  NULL
+    heter_resid <-  NULL
   }
 
   #########################
@@ -200,7 +200,7 @@ asreml_mod_output_new <- function(
     ### It possible the user provide the heter_groups while it actually a single environment,
     ## This will check and turn it off
     if(length(pheno_data[,gen_name])==length(unique(pheno_data[,gen_name]))){
-      heter_groups = NULL
+      heter_groups <-  NULL
     } else{
       if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
         heter_grp <- as.character(unique(pheno_data[, heter_groups]))
