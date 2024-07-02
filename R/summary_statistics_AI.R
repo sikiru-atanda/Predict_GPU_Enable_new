@@ -33,7 +33,11 @@ summary_statistics_AI <- function(predicted_object= NULL,
     Eval_met <- NULL
   }
 
+
+
+
   n_pheno <- nrow(pheno_object)
+
 
   nfeatures = ncol(geno_omic_object)
   #feature_names = colnames(geno_omic_object)
@@ -43,8 +47,13 @@ summary_statistics_AI <- function(predicted_object= NULL,
   trn_min <- round(min(pheno_object[, response],na.rm=TRUE), 3)
   trn_max <- round(max(pheno_object[, response],na.rm=TRUE), 3)
   var_trn <- round(var(pheno_object[, response],na.rm=TRUE),3)
-  Res_trn <- round(var(pheno_object[, response] - yhat[,"Predicted_value"]),3)
 
+  if(!is.null(test_set)){
+  Res_trn <- NA
+
+  }else {
+  Res_trn <- round(var(pheno_object[, response] - yhat[,"Predicted_value"]),3)
+  }
   #n<-length(mod$model$y)
 
   if(!is.null(test_set) & !is.null(eval_metrics)){
@@ -52,16 +61,23 @@ summary_statistics_AI <- function(predicted_object= NULL,
   ## Number of Traning
     n_trn <- n_pheno
     ## Number of Testing
-    n_tst <- nrow(test_set)
-
-    #if(!is.null(eval_metrics)){
-    for (i in 1:length(eval_metrics)){
-
-      Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_object[, response],
-                                          y_predicted = yhat[, "Predicted_value"],
-                                          eval_metrics = eval_metrics[i])
-
+    if (is.vector(test_set)){
+    n_tst <- length(test_set)
+    } else{
+      if(inherits(test_set, "data.frame") | inherits(test_set, "matrix")) {
+        n_tst <- nrow(test_set)
+      }
     }
+
+    Eval_met <- NULL
+    #if(!is.null(eval_metrics)){
+    # for (i in 1:length(eval_metrics)){
+    #
+    #   Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_object[, response],
+    #                                       y_predicted = yhat[, "Predicted_value"],
+    #                                       eval_metrics = eval_metrics[i])
+    #
+    # }
 
     #}
 
@@ -102,7 +118,7 @@ summary_statistics_AI <- function(predicted_object= NULL,
   names(Stat_Res)[2] <- "summary"
   rownames(Stat_Res) <- NULL
   #####
-  if(!is.null(eval_metrics)){
+  if(!is.null(eval_metrics) & !is.null(Eval_met)){
     Eval_met <- data.frame(Eval_met)
     Eval_met$stat <- rownames(Eval_met)
     Eval_met <- Eval_met[, c(2,1)]

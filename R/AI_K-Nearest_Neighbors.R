@@ -226,8 +226,8 @@ if(!is.null(geno_omic_test_object)){
                          Reliability = result_rel$reliability,
                          Reliability_remarks = result_rel$remarks,
                          Reliability_percentage = result_rel$reliability_percentage,
-                         Composite_reliability = composite_reliability$trustworthiness,
-                         Composite_reliability_percentage = composite_reliability$reliability_percentage,
+                         #Composite_reliability = composite_reliability$trustworthiness,
+                         #Composite_reliability_percentage = composite_reliability$reliability_percentage,
                          stringsAsFactors = FALSE)
 
   names(AI_preds)[1] <- c(gen_name)

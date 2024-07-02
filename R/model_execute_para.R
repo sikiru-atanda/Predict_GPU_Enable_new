@@ -827,6 +827,9 @@ model_execute <- function(
                                    random = random,
                                    fixed = fixed)
 
+ if("test_set"%in%names(pheno_clean)){
+   test_set <- pheno_clean[["test_set"]]
+ }
  #if(length(pheno_clean)==0) stop("pheno is null")
 ## pheno_clean is a list that can have one or two elements
  ## One element if only pheno_data is provided
@@ -1067,6 +1070,10 @@ model_execute <- function(
          gmatrix_kernel_model_ready_list[[checked_kernel_var_name]] <- match_result[[1]]
          if (length(match_result) > 1) {
              test_set <- match_result[[2]]
+             if(is.data.frame(test_set) | is.matrix(test_set)){
+               test_set <-  test_set[, 1]
+               test_set <-  unique(test_set) ## incase of MET pheno data
+             }
          }
      }
  }
@@ -1083,7 +1090,6 @@ model_execute <- function(
  } else {
    ml_dat_res <- list()
  }
-
 
  ### Ends
 #################################################################
@@ -1103,7 +1109,11 @@ model_execute <- function(
 
  if(isTRUE(cross_validation)){
    #model_prep_all_bayes_cv <-  NULL
-   test_set <-  if("test_set"%in%names(pheno_clean)) pheno_clean[["test_set"]] else NULL
+     if("test_set"%in%names(pheno_clean)) {
+
+       test_set <- pheno_clean[["test_set"]]
+
+     }
 
    if(!is.null(test_set)){
      if(is.data.frame(test_set) | is.matrix(test_set)){
@@ -1113,7 +1123,11 @@ model_execute <- function(
 
    }
    pheno_data <-  pheno_clean[["pheno_clean_data"]]
-   if(!is.null(test_set)) pheno_data[pheno_data[[gen_name]] %in% test_set, ] else pheno_data
+   if(!is.null(test_set)) {
+
+     pheno_data <-  pheno_data[!pheno_data[[gen_name]] %in% test_set, ]
+
+   }
 
    if(any(GS_model_cv%in% c(bayes_valid_models, bayes_gblup_valid_models))){
  model_prep_all_bayes_cv <- model_prep_bayes_cv(fixed = fixed,
@@ -1215,7 +1229,8 @@ if(cross_validation_meth%in%c("CV1",
                               "Repeated_CV1",
                               "Repeated_CV2")){
 cv_results_processed <- cv1_cv2_and_across_env_result_plot_process(cv_results_data=cv_results,
-                                                                   eval_metrics = eval_metrics)
+                                                                   eval_metrics = eval_metrics,
+                                                                   metric_for_ranking = metric_for_ranking)
 
 best_models <- cv_results_processed[["best_models_list"]][[metric_for_ranking]]
 
@@ -1296,7 +1311,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
  } else {
    if (length(GS_model) > 1) {
      if (length(GS_model) != length(response)) {
-       stop("When the number of models is more than one, the number of models should be the same as the number of traits.")
+       stop(paste(msg, "When the number of models is more than one, the number of models should be the same as the number of traits."), call. = FALSE)
      }
    }
 
@@ -1315,7 +1330,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
    # Automatically determine the number of cores and use half of them
    detected_cores <- parallel::detectCores(logical = TRUE)
    # For non-Windows systems, consider physical cores only
-   num_cores <- round(detected_cores * 0.5)
+   num_cores <- round(detected_cores * 0.7)
 
    set_parallel_plan(n_trait= n_trait, n_model = n_model,num_cores = num_cores,
                      sys_name = sys_name)
@@ -1386,9 +1401,13 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                                     system_database = system_database)
        #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
        res_model_output <- res_model_output[["bayes_result"]]
-       res_model_output[["diagnostic_plots"]] <- res_summary_stat[["diagnostic_tst_plot"]]
 
-       res_summary_stat <- res_summary_stat[!names(res_summary_stat) %in% "diagnostic_tst_plot"]
+       if("diagnostic_tst_plot"%in%names(res_summary_stat)){
+
+         res_model_output[["diagnostic_plots"]] <- res_summary_stat[["diagnostic_tst_plot"]]
+
+         res_summary_stat <- res_summary_stat[!names(res_summary_stat) %in% "diagnostic_tst_plot"]
+       }
 
 
        # output <- list(GS_model = GS_model,
@@ -1450,6 +1469,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                                         n_components = n_components,
                                                         threshold = threshold,
                                                         target = "test_set",
+                                                        cross_validation = FALSE,
                                                         confidence_level = confidence_level,
                                                         #iqr_multiplier = iqr_multiplier,
                                                         interval_width_low_threshold = interval_width_low_threshold,
@@ -1469,9 +1489,13 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                                     system_database = system_database)
        #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
        res_model_output <- res_model_output[["bayes_result"]]
+
+       if("diagnostic_tst_plot"%in%names(res_summary_stat)){
+
        res_model_output[["diagnostic_plots"]] <- res_summary_stat[["diagnostic_tst_plot"]]
 
        res_summary_stat <- res_summary_stat[!names(res_summary_stat) %in% "diagnostic_tst_plot"]
+       }
 
        ### This part is for GBLUP_BRR
        # if(exists("GS_modeluse")){
@@ -1590,7 +1614,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
               res_model_output <- AI_Xgb(pheno_object = ml_dat_res[["pheno_clean_data"]],
                                          response = response,
                                          geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                                         geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                         #geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                         geno_omic_test_object = ml_dat_res[["merged_data_test"]],
                                          message = message,
                                          gen_name = gen_name,
                                          scaling = scaling,
@@ -1636,7 +1661,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
               res_model_output <- AI_randomForest(pheno_object = ml_dat_res[["pheno_clean_data"]],
                                                   response = response,
                                                   geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                                                  geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                                  #geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                                  geno_omic_test_object = ml_dat_res[["merged_data_test"]],
                                                   message = message,
                                                   gen_name = gen_name,
                                                   scaling = scaling,
@@ -1666,7 +1692,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
               res_model_output <-  AI_pls(pheno_object = ml_dat_res[["pheno_clean_data"]],
                                           response = response,
                                           geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                                          geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                          #geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                          geno_omic_test_object = ml_dat_res[["merged_data_test"]],
                                           message = message,
                                           gen_name = gen_name,
                                           scaling = scaling,
@@ -1693,7 +1720,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
               res_model_output <- AI_svm(pheno_object = ml_dat_res[["pheno_clean_data"]],
                                          response = response,
                                          geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                                         geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                         #geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                         geno_omic_test_object = ml_dat_res[["merged_data_test"]],
                                          message = message,
                                          gen_name = gen_name,
                                          scaling = scaling,
@@ -1727,7 +1755,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
               res_model_output <- AI_knn(pheno_object = ml_dat_res[["pheno_clean_data"]],
                                          response = response,
                                          geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                                         geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                         #geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                                         geno_omic_test_object = ml_dat_res[["merged_data_test"]],
                                          message = message,
                                          gen_name = gen_name,
                                          scaling = scaling,
@@ -1755,7 +1784,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                 pheno_object = ml_dat_res[["pheno_clean_data"]],
                 response = response,
                 geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                #geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                geno_omic_test_object = ml_dat_res[["merged_data_test"]],
                 gen_name = gen_name,
                 para_tunning = para_tunning,
                 AI_cv_nfolds = AI_cv_nfolds,
@@ -1784,7 +1814,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                 pheno_object = ml_dat_res[["pheno_clean_data"]],
                 response = response,
                 geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                #geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                geno_omic_test_object = ml_dat_res[["merged_data_test"]],
                 gen_name = gen_name,
                 para_tunning = para_tunning,
                 AI_cv_nfolds = AI_cv_nfolds,
@@ -1813,7 +1844,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
               res_model_output <- deep_learning_model(
                 pheno_object=ml_dat_res[["pheno_clean_data"]],
                 geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-                geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                #geno_omic_test_object = ml_dat_res[["merged_data_test"]][["merge_data"]],
+                geno_omic_test_object = ml_dat_res[["merged_data_test"]],
                 response=response,
                 gen_name=gen_name,
                 num_hidden_layers = num_hidden_layers,

@@ -64,20 +64,30 @@ ML_data_processing <- function(pheno_clean = NULL,
                                omic_clean = list()
 
 ) {
-  # Separate train and test sets
-  pheno_clean <- ML_undefined_test_train(object_pheno = pheno_clean,
-                                         response = response)
 
+  test_set <- NULL
+  # Separate train and test sets
+  # pheno_clean <- ML_undefined_test_train(object_pheno = pheno_clean,
+  #                                        response = response)
+  pheno_data <- pheno_clean[["pheno_clean_data"]]
   # Unpack pheno_clean if necessary
-  if (length(pheno_clean) == 1 && is.list(pheno_clean[["pheno_clean_data"]])) {
-    pheno_clean <- pheno_clean[["pheno_clean_data"]]
-    test_set <- NULL
-  } else{
-    if (length(pheno_clean) == 2 && is.list(pheno_clean[["pheno_clean_data"]])) {
-      pheno_clean <- pheno_clean[["pheno_clean_data"]]
-      test_set <-pheno_clean[["test_set"]]
-    }
+  if("test_set"%in%names(pheno_clean)) {
+
+    test_set <- pheno_clean[["test_set"]]
+
+    pheno_data <-  pheno_data[!pheno_data[[gen_name]] %in% test_set, ]
+
   }
+
+  # if (length(pheno_clean) == 1 && is.list(pheno_clean[["pheno_clean_data"]])) {
+  #   pheno_clean <- pheno_clean[["pheno_clean_data"]]
+  #   test_set <- NULL
+  # } else{
+  #   if (length(pheno_clean) == 2 && is.list(pheno_clean[["pheno_clean_data"]])) {
+  #     pheno_clean <- pheno_clean[["pheno_clean_data"]]
+  #     test_set <-pheno_clean[["test_set"]]
+  #   }
+  # }
 
 
   # Merge geno and omic data
@@ -85,12 +95,14 @@ ML_data_processing <- function(pheno_clean = NULL,
 
   # Separate merged data into train and test sets
   if (!is.null(test_set)) {
-    merged_data_test <- merged_data[rownames(merged_data[["merge_data"]]) %in% test_set[, gen_name], ]
-    merged_data <- merged_data[!rownames(merged_data[["merge_data"]]) %in% test_set[, gen_name], ]
+    merged_data_test <- merged_data[["merge_data"]][rownames(merged_data[["merge_data"]]) %in% test_set, ]
+    merged_data[["merge_data"]] <- merged_data[["merge_data"]][!rownames(merged_data[["merge_data"]]) %in% test_set, ]
   }
 
   # Construct result list
-  result <- list(pheno_clean_data = pheno_clean, merged_data = merged_data)
+  result <- list(pheno_clean_data = pheno_data,
+                 merged_data = merged_data)
+
   if (length(merged_data)>1 && !is.null(merged_data[["omic_count"]])){
     result[["omic_count"]] <- merged_data[["omic_count"]]
   }
@@ -99,9 +111,6 @@ ML_data_processing <- function(pheno_clean = NULL,
   if (!is.null(test_set)) {
     result[["test_set"]] <- test_set
     result[["merged_data_test"]] <- merged_data_test
-  } else {
-    result[["test_set"]] <- NULL
-    result[["merged_data_test"]] <- NULL
   }
 
   return(result)

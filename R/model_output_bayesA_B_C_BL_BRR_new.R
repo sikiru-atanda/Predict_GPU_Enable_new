@@ -125,7 +125,8 @@ if(length(datasets)>1){
   datasets <- do.call(cbind, datasets)
   datasets <- scale(datasets)
 } else{
-  datasets <- unlist(datasets)
+
+  datasets <- do.call(cbind, datasets)
 }
 
 tst <- which(is.na(mod$model$y))
@@ -176,7 +177,7 @@ diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
                                                     prediction_error_var = (mod$model$SD.yHat[tst])^2,
                                                     genetic_var = var(mod$model$yHat[tst]),
                                                     confidence_level = confidence_level,
-                                                    model_for_CI_cal = "ML",
+                                                    model_for_CI_cal = "Bayes",
                                                     composite_reliability_score = composite_reliability$reliability_score,
                                                     composite_reliability = composite_reliability$trustworthiness,
                                                     composite_reliability_percentage = composite_reliability$reliability_percentage,
@@ -184,6 +185,21 @@ diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
                                                     high_reliability_thres = high_reliability_thres,
                                                     low_reliability_thres = low_reliability_thres,
                                                     system_database = system_database)
+
+predicted_value <- data.frame(name = NA,
+                              Predicted_value = mod$model$yHat[tst],
+                              Standard_error = mod$model$SD.yHat[tst],
+                              PEV = ((mod$model$SD.yHat)^2)[tst],
+                              lower_bound = result_rel_MPIW$lower_bound,
+                              upper_bound = result_rel_MPIW$upper_bound,
+                              Uncertainty = result_rel_MPIW$Uncertainty,
+                              Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
+                              Reliability = result_rel$reliability,
+                              Reliability_remarks = result_rel$remarks,
+                              Reliability_percentage = result_rel$reliability_percentage,
+                              #Composite_reliability = composite_reliability$trustworthiness,
+                              #Composite_reliability_percentage = composite_reliability$reliability_percentage,
+                              stringsAsFactors = FALSE)
 
 } else{
 
@@ -213,6 +229,22 @@ composite_reliability <- composite_reliability_tst(geno_trn = datasets,
                                                    interval_width_low_threshold = interval_width_low_threshold,
                                                    apply_pca = TRUE)
 
+
+predicted_value <- data.frame(name = NA,
+                              Predicted_value = mod$model$yHat,
+                              Standard_error = mod$model$SD.yHat,
+                              PEV = (mod$model$SD.yHat)^2,
+                              lower_bound = result_rel_MPIW$lower_bound,
+                              upper_bound = result_rel_MPIW$upper_bound,
+                              Uncertainty = result_rel_MPIW$Uncertainty,
+                              Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
+                              Reliability = result_rel$reliability,
+                              Reliability_remarks = result_rel$remarks,
+                              Reliability_percentage = result_rel$reliability_percentage,
+                              #Composite_reliability = composite_reliability$trustworthiness,
+                              #Composite_reliability_percentage = composite_reliability$reliability_percentage,
+                              stringsAsFactors = FALSE)
+
 }
 
 # AI_preds <- data.frame(name = GID,
@@ -228,20 +260,20 @@ composite_reliability <- composite_reliability_tst(geno_trn = datasets,
 #                        stringsAsFactors = FALSE)
 
 
-predicted_value <- data.frame(name = NA,
-                              Predicted_value = mod$model$yHat,
-                              Standard_error = mod$model$SD.yHat,
-                              PEV = (mod$model$SD.yHat)^2,
-                              lower_bound = result_rel_MPIW$lower_bound,
-                              upper_bound = result_rel_MPIW$upper_bound,
-                              Uncertainty = result_rel_MPIW$Uncertainty,
-                              Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
-                              Reliability = result_rel$reliability,
-                              Reliability_remarks = result_rel$remarks,
-                              Reliability_percentage = result_rel$reliability_percentage,
-                              Composite_reliability = composite_reliability$trustworthiness,
-                              Composite_reliability_percentage = composite_reliability$reliability_percentage,
-                              stringsAsFactors = FALSE)
+# predicted_value <- data.frame(name = NA,
+#                               Predicted_value = mod$model$yHat,
+#                               Standard_error = mod$model$SD.yHat,
+#                               PEV = (mod$model$SD.yHat)^2,
+#                               lower_bound = result_rel_MPIW$lower_bound,
+#                               upper_bound = result_rel_MPIW$upper_bound,
+#                               Uncertainty = result_rel_MPIW$Uncertainty,
+#                               Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
+#                               Reliability = result_rel$reliability,
+#                               Reliability_remarks = result_rel$remarks,
+#                               Reliability_percentage = result_rel$reliability_percentage,
+#                               Composite_reliability = composite_reliability$trustworthiness,
+#                               Composite_reliability_percentage = composite_reliability$reliability_percentage,
+#                               stringsAsFactors = FALSE)
 
 colnames(predicted_value)[1] <- gen_name
 ### Residual value is only estimable for response value without NA
@@ -322,6 +354,7 @@ for (i in seq_along(datasets)) {
                                                               var_u = mean(var_u_omics),
                                                               gid_name =rownames(dataset),
                                                               mod =  mod)
+
     var_u_mean_omics_list[[dataset_names[i]]] <- mean(var_u_omics)
     se_var_u_omics_list[[dataset_names[i]]] <- standard_deviation(var_u_omics)
     coefficients_list[[paste("coefficient",dataset_names[i], sep = "_")]] <- res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["Coefficient"]]
@@ -332,7 +365,7 @@ for (i in seq_along(datasets)) {
     var_u_total <- var_u_total + var_u_omics
 
     if(length(datasets)==1){
-      predicted_value[, 1] <- rownames(dataset)
+      #predicted_value[, 1] <- rownames(dataset)
       #PEV <- apply(g_ebv, 1, var)
       # predicted_value <- predicted_value |>
       #   dplyr::mutate(
@@ -356,6 +389,7 @@ for (i in seq_along(datasets)) {
 
       if(length(tst)!=0){
         residual_value[, 1] <- rownames(dataset)[tst]
+
       }else {
 
         residual_value[, 1] <- rownames(dataset)
@@ -365,7 +399,7 @@ for (i in seq_along(datasets)) {
 
       if(length(datasets)>1){
         if(i==1) gid_name <- rownames(dataset)
-        predicted_value[, 1] <- gid_name
+        #predicted_value[, 1] <- gid_name
         residual_value[, 1] <- gid_name
         ##### Treat sum_EBV
         if(i==length(datasets)){
@@ -402,6 +436,7 @@ for (i in seq_along(datasets)) {
 
     }
 
+if(length(tst)>0) sum_ebv <- sum_ebv[tst, ]
     #}
   } ## End
 

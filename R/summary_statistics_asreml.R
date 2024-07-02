@@ -65,17 +65,18 @@ summary_statistics_asreml <- function(mod=NULL,
 
     n_tst <- length(tst)
 
+    Eval_met <- NULL
     ###
-    if(!is.null(eval_metrics)){
-      for (i in 1:length(eval_metrics)){
-
-        Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_data[, response][tst],
-                                            y_predicted = predicted_value$Predicted_value[tst],
-                                            eval_metrics = eval_metrics[i])
-
-      }
-
-    }
+    # if(!is.null(eval_metrics)){
+    #   for (i in 1:length(eval_metrics)){
+    #
+    #     Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_data[, response][tst],
+    #                                         y_predicted = predicted_value$Predicted_value[tst],
+    #                                         eval_metrics = eval_metrics[i])
+    #
+    #   }
+    #
+    # }
 
     if(isFALSE(anyNA(standard_errors))){
     diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = GID_names[tst],

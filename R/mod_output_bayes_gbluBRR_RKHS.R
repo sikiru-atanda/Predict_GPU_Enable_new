@@ -90,13 +90,21 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
   dataset_names <- dataset_names[datasets_index]
 
   tst <- which(is.na(mod$model$y))
+  tst_GID <- unique(as.character(pheno_data[tst, gen_name]))
+
   # Subset datasets if tst has more than 1 element
   data_trn <- NULL
   data_tst <- NULL
 
   if (length(tst) > 1) {
+    if(!is.null(heter_groups)){
+      data_trn <- lapply(datasets, function(dataset) dataset[!rownames(dataset)%in%tst_GID, !colnames(dataset)%in%tst_GID])
+      data_tst <- lapply(datasets, function(dataset) dataset[rownames(dataset)%in%tst_GID, colnames(dataset)%in%tst_GID])
+    }else{
     data_trn <- lapply(datasets, function(dataset) dataset[-tst, -tst])
     data_tst <- lapply(datasets, function(dataset) dataset[tst, tst])
+
+    }
   }
 
   if(length(datasets)>1 & length(tst)>1){
@@ -105,8 +113,11 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
     #
     data_tst <- do.call(cbind, data_tst)
     data_tst <- scale(data_tst)
+
+    dataset <- do.call(cbind, datasets)
   } else{
-    datasets <- unlist(datasets)
+    dataset <- do.call(cbind, datasets)
+
   }
 
   ### Check bayes_parameter_check function in bayesians_preprocess for details
@@ -122,7 +133,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
     if(length(tst)>1){
       ### incidence matrix for main eff. of the genotypes
 
-      Zg<-stats::model.matrix(~factor(pheno_data[tst,gen_name])-1)
+      Zg<-stats::model.matrix(~factor(pheno_data[,gen_name])-1)
 
       ### Extract all environments in MET
       all_envs_for_met <-  as.character(pheno_data[,heter_groups])
@@ -172,11 +183,11 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                     Reliability = result_rel$reliability,
                                     Reliability_remarks = result_rel$remarks,
                                     Reliability_percentage = result_rel$reliability_percentage,
-                                    Composite_reliability = NA,
-                                    Composite_reliability_percentage = NA,
+                                    #Composite_reliability = NA,
+                                    #Composite_reliability_percentage = NA,
                                     stringsAsFactors = FALSE)
 
-      colnames(predicted_value)[c(1:2)] <- c(gen_name, heter_groups)
+      colnames(predicted_value)[c(1, 3)] <- c(gen_name, heter_groups)
 
 
       # diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
@@ -203,7 +214,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                    Residual_value = (mod$model$y[tst] - mod$model$yHat[tst]),
                                    stringsAsFactors = FALSE)
 
-      colnames(residual_value)[c(1:2)] <- c(gen_name, heter_groups)
+      colnames(residual_value)[c(1, 3)] <- c(gen_name, heter_groups)
 
     } else {
 
@@ -258,11 +269,11 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                     Reliability = result_rel$reliability,
                                     Reliability_remarks = result_rel$remarks,
                                     Reliability_percentage = result_rel$reliability_percentage,
-                                    Composite_reliability = NA,
-                                    Composite_reliability_percentage = NA,
+                                    #Composite_reliability = NA,
+                                    #Composite_reliability_percentage = NA,
                                     stringsAsFactors = FALSE)
 
-      colnames(predicted_value)[c(1:2)] <- c(gen_name, heter_groups)
+      colnames(predicted_value)[c(1, 3)] <- c(gen_name, heter_groups)
 
       residual_value <- data.frame(name = pheno_data[,gen_name],
                                    Env = all_envs_for_met,
@@ -270,7 +281,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                    Residual_value = (mod$model$y - mod$model$yHat),
                                    stringsAsFactors = FALSE)
 
-      colnames(residual_value)[c(1:2)] <- c(gen_name, heter_groups)
+      colnames(residual_value)[c(1, 3)] <- c(gen_name, heter_groups)
     }
 
     #### End MET
@@ -323,8 +334,8 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                     Reliability = result_rel$reliability,
                                     Reliability_remarks = result_rel$remarks,
                                     Reliability_percentage = result_rel$reliability_percentage,
-                                    Composite_reliability = composite_reliability$trustworthiness,
-                                    Composite_reliability_percentage = composite_reliability$reliability_percentage,
+                                    #Composite_reliability = composite_reliability$trustworthiness,
+                                    #Composite_reliability_percentage = composite_reliability$reliability_percentage,
                                     stringsAsFactors = FALSE)
 
       colnames(predicted_value)[1] <- c(gen_name)
@@ -392,8 +403,8 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                     Reliability = result_rel$reliability,
                                     Reliability_remarks = result_rel$remarks,
                                     Reliability_percentage = result_rel$reliability_percentage,
-                                    Composite_reliability = composite_reliability$trustworthiness,
-                                    Composite_reliability_percentage = composite_reliability$reliability_percentage,
+                                    #Composite_reliability = composite_reliability$trustworthiness,
+                                    #Composite_reliability_percentage = composite_reliability$reliability_percentage,
                                     stringsAsFactors = FALSE)
 
       colnames(predicted_value)[1] <- c(gen_name)
@@ -565,6 +576,8 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
           if(length(tst)>1){
             #residual_value[, 1] <- rownames(dataset)[tst]
             sum_ebv <- sum_ebv[tst, ]
+
+
           }
           # else {
           #
@@ -576,15 +589,22 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                              va = mean(var_u_omics),
                                              ve = mean(var_residual))
 
-            across_env_predicted_value <-  as.data.frame(predicted_value |>
+            across_env_predicted_value <-  as.data.frame(predicted_value[tst, ] |>
                                                            dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>  # Use across() to refer to the column specified by gen_name
-                                                           dplyr::summarise(Predicted_value = mean(Predicted_value)) |>
-                                                           dplyr::mutate(
-                                                                         #Standard_error = sep_pev_rel[,"sep"],
-                                                                         Standard_error = Standard_error,
-                                                                         Prediction_error_variance = PEV,
-                                                                         Reliability = Reliability)
+                                                           dplyr::summarise(
+                                                             Predicted_value = mean(Predicted_value, na.rm = TRUE),
+                                                             Standard_error = mean(Standard_error, na.rm = TRUE),
+                                                             PEV = mean(PEV, na.rm = TRUE),
+                                                             Reliability = mean(Reliability, na.rm = TRUE)
+                                                           )
+                                                           # dplyr::summarise(Predicted_value = mean(Predicted_value)) |>
+                                                           # dplyr::mutate(
+                                                           #               Standard_error = sep_pev_rel[,"sep"],
+                                                           #               #Standard_error = Standard_error,
+                                                           #               Prediction_error_variance = sep_pev_rel[,"pev"],
+                                                           #               Reliability = sep_pev_rel[,"rel"])
             )
+
           }
           ### MET End
         } else{
@@ -623,6 +643,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
               colnames(sum_ebv)[1:2] <- c(gen_name, heter_groups)
             }
 
+              if(length(tst)>1) sum_ebv <- sum_ebv[tst, ]
             sum_ebv <- sum_ebv |>
               dplyr::mutate(
                            #Standard_error = ifelse(!is.na(pev), sqrt(pev), NA),
@@ -641,15 +662,23 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
             if(!is.null(Zg) & length(datasets)>1){
 
 
-              across_env_predicted_value <-  as.data.frame(predicted_value |>
-                                                             dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>  # Use across() to refer to the column specified by gen_name
-                                                             dplyr::summarise(Predicted_value = mean(Predicted_value)) |>
-                                                             dplyr::mutate(
-                                                                           #Standard_error = NA,
-                                                                           Standard_error =Standard_error,
-                                                                           Prediction_error_variance = PEV,
-                                                                           Reliability = Reliability)
-              )
+                across_env_predicted_value <-  as.data.frame(predicted_value[tst, ] |>
+                                                               dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>  # Use across() to refer to the column specified by gen_name
+                                                               dplyr::summarise(
+                                                                 Predicted_value = mean(Predicted_value, na.rm = TRUE),
+                                                                 Standard_error = mean(Standard_error, na.rm = TRUE),
+                                                                 PEV = mean(PEV, na.rm = TRUE),
+                                                                 Reliability = mean(Reliability, na.rm = TRUE)
+                                                               )
+
+                                                               # dplyr::mutate(
+                                                               #
+                                                               #   Standard_error = sep_pev_rel[,"sep"],
+                                                               #   #Standard_error = Standard_error,
+                                                               #   Prediction_error_variance = sep_pev_rel[,"pev"],
+                                                               #   Reliability = sep_pev_rel[,"rel"])
+                )
+
 
             }        ## End MET
 

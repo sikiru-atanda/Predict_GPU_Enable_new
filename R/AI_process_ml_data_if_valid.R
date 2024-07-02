@@ -12,13 +12,14 @@ AI_process_ml_data_if_valid <- function(model_check,
 
 
     # Call ML_data_processing with the necessary parameters
-    ML_data_processing(pheno_clean = pheno_clean,
-                       response = response,
-                       gen_name = gen_name,
-                       geno_clean = geno_clean,
-                       omic_clean = omic_clean)
+ res <-  ML_data_processing(pheno_clean = pheno_clean,
+                           response = response,
+                           gen_name = gen_name,
+                           geno_clean = geno_clean,
+                           omic_clean = omic_clean)
+ return(res)
   } else {
-    list() # Return an empty list if conditions are not met
+    return(list()) # Return an empty list if conditions are not met
   }
 }
 

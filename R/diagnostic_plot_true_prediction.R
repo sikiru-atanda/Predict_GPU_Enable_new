@@ -39,8 +39,8 @@ diagnostic_plot_true_prediction <- function(boot_results = NULL,
 
   msg <- sprintf("==================================================\n")
 
-  if (is.null(composite_reliability) || is.na(composite_reliability) ||
-      is.null(composite_reliability_score) || is.na(composite_reliability_score)) {
+  if (is.null(composite_reliability) || any(is.na(composite_reliability)) ||
+      is.null(composite_reliability_score) || any(is.na(composite_reliability_score))) {
 
     composite_reliability <- NULL
     composite_reliability_score <- NULL
@@ -269,7 +269,8 @@ diagnostic_plot_true_prediction <- function(boot_results = NULL,
 
     }else{
 
-      combined_plot <- gridExtra::grid.arrange(p11, p111, p12, ncol = 2)
+      #combined_plot <- gridExtra::grid.arrange(p11, p111, p12, ncol = 2)
+      combined_plot <- gridExtra::grid.arrange(p11, p12, ncol = 2)
 
     }
 

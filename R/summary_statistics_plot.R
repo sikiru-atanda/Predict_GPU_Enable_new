@@ -20,7 +20,7 @@ summary_statistics_bayes <- function(mod=NULL,
                                      system_database = FALSE,
                                      ...){
 
-
+  tst <- NULL
   if(!is.null(eval_metrics)){
   Eval_met <- matrix(NA, nrow = length(eval_metrics), ncol = 1)
 
@@ -45,24 +45,24 @@ summary_statistics_bayes <- function(mod=NULL,
     n_trn <- n-length(tst)
 
     n_tst <- length(tst)
-
-    if(!is.null(eval_metrics)){
-    for (i in 1:length(eval_metrics)){
-
-      Eval_met[i, ] <- evaluation_metrics(y_observed = mod$model$y[tst],
-                                          y_predicted = mod$model$yHat[tst],
-                                          eval_metrics = eval_metrics[i])
-
-    }
-
-    }
+    Eval_met <- NULL
+    # if(!is.null(eval_metrics)){
+    # for (i in 1:length(eval_metrics)){
+    #
+    #   Eval_met[i, ] <- evaluation_metrics(y_observed = mod$model$y[tst],
+    #                                       y_predicted = mod$model$yHat[tst],
+    #                                       eval_metrics = eval_metrics[i])
+    #
+    # }
+    #
+    # }
     if(isFALSE(anyNA(model_result[["Predicted_value"]]["Standard_error"]))){
- diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = model_result[["Predicted_value"]][gen_name][tst, 1],
+ diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = model_result[["Predicted_value"]][gen_name][, 1],
                                                         CI_width_thresholds = CI_width_thresholds,
-                                                        predictions = as.double(model_result[["Predicted_value"]]["Predicted_value"][tst, 1]),
-                                                        standard_errors = as.double(model_result[["Predicted_value"]]["Standard_error"][tst, 1]),
+                                                        predictions = as.double(model_result[["Predicted_value"]]["Predicted_value"][, 1]),
+                                                        standard_errors = as.double(model_result[["Predicted_value"]]["Standard_error"][, 1]),
                                                         prediction_error_var = as.double(model_result[["Predicted_value"]]["PEV"][tst, 1]),
-                                                        genetic_var = as.double(var(model_result[["Predicted_value"]]["Predicted_value"][tst, 1])),
+                                                        genetic_var = as.double(var(model_result[["Predicted_value"]]["Predicted_value"][, 1])),
                                                         confidence_level = confidence_level,
                                                         model_for_CI_cal = "Bayes",
                                                         #threshold = NULL,
@@ -136,7 +136,7 @@ summary_statistics_bayes <- function(mod=NULL,
   names(Stat_Res)[2] <- "summary"
   rownames(Stat_Res) <- NULL
 #####
-  if(!is.null(eval_metrics)){
+  if(!is.null(eval_metrics) && !is.null(Eval_met)){
   Eval_met <- data.frame(Eval_met)
   Eval_met$stat <- rownames(Eval_met)
   Eval_met <- Eval_met[, c(2,1)]
@@ -151,9 +151,15 @@ summary_statistics_bayes <- function(mod=NULL,
 
   }
 
+if(is.null(tst) || length(tst)<=1){
+  output <-  list(summary_statistics = Stat_Res
+
+                  )
+} else {
   output <-  list(summary_statistics = Stat_Res,
                   diagnostic_tst_plot = diagnostic_tst_plot
-                  )
+  )
+}
 
 
   return(output)

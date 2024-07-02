@@ -65,6 +65,35 @@ msg <- sprintf("==================================================\n")
                                      random = random,
                                      fixed, fixed)
 
+    # Find the rows with NA in each response column if the user has NA as testing set
+    na_rows <- lapply(response, function(col) which(is.na(pheno_data[[col]])))
+
+    # Check if all vectors of NA rows are identical across the response, sparse is not allowed
+    if (!all(sapply(na_rows, function(x) identical(x, na_rows[[1]])))) {
+      stop(sprintf("Rows containing NA did not match across the response columns: %s.", paste(response, collapse = ", ")))
+    }
+
+    if (length(na_rows[[1]]) > 0) {
+    # Get the unique rows with NA (since all are identical, we can take from the first column)
+      # if(!is.null(heter_groups)) {
+      #   stop(print(paste(msg, "Provide data.frame or vector of the names of the testing set.")), call. = FALSE)
+      #
+      # }
+      if(is.null(test_set) || is.null(pheno_data_test)){
+
+        if(!is.null(heter_groups)){
+          test_set <- unique(as.character(pheno_data[na_rows[[1]], gen_name]))
+        }else{
+      test_set <- unique(na_rows[[1]])
+
+      test_set <- as.character(pheno_data[test_set, gen_name])
+        }
+
+      }
+
+
+    }
+
     if(!is.null(test_set)){
 
       if(is.data.frame(test_set) | is.matrix(test_set)){

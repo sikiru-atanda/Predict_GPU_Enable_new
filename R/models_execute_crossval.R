@@ -194,9 +194,10 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     ...){
 
  #browser()
+  msg <- sprintf("==================================================\n")
 
   if(!is.null(cross_validation_meth) & length(cross_validation_meth)>1){
-    stop('use only one cross_validation method at a time')
+    stop(paste(msg, 'use only one cross_validation method at a time'), call. = FALSE)
   }
   ##### if user choose repeated and stratified CV strategy but
   ## forget to choose sampling stratgy or replication is not defined.
@@ -216,8 +217,8 @@ models_execute_crossval <- function(pheno_data = NULL,
 
     if("stratified"%in%present_patterns) sampling_method <- "stratified"
 
-    if("Repeated"%in%present_patterns) {
-      stop("You select repeated cross-validation provide number of replications.\n For example, replication = 2")
+    if("Repeated"%in%present_patterns && is.null(replication)) {
+      stop(paste(msg, "You select repeated cross-validation provide number of replications.\n For example, replication = 2"), call. = FALSE)
     }
 
 
@@ -229,7 +230,27 @@ models_execute_crossval <- function(pheno_data = NULL,
   bayes_trait <- NULL
   bayes_para <- NULL
 
-  omic_count <- if("omic_count"%in%names(ml_dat_res)) ml_dat_res[["omic_count"]] else NULL
+  if(!is.null(ml_dat_res)){
+  omics_data <-  ml_dat_res[["merged_data"]][["merge_data"]]
+
+  if(!"merged_data_test"%in%names(ml_dat_res)){
+  if(!is.null(test_set)) {
+
+    omics_data <-  omics_data[!rownames(omics_data) %in% test_set, ]
+
+  }
+
+  }
+
+
+  if("omic_count"%in%names(ml_dat_res)){
+    omic_count <- ml_dat_res[["omic_count"]]
+
+  }else{
+    omic_count <- NULL
+  }
+
+  }
 
   additional_params <- list(ETA = ETA, weights = weights, bayes_para = bayes_para,
                             bayes_model = bayes_model, bayes_trait = bayes_trait,
@@ -276,7 +297,7 @@ models_execute_crossval <- function(pheno_data = NULL,
   n_trait <- length(response)
   n_model <- length(GS_model_cv)
 
-  msg <- sprintf("==================================================\n")
+
 
   holds_out_methods_avail <- c("Hold_Out",
                                "Stratified_Hold_Out",
@@ -299,7 +320,7 @@ models_execute_crossval <- function(pheno_data = NULL,
     if (method %in% names(method_mapping)) {
       return(method_mapping[method])
     } else {
-      stop("Provided method is not available in hold-out methods.")
+      stop(paste(msg, "Provided method is not available in hold-out methods."), call. = FALSE)
     }
   }
 
@@ -355,11 +376,12 @@ models_execute_crossval <- function(pheno_data = NULL,
     rep <- as.integer(task_row$replication)
     model <- as.character(task_row$modell)
 
+    if(!is.null(heter_groups)){
     y_scaler <- caret::preProcess(as.data.frame(as.matrix(pheno_data[[trait]])), method = c("center", "scale"))
 
     # Predict on the training data and get the scaled values
     pheno_data[, trait] <- stats::predict(y_scaler, as.data.frame(as.matrix(pheno_data[[trait]])))[, 1]
-
+}
     #print(c(trait, rep))  # For diagnostic purposes
 
     repp <- 1
@@ -413,10 +435,10 @@ models_execute_crossval <- function(pheno_data = NULL,
                                                       sampling_method = sampling_method)
       }
     } else {
-      stop("Unsupported cross-validation method specified. Choose from: ",
+      stop(paste(msg, "Unsupported cross-validation method specified. Choose from: ",
            paste(c(holds_out_methods_avail,
                    Kfolds_methods_avail,
-                   CVs_multi_envs_methods_avail), collapse = ", "), call. = FALSE)
+                   CVs_multi_envs_methods_avail), collapse = ", ")), call. = FALSE)
     }
 
     len_y <-  nrow(pheno_data)
@@ -520,14 +542,11 @@ models_execute_crossval <- function(pheno_data = NULL,
 
           ypred_cv[tst, "yhat"] <- predict_with_model(model = model, tst = tst, additional_params = additional_params)
 
-        }
+          }
 
         }
 
         if(model %in% c(AI_valid_models)) {
-          omics_data <-  ml_dat_res[["merged_data"]][["merge_data"]]
-
-          if(!is.null(test_set)) omics_data[rownames(omics_data) %in% test_set, ] else omics_data
 
         ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = omics_data,
                                                     tst = tst, additional_params = additional_params)
@@ -571,7 +590,8 @@ models_execute_crossval <- function(pheno_data = NULL,
       }
 
       if(model %in% c(AI_valid_models)) {
-        ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = ml_dat_res[["merged_data"]][["merge_data"]],
+
+        ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = omics_data,
                                                     tst = tst, additional_params = additional_params)
       }
 
