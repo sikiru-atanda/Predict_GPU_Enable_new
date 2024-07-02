@@ -186,7 +186,8 @@ geno_precheck <- function(object_geno = NULL,
         message(insight::print_color(paste(msg, paste("Removing monomorphic markers:", length(monomorphic_markers))), "blue"))
       }
 
-        object_geno <- object_geno[, -monomorphic_markers]
+        object_geno <- object_geno[, -monomorphic_markers]      
+        
 
       #map_data <- map_data[-monomorphic_markers, ]
       total_mono <-  length(monomorphic_markers)
