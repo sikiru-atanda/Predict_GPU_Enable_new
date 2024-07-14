@@ -109,7 +109,7 @@ AI_randomForest <- function(pheno_object=NULL,
 
 ){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(!is.null(geno_omic_object)){
     scaler <- caret::preProcess(geno_omic_object, method = c("center", "scale"))

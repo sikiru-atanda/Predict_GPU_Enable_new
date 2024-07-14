@@ -51,7 +51,7 @@ bayes_mod_execute_crossvall <- function(pheno_data = NULL,
 
 #browser()
   n_trait <- length(response)
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   holds_out_methods_avail <- c("Hold_Out",
                                "Stratified_Hold_Out",
@@ -172,12 +172,12 @@ bayes_mod_execute_crossvall <- function(pheno_data = NULL,
       stop(message(paste(msg,'For CV1 or CV2 column name for environment/location is required.')), call. = FALSE)
 
     }
-    ENV <-  as.character(unique(pheno_data[, heter_groups]))
+    ENV <-  as.character(unique(pheno_data[[heter_groups]]))
 
     ypred_cv <- matrix(data=NA, nrow=len_y, ncol=3)
     colnames(ypred_cv) <- c("y", "yhat", heter_groups)
     ypred_cv[, "y"] <-  pheno_data[, trait]
-    ypred_cv[, heter_groups] <-  as.character(pheno_data[, heter_groups])
+    ypred_cv[, heter_groups] <-  as.character(pheno_data[[heter_groups]])
 
     results_eval_metrics_reps <- matrix(NA, nrow = length(ENV), ncol = length(eval_metrics)+2) ### Add rep and Env to the cols
     results_eval_metrics_reps[, 1] <-  rep(1, length(ENV))
@@ -195,7 +195,7 @@ bayes_mod_execute_crossvall <- function(pheno_data = NULL,
 
   ################
 
-  #y <-  pheno_data[, response]
+  #y <-  pheno_data[[response]]
 
 
   for (k in 1:NRep) {

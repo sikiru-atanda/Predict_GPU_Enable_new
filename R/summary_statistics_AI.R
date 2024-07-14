@@ -44,15 +44,15 @@ summary_statistics_AI <- function(predicted_object= NULL,
   yhat <-  predicted_object
   #Res <-  cat(tmp,'\n')
 
-  trn_min <- round(min(pheno_object[, response],na.rm=TRUE), 3)
-  trn_max <- round(max(pheno_object[, response],na.rm=TRUE), 3)
-  var_trn <- round(var(pheno_object[, response],na.rm=TRUE),3)
+  trn_min <- round(min(pheno_object[[response]],na.rm=TRUE), 3)
+  trn_max <- round(max(pheno_object[[response]],na.rm=TRUE), 3)
+  var_trn <- round(var(pheno_object[[response]],na.rm=TRUE),3)
 
   if(!is.null(test_set)){
   Res_trn <- NA
 
   }else {
-  Res_trn <- round(var(pheno_object[, response] - yhat[,"Predicted_value"]),3)
+  Res_trn <- round(var(pheno_object[[response]] - yhat[,"Predicted_value"]),3)
   }
   #n<-length(mod$model$y)
 
@@ -93,7 +93,7 @@ summary_statistics_AI <- function(predicted_object= NULL,
     if(!is.null(eval_metrics)){
     for (i in 1:length(eval_metrics)){
 
-      Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_object[, response],
+      Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_object[[response]],
                                           y_predicted = yhat[, "Predicted_value"],
                                           eval_metrics = eval_metrics[i])
 

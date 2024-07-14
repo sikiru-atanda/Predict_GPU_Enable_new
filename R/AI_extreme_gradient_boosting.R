@@ -175,7 +175,7 @@ AI_Xgb <- function(pheno_object=NULL,
 
 ){
 #browser()
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   if(!is.null(geno_omic_object)){
     scaler <- caret::preProcess(geno_omic_object, method = c("center", "scale"))
     geno_omic_object <- stats::predict(scaler, geno_omic_object)
@@ -201,7 +201,7 @@ AI_Xgb <- function(pheno_object=NULL,
     #   }
     # }
   }
-  #msg <- sprintf("==================================================\n")
+  #msg <- "\n==================================================\n"
 ## when length of response variable is 1
 #########################
   y_train <-  pheno_object[, response]

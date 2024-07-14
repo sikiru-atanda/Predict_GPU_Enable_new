@@ -19,6 +19,9 @@ cv1_cv2_and_across_env_result_plot_process <- function(cv_results_data = NULL,
     cbind(trait = x$trait, rep = x$rep, model = x$model, x$eval_metrics_reps)
   }))
 
+  combined_df <- combined_df |>
+    dplyr::mutate(dplyr::across(-c(trait, model, Env), as.numeric))
+
   # Ensure 'Rep' is treated as a factor for proper aggregation later
   combined_df$Rep <- as.factor(combined_df$rep)
 

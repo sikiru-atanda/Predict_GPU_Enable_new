@@ -50,7 +50,7 @@ asreml_utilisOLDD <- function(
     ...
 ) {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
 
   ######
@@ -526,7 +526,7 @@ asreml_utilisOLDD <- function(
       if(is.null(heter_groups)){stop(print(paste(msg, "Provide heter_groups to model specified variance-covariance structure")), call. = FALSE)}
 
       ### Check if the number of hetero.Grp is greater 5 or greater than 5
-      NN = nlevels(pheno_data[, heter_groups])
+      NN = nlevels(pheno_data[[heter_groups]])
       if (NN >=5 & isFALSE(grepl("fa", var_cov_str))){
 
         msg <- sprintf("\r==================================================\n")
@@ -1183,9 +1183,9 @@ asreml_utilisOLDD <- function(
     # #Heter.Grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
     #
     # if (!is.null(heter_groups)){
-    #   Heter.Grp <- as.character(unique(pheno_data[, heter_groups]))
+    #   Heter.Grp <- as.character(unique(pheno_data[[heter_groups]]))
     # }
-    # #ENV_Ids = as.character(unique(pheno_data[, heter_groups]))
+    # #ENV_Ids = as.character(unique(pheno_data[[heter_groups]]))
     # #### Extract Breeding values/genetic effect estimate for all omics
     # BV_All = vector(mode = 'list', length = length(G_list))
     # for (b in 1:length(G_list)) {

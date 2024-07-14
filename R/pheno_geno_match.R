@@ -10,7 +10,7 @@
 #' @examples
 check_test_set <- function(test_set = NULL
                            ) {
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   if (is.null(test_set)) return(NULL)
 
   if (!is.data.frame(test_set) && !is.matrix(test_set) && !is.vector(test_set)) {
@@ -42,7 +42,7 @@ pheno_geno_match <- function(object_geno = NULL,
                              test_set = NULL,
                              heter_groups = NULL,
                              message = TRUE) {
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   # Check if genotypes are consistent across all environments
   if(!is.null(heter_groups)){
@@ -63,7 +63,7 @@ pheno_geno_match <- function(object_geno = NULL,
 
   }
 
-  ID_pheno <- as.character(unique(object_pheno[, gen_name]))
+  ID_pheno <- as.character(unique(object_pheno[[gen_name]]))
 
   if (!isTRUE(all(ID_pheno %in% rownames(object_geno)))) {
     stop(print(paste(msg, 'Not all individuals with phenotypic records have genotypic/omic records.')), call. = FALSE)

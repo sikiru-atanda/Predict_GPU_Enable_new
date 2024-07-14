@@ -5,6 +5,8 @@ aggregate_metrics <- function(cv_results_data) {
     cbind(data.frame(trait = x$trait, model = x$model, rep = x$rep), x$eval_metrics_reps)
   }))
 
+  combined_df <- combined_df |>
+    dplyr::mutate(dplyr::across(-c(trait, model), as.numeric))
   # Calculate mean evaluation metrics across reps for each trait and model
   aggregated_across_reps <- stats::aggregate(. ~ trait + model, data = combined_df, FUN = mean)
 

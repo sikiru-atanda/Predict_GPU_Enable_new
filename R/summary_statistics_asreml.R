@@ -27,7 +27,7 @@ summary_statistics_asreml <- function(mod=NULL,
                                       low_reliability_thres = 0.4,
                                       system_database = FALSE,
                                       ...){
-
+  diagnostic_tst_plot <- NULL
 ##browser()
   if(!is.null(eval_metrics)){
     Eval_met <- matrix(NA, nrow = length(eval_metrics), ncol = 1)
@@ -39,10 +39,10 @@ summary_statistics_asreml <- function(mod=NULL,
   }
 
   #pheno <-  as.data.frame(mod$mf)
-  n_pheno <- sum(!is.na(pheno_data[, response]))
-  trn_min <-  round(min(pheno_data[, response],na.rm=TRUE), 3)
-  trn_max <- round(max(pheno_data[, response],na.rm=TRUE), 3)
-  var_trn <- round(var(pheno_data[, response],na.rm=TRUE),3)
+  n_pheno <- sum(!is.na(pheno_data[[response]]))
+  trn_min <-  round(min(pheno_data[[response]],na.rm=TRUE), 3)
+  trn_max <- round(max(pheno_data[[response]],na.rm=TRUE), 3)
+  var_trn <- round(var(pheno_data[[response]],na.rm=TRUE),3)
   n_trn <- n_pheno
   n_tst <- 0
 
@@ -53,13 +53,13 @@ summary_statistics_asreml <- function(mod=NULL,
     Res_trn <-  NA
   }
 
-  if(nrow(pheno_data)==length(unique(pheno_data[, gen_name]))){
+  if(nrow(pheno_data)==length(unique(pheno_data[[gen_name]]))){
 
 
-  n<-length(pheno_data[, response])
+  n<-length(pheno_data[[response]])
 
-  if(any(is.na(pheno_data[, response]))){
-    tst <- which(is.na(pheno_data[, response]))
+  if(any(is.na(pheno_data[[response]]))){
+    tst <- which(is.na(pheno_data[[response]]))
 
     n_trn <- n-length(tst)
 
@@ -70,7 +70,7 @@ summary_statistics_asreml <- function(mod=NULL,
     # if(!is.null(eval_metrics)){
     #   for (i in 1:length(eval_metrics)){
     #
-    #     Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_data[, response][tst],
+    #     Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_data[[response]][tst],
     #                                         y_predicted = predicted_value$Predicted_value[tst],
     #                                         eval_metrics = eval_metrics[i])
     #
@@ -78,6 +78,7 @@ summary_statistics_asreml <- function(mod=NULL,
     #
     # }
 
+    if(is.null(heter_groups)){
     if(isFALSE(anyNA(standard_errors))){
     diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = GID_names[tst],
                                                            CI_width_thresholds = CI_width_thresholds,
@@ -90,6 +91,8 @@ summary_statistics_asreml <- function(mod=NULL,
                                                            #threshold = NULL,
                                                            high_reliability_thres = high_reliability_thres,
                                                            low_reliability_thres = low_reliability_thres)
+
+    }
 
     }
 
@@ -116,8 +119,8 @@ summary_statistics_asreml <- function(mod=NULL,
     if(!is.null(eval_metrics)){
       for (i in 1:length(eval_metrics)){
 
-        Eval_met[i, ] <- evaluation_metrics(y_observed = pheno_data[, response],
-                                            y_predicted = predicted_value$Predicted_value,
+        Eval_met[i, ] <- evaluation_metrics(y_observed = as.double(pheno_data[[response]]),
+                                            y_predicted = as.double(predicted_value[["Predicted_value"]]),
                                             eval_metrics = eval_metrics[i])
 
       }
@@ -161,11 +164,13 @@ summary_statistics_asreml <- function(mod=NULL,
 
   }
 
-
+if(is.null(heter_groups)){
   output <-  list(summary_statistics = Stat_Res,
                   diagnostic_tst_plot = diagnostic_tst_plot
   )
-
+} else{
+  output <-  list(summary_statistics = Stat_Res)
+}
 
   return(output)
 

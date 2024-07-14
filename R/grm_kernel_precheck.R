@@ -57,26 +57,26 @@ grm_kernel_precheck <- function(grm_kernel_data= NULL,
                                 message= TRUE,
                                 ...){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n ==================================================\n"
 
   ## Check no NA is present in the matrix
 if (!is.null(grm_kernel_data)){
   if(isTRUE(anyNA(grm_kernel_data))){
-    stop(message(paste(msg,'NA is not allowed in the grm or kernel matrix')), call. = FALSE)
+    stop(message(paste(msg,'NA is not allowed in the grm or kernel matrix.')), call. = FALSE)
   }
   ## Check rownames is provided
   if (is.null(rownames(grm_kernel_data))){
-    stop(message(paste(msg,'Rownames containing individuals in the matrix is missing')), call. = FALSE)
+    stop(message(paste(msg,'Rownames containing individuals in the matrix is missing.')), call. = FALSE)
   }
   ## Check colnames is provided
   if (is.null(colnames(grm_kernel_data))){
-    stop(message(paste(msg,'Colnames containing individuals in the matrix is missing')), call. = FALSE)
+    stop(message(paste(msg,'Colnames containing individuals in the matrix is missing.')), call. = FALSE)
   }
   all_numeric <- all(apply(grm_kernel_data, c(1, 2), is.numeric))
 
   # Stop execution if any element is not numeric
   if (!all_numeric) {
-    stop('The data contains non-numeric values', call. = FALSE)
+    stop(paste(msg, 'The data contains non-numeric values.'), call. = FALSE)
   }
   ### Check if the matrix is in class matrix if not convert to class matrix
   if (!is.matrix(grm_kernel_data)) grm_kernel_data <- as.matrix(grm_kernel_data)

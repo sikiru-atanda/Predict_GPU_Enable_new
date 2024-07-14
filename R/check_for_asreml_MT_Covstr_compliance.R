@@ -1,6 +1,6 @@
 # Function to check for ASReml software requirement
 checkForASReml <- function(engine, GS_model, GS_model_cv, cross_validation, msg) {
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   if ((!isFALSE(cross_validation) && "GBLUP" %in% GS_model_cv) ||
       (isFALSE(cross_validation) && "GBLUP" %in% GS_model)) {
     if (engine != "asreml") {
@@ -11,7 +11,7 @@ checkForASReml <- function(engine, GS_model, GS_model_cv, cross_validation, msg)
 
 # Function to check variance-covariance structure inputs
 checkVarianceCovarianceInputs <- function(heter_groups, heter_resid, var_cov_str, var_cov_str_available, msg) {
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   if (!is.null(heter_groups) && !is.null(heter_resid) && is.null(var_cov_str)) {
     stop(msg, "Your data suggest multi-environment but variance-covariance structure is missing. Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
   } else if (!is.null(heter_groups) && is.null(heter_resid) && !is.null(var_cov_str)) {
@@ -23,7 +23,7 @@ checkVarianceCovarianceInputs <- function(heter_groups, heter_resid, var_cov_str
 
 # Function to check variance-covariance structure inputs
 checkVarianceCovarianceInputs <- function(heter_groups, heter_resid, var_cov_str, var_cov_str_available, msg) {
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   if (!is.null(heter_groups) && !is.null(heter_resid) && is.null(var_cov_str)) {
     stop(msg, "Your data suggest multi-environment but variance-covariance structure is missing. Choose from: ", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
   } else if (!is.null(heter_groups) && is.null(heter_resid) && !is.null(var_cov_str)) {
@@ -37,8 +37,8 @@ checkVarianceCovarianceInputs <- function(heter_groups, heter_resid, var_cov_str
 validateMultiEnvironment <- function(pheno_data, gen_name, heter_groups,
                                      heter_resid, var_cov_str, GS_model, var_cov_str_available,
                                      cross_validation, GS_model_cv, msg) {
-  msg <- sprintf("==================================================\n")
-  if (length(pheno_data[, gen_name]) > length(unique(pheno_data[, gen_name]))) {
+  msg <- "\n==================================================\n"
+  if (length(pheno_data[[gen_name]]) > length(unique(pheno_data[[gen_name]]))) {
     if (is.null(heter_groups)) {
       stop(paste(msg, "Your phenotypic data has a multi-environment structure, but the column containing the environment/location is missing. Please provide heter_groups parameter. For example: heter_groups = 'locations'. If you have location as column name in your phenotypic data."), call. = FALSE)
     }

@@ -17,7 +17,7 @@ omic_to_model <- function(omic_data = NULL,
                           impute_omic = FALSE,
                           ...) {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   # Check if omic_data is provided
   if (!is.null(omic_data)) {

@@ -11,7 +11,7 @@
 omic_precheck <- function(object = NULL,
                           message = TRUE,
                           impute = FALSE){
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   if(!is.null(object)){
     if("data.table" %in% class(object)){
       stop(print(paste(msg,'Omic data must be data.frame or matrix not character.')), call. = FALSE)

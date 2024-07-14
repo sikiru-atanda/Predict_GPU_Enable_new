@@ -16,7 +16,7 @@ omic_to_modelOLD <- function(omic_data = NULL,
                           message = TRUE,
                           ...) {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   # Placeholder for omic_precheck function
   # omic_precheck <- function(object, message) {

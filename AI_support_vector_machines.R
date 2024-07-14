@@ -127,7 +127,7 @@ AI_svmOLD <- function(pheno_object=NULL,
     }
 
   }
-  #msg <- sprintf("==================================================\n")
+  #msg <- "\n==================================================\n"
      if(isTRUE(para_tunning)){
        # create hyperparameter grid
 

@@ -34,7 +34,7 @@ mod_output_bayes_RKHS <- function(mod=NULL,
                                  bayes_para = NULL,
                                  ...){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   g_use <- NULL
   ##############
   if(typeof(omics_kernel_label)=='list'){

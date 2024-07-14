@@ -24,7 +24,7 @@ hold_out_stratified_and_un <- function (
                                       message = TRUE
                                   ) {
 
-  #msg <- sprintf("==================================================\n")
+  #msg <- "\n==================================================\n"
 
   if (!is.null(random_state) && is.numeric(random_state)) {
     set.seed(random_state)

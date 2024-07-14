@@ -37,7 +37,7 @@ asreml_mod_output <- function(
 {
 
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if (!is.null(gkernel)){
     gmatrix = gkernel
@@ -109,12 +109,12 @@ asreml_mod_output <- function(
       heter_groups = NULL
     } else{
       if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
-        heter_grp <- as.character(unique(pheno_data[, heter_groups]))
+        heter_grp <- as.character(unique(pheno_data[[heter_groups]]))
       }
     }
 
   }
-  #ENV_Ids = as.character(unique(pheno_data[, heter_groups]))
+  #ENV_Ids = as.character(unique(pheno_data[[heter_groups]]))
   ##############################################
   #### Extract Breeding values/genetic effect estimate for all omics
   ##############################################

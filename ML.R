@@ -87,7 +87,7 @@ AI_xgbOLD <- function(pheno_data=NULL,
 
 ){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   ### Get clean pheno data for model fit
 
 

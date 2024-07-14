@@ -29,15 +29,15 @@ train_test_split <- function (
     ...
 ){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   test_Res <- vector(mode = "list", length = replication)
 
   #if(length(y) < 2) {stop("y must be greater than 1")}
 
-  y <- pheno_data[, response]
+  y <- pheno_data[[response]]
 
-  ID_GIDs = as.character(unique(pheno_data[, gen_name]))
+  ID_GIDs = as.character(unique(pheno_data[[gen_name]]))
 
   if (length(y)>length(ID_GIDs)){warning(paste(msg,'You have more than one environment. \n\tThis cross-validation method works best with one environment.'),
                                          call. = FALSE)}

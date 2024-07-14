@@ -97,7 +97,7 @@ Binary files /dev/null and b/.RData differ
 [32m+[m[32mresponse,[m
 [32m+[m[32m...)[m
 [32m+[m[32m{[m
-[32m+[m[32mmsg <- sprintf("==================================================\n")[m
++msg <- "\n==================================================\n"
 [32m+[m[32mif(nrow(pheno)==0) { stop(print(paste(msg, 'No phenotypic records provided.')), call. = FALSE)[m
 [32m+[m[32m}[m
 [32m+[m[32mif (!inherits(pheno, what = 'data.frame')) {[m
@@ -197,7 +197,7 @@ Binary files /dev/null and b/.RData differ
 [32m+[m[32mgen_name = gen_name)[m
 [32m+[m[32m### Create empty list for ETA[m
 [32m+[m[32mETA = list()[m
-[32m+[m[32mmsg <- sprintf("==================================================\n")[m
++msg <- "\n==================================================\n"
 [32m+[m[32m### Get the random terms. Here no interaction terms in the random effect[m
 +rand_term_no_inter
 [32m+[m[32mobject = pheno_data)[m

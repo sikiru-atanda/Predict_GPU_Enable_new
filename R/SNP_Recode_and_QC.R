@@ -55,7 +55,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
                           ...
 )
 {
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   ### Remove All loci with All NAs and monomorphic markers
   ####### TO DO
   # Develop function to accomodate when the data is already recoded but

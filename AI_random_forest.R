@@ -55,7 +55,7 @@ AI_randomForestOLD <- function(pheno_object=NULL,
 
 ){
 
-  #msg <- sprintf("==================================================\n")
+  #msg <- "\n==================================================\n"
 
   if(!is.null(geno_omic_object)){
     if(isTRUE(scaling)){

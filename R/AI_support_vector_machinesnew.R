@@ -78,7 +78,7 @@ AI_svm <- function(pheno_object=NULL,
                    system_database = FALSE,
                    ...) {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(!is.null(geno_omic_object)){
     scaler <- caret::preProcess(geno_omic_object, method = c("center", "scale"))

@@ -59,7 +59,7 @@ AI_pls <- function(pheno_object=NULL,
                    ...
 
 ){
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 ## Standardizing features is beneficial in PLS to
 ## ensure that variables with larger scales do not dominate the model
   # if(!is.null(geno_omic_object) & !is.null(pheno_object)) {

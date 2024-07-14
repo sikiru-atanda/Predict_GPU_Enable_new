@@ -19,7 +19,7 @@ blending_statOLD <- function(grm_kernel_data = NULL,
          blending_value = 0.02
          ){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(blending_value>=1){
     stop(print(paste(msg,'Consider lower value for blending')), call. = FALSE)

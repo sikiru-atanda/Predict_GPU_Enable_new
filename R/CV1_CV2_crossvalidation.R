@@ -25,19 +25,19 @@ CV1_CV2_for_multi_environment <- function(
                                           replication = 1,
                                           ...){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if (is.null(heter_groups)){stop(message(paste(msg,"Provide the a pointer (heter_groups) to the column contaning the environments")), call. = FALSE)}
   if(CV>2){stop(message(paste(msg,"CV must be 1 or 2")), call. = FALSE)}
   if(is.null(nfolds)){stop(message(paste(msg,"Provide value the number of desired folds")), call. = FALSE)}
   ## Order the pheno_data data by gen_name and by Environment
-  pheno_data = pheno_data[order(pheno_data[, gen_name]), ]
-  pheno_data = pheno_data[order(pheno_data[, heter_groups]), ]
+  pheno_data = pheno_data[order(pheno_data[[gen_name]]), ]
+  pheno_data = pheno_data[order(pheno_data[[heter_groups]]), ]
 
-  #nEnv <- length(unique(pheno_data[, heter_groups]))
+  #nEnv <- length(unique(pheno_data[[heter_groups]]))
 
-  ID_GIDs = as.character(unique(pheno_data[, gen_name]))
-  Envs_ID_GIDs = as.character(pheno_data[, gen_name])
+  ID_GIDs = as.character(unique(pheno_data[[gen_name]]))
+  Envs_ID_GIDs = as.character(pheno_data[[gen_name]])
 
   if(length(ID_GIDs)==length(Envs_ID_GIDs)){stop(message(paste(msg,'CV1 and CV2 works when number of environment is greater than 1')), call. = FALSE)}
 
@@ -46,7 +46,7 @@ CV1_CV2_for_multi_environment <- function(
 
   Rep_FoldCV = vector(mode = "list", length = replication)
 
-  All_nfolds <- vector(mode = "integer",  length(pheno_data[, gen_name]))
+  All_nfolds <- vector(mode = "integer",  length(pheno_data[[gen_name]]))
 
   if(!is.null(random_state) & is.numeric(random_state)){
     set.seed(random_state)
@@ -58,9 +58,9 @@ CV1_CV2_for_multi_environment <- function(
 
       mfold <- sample(1:nfolds, size = length(ID_GIDs), replace = TRUE)
 
-      for (i in 1:length(pheno_data[, gen_name])) {
+      for (i in 1:length(pheno_data[[gen_name]])) {
 
-        All_nfolds[i] <- mfold[which(ID_GIDs == pheno_data[, gen_name][i])]
+        All_nfolds[i] <- mfold[which(ID_GIDs == pheno_data[[gen_name]][i])]
 
       }
 

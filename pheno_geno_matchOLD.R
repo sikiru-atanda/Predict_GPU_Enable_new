@@ -30,7 +30,7 @@ pheno_geno_matchOLD <- function(object_pheno = NULL,
                              message = TRUE,
                              ...){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   #ID_geno <- rownames(object_geno)
   ID_pheno <- as.character(unique(object_pheno[, gen_name]))
 

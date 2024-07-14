@@ -26,7 +26,7 @@ evaluation_metrics <- function(y_observed = NULL,
                                y_predicted = NULL,
                                eval_metrics = NULL) {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if (is.null(y_observed) || is.null(y_predicted)) {
     stop("Both observed and predicted values must be provided.")

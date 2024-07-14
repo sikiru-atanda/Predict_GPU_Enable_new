@@ -1,0 +1,4 @@
+"stat","summary"
+"ntree",50
+"mtry",50
+"maxnodes",50

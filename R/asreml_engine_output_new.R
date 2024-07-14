@@ -143,7 +143,11 @@ asreml_mod_output_new <- function(
 {
 
 
-  msg <- sprintf("==================================================\n")
+  # msg <- sprintf("==================================================\n")
+
+  msg <- "\n==================================================\n"
+
+  #cat(msg)
 
   ##### Print lable
   if(inherits(omics_kernel_label,'list')){
@@ -203,13 +207,13 @@ asreml_mod_output_new <- function(
       heter_groups <-  NULL
     } else{
       if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
-        heter_grp <- as.character(unique(pheno_data[, heter_groups]))
-        all_envs_for_met <- as.character(pheno_data[, heter_groups])
+        heter_grp <- as.character(unique(pheno_data[[heter_groups]]))
+        all_envs_for_met <- as.character(pheno_data[[heter_groups]])
       }
     }
 
   }
-  #ENV_Ids = as.character(unique(pheno_data[, heter_groups]))
+  #ENV_Ids = as.character(unique(pheno_data[[heter_groups]]))
   ##############################################
   #### Extract Breeding values/genetic effect estimate for all omics
   ##############################################
@@ -276,6 +280,8 @@ asreml_mod_output_new <- function(
     }
     #######################################
 
+    res_herit_varCov <-  tryCatch({
+
     Res_Va_Ve_H2_COV_COR <-  asreml_herit_varCov_new(model= mod,
                                                  heter_groups= heter_groups,
                                                  var_cov_str= var_cov_str,
@@ -284,13 +290,24 @@ asreml_mod_output_new <- function(
                                                  inter_gen_pos = inter_gen_pos,
                                                  gen_pos = gen_pos)
 
+    Res_Va_Ve_H2_COV_COR
 
+      },
+    error = function(e) {
+      # Handle the error, you can print a message or take other actions
+      cat(paste("Error in processing the variance components:", conditionMessage(e), "\n"))
+      return(NULL)  # Return NULL or an appropriate value to indicate the failure
+    }
+    )
 
     #VA = Res$Genetic_Var
     heter_grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
 
     for (bb in seq_along(names_in_inv_list)){
 
+      if(!is.null(res_herit_varCov)){
+
+        Res_Va_Ve_H2_COV_COR <-  res_herit_varCov
       if(length(names_in_inv_list)>1){
         VA <-  Res_Va_Ve_H2_COV_COR[["varG_per_omics"]][[bb]]
       } else {
@@ -299,11 +316,15 @@ asreml_mod_output_new <- function(
         }
 
       }
+      } else{
+        VA <- NULL
+      }
 
+    if(is.null(VA)){
       if(length(VA)< length(heter_grp)){
         estimated_breeding_value_list[[bb]][, "Reliability"] = NA
         message(paste( insight::print_color("WARNINGS\n", "blue"),
-                       insight::print_color(paste(msg,paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive.")), "blue")))
+                       insight::print_color(paste(msg,paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive.\n")), "blue")))
         #message(paste(msg,paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive.")))
       } else{
         if(length(VA) == length(heter_grp)){
@@ -318,6 +339,14 @@ asreml_mod_output_new <- function(
 
 
       }
+##########
+} else {
+
+    estimated_breeding_value_list[[bb]][, "Reliability"] = NA
+    message(paste( insight::print_color("WARNINGS\n", "blue"),
+                   insight::print_color(paste(msg,paste("There is a problem with the variance component, reliability cannot be estimated.\n")), "blue")))
+
+}
 
     }
 
@@ -336,26 +365,36 @@ asreml_mod_output_new <- function(
       vc <- summary(mod)$varcomp
 
       #VAR_check_Pos <- which(vc$bound=='F' | vc$bound=='U' | vc$bound=="?" | vc$bound=="S")
-      VAR_check_Pos <- which(vc$bound=="?" | vc$bound=="S")
-      if(length(VAR_check_Pos)>1) {
 
-        # stop(message(paste( insight::print_color("STOP\n", "red"),
-        #                insight::print_color(paste(msg, paste(paste("variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" and" ),
-        #                                                      " is unstable, refix the model")), "red"))), call. = FALSE)
-        #
-        stop(print(paste(msg, paste(paste("variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" and" ),
-                                    " is unstable, refix the model"))), call. = FALSE)
+      res_comp_check <-  tryCatch({
+        VAR_check_Pos <- which(vc$bound=="?" | vc$bound=="S")
+        if(length(VAR_check_Pos)>1) {
 
-      } else {
+          # stop(message(paste( insight::print_color("STOP\n", "red"),
+          #                insight::print_color(paste(msg, paste(paste("variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" and" ),
+          #                                                      " is unstable, refix the model")), "red"))), call. = FALSE)
+          #
+          stop(print(paste(msg, paste(paste("Variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" and" ),
+                                      " is unstable, refix the model.\n"))), call. = FALSE)
 
-        if(length(VAR_check_Pos)==1) {
+        } else {
 
-          stop(print(paste(msg, paste(paste("variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" " ),
-                                      " is unstable, refix the model"))), call. = FALSE)
+          if(length(VAR_check_Pos)==1) {
+
+            stop(print(paste(msg, paste(paste("Variance component for", as.character(rownames(vc)[VAR_check_Pos]), collapse =" " ),
+                                        " is unstable, refix the model.\n"))), call. = FALSE)
+
+          }
 
         }
-
-      }
+           vc
+        },
+        error = function(e) {
+          # Handle the error, you can print a message or take other actions
+          cat(paste("Variance component  for", conditionMessage(e), "\n"))
+          return(NULL)  # Return NULL or an appropriate value to indicate the failure
+        }
+      )
 
       #### Extration of the genetic variance for all omics to calcuate heritability.
       VarG_All <- vector("list", length = length(names_in_inv_list))
@@ -431,21 +470,21 @@ asreml_mod_output_new <- function(
                                                  inter_gen_pos = inter_gen_pos,
                                                  gen_pos = gen_pos)
 
-    varG_matrix = Res_Va_Ve_H2_COV_COR[["varG_per_omics"]]
+    varG_matrix <- Res_Va_Ve_H2_COV_COR[["varG_per_omics"]]
     ##
     heter_grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
 
     for (bb in seq_along(names_in_inv_list)){
       if(length(names_in_inv_list)>1){
-        VA = Res_Va_Ve_H2_COV_COR[["varG_per_omics"]][bb, ]
+        VA <-  Res_Va_Ve_H2_COV_COR[["varG_per_omics"]][bb, ]
       } else {
         if(length(names_in_inv_list)==1){
-          VA = Res_Va_Ve_H2_COV_COR[["Total_genetic_var"]][1, ]
+          VA <-  Res_Va_Ve_H2_COV_COR[["Total_genetic_var"]][1, ]
         }
       }
 
       if(length(VA)< length(heter_grp)){
-        print(paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive"))
+        print(paste("Reliability cannot be estimated. Not all varaince components for", heter_groups, "are postive definitive.\n"))
       } else{
         if(length(VA) == length(heter_grp)){
           estimated_breeding_value_list[[bb]][, "Reliability"] <- NA
@@ -480,15 +519,226 @@ asreml_mod_output_new <- function(
   ### Predicted Values
   tst <- which(is.na(yy))
 
+  gc() ## to free memory
+
+  result_single_loc <-tryCatch({
   predicted_value <- asreml::predict.asreml(mod, classify=gen_name, sed=FALSE)$pvals
   predicted_value <-  predicted_value[, -ncol(predicted_value)] ### Remove status
   colnames(predicted_value)[colnames(predicted_value)%in%c("predicted.value", "std.error")] <- c("Predicted_value", "Standard_error")
   predicted_value[, "Prediction_error_variance"] <-  predicted_value[, "Standard_error"]^2
   predicted_value[, "Reliability"] <-  NA
+
+  predicted_value
+
+    },
+  error = function(e) {
+    # Handle the error, you can print a message or take other actions
+    cat(paste("Error in prediction for single location GBLUP model. BLUPs value will be provided:", conditionMessage(e), "\n"))
+    return(NULL)  # Return NULL or an appropriate value to indicate the failure
+  }
+  )
+
+  if(is.null(result_single_loc)){
+    BLUP <- summary(mod, coef=TRUE)$coef.random
+
+    colnames(BLUP)[colnames(BLUP)%in%"std.error"] <- "Standard_error"
+
+    #heter_grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
+
+    if (!is.null(heter_groups)){
+      ### It possible the user provide the heter_groups while it actually a single environment,
+      ## This will check and turn it off
+      if(length(pheno_data[,gen_name])==length(unique(pheno_data[,gen_name]))){
+        heter_groups <-  NULL
+        inter_gen_pos <-  NULL
+      } else{
+        if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+          heter_grp <- as.character(unique(pheno_data[[heter_groups]]))
+          all_envs_for_met <- as.character(pheno_data[[heter_groups]])
+        }
+      }
+
+    }
+
+    ##############################################
+    #### Extract Breeding values/genetic effect estimate for all omics
+    ##############################################
+    estimated_breeding_value_listt <- list()
+
+    ##
+    for (b in seq_along(names_in_inv_list)) {
+      estimated_breeding_value_listt[[names_in_inv_list[b]]] <- BLUP[grep(paste(names_in_inv_list[b],"\\)", sep = ""),rownames(BLUP)),]
+
+    }
+    ###
+    ### For variance structure extraction
+    if(!is.null(var_cov_str) & !is.null(inter_gen_pos)){
+
+      if(isTRUE(grepl("fa", var_cov_str)) | isTRUE(grepl("rr", var_cov_str))){
+        ## Extract the number of factors
+        #N_fa = substr(var_cov_str, 3, 100)
+
+        for (bb in seq_along(names_in_inv_list)) {
+          estimated_breeding_value_listt[[names_in_inv_list[bb]]] <- estimated_breeding_value_listt[[names_in_inv_list[bb]]][!rownames(estimated_breeding_value_listt[[names_in_inv_list[bb]]])%in%rownames(estimated_breeding_value_listt[[names_in_inv_list[bb]]][grep('Comp',rownames(estimated_breeding_value_listt[[names_in_inv_list[bb]]])),]), ]
+
+          estimated_breeding_value_listt[[names_in_inv_list[bb]]] <- as.data.frame(estimated_breeding_value_listt[[names_in_inv_list[bb]]])
+
+          estimated_breeding_value_listt[[names_in_inv_list[bb]]][, gen_name]<-as.character(stringr::str_split_fixed(rownames(estimated_breeding_value_listt[[names_in_inv_list[bb]]]), "\\)_", 3)[,3])
+
+        }
+
+      } else {
+
+        if (var_cov_str %in% c("us", "corgh", "corgv", "corh", "corv")) {
+
+          for (bb in seq_along(names_in_inv_list)) {
+
+            estimated_breeding_value_listt[[names_in_inv_list[bb]]] <- as.data.frame(estimated_breeding_value_listt[[names_in_inv_list[bb]]])
+
+            estimated_breeding_value_listt[[names_in_inv_list[bb]]][, gen_name] <- as.character(stringr::str_split_fixed(rownames(estimated_breeding_value_listt[[names_in_inv_list[bb]]]), "\\)_", 3)[,2])
+
+          }
+
+
+        }
+
+
+      } ## End
+
+      #################################
+      if(!is.null(inter_gen_pos)){
+        for (bb in seq_along(names_in_inv_list)) {
+
+          estimated_breeding_value_listt[[names_in_inv_list[bb]]] <- estimated_breeding_value_listt[[names_in_inv_list[bb]]][, c(4, 1:2)]
+
+          estimated_breeding_value_listt[[names_in_inv_list[bb]]][, heter_groups] <- rep(heter_grp, each=length(unique(estimated_breeding_value_listt[[names_in_inv_list[bb]]][, gen_name])))
+
+          estimated_breeding_value_listt[[names_in_inv_list[bb]]] <- estimated_breeding_value_listt[[names_in_inv_list[bb]]][, c(1, 4, 2:3)]
+
+          colnames(estimated_breeding_value_listt[[names_in_inv_list[bb]]])[1:3] <- c(gen_name, heter_groups, "BLUP")
+
+          estimated_breeding_value_listt[[names_in_inv_list[bb]]][, "Prediction_error_variance"] <-  estimated_breeding_value_listt[[names_in_inv_list[bb]]][, "Standard_error"]^2
+          rownames(estimated_breeding_value_listt[[names_in_inv_list[bb]]]) <-  NULL
+
+
+        }
+
+      }
+
+      # Bind all data frames into a single data frame
+      combined_df <- dplyr::bind_rows(estimated_breeding_value_listt)
+      # Aggregate total BLUP and standard error across all environments
+      # total_summarized_blup <- combined_df |>
+      #   dplyr::group_by(!!rlang::sym(gen_name)) |>
+      #   dplyr::summarise(
+      #     total_BLUP = sum(BLUP, na.rm = TRUE),
+      #     total_Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
+      #     .groups = 'drop'
+      #   )
+      #
+      # # Calculate the Prediction Error Variance
+      # summarized_blup <- total_summarized_blup |>
+      #   dplyr::mutate(Prediction_error_variance = total_Standard_error^2)
+
+      # # Group by the user-specified environment/location and sum the BLUP values
+      # summarized_blup <- combined_df |>
+      #   dplyr::group_by(!!rlang::sym(gen_name), !!rlang::sym(heter_groups)) |>
+      #   dplyr::summarise(BLUP = sum(BLUP, na.rm = TRUE),
+      #                    Standard_error = mean(Standard_error, na.rm = TRUE),
+      #                    Prediction_error_variance = mean(Prediction_error_variance, na.rm = TRUE))
+      # summarized_blup <- as.data.frame(summarized_blup)
+
+    }
+
+    ### For compound symmetric
+    if(is.null(var_cov_str) & !is.null(inter_gen_pos)){
+      for (bb in seq_along(names_in_inv_list)) {
+        estimated_breeding_value_listt[[bb]] <- as.data.frame(estimated_breeding_value_listt[[bb]])
+        estimated_breeding_value_listt[[bb]][, gen_name] <- as.character(stringr::str_split_fixed(rownames(estimated_breeding_value_listt[[bb]]), "\\)_", 3)[,2])
+        estimated_breeding_value_listt[[bb]][, "Prediction_error_variance"] <-  estimated_breeding_value_listt[[bb]][, "Standard_error"]^2
+        rownames(estimated_breeding_value_listt[[bb]]) <-  NULL
+      }
+      #################################
+      if(!is.null(inter_gen_pos)){
+        for (bb in seq_along(names_in_inv_list)) {
+          estimated_breeding_value_listt[[bb]] <- estimated_breeding_value_listt[[bb]][, c(4, 1:2)]
+          estimated_breeding_value_listt[[bb]][, heter_groups] <- rep(heter_grp, each=length(unique(estimated_breeding_value_listt[[bb]][, gen_name])))
+          estimated_breeding_value_listt[[bb]] <- estimated_breeding_value_listt[[bb]][, c(1, 4, 2:3)]
+          colnames(estimated_breeding_value_listt[[bb]])[1:3] <- c(gen_name, heter_groups, "BLUP")
+          estimated_breeding_value_listt[[bb]][, "Prediction_error_variance"] <-  estimated_breeding_value_listt[[bb]][, "Standard_error"]^2
+          rownames(estimated_breeding_value_listt[[bb]]) <- NULL
+        }
+      }
+
+      # Bind all data frames into a single data frame
+      combined_df <- dplyr::bind_rows(estimated_breeding_value_listt)
+
+      # if(!is.null(heter_groups)){
+      #
+      #   # Aggregate total BLUP and standard error across all environments
+      #   total_summarized_blup <- combined_df |>
+      #     dplyr::group_by(!!rlang::sym(gen_name)) |>
+      #     dplyr::summarise(
+      #       total_BLUP = sum(BLUP, na.rm = TRUE),
+      #       total_Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
+      #       .groups = 'drop'
+      #     )
+      #
+      #   # Calculate the Prediction Error Variance
+      #   summarized_blup <- total_summarized_blup |>
+      #     dplyr::mutate(Prediction_error_variance = total_Standard_error^2)
+      #
+      #   summarized_blup <- as.data.frame(summarized_blup)
+
+      }
+
+
+    #}
+
+    if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
+      for (bb in seq_along(names_in_inv_list)){
+        estimated_breeding_value_listt[[bb]] <- as.data.frame(estimated_breeding_value_listt[[bb]])
+        estimated_breeding_value_listt[[bb]][, gen_name] <- as.character(stringr::str_split_fixed(rownames(estimated_breeding_value_listt[[bb]]), "\\)_", 3)[,2])
+        rownames(estimated_breeding_value_listt[[bb]]) <-  NULL
+
+        estimated_breeding_value_listt[[bb]] <-   estimated_breeding_value_listt[[bb]][, c(4, 1:2)]
+        colnames(estimated_breeding_value_listt[[bb]])[1:2] <- c(gen_name, "BLUP")
+      }
+
+      combined_df <- dplyr::bind_rows(estimated_breeding_value_listt)
+
+      # # Group by GID and sum the BLUP values for each GID
+      # summarized_blup <- combined_df |>
+      #   dplyr::group_by(!!rlang::sym(gen_name)) |>
+      #   dplyr::summarise(BLUP = sum(BLUP, na.rm = TRUE),
+      #                    Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)))
+      # summarized_blup$Prediction_error_variance <- (summarized_blup$Standard_error)^2
+      #
+      #
+      # summarized_blup <- as.data.frame(summarized_blup)
+
+
+    }
+
+    # Aggregate total BLUP and standard error across all environments
+    total_summarized_blup <- combined_df |>
+      dplyr::group_by(!!rlang::sym(gen_name)) |>
+      dplyr::summarise(
+        BLUP = sum(BLUP, na.rm = TRUE),
+        Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
+        .groups = 'drop'
+      )
+
+    # Calculate the Prediction Error Variance
+    summarized_blup <- total_summarized_blup |>
+      dplyr::mutate(Prediction_error_variance = Standard_error^2)
+    summarized_blup <- as.data.frame(summarized_blup)
+    predicted_value <- summarized_blup
+  }
   ## sik
 
   if(!is.null(Zg)){
-    genotype_means <- pheno |>
+    genotype_means <- pheno_data |>
       dplyr::group_by(!!rlang::sym(gen_name)) |>
       dplyr::summarise(mean_value = mean(!!rlang::sym(response), na.rm = TRUE))
     genotype_means <-  as.data.frame(genotype_means)
@@ -498,17 +748,34 @@ asreml_mod_output_new <- function(
   }
 
   if(length(tst)!=0){
-    residual_value <- data.frame(name =  predicted_value[tst, gen_name],
-                                 #Env = all_envs_for_met[tst],
-                                 Predicted_value = predicted_value[tst, "Predicted_value"],
-                                 Residual_value = (yy[tst] - predicted_value[tst, "Predicted_value"]),
-                                 stringsAsFactors = FALSE)
+    if(!is.null(result_single_loc)){
+      residual_value <- data.frame(name =  predicted_value[tst, gen_name],
+                                   #Env = all_envs_for_met[tst],
+                                   Predicted_value = predicted_value[tst, "Predicted_value"],
+                                   Residual_value = (yy[tst] - predicted_value[tst, "Predicted_value"]),
+                                   stringsAsFactors = FALSE)
+
+      colnames(residual_value)[1] <- gen_name
+
+    } else{
+
+    residual_value <- NULL
+
+    }
+
   } else {
+    if(!is.null(result_single_loc)){
     residual_value <- data.frame(name = unique(as.character(predicted_value[, gen_name])),
                                  #Env = all_envs_for_met,
                                  Predicted_value = predicted_value[, "Predicted_value"],
                                  Residual_value = (yy - predicted_value[, "Predicted_value"]),
                                  stringsAsFactors = FALSE)
+    colnames(residual_value)[1] <- gen_name
+
+    } else {
+      residual_value <- NULL
+    }
+
   }
 
 
@@ -516,18 +783,18 @@ asreml_mod_output_new <- function(
     if(var(predicted_value[, "Predicted_value"])==0){
       ### Check if the the across
       message(paste( insight::print_color("WARNING\n", "blue"),
-                     insight::print_color(paste(msg, paste(paste('The average prediction across', heter_groups), paste('is a constant value.\n \t Check the model to change', heter_groups), 'to fixed term ')), "blue")))
-
+                     insight::print_color(paste(msg, paste(paste('The average prediction across', heter_groups), paste('is a constant value.\n \t Check the model to change', heter_groups), 'to fixed term.\n ')), "blue")))
     }
   }
   gc()
   ################
 
-  if (is.null(heter_groups) & is.null(var_cov_str)){inter_gen_pos <-  NULL}
-  if(length(gen_pos) == length(rand_term)){inter_gen_pos <- NULL}
+  if (is.null(heter_groups) & is.null(var_cov_str)) inter_gen_pos <-  NULL
+  if(length(gen_pos) == length(rand_term)) inter_gen_pos <- NULL
+
   if(!is.null(inter_gen_pos)){
-   result_met <-  tryCatch(
-      {
+
+   result_met <-  tryCatch({
     #pred_heter_groups <- asreml::predict.asreml(mod, classify= rand_term[[inter_gen_pos]], vcov = TRUE, aliased = T)
     across_env_predicted_value <- asreml::predict.asreml(mod, classify= rand_term[[inter_gen_pos]], sed=FALSE)$pvals
     across_env_predicted_value =  across_env_predicted_value[, -ncol(across_env_predicted_value)] ### Remove status
@@ -542,24 +809,195 @@ asreml_mod_output_new <- function(
                                        Predicted_value = across_env_predicted_value[, "Predicted_value"][tst],
                                        Residual_value = (yy[tst] - across_env_predicted_value[, "Predicted_value"][tst]),
                                        stringsAsFactors = FALSE)
+      colnames(residual_value_met)[1:2] <- c(gen_name, heter_groups)
     } else {
       residual_value_met <- data.frame(name = across_env_predicted_value[, gen_name],
                                        Env = all_envs_for_met,
                                        Predicted_value = across_env_predicted_value[, "Predicted_value"],
                                        Residual_value = (yy - across_env_predicted_value[, "Predicted_value"]),
                                        stringsAsFactors = FALSE)
+      colnames(residual_value_met)[1:2] <- c(gen_name, heter_groups)
     }
     list(across_env_predicted_value = across_env_predicted_value,
          residual_value_met = residual_value_met)
       },
     error = function(e) {
       # Handle the error, you can print a message or take other actions
-      cat(paste("Error in across", heter_groups, "prediction:", conditionMessage(e), "\n"))
+      #cat(paste("Error in across", heter_groups, "prediction:", conditionMessage(e), "\n"))
+      cat(paste("Error in multi-environment GS prediction. BLUP will be provided:", conditionMessage(e), "\n"))
       return(NULL)  # Return NULL or an appropriate value to indicate the failure
     }
     )
+
     if(is.null(result_met)) {
-      across_env_predicted_value <- NULL
+      BLUP <- summary(mod, coef=TRUE)$coef.random
+
+      colnames(BLUP)[colnames(BLUP)%in%"std.error"] <- "Standard_error"
+
+      #heter_grp <- as.character(unique(data.frame(mod$mf)[, heter_groups]))
+
+      if (!is.null(heter_groups)){
+        ### It possible the user provide the heter_groups while it actually a single environment,
+        ## This will check and turn it off
+        if(length(pheno_data[,gen_name])==length(unique(pheno_data[,gen_name]))){
+          heter_groups <-  NULL
+          inter_gen_pos <-  NULL
+        } else{
+          if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+            heter_grp <- as.character(unique(pheno_data[[heter_groups]]))
+            all_envs_for_met <- as.character(pheno_data[[heter_groups]])
+          }
+        }
+
+      }
+
+      ##############################################
+      #### Extract Breeding values/genetic effect estimate for all omics
+      ##############################################
+      estimated_breeding_value_list_t <- list()
+
+      ##
+      for (b in seq_along(names_in_inv_list)) {
+        estimated_breeding_value_list_t[[names_in_inv_list[b]]] <- BLUP[grep(paste(names_in_inv_list[b],"\\)", sep = ""),rownames(BLUP)),]
+
+      }
+      ###
+      ### For variance structure extraction
+      if(!is.null(var_cov_str) & !is.null(inter_gen_pos)){
+
+        if(isTRUE(grepl("fa", var_cov_str)) | isTRUE(grepl("rr", var_cov_str))){
+          ## Extract the number of factors
+          #N_fa = substr(var_cov_str, 3, 100)
+
+          for (bb in seq_along(names_in_inv_list)) {
+            estimated_breeding_value_list_t[[names_in_inv_list[bb]]] <- estimated_breeding_value_list_t[[names_in_inv_list[bb]]][!rownames(estimated_breeding_value_list_t[[names_in_inv_list[bb]]])%in%rownames(estimated_breeding_value_list_t[[names_in_inv_list[bb]]][grep('Comp',rownames(estimated_breeding_value_list_t[[names_in_inv_list[bb]]])),]), ]
+
+            estimated_breeding_value_list_t[[names_in_inv_list[bb]]] <- as.data.frame(estimated_breeding_value_list_t[[names_in_inv_list[bb]]])
+
+            estimated_breeding_value_list_t[[names_in_inv_list[bb]]][, gen_name]<-as.character(stringr::str_split_fixed(rownames(estimated_breeding_value_list_t[[names_in_inv_list[bb]]]), "\\)_", 3)[,3])
+
+          }
+
+        } else {
+
+          if (var_cov_str %in% c("us", "corgh", "corgv", "corh", "corv")) {
+
+            for (bb in seq_along(names_in_inv_list)) {
+
+              estimated_breeding_value_list_t[[names_in_inv_list[bb]]] <- as.data.frame(estimated_breeding_value_list_t[[names_in_inv_list[bb]]])
+
+              estimated_breeding_value_list_t[[names_in_inv_list[bb]]][, gen_name] <- as.character(stringr::str_split_fixed(rownames(estimated_breeding_value_list_t[[names_in_inv_list[bb]]]), "\\)_", 3)[,2])
+
+            }
+
+
+          }
+
+
+        } ## End
+
+        #################################
+        if(!is.null(inter_gen_pos)){
+          for (bb in seq_along(names_in_inv_list)) {
+
+            estimated_breeding_value_list_t[[names_in_inv_list[bb]]] <- estimated_breeding_value_list_t[[names_in_inv_list[bb]]][, c(4, 1:2)]
+
+            estimated_breeding_value_list_t[[names_in_inv_list[bb]]][, heter_groups] <- rep(heter_grp, each=length(unique(estimated_breeding_value_list_t[[names_in_inv_list[bb]]][, gen_name])))
+
+            estimated_breeding_value_list_t[[names_in_inv_list[bb]]] <- estimated_breeding_value_list_t[[names_in_inv_list[bb]]][, c(1, 4, 2:3)]
+
+            colnames(estimated_breeding_value_list_t[[names_in_inv_list[bb]]])[1:3] <- c(gen_name, heter_groups, "BLUP")
+
+            #estimated_breeding_value_list[[names_in_inv_list[bb]]][, "Prediction_error_variance"] <-  estimated_breeding_value_list[[names_in_inv_list[bb]]][, "Standard_error"]^2
+            rownames(estimated_breeding_value_list_t[[names_in_inv_list[bb]]]) <-  NULL
+
+
+          }
+
+        }
+
+        # Bind all data frames into a single data frame
+        combined_df <- dplyr::bind_rows(estimated_breeding_value_list_t)
+
+        # Group by the user-specified environment/location and sum the BLUP values
+        # summarized_blup <- combined_df |>
+        #   dplyr::group_by(!!rlang::sym(gen_name), !!rlang::sym(heter_groups)) |>
+        #   dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
+        # summarized_blup <- as.data.frame(summarized_blup)
+
+      }
+
+      ### For compound symmetric
+      if(is.null(var_cov_str) & !is.null(inter_gen_pos)){
+
+        for (bb in seq_along(names_in_inv_list)) {
+          estimated_breeding_value_list_t[[bb]] <- as.data.frame(estimated_breeding_value_list_t[[bb]])
+          estimated_breeding_value_list_t[[bb]][, gen_name] <- as.character(stringr::str_split_fixed(rownames(estimated_breeding_value_list_t[[bb]]), "\\)_", 3)[,2])
+          rownames(estimated_breeding_value_list_t[[bb]]) <-  NULL
+        }
+        #################################
+        if(!is.null(inter_gen_pos)){
+          for (bb in seq_along(names_in_inv_list)) {
+            estimated_breeding_value_list_t[[bb]] <- estimated_breeding_value_list_t[[bb]][, c(4, 1:2)]
+            estimated_breeding_value_list_t[[bb]][, heter_groups] <- rep(heter_grp, each=length(unique(estimated_breeding_value_list_t[[bb]][, gen_name])))
+            estimated_breeding_value_list_t[[bb]] <- estimated_breeding_value_list_t[[bb]][, c(1, 4, 2:3)]
+            colnames(estimated_breeding_value_list_t[[bb]])[1:3] <- c(gen_name, heter_groups, "BLUP")
+            #estimated_breeding_value_list[[bb]][, "Prediction_error_variance"] <-  estimated_breeding_value_list[[bb]][, "Standard_error"]^2
+            rownames(estimated_breeding_value_list_t[[bb]]) <- NULL
+          }
+        }
+
+        # Bind all data frames into a single data frame
+        combined_df <- dplyr::bind_rows(estimated_breeding_value_list_t)
+
+        # if(!is.null(heter_groups)){
+        #
+        #   summarized_blup <- combined_df |>
+        #     dplyr::group_by(!!rlang::sym(gen_name)) |>
+        #     dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
+        #
+        #   summarized_blup <- as.data.frame(summarized_blup)
+        #
+        # }
+
+
+      }
+
+      if(is.null(var_cov_str) & is.null(inter_gen_pos)){
+        for (bb in seq_along(names_in_inv_list)){
+          estimated_breeding_value_list_t[[bb]] <- as.data.frame(estimated_breeding_value_list_t[[bb]])
+          estimated_breeding_value_list_t[[bb]][, gen_name] <- as.character(stringr::str_split_fixed(rownames(estimated_breeding_value_list_t[[bb]]), "\\)_", 3)[,2])
+          rownames(estimated_breeding_value_list_t[[bb]]) <-  NULL
+
+          estimated_breeding_value_list_t[[bb]] <-   estimated_breeding_value_list_t[[bb]][, c(4, 1:2)]
+          colnames(estimated_breeding_value_list_t[[bb]])[1:2] <- c(gen_name, "BLUP")
+        }
+
+        combined_df <- dplyr::bind_rows(estimated_breeding_value_list_t)
+
+        # Group by GID and sum the BLUP values for each GID
+        # summarized_blup <- combined_df |>
+        #   dplyr::group_by(!!rlang::sym(gen_name)) |>
+        #   dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
+        #
+        # summarized_blup <- as.data.frame(summarized_blup)
+
+
+      }
+
+      env_summarized_blup <- combined_df |>
+        dplyr::group_by(!!rlang::sym(gen_name), !!rlang::sym(heter_groups))|>
+        dplyr::summarise(
+          BLUP = sum(BLUP, na.rm = TRUE),
+          Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
+          .groups = 'drop'  # Ensure the resulting data frame is not grouped
+        )
+
+      final_env_summarized_blup <- env_summarized_blup |>
+        dplyr::mutate(Prediction_error_variance = Standard_error^2)
+      summarized_blup <- as.data.frame(final_env_summarized_blup)
+
+      across_env_predicted_value <- final_env_summarized_blup
       residual_value_met <- NULL
     } else{
       across_env_predicted_value <- result_met[["across_env_predicted_value"]]
@@ -579,6 +1017,7 @@ asreml_mod_output_new <- function(
   coefficients_list <-   list()
   m_matrix_model_ready_list <-   list()
   sum_estimated_breeding_value <-  0
+
   ## names_in_inv_list used to fit asreml model contains names of the kernel/gmatrix with inv this will identify it and remove it
   ## The idea is to make sure the order of the name is the same here and in names_in_in_list
   extracted_names_from_inv_list <- gsub("_inv", "", names_in_inv_list, ignore.case = TRUE)
@@ -609,16 +1048,172 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
 }
 
   ## Intialize step to calculate EBV across environment for each omics
+  # for (i in seq_along(datasets)) {
+  #   dataset <- datasets[[i]]
+  #   if (!is.null(dataset)) {
+  #   if(!is.null(Zg)){
+  #     ZgZg <- Zg%*%dataset%*%t(Zg)
+  #     suppressMessages({
+  #     ZgZg <- grm_kernel_precheck(ZgZg)
+  #     })
+  #
+  #   }
+  #     ## This function calcuate EBV for each omics
+  #     coefficients_list[[paste("coefficient",dataset_names[i], sep = "_")]] <- cal_coeff_asreml(gmatrix = if(!is.null(Zg)) ZgZg else dataset,
+  #                                                                                               ebv = estimated_breeding_value_list[[i]][, "BLUP"],
+  #                                                                                               heter_groups = heter_groups,
+  #                                                                                               heter_grp = all_envs_for_met,
+  #                                                                                               gid_name = rownames(dataset))
+  #
+  #     sum_estimated_breeding_value <- sum_estimated_breeding_value + estimated_breeding_value_list[[i]][["BLUP"]]
+  #
+  #     #colnames(estimated_breeding_value_list[[i]])[which("BLUP"%in%colnames(estimated_breeding_value_list[[i]]))] <- "sik" # Estimated_breeding_value
+  #
+  #     if(dataset_names[i]=="gmatrix"){
+  #       m_matrix_model_ready_list[[paste(gsub("gmatrix", "geno", dataset_names[i]), "model_ready", sep = "_")]] <- dataset
+  #     } else{
+  #       m_matrix_model_ready_list[[paste(gsub("_kernel", "", dataset_names[i]), "model_ready", sep = "_")]] <- dataset
+  #     }
+  #        }
+  #
+  #   ##############
+  #   if(length(datasets)==1){
+  #
+  #     if(is.null(Zg)){
+  #       # sum_ebv <- data.frame(name = rownames(dataset),
+  #       #                       Estimated_breeding_value = sum_estimated_breeding_value,
+  #       #                       stringsAsFactors = FALSE)
+  #       #
+  #       # colnames(sum_ebv)[1] <- gen_name
+  #
+  #       combined_dff <- dplyr::bind_rows(estimated_breeding_value_list)
+  #       summarized_blup_use <- combined_dff |>
+  #         dplyr::group_by(!!rlang::sym(gen_name))|>
+  #         dplyr::summarise(
+  #           BLUP = sum(BLUP, na.rm = TRUE),
+  #           Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
+  #           #Reliability = NA,
+  #           .groups = 'drop'  # Ensure the resulting data frame is not grouped
+  #         )
+  #
+  #       # Calculate the Prediction Error Variance
+  #       sum_ebv <- summarized_blup_use |>
+  #         dplyr::mutate(Prediction_error_variance = Standard_error^2,
+  #                Reliability = NA)
+  #     } else{
+  #       # sum_ebv <- data.frame(name =rownames(dataset),
+  #       #                       Env = all_envs_for_met,
+  #       #                       Estimated_breeding_value = sum_estimated_breeding_value,
+  #       #                       stringsAsFactors = FALSE)
+  #       #
+  #       # colnames(sum_ebv)[1:2] <- c(gen_name, heter_groups)
+  #       combined_dff <- dplyr::bind_rows(estimated_breeding_value_list)
+  #       summarized_blup_use <- combined_dff |>
+  #         dplyr::group_by(!!rlang::sym(gen_name))|>
+  #         dplyr::summarise(
+  #           BLUP = sum(BLUP, na.rm = TRUE),
+  #           Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
+  #           #Reliability = NA,
+  #           .groups = 'drop'  # Ensure the resulting data frame is not grouped
+  #         )
+  #
+  #       # Calculate the Prediction Error Variance
+  #       sum_ebv <- summarized_blup_use |>
+  #         dplyr::mutate(Prediction_error_variance = Standard_error^2,
+  #                        Reliability = NA)
+  #     }
+  #     # sum_ebv <- sum_ebv |>
+  #     #   dplyr::mutate(Standard_error = estimated_breeding_value_list[[i]][, "Standard_error"],
+  #     #                 Prediction_error_variance = estimated_breeding_value_list[[i]][, "Prediction_error_variance"],
+  #     #                 Reliability = estimated_breeding_value_list[[i]][, "Reliability"])
+  #
+  #
+  #     if(length(tst)!=0){
+  #       residual_value[, 1] <- rownames(dataset)[tst]
+  #     }else {
+  #
+  #       residual_value[, 1] <- rownames(dataset)
+  #     }
+  #
+  #   } else{
+  #
+  #     if(length(datasets)>1){
+  #       if(i==1) gid_name <- rownames(dataset)
+  #       predicted_value[, 1] <- gid_name
+  #       residual_value[, 1] <- gid_name
+  #       ##### Treat sum_EBV
+  #       if(i==length(datasets)){
+  #
+  #         if(is.null(Zg)){
+  #           # sum_ebv <- data.frame(name = gid_name,
+  #           #                       Estimated_breeding_value = sum_estimated_breeding_value,
+  #           #                       stringsAsFactors = FALSE)
+  #           #
+  #           # colnames(sum_ebv)[1] <- gen_name
+  #           combined_dff <- dplyr::bind_rows(estimated_breeding_value_list)
+  #           summarized_blup_use <- combined_dff |>
+  #             dplyr::group_by(!!rlang::sym(gen_name))|>
+  #             dplyr::summarise(
+  #               BLUP = sum(BLUP, na.rm = TRUE),
+  #               Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
+  #               #Reliability = NA,
+  #               .groups = 'drop'  # Ensure the resulting data frame is not grouped
+  #             )
+  #
+  #           # Calculate the Prediction Error Variance
+  #           sum_ebv <- summarized_blup_use |>
+  #             dplyr::mutate(Prediction_error_variance = Standard_error^2,
+  #                           Reliability = NA)
+  #
+  #         } else{
+  #           # sum_ebv <- data.frame(name = gid_name,
+  #           #                       Env = all_envs_for_met,
+  #           #                       Estimated_breeding_value = sum_estimated_breeding_value,
+  #           #                       stringsAsFactors = FALSE)
+  #           #
+  #           # colnames(sum_ebv)[1:2] <- c(gen_name, heter_groups)
+  #           combined_dff <- dplyr::bind_rows(estimated_breeding_value_list)
+  #           summarized_blup_use <- combined_dff |>
+  #             dplyr::group_by(!!rlang::sym(gen_name))|>
+  #             dplyr::summarise(
+  #               BLUP = sum(BLUP, na.rm = TRUE),
+  #               Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
+  #               #Reliability = NA,
+  #               .groups = 'drop'  # Ensure the resulting data frame is not grouped
+  #             )
+  #
+  #           # Calculate the Prediction Error Variance
+  #           sum_ebv <- summarized_blup_use |>
+  #             dplyr::mutate(Prediction_error_variance = Standard_error^2,
+  #                           Reliability = NA)
+  #         }
+  #
+  #         # sum_ebv <- sum_ebv |>
+  #         #   dplyr::mutate(Standard_error = NA,
+  #         #                 Prediction_error_variance =NA,
+  #         #                 Reliability = NA)
+  #
+  #         # predicted_value <- predicted_value |>
+  #         #   dplyr::mutate(Standard_error = ifelse(!is.na(pev), sqrt(pev), NA),
+  #         #                 Prediction_error_variance = pev,
+  #         #                 Reliability = rel)
+  #
+  #       }
+  #     } ##
+  #   }
+  # }
+
+  ## Intialize step to calculate EBV across environment for each omics
   for (i in seq_along(datasets)) {
     dataset <- datasets[[i]]
     if (!is.null(dataset)) {
-    if(!is.null(Zg)){
-      ZgZg <- Zg%*%dataset%*%t(Zg)
-      suppressMessages({
-      ZgZg <- grm_kernel_precheck(ZgZg)
-      })
+      if(!is.null(Zg)){
+        ZgZg <- Zg%*%dataset%*%t(Zg)
+        suppressMessages({
+          ZgZg <- grm_kernel_precheck(ZgZg)
+        })
 
-    }
+      }
       ## This function calcuate EBV for each omics
       coefficients_list[[paste("coefficient",dataset_names[i], sep = "_")]] <- cal_coeff_asreml(gmatrix = if(!is.null(Zg)) ZgZg else dataset,
                                                                                                 ebv = estimated_breeding_value_list[[i]][, "BLUP"],
@@ -626,88 +1221,43 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
                                                                                                 heter_grp = all_envs_for_met,
                                                                                                 gid_name = rownames(dataset))
 
-      sum_estimated_breeding_value <- sum_estimated_breeding_value + estimated_breeding_value_list[[i]][, "BLUP"]
-      colnames(estimated_breeding_value_list[[i]])[which("BLUP"%in%colnames(estimated_breeding_value_list[[i]]))] <- "Estimated_breeding_value"
+      sum_estimated_breeding_value <- sum_estimated_breeding_value + estimated_breeding_value_list[[i]][["BLUP"]]
+
+      #colnames(estimated_breeding_value_list[[i]])[which("BLUP"%in%colnames(estimated_breeding_value_list[[i]]))] <- "sik" # Estimated_breeding_value
 
       if(dataset_names[i]=="gmatrix"){
         m_matrix_model_ready_list[[paste(gsub("gmatrix", "geno", dataset_names[i]), "model_ready", sep = "_")]] <- dataset
       } else{
         m_matrix_model_ready_list[[paste(gsub("_kernel", "", dataset_names[i]), "model_ready", sep = "_")]] <- dataset
       }
-         }
+    }
 
-    ##############
+
+  }
+#### process the sum_ebv
+  combined_dff <- dplyr::bind_rows(estimated_breeding_value_list)
+  if(length(datasets)>1){
+    summarized_blup_use <- combined_dff |>
+      dplyr::group_by(!!rlang::sym(gen_name))|>
+      dplyr::summarise(
+        BLUP = sum(BLUP, na.rm = TRUE),
+        Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
+        #Reliability = NA,
+        .groups = 'drop'  # Ensure the resulting data frame is not grouped
+      )
+
+    # Calculate the Prediction Error Variance
+    sum_ebv <- summarized_blup_use |>
+      dplyr::mutate(Prediction_error_variance = Standard_error^2,
+                    Reliability = NA)
+
+  } else{
     if(length(datasets)==1){
+      sum_ebv <- dplyr::bind_rows(estimated_breeding_value_list)
 
-      if(is.null(Zg)){
-        sum_ebv <- data.frame(name = rownames(dataset),
-                              Estimated_breeding_value = sum_estimated_breeding_value,
-                              stringsAsFactors = FALSE)
-
-        colnames(sum_ebv)[1] <- gen_name
-
-      } else{
-        sum_ebv <- data.frame(name =rownames(dataset),
-                              Env = all_envs_for_met,
-                              Estimated_breeding_value = sum_estimated_breeding_value,
-                              stringsAsFactors = FALSE)
-
-        colnames(sum_ebv)[1:2] <- c(gen_name, heter_groups)
-      }
-      sum_ebv <- sum_ebv |>
-        dplyr::mutate(Standard_error = estimated_breeding_value_list[[i]][, "Standard_error"],
-                      Prediction_error_variance = estimated_breeding_value_list[[i]][, "Prediction_error_variance"],
-                      Reliability = estimated_breeding_value_list[[i]][, "Reliability"])
-
-
-      if(length(tst)!=0){
-        residual_value[, 1] <- rownames(dataset)[tst]
-      }else {
-
-        residual_value[, 1] <- rownames(dataset)
-      }
-
-    } else{
-
-      if(length(datasets)>1){
-        if(i==1) gid_name <- rownames(dataset)
-        predicted_value[, 1] <- gid_name
-        residual_value[, 1] <- gid_name
-        ##### Treat sum_EBV
-        if(i==length(datasets)){
-
-          if(is.null(Zg)){
-            sum_ebv <- data.frame(name = gid_name,
-                                  Estimated_breeding_value = sum_estimated_breeding_value,
-                                  stringsAsFactors = FALSE)
-
-            colnames(sum_ebv)[1] <- gen_name
-
-          } else{
-            sum_ebv <- data.frame(name = gid_name,
-                                  Env = all_envs_for_met,
-                                  Estimated_breeding_value = sum_estimated_breeding_value,
-                                  stringsAsFactors = FALSE)
-
-            colnames(sum_ebv)[1:2] <- c(gen_name, heter_groups)
-          }
-
-          sum_ebv <- sum_ebv |>
-            dplyr::mutate(Standard_error = NA,
-                          Prediction_error_variance =NA,
-                          Reliability = NA)
-
-          # predicted_value <- predicted_value |>
-          #   dplyr::mutate(Standard_error = ifelse(!is.na(pev), sqrt(pev), NA),
-          #                 Prediction_error_variance = pev,
-          #                 Reliability = rel)
-
-        }
-      } ##
     }
   }
-
-
+  ### process of sum_ebv ends
   variance_components <-asreml_variance_components(res_var_cov_h_ve = Res_Va_Ve_H2_COV_COR)
 
   if(inherits(variance_components, "list")){
@@ -773,7 +1323,7 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
       print_lable <- c("Genomic", print_lable)
     }
     if(length(print_lable)>length(m_matrix_model_ready_list) | length(print_lable)<length(m_matrix_model_ready_list)){
-      message(insight::print_color(paste(msg,paste("More than two Omics lable were provided. Default name was applied.")), "blue"))
+      message(insight::print_color(paste(msg,paste("More than two Omics lable were provided. Default name was applied.\n")), "blue"))
 
 
 
@@ -791,12 +1341,12 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
 
   } else {
     if(is.null(gmatrix)){
-    message(insight::print_color(paste(msg,paste("Omics lable was not provided. Default name was applied.")), "blue"))
+    message(insight::print_color(paste(msg,paste("Omics lable was not provided. Default name was applied.\n")), "blue"))
 }
 
   }
 #####################################################################
-
+if(exists("sum_ebv")) sum_ebv <- as.data.frame(sum_ebv)
   if(is.null(Zg)){
 
     res <- list(Coefficients = coefficients_list,
@@ -821,8 +1371,7 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
                 Residual_value = residual_value,
                 Residual_value_MET = residual_value_met,
                 Variance_components = variance_components,
-                M_matrix_model_ready =  m_matrix_model_ready_list
-    )
+                M_matrix_model_ready =  m_matrix_model_ready_list)
 
       } else {
         if(!is.null(correlation) & !is.null(covariance)){
@@ -837,8 +1386,7 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
                       Residual_value = residual_value,
                       Residual_value_MET = residual_value_met,
                       Variance_components = variance_components,
-                      M_matrix_model_ready =  m_matrix_model_ready_list
-          )
+                      M_matrix_model_ready =  m_matrix_model_ready_list)
 
         }
       }
@@ -853,8 +1401,8 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
                     Predicted_value =  predicted_value,
                     Residual_value = residual_value,
                     Variance_components = variance_components,
-                    M_matrix_model_ready =  m_matrix_model_ready_list
-        )
+                    M_matrix_model_ready =  m_matrix_model_ready_list)
+
         } else{
           if(!is.null(correlation) & !is.null(covariance)){
             res <- list(Coefficients = coefficients_list,
@@ -866,8 +1414,7 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
                         Correlation = correlation,
                         Covariance = covariance,
                         Variance_components = variance_components,
-                        M_matrix_model_ready =  m_matrix_model_ready_list
-            )
+                        M_matrix_model_ready =  m_matrix_model_ready_list)
           }
 
         }

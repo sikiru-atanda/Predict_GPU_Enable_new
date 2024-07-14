@@ -31,7 +31,7 @@ mod_output_bayesOLD <- function(mod=NULL,
                              ...){
 
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   ### Check if the user provide lable/name for the omics data
 
   if(inherits(omics_data_label, 'list')){

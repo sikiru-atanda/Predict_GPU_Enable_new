@@ -24,7 +24,7 @@ asreml_herit_CSM <-  function(
 
 ){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   vc <- asreml::summary.asreml(model)$varcomp
 

@@ -56,7 +56,7 @@ grm_calculation <- function(
     method= NULL
 ){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   ### iT important to check the name in the weight data is the match and the same
   ## order in the geno_clean data

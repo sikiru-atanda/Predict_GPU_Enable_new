@@ -37,7 +37,7 @@ diagnostic_plot_true_prediction <- function(boot_results = NULL,
                                            low_reliability_thres = 0.4,
                                            system_database = FALSE){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if (is.null(composite_reliability) || any(is.na(composite_reliability)) ||
       is.null(composite_reliability_score) || any(is.na(composite_reliability_score))) {

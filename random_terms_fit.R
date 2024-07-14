@@ -10,7 +10,7 @@ random_terms_fit <- function(random = NULL,
                               gen_name = NULL,
                               pheno_data= NULL,
                               ...){
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   if (!is.null(random)){
     #if (length(all.vars(random))>1) {
     rand_term <- strsplit(as.character(random[2]), split = "[+]")[[1]] # random parts
@@ -91,7 +91,7 @@ random_terms_fit <- function(random = NULL,
       if(is.null(heter_groups)){stop(print(paste(msg, "Provide heter_groups to model specified variance-covariance structure")), call. = FALSE)}
 
       ### Check if the number of hetero.Grp is greater 5 or greater than 5
-      NN = nlevels(pheno_data[, heter_groups])
+      NN = nlevels(pheno_data[[heter_groups]])
       if (NN >=5 & isFALSE(grepl("fa", var_cov_str))){
 
         msg <- sprintf("\r==================================================\n")

@@ -100,7 +100,7 @@ ETA_compiler_bayes <- function(
     ...
 ) {
   ETA <- list()
-  msg <- "==================================================\n"
+  msg <- "\n==================================================\n"
 
   rand_term_no_inter <- random_terms(random = random, pheno_data = pheno_data)
 
@@ -170,7 +170,7 @@ ETA_compiler_bayes <- function(
 #   ### Create empty list for ETA
 #   ETA = list()
 #
-#   msg <- sprintf("==================================================\n")
+#   msg <- "\n==================================================\n"
 #   ### Get the random terms. Here no interaction terms in the random effect
 #   ## This function is present in the bayesians_preprocess.R check for details
 #   rand_term_no_inter <- random_terms(random = random,

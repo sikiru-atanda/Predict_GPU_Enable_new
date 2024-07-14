@@ -1,7 +1,7 @@
 
 # Validate terms in fixed and random effects are present in pheno_data
 validate_terms <- function(term, data, term_type, gen_name) {
-  msg <- "==================================================\n"
+  msg <- "\n==================================================\n"
   term_vars <- all.vars(term)
   if (!all(term_vars %in% names(data))) {
     stop(msg, "All variables indicated in argument ", term_type, " should be present in phenotypic data.")
@@ -34,7 +34,11 @@ phenotype_precheck <- function(pheno_data = NULL,
                                fixed = NULL,
                                ...) {
 
-  msg <- "==================================================\n"
+  msg <- "\n==================================================\n"
+
+  if (dplyr::is_grouped_df(pheno_data)) {
+    pheno_data <- dplyr::ungroup(pheno_data)
+  }
 
   # Check for empty data
   if (nrow(pheno_data) == 0) {

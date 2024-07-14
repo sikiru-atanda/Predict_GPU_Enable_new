@@ -23,7 +23,7 @@ Remove_NA_Mono_SNP <- function(geno = NULL,
   N_Individuals<- nrow(geno)
 
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(isTRUE(message)){
 

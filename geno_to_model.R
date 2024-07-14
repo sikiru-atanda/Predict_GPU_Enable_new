@@ -30,7 +30,7 @@ geno_to_modelOLD <- function(geno_data = NULL,
                             message= TRUE,
                             ...){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(((!is.null(geno_data) & is.null(map_data)) & (is.null(test_geno_data) & is.null(train_geno_data)))){
     geno_object = geno_precheck(object_geno = geno_data,
@@ -106,7 +106,7 @@ geno_to_modelOLD <- function(geno_data = NULL,
     ## test before they will be merge
     # if(attr(test_geno_data, "cleared")!="pass" & class(test_geno_data)!=c("matrix", "array", "geno_data")) {
     #
-    #   msg <- sprintf("==================================================\n")
+    #   msg <- "\n==================================================\n"
     #   stop(print(paste(msg,'Test_geno_data is not class formula.')), call. = FALSE)
     # }
 

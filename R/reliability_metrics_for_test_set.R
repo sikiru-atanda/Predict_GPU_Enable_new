@@ -32,7 +32,7 @@ reliability_thresholds_MPIW_from_CI <- function(boot_results = NULL,
                                                 confidence_level = 0.95,
                                                 model_for_CI_cal = "ML") {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 if(model_for_CI_cal=="ML"){
   if(is.null(boot_results)) stop("Boostrapping results is required for machine learning models result diagonistic")
   lower_bound <- apply(boot_results$t, 2, quantile, probs = 0.05)
@@ -183,7 +183,7 @@ composite_reliability_tst <- function(geno_trn = NULL,
                                       interval_width = NULL,
                                       apply_pca = TRUE) {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if (setequal(rownames(geno_trn), rownames(geno_tst))) {
     return(list(trustworthiness=NA,

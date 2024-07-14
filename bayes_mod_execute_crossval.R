@@ -38,7 +38,7 @@ bayes_mod_execute_crossval <- function(pheno_object = NULL,
 
 
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   ###############################################################
   if(!cross_validation %in%c("Hold_Out",
                              "Stratified_Hold_Out",

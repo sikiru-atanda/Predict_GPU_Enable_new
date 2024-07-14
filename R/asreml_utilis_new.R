@@ -172,7 +172,7 @@ asreml_utilis_new <- function(
     ...
 ) {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(engine %in% rownames(installed.packages())){
     do.call('library', list(engine))
@@ -368,11 +368,7 @@ asreml_utilis_new <- function(
   #if (trait==1){
   #code.asr[1] <-  gsub("trait", response[trait], code.asr[1])
   #code.asr[1] <-  gsub("trait", response, code.asr[1])
-  code_asr_fit[1] <-  gsub("trait", response, code_asr_fit[1])
-  #} else {
 
-  #code.asr[1] <-  gsub(response[trait-1], response[trait], code.asr[1])
-  #}
   if(isTRUE(cross_validation)){
 
     output <- list(code_asr_fit = code_asr_fit,
@@ -385,6 +381,13 @@ asreml_utilis_new <- function(
 
     return(output)
   }
+
+  code_asr_fit[1] <-  gsub("trait", response, code_asr_fit[1])
+  #} else {
+
+  #code.asr[1] <-  gsub(response[trait-1], response[trait], code.asr[1])
+  #}
+
 
   if(is.null(weights)){
     #code.asr[4] <- 'na.action=list(x="include",y="include"),data=pheno_data)'
@@ -477,19 +480,19 @@ asreml_utilis_new <- function(
   ##### Start the process of processing the results
   ################################################
 
-  output <- list(mod,
-                 str_mod,
-                 names_in_inv_list ,
-                 gen_pos,
-                 inter_gen_pos,
-                 rand_term)
+  output <- list(model = mod,
+                 str_mod = str_mod,
+                 names_in_inv_list = names_in_inv_list ,
+                 gen_pos = gen_pos,
+                 inter_gen_pos = inter_gen_pos,
+                 rand_term = rand_term)
 
-  names(output) <- c("model",
-                     "str_mod",
-                     "names_in_inv_list",
-                     "gen_pos",
-                     "inter_gen_pos",
-                     "rand_term")
+  # names(output) <- c("model",
+  #                    "str_mod",
+  #                    "names_in_inv_list",
+  #                    "gen_pos",
+  #                    "inter_gen_pos",
+  #                    "rand_term")
   #return(c(Univariate, G_list))
   return(output)
 

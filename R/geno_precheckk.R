@@ -95,7 +95,7 @@ geno_precheck <- function(object_geno = NULL,
                           message = TRUE,
                           ...) {
   # ... (input validation, if necessary)
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   if (!is.null(object_geno)) {
     if("data.table" %in% class(object_geno)){
       stop(print(paste(msg,'Genomic data must be data.frame or matrix not character.')), call. = FALSE)

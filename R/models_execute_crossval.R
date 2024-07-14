@@ -93,8 +93,10 @@ predict_with_model <- function(model = NULL,
                                           scaling = additional_params$scaling,
                                           centering = additional_params$centering, k = additional_params$k,
                                           omic_count = additional_params$omic_count),
-         "GBLUP" = asreml_mod_cv(asreml_models_prep_cv = additional_params$asreml_models_prep_cv, pheno_data = additional_params$pheno_data,
-                                    response = additional_params$response, heter_groups = additional_params$heter_groups,
+         "GBLUP" = asreml_mod_cv(asreml_models_prep_cv = additional_params$asreml_models_prep_cv,
+                                 pheno_data = additional_params$pheno_data,
+                                 response = additional_params$response,
+                                 heter_groups = additional_params$heter_groups,
                                  gen_name = additional_params$gen_name, tst = tst),
          "Bayes" = bayes_mod_cv(y = y, ETA = additional_params$ETA, weights = additional_params$weights,
                                 bayes_para = additional_params$bayes_para, tst = tst,
@@ -194,10 +196,10 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     ...){
 
  #browser()
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(!is.null(cross_validation_meth) & length(cross_validation_meth)>1){
-    stop(paste(msg, 'use only one cross_validation method at a time'), call. = FALSE)
+    stop(paste(msg, 'use only one cross_validation method at a time.'), call. = FALSE)
   }
   ##### if user choose repeated and stratified CV strategy but
   ## forget to choose sampling stratgy or replication is not defined.
@@ -218,7 +220,7 @@ models_execute_crossval <- function(pheno_data = NULL,
     if("stratified"%in%present_patterns) sampling_method <- "stratified"
 
     if("Repeated"%in%present_patterns && is.null(replication)) {
-      stop(paste(msg, "You select repeated cross-validation provide number of replications.\n For example, replication = 2"), call. = FALSE)
+      stop(paste(msg, "You select repeated cross-validation provide number of replications.\n For example, replication = 2."), call. = FALSE)
     }
 
 
@@ -269,8 +271,11 @@ models_execute_crossval <- function(pheno_data = NULL,
                             ncomp = ncomp, C_value = C_value,degree_value = degree_value,
                             scale_value = scale_value, offset_value = offset_value,
                             k = k, omic_count = omic_count,
-                            asreml_models_prep_cv = asreml_models_prep_cv, gen_name = gen_name,
-                            pheno_data = pheno_data, response = response, heter_groups = heter_groups)
+                            asreml_models_prep_cv = asreml_models_prep_cv, ## asreml
+                            gen_name = gen_name,
+                            pheno_data = pheno_data,
+                            #response = trait,
+                            heter_groups = heter_groups)
 
 
   AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare",
@@ -361,6 +366,7 @@ models_execute_crossval <- function(pheno_data = NULL,
                       sys_name = sys_name)
   }
 
+
   # Create a list of all combinations of response variables and replications
   tasks <- expand.grid(response = response,
                        replication = seq_len(replication),
@@ -369,6 +375,7 @@ models_execute_crossval <- function(pheno_data = NULL,
 
   # Execute each task in parallel
   #process_task <- function(task) {
+
   results <- future.apply::future_lapply(seq_len(nrow(tasks)), function(i) {
     task_row <- tasks[i, ]
 
@@ -376,52 +383,40 @@ models_execute_crossval <- function(pheno_data = NULL,
     rep <- as.integer(task_row$replication)
     model <- as.character(task_row$modell)
 
-    if(!is.null(heter_groups)){
-    y_scaler <- caret::preProcess(as.data.frame(as.matrix(pheno_data[[trait]])), method = c("center", "scale"))
-
-    # Predict on the training data and get the scaled values
-    pheno_data[, trait] <- stats::predict(y_scaler, as.data.frame(as.matrix(pheno_data[[trait]])))[, 1]
-}
-    #print(c(trait, rep))  # For diagnostic purposes
+    if (is.null(heter_groups)) {
+      y_scaler <- caret::preProcess(as.data.frame(as.matrix(pheno_data[[trait]])), method = c("center", "scale"))
+      pheno_data[[trait]] <- stats::predict(y_scaler, as.data.frame(as.matrix(pheno_data[[trait]])))[, 1]
+    }
 
     repp <- 1
-    #######
-    # Check if a seed was provided and calculate a new seed based on the replication number
+
     if (!is.null(random_state) && is.numeric(random_state) && length(random_state) == 1) {
-      # Ensure random_state is an integer
       base_seed <- as.integer(random_state)
-      # Generate a new, valid integer seed for each replication
-      # The modulo operation ensures the seed stays within the integer range
       new_seed <- (base_seed + rep * 10000L) %% .Machine$integer.max
-      #new_seed <- base_seed + rep
     } else {
-      # Fallback seed if random_state is not set
       base_seed <- 123L
       new_seed <- (base_seed + rep * 10000L) %% .Machine$integer.max
     }
 
-    # Apply the new seed for replication this is important to prevent same seed is used across replication
-
-    #######
-    if(cross_validation_meth %in% c(holds_out_methods_avail, Kfolds_methods_avail, CVs_multi_envs_methods_avail)) {
-      if(cross_validation_meth %in% holds_out_methods_avail) {
+    if (cross_validation_meth %in% c(holds_out_methods_avail, Kfolds_methods_avail, CVs_multi_envs_methods_avail)) {
+      if (cross_validation_meth %in% holds_out_methods_avail) {
         test_set_val <- hold_out_stratified_and_un(pheno_data = pheno_data,
                                                    gen_name = gen_name,
                                                    response = trait,
                                                    test_size = test_size,
                                                    random_state = new_seed,
-                                                   replication = repp,  # Use rep here if your function supports per-replication processing
+                                                   replication = repp,
                                                    sampling_method = sampling_method)
-      } else if(cross_validation_meth %in% Kfolds_methods_avail) {
+      } else if (cross_validation_meth %in% Kfolds_methods_avail) {
         test_set_val <- kfolds_stratified_un(pheno_data = pheno_data,
                                              gen_name = gen_name,
                                              response = trait,
                                              test_size = test_size,
                                              nfolds = nfolds,
-                                             random_state = new_seed ,
-                                             replication = repp,  # Use rep here if your function supports per-replication processing
+                                             random_state = new_seed,
+                                             replication = repp,
                                              sampling_method = sampling_method)
-      } else if(cross_validation_meth %in% CVs_multi_envs_methods_avail) {
+      } else if (cross_validation_meth %in% CVs_multi_envs_methods_avail) {
         CV <- as.integer(strsplit(cross_validation_meth, "CV")[[1]][2])
         test_set_val <- CV1_CV2_for_multi_environment(pheno_data = pheno_data,
                                                       gen_name = gen_name,
@@ -431,221 +426,501 @@ models_execute_crossval <- function(pheno_data = NULL,
                                                       nfolds = nfolds,
                                                       heter_groups = heter_groups,
                                                       random_state = new_seed,
-                                                      replication = repp,  # Use rep here if your function supports per-replication processing
+                                                      replication = repp,
                                                       sampling_method = sampling_method)
       }
     } else {
       stop(paste(msg, "Unsupported cross-validation method specified. Choose from: ",
-           paste(c(holds_out_methods_avail,
-                   Kfolds_methods_avail,
-                   CVs_multi_envs_methods_avail), collapse = ", ")), call. = FALSE)
+                 paste(c(holds_out_methods_avail, Kfolds_methods_avail, CVs_multi_envs_methods_avail), collapse = ", ")), call. = FALSE)
     }
 
-    len_y <-  nrow(pheno_data)
-
+    len_y <- nrow(pheno_data)
     y <- pheno_data[, trait]
 
-    if(cross_validation_meth %in%c(Kfolds_methods_avail,
-                                   holds_out_methods_avail)){
-
+    if (cross_validation_meth %in% c(Kfolds_methods_avail, holds_out_methods_avail)) {
       ypred_cv <- matrix(data=NA, nrow=len_y, ncol=2)
       colnames(ypred_cv) <- c("y", "yhat")
-      ypred_cv[, "y"] <- pheno_data[, trait]
-      ##################
-      ## Add rep to the column in addition to the metrics
+      ypred_cv <- as.data.frame(ypred_cv)
+      ypred_cv[, "y"] <- as.double(pheno_data[[trait]])
+
       results_eval_metrics_reps <- matrix(NA, nrow = repp, ncol = length(eval_metrics)+1)
-      results_eval_metrics_reps[, 1] <-  c(1:repp)
-      rownames(results_eval_metrics_reps) <-  paste("REP",1:repp, sep = "_")
-      colnames(results_eval_metrics_reps) <-  c("Rep", eval_metrics)
-
-      results_eval_metrics_reps <-  as.data.frame(results_eval_metrics_reps)
-
+      results_eval_metrics_reps[, 1] <- 1
+      rownames(results_eval_metrics_reps) <- paste("REP", 1, sep = "_")
+      colnames(results_eval_metrics_reps) <- c("Rep", eval_metrics)
+      results_eval_metrics_reps <- as.data.frame(results_eval_metrics_reps)
     }
 
-    ########################################
-
-    if (cross_validation_meth %in% CVs_multi_envs_methods_avail){
-
-      if(is.null(heter_groups )){
-        stop(message(paste(msg,'For CV1 or CV2 column name for environment/location is required.')), call. = FALSE)
-
+    if (cross_validation_meth %in% CVs_multi_envs_methods_avail) {
+      if (is.null(heter_groups)) {
+        stop(message(paste(msg, 'For CV1 or CV2 column name for environment/location is required.')), call. = FALSE)
       }
-      ENV <-  as.character(unique(pheno_data[, heter_groups]))
-
+      ENV <- as.character(unique(pheno_data[[heter_groups]]))
       ypred_cv <- matrix(data=NA, nrow=len_y, ncol=3)
       colnames(ypred_cv) <- c("y", "yhat", heter_groups)
-      ypred_cv[, "y"] <-  pheno_data[, trait]
-      ypred_cv[, heter_groups] <-  as.character(pheno_data[, heter_groups])
+      ypred_cv <- as.data.frame(ypred_cv)
+      ypred_cv[["y"]] <- as.double(pheno_data[[trait]])
+      ypred_cv[[heter_groups]] <- as.character(pheno_data[[heter_groups]])
 
-      results_eval_metrics_reps <- matrix(NA, nrow = length(ENV), ncol = length(eval_metrics)+2) ### Add rep and Env to the cols
-      results_eval_metrics_reps[, 1] <-  rep(1, length(ENV))
-      results_eval_metrics_reps[, 2] <-  ENV
-
-      #rownames(results_eval_metrics_all) = paste("REP",1:(NRep*length(ENV)), sep = "_")
-      colnames(results_eval_metrics_reps) <-  c("Rep", "Env",
-                                                eval_metrics)
-      results_eval_metrics_reps_use <-   results_eval_metrics_reps
-      ## Convert it to empyt dataframe for final storage
-      results_eval_metrics_reps <-  data.frame()
-
+      results_eval_metrics_reps <- matrix(NA, nrow = length(ENV), ncol = length(eval_metrics)+2)
+      results_eval_metrics_reps[, 1] <- rep(1, length(ENV))
+      results_eval_metrics_reps[, 2] <- ENV
+      colnames(results_eval_metrics_reps) <- c("Rep", "Env", eval_metrics)
+      results_eval_metrics_reps_use <- results_eval_metrics_reps
+      results_eval_metrics_reps <- data.frame()
     }
-
-    ################
-    #y <-  pheno_data[, response]
-
-    #for (k in 1:NRep) {
 
     group <- test_set_val[[repp]]
 
-    if(!cross_validation_meth %in%holds_out_methods_avail){
+    handle_error <- FALSE
 
-      #folds = test_set_val[[k]]
-
-      for(j in 1:nfolds){
-
+    if (!cross_validation_meth %in% holds_out_methods_avail) {
+      for (j in 1:nfolds) {
         yNA <- y
-        ## set the g fold to NA as the testing set
         for (g in 1:len_y) {
-          if(group[g] == j) { yNA[g]<- NA }
+          if (group[g] == j) { yNA[g] <- NA }
+        }
+        tst <- which(is.na(yNA))
+
+        if (model %in% c(bayes_valid_models, bayes_gblup_valid_models)) {
+          tryCatch({
+            if (model == "GBLUP_BRR") {
+              model_GBLUP <- "BRR"
+              additional_params$bayes_model <- model
+              additional_params$bayes_trait <- trait
+              additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
+              additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
+            } else {
+              additional_params$bayes_model <- model
+              additional_params$bayes_trait <- trait
+              additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
+              additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
+            }
+            ypred_cv[tst, "yhat"] <- predict_with_model(model = "Bayes", y = yNA,
+                                                        tst = tst, additional_params = additional_params)
+          }, error = function(e) {
+            message(paste("Error in processing Bayes model", model, "for", trait, ": ", e$message))
+            handle_error <<- TRUE
+          })
         }
 
-        ## extract the position NA which is the testing set
-        tst = which(is.na(yNA))
-
-        if(model %in% c(bayes_valid_models, bayes_gblup_valid_models)) {
-          #model_use <- model
-          #model <- "Bayes" # Use a general term for Bayesian models for the switch function
-          if(model == "GBLUP_BRR") {
-            model_GBLUP <- "BRR"
-            additional_params$bayes_model <- model
-            additional_params$bayes_trait <- trait
-            additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
-            additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
-
-          } else{
-            additional_params$bayes_model <- model
-            additional_params$bayes_trait <- trait
-            additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
-            additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
-
-          }
-          # additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
-          # additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
-
-          ypred_cv[tst, "yhat"] <- predict_with_model(model = "Bayes", y = yNA,
-                                                      tst = tst, additional_params = additional_params)
-          #model <- model_use
+        if (!is.null(engine) && model == "GBLUP" && engine == "asreml") {
+          tryCatch({
+            additional_params$response <- trait
+            preds <- predict_with_model(model = model, tst = tst, additional_params = additional_params)
+            if (!is.null(preds)) {
+              ypred_cv[tst, "yhat"] <- preds
+            } else {
+              stop(paste(msg, "Prediction with GBLUP model failed.\n"), call. = FALSE)
+            }
+          }, error = function(e) {
+            message(paste("Error in processing GBLUP model for ", trait, ": ", e$message))
+            handle_error <<- TRUE
+          })
         }
 
-        if(!is.null(engine)){
-        if(model == "GBLUP" && engine == "asreml") {
-
-          ypred_cv[tst, "yhat"] <- predict_with_model(model = model, tst = tst, additional_params = additional_params)
-
-          }
-
+        if (model %in% c(AI_valid_models)) {
+          tryCatch({
+            ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = omics_data,
+                                                        tst = tst, additional_params = additional_params)
+          }, error = function(e) {
+            message(paste("Error in processing AI model", model, "for", trait, ": ", e$message))
+            handle_error <<- TRUE
+          })
         }
-
-        if(model %in% c(AI_valid_models)) {
-
-        ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = omics_data,
-                                                    tst = tst, additional_params = additional_params)
-        }
-
-      } ### Ends folds
-
+      }
     } else {
-      if(cross_validation_meth %in%holds_out_methods_avail){
-      tst <-  test_set_val[[repp]]
-      yNA <- y
-      yNA[tst] <- NA
+      if (cross_validation_meth %in% holds_out_methods_avail) {
+        tst <- test_set_val[[repp]]
+        yNA <- y
+        yNA[tst] <- NA
 
-      if(model %in% c(bayes_valid_models, bayes_gblup_valid_models)) {
-        #model <- "Bayes" # Use a general term for Bayesian models for the switch function
-        if(model == "GBLUP_BRR") {
-          model_GBLUP <- "BRR"
-          additional_params$bayes_model <- model
-          additional_params$bayes_trait <- trait
-          additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
-          additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
-
-        } else{
-          additional_params$bayes_model <- model
-          additional_params$bayes_trait <- trait
-          additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
-          additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
-
+        if (model %in% c(bayes_valid_models, bayes_gblup_valid_models)) {
+          tryCatch({
+            if (model == "GBLUP_BRR") {
+              model_GBLUP <- "BRR"
+              additional_params$bayes_model <- model
+              additional_params$bayes_trait <- trait
+              additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
+              additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
+            } else {
+              additional_params$bayes_model <- model
+              additional_params$bayes_trait <- trait
+              additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
+              additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
+            }
+            ypred_cv[tst, "yhat"] <- predict_with_model(model = "Bayes", y = yNA,
+                                                        tst = tst, additional_params = additional_params)
+          }, error = function(e) {
+            message(paste("Error in processing Bayes model", model, "for", trait, ": ", e$message))
+            handle_error <<- TRUE
+          })
         }
-        ypred_cv[tst, "yhat"] <- predict_with_model(model = "Bayes", y = yNA,
-                                                    tst = tst, additional_params = additional_params)
+
+        if (!is.null(engine) && model == "GBLUP" && engine == "asreml") {
+          tryCatch({
+            additional_params$response <- trait
+            preds <- predict_with_model(model = model, tst = tst, additional_params = additional_params)
+            if (!is.null(preds)) {
+              ypred_cv[tst, "yhat"] <- preds
+            } else {
+              stop("Prediction with GBLUP model failed.\n")
+            }
+          }, error = function(e) {
+            message(paste("Error in processing GBLUP model for ", trait, ": ", e$message))
+            handle_error <<- TRUE
+          })
+        }
+
+        if (model %in% c(AI_valid_models)) {
+          tryCatch({
+            ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = omics_data,
+                                                        tst = tst, additional_params = additional_params)
+          }, error = function(e) {
+            message(paste("Error in processing AI model", model, "for", trait, ": ", e$message))
+            handle_error <<- TRUE
+          })
+        }
       }
+    }
 
-      if(!is.null(engine)){
-      if(model == "GBLUP" && engine == "asreml") {
+    if (isTRUE(handle_error)) {
+      #return(NULL)
+      ypred_cv <- NULL
+      results_eval_metrics_reps <- NULL
+    }
 
-        ypred_cv[tst, "yhat"] <- predict_with_model(model = model, tst = tst, additional_params = additional_params)
+    if (cross_validation_meth %in% CVs_multi_envs_methods_avail & isFALSE(handle_error)) {
+      ypred_cv <- as.data.frame(ypred_cv)
+      ypred_cv[, 'y'] <- as.double(ypred_cv[, 'y'])
+      ypred_cv[, 'yhat'] <- as.double(ypred_cv[, 'yhat'])
 
-      }
-
-      }
-
-      if(model %in% c(AI_valid_models)) {
-
-        ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = omics_data,
-                                                    tst = tst, additional_params = additional_params)
-      }
-
-      }
-
-}## End
-
-    if (cross_validation_meth %in%CVs_multi_envs_methods_avail){
-      ypred_cv = as.data.frame(ypred_cv)
-      ypred_cv[, 'y'] =  as.double(ypred_cv[, 'y'])
-      ypred_cv[, 'yhat'] =  as.double(ypred_cv[, 'yhat'])
-
-      results_eval_metrics_reps_use = as.data.frame(results_eval_metrics_reps_use)
+      results_eval_metrics_reps_use <- as.data.frame(results_eval_metrics_reps_use)
       for (eva in 1:length(eval_metrics)) {
-
-        sik <- unlist(doBy::lapplyBy(~Env,data=ypred_cv,
-                                     function(x){evaluation_metrics(x$yhat,x$y,
-                                                                    eval_metrics = eval_metrics[eva])}))
+        sik <- unlist(doBy::lapplyBy(~Env, data=ypred_cv,
+                                     function(x) { evaluation_metrics(x$yhat, x$y, eval_metrics = eval_metrics[eva]) }))
         for (s in 1:length(sik)) {
-          results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups]%in%names(sik)[s], c("Rep", eval_metrics[eva])] = c(repp, sik[s])
-
+          results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups] %in% names(sik)[s], c("Rep", eval_metrics[eva])] <- c(repp, sik[s])
         }
       }
-      results_eval_metrics_reps = rbind(results_eval_metrics_reps_use, results_eval_metrics_reps)
+      results_eval_metrics_reps <- rbind(results_eval_metrics_reps_use, results_eval_metrics_reps)
     } else {
-      if (!cross_validation_meth%in%CVs_multi_envs_methods_avail){
+      if (!cross_validation_meth %in% CVs_multi_envs_methods_avail) {
         for (eva in 1:length(eval_metrics)) {
           results_eval_metrics_reps[repp, eval_metrics[eva]] <- evaluation_metrics(y_observed = ypred_cv[tst, "y"],
-                                                                                   y_predicted = ypred_cv [tst, "yhat"],
+                                                                                   y_predicted = ypred_cv[tst, "yhat"],
                                                                                    eval_metrics = eval_metrics[eva])
         }
-
       }
-
     }
 
-
-    #} ### End Replication
-
-    ### Check if some value are not double or numeric and convert it
-    if(!all(sapply(eval_metrics, function(x, results_eval_metrics_reps) is.numeric(results_eval_metrics_reps[,x]),  results_eval_metrics_reps))) {
-      results_eval_metrics_reps[, eval_metrics] <-
-        lapply(results_eval_metrics_reps[, eval_metrics, drop = FALSE],
-               function(x) as.double(as.character(x)))
-    }
-
-    list(trait = trait, rep = rep, model = model, eval_metrics_reps = results_eval_metrics_reps,
+    list(trait = trait,
+         rep = rep,
+         model = model,
+         eval_metrics_reps = results_eval_metrics_reps,
          ypred_cv_Reps_all = ypred_cv)
   }, future.seed = TRUE)
 
 
+#   results <- future.apply::future_lapply(seq_len(nrow(tasks)), function(i) {
+#     task_row <- tasks[i, ]
+#
+#     trait <- as.character(task_row$response)
+#     rep <- as.integer(task_row$replication)
+#     model <- as.character(task_row$modell)
+#
+#     if(is.null(heter_groups)){
+#     y_scaler <- caret::preProcess(as.data.frame(as.matrix(pheno_data[[trait]])), method = c("center", "scale"))
+#
+#     # Predict on the training data and get the scaled values
+#     pheno_data[[trait]] <- stats::predict(y_scaler, as.data.frame(as.matrix(pheno_data[[trait]])))[, 1]
+# }
+#     #print(c(trait, rep))  # For diagnostic purposes
+#
+#     repp <- 1
+#     #######
+#     # Check if a seed was provided and calculate a new seed based on the replication number
+#     if (!is.null(random_state) && is.numeric(random_state) && length(random_state) == 1) {
+#       # Ensure random_state is an integer
+#       base_seed <- as.integer(random_state)
+#       # Generate a new, valid integer seed for each replication
+#       # The modulo operation ensures the seed stays within the integer range
+#       new_seed <- (base_seed + rep * 10000L) %% .Machine$integer.max
+#       #new_seed <- base_seed + rep
+#     } else {
+#       # Fallback seed if random_state is not set
+#       base_seed <- 123L
+#       new_seed <- (base_seed + rep * 10000L) %% .Machine$integer.max
+#     }
+#
+#     # Apply the new seed for replication this is important to prevent same seed is used across replication
+#
+#     #######
+#     if(cross_validation_meth %in% c(holds_out_methods_avail, Kfolds_methods_avail, CVs_multi_envs_methods_avail)) {
+#       if(cross_validation_meth %in% holds_out_methods_avail) {
+#         test_set_val <- hold_out_stratified_and_un(pheno_data = pheno_data,
+#                                                    gen_name = gen_name,
+#                                                    response = trait,
+#                                                    test_size = test_size,
+#                                                    random_state = new_seed,
+#                                                    replication = repp,  # Use rep here if your function supports per-replication processing
+#                                                    sampling_method = sampling_method)
+#       } else if(cross_validation_meth %in% Kfolds_methods_avail) {
+#         test_set_val <- kfolds_stratified_un(pheno_data = pheno_data,
+#                                              gen_name = gen_name,
+#                                              response = trait,
+#                                              test_size = test_size,
+#                                              nfolds = nfolds,
+#                                              random_state = new_seed ,
+#                                              replication = repp,  # Use rep here if your function supports per-replication processing
+#                                              sampling_method = sampling_method)
+#       } else if(cross_validation_meth %in% CVs_multi_envs_methods_avail) {
+#         CV <- as.integer(strsplit(cross_validation_meth, "CV")[[1]][2])
+#         test_set_val <- CV1_CV2_for_multi_environment(pheno_data = pheno_data,
+#                                                       gen_name = gen_name,
+#                                                       response = trait,
+#                                                       test_size = test_size,
+#                                                       CV = CV,
+#                                                       nfolds = nfolds,
+#                                                       heter_groups = heter_groups,
+#                                                       random_state = new_seed,
+#                                                       replication = repp,  # Use rep here if your function supports per-replication processing
+#                                                       sampling_method = sampling_method)
+#       }
+#     } else {
+#       stop(paste(msg, "Unsupported cross-validation method specified. Choose from: ",
+#            paste(c(holds_out_methods_avail,
+#                    Kfolds_methods_avail,
+#                    CVs_multi_envs_methods_avail), collapse = ", ")), call. = FALSE)
+#     }
+#
+#     len_y <-  nrow(pheno_data)
+#
+#     y <- pheno_data[, trait]
+#
+#     if(cross_validation_meth %in%c(Kfolds_methods_avail,
+#                                    holds_out_methods_avail)){
+#
+#       ypred_cv <- matrix(data=NA, nrow=len_y, ncol=2)
+#       colnames(ypred_cv) <- c("y", "yhat")
+#       ypred_cv <- as.data.frame(ypred_cv)
+#       ypred_cv[, "y"] <- as.double(pheno_data[[trait]])
+#       ##################
+#       ## Add rep to the column in addition to the metrics
+#       results_eval_metrics_reps <- matrix(NA, nrow = repp, ncol = length(eval_metrics)+1)
+#       results_eval_metrics_reps[, 1] <-  c(1:repp)
+#       rownames(results_eval_metrics_reps) <-  paste("REP",1:repp, sep = "_")
+#       colnames(results_eval_metrics_reps) <-  c("Rep", eval_metrics)
+#
+#       results_eval_metrics_reps <-  as.data.frame(results_eval_metrics_reps)
+#
+#     }
+#
+#     ########################################
+#
+#     if (cross_validation_meth %in% CVs_multi_envs_methods_avail){
+#
+#       if(is.null(heter_groups )){
+#         stop(message(paste(msg,'For CV1 or CV2 column name for environment/location is required.')), call. = FALSE)
+#
+#       }
+#       ENV <-  as.character(unique(pheno_data[[heter_groups]]))
+#
+#       ypred_cv <- matrix(data=NA, nrow=len_y, ncol=3)
+#       colnames(ypred_cv) <- c("y", "yhat", heter_groups)
+#       ypred_cv <- as.data.frame(ypred_cv)
+#       ypred_cv[["y"]] <-  as.double(pheno_data[[trait]])
+#       ypred_cv[[heter_groups]] <-  as.character(pheno_data[[heter_groups]])
+#
+#       results_eval_metrics_reps <- matrix(NA, nrow = length(ENV), ncol = length(eval_metrics)+2) ### Add rep and Env to the cols
+#       results_eval_metrics_reps[, 1] <-  rep(1, length(ENV))
+#       results_eval_metrics_reps[, 2] <-  ENV
+#
+#       #rownames(results_eval_metrics_all) = paste("REP",1:(NRep*length(ENV)), sep = "_")
+#       colnames(results_eval_metrics_reps) <-  c("Rep", "Env",
+#                                                 eval_metrics)
+#       results_eval_metrics_reps_use <-   results_eval_metrics_reps
+#       ## Convert it to empyt dataframe for final storage
+#       results_eval_metrics_reps <-  data.frame()
+#
+#     }
+#
+#     ################
+#     #y <-  pheno_data[[response]]
+#
+#     #for (k in 1:NRep) {
+#
+#     group <- test_set_val[[repp]]
+#
+#     if(!cross_validation_meth %in%holds_out_methods_avail){
+#
+#       #folds = test_set_val[[k]]
+#
+#       for(j in 1:nfolds){
+#
+#         yNA <- y
+#         ## set the g fold to NA as the testing set
+#         for (g in 1:len_y) {
+#           if(group[g] == j) { yNA[g]<- NA }
+#         }
+#
+#         ## extract the position NA which is the testing set
+#         tst <-  which(is.na(yNA))
+#
+#         if(model %in% c(bayes_valid_models, bayes_gblup_valid_models)) {
+#           #model_use <- model
+#           #model <- "Bayes" # Use a general term for Bayesian models for the switch function
+#           if(model == "GBLUP_BRR") {
+#             model_GBLUP <- "BRR"
+#             additional_params$bayes_model <- model
+#             additional_params$bayes_trait <- trait
+#             additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
+#             additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
+#
+#           } else{
+#             additional_params$bayes_model <- model
+#             additional_params$bayes_trait <- trait
+#             additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
+#             additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
+#
+#           }
+#           # additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
+#           # additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
+#
+#           ypred_cv[tst, "yhat"] <- predict_with_model(model = "Bayes", y = yNA,
+#                                                       tst = tst, additional_params = additional_params)
+#           #model <- model_use
+#         }
+#
+#         if(!is.null(engine)){
+#         if(model == "GBLUP" && engine == "asreml") {
+#           additional_params$response <-  trait
+#           preds <- predict_with_model(model = model, tst = tst, additional_params = additional_params)
+#           if(!is.null(preds)){
+#             ypred_cv[tst, "yhat"] <- preds
+#           }
+#             }
+#
+#         }
+#
+#         if(model %in% c(AI_valid_models)) {
+#
+#         ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = omics_data,
+#                                                     tst = tst, additional_params = additional_params)
+#         }
+#
+#       } ### Ends folds
+#
+#     } else {
+#       if(cross_validation_meth %in%holds_out_methods_avail){
+#       tst <-  test_set_val[[repp]]
+#       yNA <- y
+#       yNA[tst] <- NA
+#
+#       if(model %in% c(bayes_valid_models, bayes_gblup_valid_models)) {
+#         #model <- "Bayes" # Use a general term for Bayesian models for the switch function
+#         if(model == "GBLUP_BRR") {
+#           model_GBLUP <- "BRR"
+#           additional_params$bayes_model <- model
+#           additional_params$bayes_trait <- trait
+#           additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
+#           additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
+#
+#         } else{
+#           additional_params$bayes_model <- model
+#           additional_params$bayes_trait <- trait
+#           additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
+#           additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
+#
+#         }
+#         ypred_cv[tst, "yhat"] <- predict_with_model(model = "Bayes", y = yNA,
+#                                                     tst = tst, additional_params = additional_params)
+#       }
+#
+#       if(!is.null(engine)){
+#       if(model == "GBLUP" && engine == "asreml") {
+#         additional_params$response <-  trait
+#         preds <- predict_with_model(model = model, tst = tst, additional_params = additional_params)
+#         if(!is.null(preds)){
+#         ypred_cv[tst, "yhat"] <- preds
+#         }
+#
+#       }
+#
+#       }
+#
+#       if(model %in% c(AI_valid_models)) {
+#
+#         ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = omics_data,
+#                                                     tst = tst, additional_params = additional_params)
+#       }
+#
+#       }
+#
+# }## End
+#
+#     if (cross_validation_meth %in%CVs_multi_envs_methods_avail){
+#       ypred_cv <-  as.data.frame(ypred_cv)
+#       ypred_cv[, 'y'] <-  as.double(ypred_cv[, 'y'])
+#       ypred_cv[, 'yhat'] <- as.double(ypred_cv[, 'yhat'])
+#
+#       results_eval_metrics_reps_use <- as.data.frame(results_eval_metrics_reps_use)
+#       for (eva in 1:length(eval_metrics)) {
+#
+#         sik <- unlist(doBy::lapplyBy(~Env,data=ypred_cv,
+#                                      function(x){evaluation_metrics(x$yhat,x$y,
+#                                                                     eval_metrics = eval_metrics[eva])}))
+#         for (s in 1:length(sik)) {
+#           results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups]%in%names(sik)[s], c("Rep", eval_metrics[eva])] = c(repp, sik[s])
+#
+#         }
+#       }
+#       results_eval_metrics_reps <- rbind(results_eval_metrics_reps_use, results_eval_metrics_reps)
+#     } else {
+#       if (!cross_validation_meth%in%CVs_multi_envs_methods_avail){
+#         for (eva in 1:length(eval_metrics)) {
+#           results_eval_metrics_reps[repp, eval_metrics[eva]] <- evaluation_metrics(y_observed = ypred_cv[tst, "y"],
+#                                                                                    y_predicted = ypred_cv [tst, "yhat"],
+#                                                                                    eval_metrics = eval_metrics[eva])
+#         }
+#
+#       }
+#
+#     }
+#
+#
+#     #} ### End Replication
+#
+#     ### Check if some value are not double or numeric and convert it
+#     if(!all(sapply(eval_metrics, function(x, results_eval_metrics_reps) is.numeric(results_eval_metrics_reps[,x]),  results_eval_metrics_reps))) {
+#       results_eval_metrics_reps[, eval_metrics] <-
+#         lapply(results_eval_metrics_reps[, eval_metrics, drop = FALSE],
+#                function(x) as.double(as.character(x)))
+#     }
+#
+#     list(trait = trait,
+#          rep = rep,
+#          model = model,
+#          eval_metrics_reps = results_eval_metrics_reps,
+#          ypred_cv_Reps_all = ypred_cv)
+#   }, future.seed = TRUE)
+
+  # Process the results
+  filtered_results <- lapply(results, function(res) {
+    if (!is.null(res$eval_metrics_reps) && !is.null(res$ypred_cv_Reps_all)) {
+      return(res)
+    } else {
+      return(NULL)
+    }
+  })
+
+  # Remove NULL elements
+  filtered_results <- Filter(Negate(is.null), filtered_results)
+
+
+
 
   future::plan("sequential")  # Reset to default plan
-  return(results) # Adjust depending on how you want to return or further process the results
+  return(filtered_results) # Adjust depending on how you want to return or further process the results
 
 
 }
