@@ -51,7 +51,7 @@ asreml_utilisoldNew <- function(
     ...
 ) {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(engine %in% rownames(installed.packages())){
     do.call('library', list(engine))
@@ -513,7 +513,7 @@ asreml_utilisoldNew <- function(
       if(is.null(heter_groups)){stop(print(paste(msg, "Provide heter_groups to model specified variance-covariance structure")), call. = FALSE)}
 
       ### Check if the number of hetero.Grp is greater 5 or greater than 5
-      NN = nlevels(pheno_data[, heter_groups])
+      NN = nlevels(pheno_data[[heter_groups]])
       if (NN >=5 & isFALSE(grepl("fa", var_cov_str))){
 
         msg <- sprintf("\r==================================================\n")

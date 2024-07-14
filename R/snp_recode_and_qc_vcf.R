@@ -49,7 +49,7 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
                            #beagle_path = "D:/PredictProR",
                            message = TRUE) {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   #### Place holders
   markers_callrate_removed  <-  0
   ind_callrate_removed  <-  0

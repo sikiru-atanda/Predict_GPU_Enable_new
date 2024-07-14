@@ -21,7 +21,7 @@ grm_kernel_diagnostic_fixOLD <- function(grm_kernel_data = NULL,
                                       optimize_diagonal = FALSE,
                                       optimize_duplicate = FALSE) {
 
-  msg <- "==================================================\n"
+  msg <- "\n==================================================\n"
 
   # Check input values
   stopifnot(0 <= duplicate_cut_off && duplicate_cut_off <= 1,

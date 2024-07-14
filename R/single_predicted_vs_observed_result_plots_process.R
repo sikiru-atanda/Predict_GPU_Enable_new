@@ -63,7 +63,7 @@ single_predicted_vs_observed_result_plots_process <- function(results,
     # Iterate through each trait
     for (tt in traits) {
       # Filter data for the current trait and extract 'yhat'
-      datt <- dat[dat[["trait"]] == tt, "yhat"]
+      datt <- as.numeric(dat[dat[["trait"]] == tt, "yhat"])
 
       # Convert 'yhat' to matrix format
       mat_res <- matrix(datt, ncol = length(reps))
@@ -86,8 +86,8 @@ single_predicted_vs_observed_result_plots_process <- function(results,
     for (mod in models) {
 
       sik <-  predicted_vs_observed_ranking_plot(
-        observed_value = pheno_data[[trait]],
-        predicted_value = mod_res_per_trait_per_model[[mod]][[trait]]$pred_mean,
+        observed_value = as.numeric(pheno_data[[trait]]),
+        predicted_value = as.numeric(mod_res_per_trait_per_model[[mod]][[trait]]$pred_mean),
         abs_very_close_threshold = abs_very_close_threshold,
         abs_close_threshold =abs_close_threshold
         )

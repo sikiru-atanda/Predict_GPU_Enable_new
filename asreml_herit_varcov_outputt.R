@@ -28,7 +28,7 @@ asreml_herit_varCov <-  function(
 
 ){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   vc <- asreml::summary.asreml(model)$varcomp
 

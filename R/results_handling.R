@@ -179,7 +179,10 @@ results_handling <-  function(GS_model = NULL,
                          res_plot_result_diagnostic_cv_only) {
     #browser()
     if(!is.null(res_model_output)){
-    for (i in 1:length(res_model_output)) {
+      if ("bayes_model" %in% names(res_model_output)) {
+        res_model_output <- res_model_output[names(res_model_output) != "bayes_model"]
+      }
+    #for (i in 1:length(res_model_output)) {
 
       for(i in 1:length(res_model_output)){
         ### check which output is a list
@@ -188,6 +191,10 @@ results_handling <-  function(GS_model = NULL,
             write.csv(res_model_output[[i]],
                       file.path(pathout,paste(names(res_model_output)[i], "csv", sep = ".")),
                       row.names = TRUE)
+
+          } else if(names(res_model_output)[i]=="bayes_model"){
+            base::saveRDS(res_model_output[[i]],
+                          paste(GS_model, "Bayes_model.RData", sep = "_"))
 
           } else if(names(res_model_output)[i]=="Asreml_model"){
             base::saveRDS(res_model_output[[i]],
@@ -263,7 +270,7 @@ results_handling <-  function(GS_model = NULL,
 
       }
 
-    }
+    #}
 
     }
 

@@ -31,7 +31,7 @@ phenotype_precheckOLD<- function(pheno_data = NULL,
                                ...)
   {
 
-      msg <- sprintf("==================================================\n")
+      msg <- "\n==================================================\n"
     if(nrow(pheno_data)==0) { stop(print(paste(msg, 'No pheno_data records provided.')), call. = FALSE)
 
     }
@@ -66,7 +66,7 @@ phenotype_precheckOLD<- function(pheno_data = NULL,
         stop(print(paste(msg,paste(paste("The specified ",  heter_groups),
                                    " did not match with your data.\n\t\t Please check and use apppropriatly"))), call. = FALSE)
 
-        pheno_data = pheno_data[order(pheno_data[, heter_groups]), ]
+        pheno_data = pheno_data[order(pheno_data[[heter_groups]]), ]
 
       }
 
@@ -76,19 +76,19 @@ phenotype_precheckOLD<- function(pheno_data = NULL,
 
     }
 
-      if(var(pheno_data[, response], na.rm = TRUE)==0){
+      if(var(pheno_data[[response]], na.rm = TRUE)==0){
         stop(print(paste(msg,paste(response, "variable has zero variance.\n\t This trait cannot be used for prediction model.\n\t\t Check the raw data and model that generate the BLUEs."))), call. = FALSE)
 
       }
     ### Check to ensure no NA in the column GID/name
-    if (anyNA(pheno_data[, gen_name]) || any(pheno_data[, gen_name]==-999)){
+    if (anyNA(pheno_data[[gen_name]]) || any(pheno_data[[gen_name]]==-999)){
 
       stop(print(paste(msg,paste(paste('column',  gen_name),
                                  'should not have NA/missing'))), call. = FALSE)
     }
 
       if(!all(sapply(response, function(x, pheno_data) is.numeric(pheno_data[,x]),  pheno_data))) {
-        pheno_data[, response] <-
+        pheno_data[[response]] <-
           lapply(pheno_data[, response, drop = FALSE],
                  function(x) as.double(as.character(x)))
 

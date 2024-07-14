@@ -39,7 +39,7 @@ ETA_compiler_bayes_GBLUPOLD <- function(
   ### Create empty list for ETA
   ETA = list()
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   ### Get the random terms. Here no interaction terms in the random effect
   rand_term_no_inter <- random_terms(random = random,
                                      object = pheno_data)

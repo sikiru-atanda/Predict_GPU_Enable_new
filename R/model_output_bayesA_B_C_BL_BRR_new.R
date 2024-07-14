@@ -81,7 +81,7 @@ mod_output_bayes <- function(mod=NULL,
   # Reliability <- 1 - (PEV/var(mod$model$yHat))
 
 
-msg <- sprintf("==================================================\n")
+msg <- "\n ==================================================\n"
 ### Check if the user provide lable/name for the omics data
 
 diagnostic_plots <- NULL

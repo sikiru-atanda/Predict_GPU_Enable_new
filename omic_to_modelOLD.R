@@ -17,7 +17,7 @@ omic_to_modelOLD <- function(omic_data = NULL,
                           message= TRUE,
                           ...){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(!is.null(omic_data)){
     omic_object = omic_precheck(object = omic_data,
@@ -70,7 +70,7 @@ omic_to_modelOLD <- function(omic_data = NULL,
     ## test before they will be merge
     # if(attr(test_omic_data, "cleared")!="pass" & class(test_omic_data)!=c("matrix", "array", "omic_data")) {
     #
-    #   msg <- sprintf("==================================================\n")
+    #   msg <- "\n==================================================\n"
     #   stop(print(paste(msg,'Test_omic_data is not class formula.')), call. = FALSE)
     # }
 

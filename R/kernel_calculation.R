@@ -38,7 +38,7 @@ kernel_calculation <- function(
     message = TRUE,
     ...){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(is.null(theta)) theta <- 1
 

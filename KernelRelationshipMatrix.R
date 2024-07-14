@@ -20,7 +20,7 @@ kernelMatrix <- function(
                "Poly3",
                "Poly4")){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(is.null(omics.data)){stop(print('object omics is missing'), call. = FALSE)}
 

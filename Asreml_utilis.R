@@ -53,7 +53,7 @@ asreml_utilis <- function(
     ...
 ) {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(engine %in% rownames(installed.packages())){
     do.call('library', list(engine))

@@ -51,7 +51,7 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
 
 ){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(is.null(geno_omic_object) & is.null(pheno_object)) {
 
@@ -88,7 +88,7 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
   #   }
   #
   # }
-  #msg <- sprintf("==================================================\n")
+  #msg <- "\n==================================================\n"
   #####################################################################
   # if (is.null(lambda_rr) & !inherits(lambda_rr, 'numeric')){
   #

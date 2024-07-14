@@ -35,7 +35,7 @@ grm_kernel_precheckOLD <- function(
                                 message = TRUE,
                                 ...
                             ) {
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   check_symmetry <- function(matrix) {
     if (!isSymmetric.matrix(matrix)) {

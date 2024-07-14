@@ -47,7 +47,7 @@ process_geno_data <- function(geno_data = NULL,
                               heter_groups = heter_groups,
                               ...) {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
 # genomic data check ------------------------------------------------------
 ### geno_data will be a list when user supplied vcf/hampmap and it is recorded in the engine
@@ -181,7 +181,7 @@ process_omic_data <- function(omic_data = NULL,
                               ...) {
 
   ##browser()
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   if(isFALSE(((is.null(omic_data) & is.null(train_omic_data)) & is.null(test_omic_data)))){
     #if (!is.null(data) && !is.null(train_data) && !is.null(test_data)) {
     cleaned_dataa <- omic_to_model(omic_data = omic_data,

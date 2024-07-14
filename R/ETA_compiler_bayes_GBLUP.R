@@ -57,7 +57,7 @@ ETA_compiler_bayes_GBLUP <- function(
 
   ETA <- list()
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   ### Get the random terms. Both no interaction and interaction terms if present in the random terms
   rand_terms <- random_terms(random = random,
                              pheno_data = pheno_data)
@@ -126,19 +126,19 @@ ETA_compiler_bayes_GBLUP <- function(
   }
 
   if (length(inter_gen_pos_mod)>=1){
-    if (length(pheno_data[,gen_name]) ==length(unique(pheno_data[,gen_name]))){
+    if (length(pheno_data[[gen_name]]) ==length(unique(pheno_data[[gen_name]]))){
       stop(print(paste(msg, "Phenotypic data contain single environment but you specify multi-environment analysis.")), call. = FALSE)
     }
 
   }
   #########
   #### When the genotype are present in more than one environment/location
-  if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+  if(length(pheno_data[[gen_name]])>length(unique(pheno_data[[gen_name]]))){
     ### incidence matrix for main eff. of the genotypes
-    Zg<-stats::model.matrix(~factor(pheno_data[,gen_name])-1)
+    Zg<-stats::model.matrix(~factor(pheno_data[[gen_name]])-1)
 
     if(!is.null(heter_groups)){
-      ZE <- model.matrix(~factor(pheno_data[,heter_groups])-1)
+      ZE <- model.matrix(~factor(pheno_data[[heter_groups]])-1)
       ZEZE <-tcrossprod(ZE)
 
     }
@@ -274,7 +274,7 @@ ETA_compiler_bayes_GBLUP <- function(
 #   #rm(ZE, ZEZE, Zg, K1, K2, ETA)
 #   ETA = list()
 #
-#   msg <- sprintf("==================================================\n")
+#   msg <- "\n==================================================\n"
 #   ### Get the random terms. Both no interaction and interaction terms if present in the random terms
 #   rand_terms <- random_terms(random = random,
 #                              object = pheno_data)
@@ -342,12 +342,12 @@ ETA_compiler_bayes_GBLUP <- function(
 #
 #   #########
 #   #### When the genotype are present in more than one environment/location
-#   if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+#   if(length(pheno_data[[gen_name]])>length(unique(pheno_data[[gen_name]]))){
 #     ### incidence matrix for main eff. of the genotypes
-#     Zg<-stats::model.matrix(~factor(pheno_data[,gen_name])-1)
+#     Zg<-stats::model.matrix(~factor(pheno_data[[gen_name]])-1)
 #
 #     if(!is.null(heter_groups)){
-#       ZE <- model.matrix(~factor(pheno_data[,heter_groups])-1)
+#       ZE <- model.matrix(~factor(pheno_data[[heter_groups]])-1)
 #       ZEZE<-tcrossprod(ZE)
 #
 #     }

@@ -68,7 +68,7 @@ asreml_herit_varCov_new <-  function(
 
 ){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   vc <- asreml::summary.asreml(model)$varcomp
 
@@ -126,7 +126,9 @@ asreml_herit_varCov_new <-  function(
   # P - positive definite
   # U - unbounded
   ############################################
-  VAR_check <- vc[grep(paste0("!", heter_groups), rownames(vc), value = FALSE), ]
+  #VAR_check <- vc[grep(paste0("!", heter_groups), rownames(vc), value = FALSE), ]
+  VAR_check <- vc[apply(sapply(heter_grp, function(env) grepl(paste0("!", env, "!"), rownames(vc))), 1, any), ]
+
 
   #VAR_check_Pos = which(vc[, "bound"]=="F" | vc[, "bound"]=="U" |vc[, "bound"] =="?" |vc[, "bound"] =="S" )
   #VAR_check_Pos = which(VAR_check[, "bound"]=="F" | VAR_check[, "bound"]=="U" |VAR_check[, "bound"] =="?" |VAR_check[, "bound"] =="S" )
@@ -354,7 +356,14 @@ asreml_herit_varCov_new <-  function(
 
   ### Calculate genomic Heritability for Each Location for any of the variance-covariance structure
   VarE = vc[grep("!R", rownames(vc)), "component"]
+  if(isTRUE(heter_resid)){
   names(VarE) = heter_grp
+
+  } else {
+    VarE <- array(rep(VarE[1], length(heter_grp)))
+
+    names(VarE) <-  heter_grp
+  }
 
   #VarG = diag(VarCov)
   H = matrix(NA, nrow = 1, ncol = length(heter_grp))

@@ -35,7 +35,7 @@ mod_output_bayes_BRRGBLUP <- function(
                                  bayes_para = NULL,
                                  ...){
   ##############
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   g_use <- NULL
   if(inherits(omics_kernel_label,'list')){

@@ -18,10 +18,11 @@ summary_statistics_bayes <- function(mod=NULL,
                                      high_reliability_thres = 0.7,
                                      low_reliability_thres = 0.4,
                                      system_database = FALSE,
+                                     heter_groups = NULL,
                                      ...){
 
   tst <- NULL
-  if(!is.null(eval_metrics)){
+  if(!is.null(eval_metrics) & is.null(heter_groups)){
   Eval_met <- matrix(NA, nrow = length(eval_metrics), ncol = 1)
 
   rownames(Eval_met) <- eval_metrics
@@ -36,9 +37,12 @@ summary_statistics_bayes <- function(mod=NULL,
   trn_max <- round(max(mod$model$y,na.rm=TRUE), 3)
   var_trn <- round(var(mod$model$y,na.rm=TRUE),3)
   Res_trn <- round(mod$model$varE,3)
+  n_trn <- NA
+  n_tst <- NA
 
   n<-length(mod$model$y)
 
+ if(is.null(heter_groups)) {
   if(any(is.na(mod$model$y))){
     tst <- which(is.na(mod$model$y))
 
@@ -105,6 +109,9 @@ summary_statistics_bayes <- function(mod=NULL,
 
   }
 
+}
+
+  ## put here
   #model = data.frame()
 
   model <- c()
@@ -136,6 +143,7 @@ summary_statistics_bayes <- function(mod=NULL,
   names(Stat_Res)[2] <- "summary"
   rownames(Stat_Res) <- NULL
 #####
+  if(is.null(heter_groups)){
   if(!is.null(eval_metrics) && !is.null(Eval_met)){
   Eval_met <- data.frame(Eval_met)
   Eval_met$stat <- rownames(Eval_met)
@@ -151,10 +159,12 @@ summary_statistics_bayes <- function(mod=NULL,
 
   }
 
-if(is.null(tst) || length(tst)<=1){
-  output <-  list(summary_statistics = Stat_Res
+  }
 
-                  )
+if((is.null(tst) || length(tst)<=1) && !is.null(heter_groups)){
+  output <-  list(summary_statistics = Stat_Res)
+} else if((!is.null(tst) || length(tst)<1) && !is.null(heter_groups)){
+  output <-  list(summary_statistics = Stat_Res)
 } else {
   output <-  list(summary_statistics = Stat_Res,
                   diagnostic_tst_plot = diagnostic_tst_plot

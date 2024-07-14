@@ -35,7 +35,7 @@ asreml_herit_CSM_new <-  function(
 
 ){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   vc <- asreml::summary.asreml(model)$varcomp
   ENV <- data.frame(model$mf)[, heter_groups]

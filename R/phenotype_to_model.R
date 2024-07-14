@@ -48,7 +48,7 @@ phenotype_to_model <- function(
   pheno_data_train_ <-  NULL
 
   pheno_data_test_ <- NULL
-msg <- sprintf("==================================================\n")
+msg <- "\n==================================================\n"
 
 
   ## Check availability of pheno_datatypic data (training and testing set). This
@@ -82,11 +82,11 @@ msg <- sprintf("==================================================\n")
       if(is.null(test_set) || is.null(pheno_data_test)){
 
         if(!is.null(heter_groups)){
-          test_set <- unique(as.character(pheno_data[na_rows[[1]], gen_name]))
+          test_set <- unique(as.character(pheno_data[[gen_name]][na_rows[[1]]]))
         }else{
       test_set <- unique(na_rows[[1]])
 
-      test_set <- as.character(pheno_data[test_set, gen_name])
+      test_set <- as.character(pheno_data[[gen_name]][test_set])
         }
 
       }
@@ -113,15 +113,20 @@ msg <- sprintf("==================================================\n")
 
       }
 
-      if(length(test_set)>length(unique(as.character(pheno_data[, gen_name])))){
+      if(length(test_set)>length(unique(as.character(pheno_data[[gen_name]])))){
         stop(message(paste(msg, "The testing set size should be less than the unique genotypes in the pheno_data.")), call. = FALSE)
       }
 
-      # pheno_data[, response] <- ifelse(pheno_data[, gen_name]%in%test_set, NA,
-      #                                  pheno_data[, response])
+      # pheno_data[[response]] <- ifelse(pheno_data[[gen_name]]%in%test_set, NA,
+      #                                  pheno_data[[response]])
       # Loop through each column name in response and apply the ifelse function
+
+      if (dplyr::is_grouped_df(pheno_data)) {
+        pheno_data <- dplyr::ungroup(pheno_data)
+      }
+
       for (col in response) {
-        pheno_data[, col] <- ifelse(pheno_data[, gen_name] %in% test_set, NA, pheno_data[, col])
+        pheno_data[[col]] <- ifelse(pheno_data[[gen_name]] %in% test_set, NA, pheno_data[[col]])
       }
 
       # test_set_ = test_set
@@ -145,10 +150,10 @@ msg <- sprintf("==================================================\n")
 
           }
 
-        pheno_data[, response] <- ifelse(!pheno_data[, gen_name]%in%train_set, NA,
-                                         pheno_data[, response])
+        pheno_data[[response]] <- ifelse(!pheno_data[[gen_name]]%in%train_set, NA,
+                                         pheno_data[[response]])
 
-        test_set <- data.frame(name = as.character(unique(pheno[!pheno_data[, gen_name]%in%train_set, gen_name])), stringsAsFactors = FALSE)
+        test_set <- data.frame(name = as.character(unique(pheno[!pheno_data[[gen_name]]%in%train_set, gen_name])), stringsAsFactors = FALSE)
         names(test_set) <- gen_name
 
         if(nrow(test_set)==0){
@@ -237,7 +242,7 @@ msg <- sprintf("==================================================\n")
 
     #### if both pheno_data_train and pheno_data_test are provided
 
-    if ((!is.null(pheno_data_train_) & !is.null(pheno_data_test_)) & is.null(pheno_data)){
+    if (!is.null(pheno_data_train_) & !is.null(pheno_data_test_)){
 
       if (!identical(colnames(pheno_data_train_), colnames(pheno_data_test_))){
         stop(message(paste(msg,'Columns name in the pheno_data_train not the same as pheno_data_test.')), call. = FALSE)
@@ -287,6 +292,11 @@ msg <- sprintf("==================================================\n")
       #names(output) <- c("pheno_data")
 
       #rm(pheno_data)
+    }else if (!is.null(pheno_data) & (!is.null(pheno_data_train) & is.null(pheno_data_test))){
+
+      ### Check to ensure the response variable are in numeric
+
+      output <- list(pheno_clean_data =  pheno_data_train_)
 
   } else {
 

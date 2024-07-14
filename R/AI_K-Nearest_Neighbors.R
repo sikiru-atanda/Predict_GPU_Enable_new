@@ -87,7 +87,7 @@ AI_knn <- function(pheno_object=NULL,
   y_train_scaled <- stats::predict(y_scaler, as.data.frame(as.matrix(y_train)))[, 1]
 
   data <- cbind(y=y_train_scaled, geno_omic_object)
-  #msg <- sprintf("==================================================\n")
+  #msg <- "\n==================================================\n"
 
      if(isTRUE(para_tunning)){
        # create hyperparameter grid

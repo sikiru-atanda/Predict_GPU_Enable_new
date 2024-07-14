@@ -23,7 +23,7 @@ kfolds_stratified_un <- function(
                       ...
                   ) {
 
- # msg <- sprintf("==================================================\n")
+ # msg <- "\n==================================================\n"
 #browser()
   if (!is.null(random_state) && is.numeric(random_state)) {
     set.seed(random_state)

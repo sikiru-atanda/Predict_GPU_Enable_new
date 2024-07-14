@@ -85,10 +85,22 @@ asreml_mod_cv <- function(pheno_data,
   #browser()
 asreml_tst_model_cv <- asreml_cv_model(pheno_dataa = pheno_data,
                                        response = response,
-                                       #gen_name = gen_name,
-                                       #heter_groups = heter_groups,
+                                       gen_name = gen_name,
+                                       heter_groups = heter_groups,
                                        asreml_models_prep_cv = asreml_models_prep_cv,
                                        tst = tst)
+
+modm <-  asreml_tst_model_cv[["model_cv"]]
+
+### Asreml required the pheno data in the environment to execute the predict func
+pheno_dataa <-  asreml_tst_model_cv[["pheno_dataa"]]
+
+if(is.null(modm)){
+  return(NULL)
+}
+GIDs <- as.character(pheno_data[[gen_name]])
+
+GID_tst <- GIDs[tst]
 
 var_cov_str_available <- c("us","corgh","corgv",
                            "corh","corv","fa","rr")
@@ -115,25 +127,52 @@ gen_pos <-  asreml_models_prep_cv[["gen_pos"]]
 inter_gen_pos <-  asreml_models_prep_cv[["inter_gen_pos"]]
 names_in_inv_list <-  asreml_models_prep_cv[["names_in_inv_list"]]
 rand_term <-  asreml_models_prep_cv[["rand_term"]]
+####
+# Create a reference dataframe from pheno_dataa
+if(!is.null(heter_groups)){
+reference_order <- pheno_dataa |>
+  dplyr::select(!!dplyr::sym(gen_name), !!dplyr::sym(heter_groups))
 
-result_met <-  tryCatch(
-  {
-if(is.null(heter_groups)){
-    predicted_value <- asreml::predict.asreml(asreml_tst_model_cv[["model_cv"]], classify=gen_name, sed=FALSE)$pvals
+# predicted_value <- reference_order |>
+#   dplyr::left_join(predicted_value, by = stats::setNames(c(gen_name, heter_groups), c(gen_name, heter_groups))) |>
+#   dplyr::select(!!dplyr::sym(gen_name), !!dplyr::sym(heter_groups), predicted.value, std.error, status)
 
-} else {
-  if(is.null(heter_groups)){
-  predicted_value <- asreml::predict.asreml(asreml_tst_model_cv[["model_cv"]], classify= rand_term[[inter_gen_pos]], sed=FALSE)$pvals
+
+} else{
+  reference_order <- pheno_dataa |>
+    dplyr::select(!!dplyr::sym(gen_name))
+
+  # predicted_value <- reference_order |>
+  #   dplyr::left_join(predicted_value, by = stats::setNames(c(gen_name), c(gen_name))) |>
+  #   dplyr::select(!!dplyr::sym(gen_name), predicted.value, std.error, status)
 
 }
-  }
+
+
+result_met <- tryCatch(
+  {
+    if (is.null(heter_groups)) {
+      predicted_value <- asreml::predict.asreml(modm, classify = gen_name, sed = FALSE)$pvals
+      predicted_value <- reference_order |>
+        dplyr::left_join(predicted_value, by = stats::setNames(c(gen_name), c(gen_name))) |>
+        dplyr::select(!!dplyr::sym(gen_name), predicted.value, std.error, status)
+
+    } else {
+      predicted_value <- asreml::predict.asreml(modm, classify = rand_term[[inter_gen_pos]], sed = FALSE)$pvals
+      predicted_value <- reference_order |>
+        dplyr::left_join(predicted_value, by = stats::setNames(c(gen_name, heter_groups), c(gen_name, heter_groups))) |>
+        dplyr::select(!!dplyr::sym(gen_name), !!dplyr::sym(heter_groups), predicted.value, std.error, status)
+
+    }
+    predicted_value
   },
   error = function(e) {
     # Handle the error, you can print a message or take other actions
-    cat(paste("Error in prediction", conditionMessage(e), "\n"))
+    cat(paste("Error in prediction:", conditionMessage(e), "\n"))
     return(NULL)  # Return NULL or an appropriate value to indicate the failure
   }
 )
+
 
 if(is.null(result_met)) {
 BLUP <- summary(asreml_tst_model_cv[["model_cv"]], coef=TRUE)$coef.random
@@ -150,8 +189,8 @@ if (!is.null(heter_groups)){
     inter_gen_pos <-  NULL
   } else{
     if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
-      heter_grp <- as.character(unique(pheno_data[, heter_groups]))
-      all_envs_for_met <- as.character(pheno_data[, heter_groups])
+      heter_grp <- as.character(unique(pheno_data[[heter_groups]]))
+      all_envs_for_met <- as.character(pheno_data[[heter_groups]])
     }
   }
 
@@ -215,7 +254,7 @@ if(!is.null(var_cov_str) & !is.null(inter_gen_pos)){
       colnames(estimated_breeding_value_list[[names_in_inv_list[bb]]])[1:3] <- c(gen_name, heter_groups, "BLUP")
 
       #estimated_breeding_value_list[[names_in_inv_list[bb]]][, "Prediction_error_variance"] <-  estimated_breeding_value_list[[names_in_inv_list[bb]]][, "Standard_error"]^2
-      rownames(estimated_breeding_value_list[[names_in_inv_list[bb]]]) = NULL
+      rownames(estimated_breeding_value_list[[names_in_inv_list[bb]]]) <-  NULL
 
 
     }
@@ -230,7 +269,14 @@ if(!is.null(var_cov_str) & !is.null(inter_gen_pos)){
     dplyr::group_by(!!rlang::sym(gen_name), !!rlang::sym(heter_groups)) |>
     dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
   summarized_blup <- as.data.frame(summarized_blup)
-  return(summarized_blup[tst, "Summed_BLUP"])
+
+  summarized_blup <- reference_order |>
+    dplyr::left_join(summarized_blup, by = stats::setNames(c(gen_name, heter_groups), c(gen_name, heter_groups))) |>
+    dplyr::select(!!dplyr::sym(gen_name), !!dplyr::sym(heter_groups), Summed_BLUP)
+
+  #colnames(summarized_blup)[colnames(summarized_blup)%in%heter_groups] <- "Env"
+  return(as.double(summarized_blup[tst, c("Summed_BLUP")]))
+
 
 }
 
@@ -256,13 +302,39 @@ if(is.null(var_cov_str) & !is.null(inter_gen_pos)){
   # Bind all data frames into a single data frame
   combined_df <- dplyr::bind_rows(estimated_breeding_value_list)
 
-  # Group by the user-specified environment/location and sum the BLUP values
+  if(!is.null(heter_groups)){
+  #combined_df <- combined_df[order(combined_df[[heter_groups]]), ]
+  #colnames(combined_df)[colnames(combined_df)%in%heter_groups] <- "Env"
+
+  # Group by GID and sum the BLUP values for each GID
   summarized_blup <- combined_df |>
-    dplyr::group_by(!!rlang::sym(gen_name), !!rlang::sym(heter_groups)) |>
+    dplyr::group_by(!!rlang::sym(gen_name)) |>
     dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
 
   summarized_blup <- as.data.frame(summarized_blup)
-  return(summarized_blup[tst, "Summed_BLUP"])
+  summarized_blup <- reference_order |>
+    dplyr::left_join(summarized_blup, by = stats::setNames(c(gen_name, heter_groups), c(gen_name, heter_groups))) |>
+    dplyr::select(!!dplyr::sym(gen_name), !!dplyr::sym(heter_groups), Summed_BLUP)
+  #summarized_blup <- summarized_blup[as.character(summarized_blup[[gen_name]])%in%GID_tst, ]
+  #summarized_blup <- summarized_blup[order(as.character(summarized_blup[[gen_name]])%in%GID_tst), ]
+  #### sik
+  #gen_namess <- as.character(summarized_blup[[gen_name]])
+  # Get the match positions of gen_names in GID_tst
+  #order_indices <- match(gen_namess, GID_tst)
+  # Order the data frame based on these match positions
+  #summarized_blup <- summarized_blup[order(order_indices), ]
+  #colnames(summarized_blup)[colnames(summarized_blup)%in%heter_groups] <- "Env"
+  return(as.double(summarized_blup[tst, c("Summed_BLUP")]))
+  }
+
+
+  # Group by the user-specified environment/location and sum the BLUP values
+  # summarized_blup <- combined_df |>
+  #   dplyr::group_by(!!rlang::sym(gen_name), !!rlang::sym(heter_groups)) |>
+  #   dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
+  #
+  # summarized_blup <- as.data.frame(summarized_blup)
+  # return(summarized_blup[tst, "Summed_BLUP"])
 
 }
 
@@ -290,13 +362,65 @@ if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
     dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
 
   summarized_blup <- as.data.frame(summarized_blup)
-  return(summarized_blup[tst, "Summed_BLUP"])
+
+  #summarized_blup <- summarized_blup[as.character(summarized_blup[[gen_name]])%in%GID_tst, ]
+  #summarized_blup <- summarized_blup[order(as.character(summarized_blup[[gen_name]])%in%GID_tst), ]
+  #### sik
+  #gen_namess <- as.character(summarized_blup[[gen_name]])
+  # Get the match positions of gen_names in GID_tst
+  #order_indices <- match(gen_namess, GID_tst)
+  # Order the data frame based on these match positions
+  #summarized_blup <- summarized_blup[order(order_indices), ]
+
+
+  summarized_blup <- reference_order |>
+    dplyr::left_join(summarized_blup, by = stats::setNames(c(gen_name), c(gen_name))) |>
+    dplyr::select(!!dplyr::sym(gen_name), Summed_BLUP)
+
+  return(as.double(summarized_blup[tst, "Summed_BLUP"]))
 
 }
 
 } else {
 
-  return(predicted_value[tst, "predicted.value"])
+  predicted_value <- result_met
+
+  if(!is.null(heter_groups)){
+    #predicted_value <- predicted_value[order(predicted_value[[heter_groups]]), ]
+
+    # predicted_value <- predicted_value[as.character(predicted_value[[gen_name]])%in%GID_tst, ]
+    # #predicted_value <-predicted_value[order(as.character(predicted_value[[gen_name]])%in%GID_tst), ]
+    # #### sik
+    # gen_namess <- as.character(predicted_value[[gen_name]])
+    # # Get the match positions of gen_names in GID_tst
+    # order_indices <- match(gen_namess, GID_tst)
+    # # Order the data frame based on these match positions
+    # predicted_value <- predicted_value[order(order_indices), ]
+
+    predicted_value <- reference_order |>
+      dplyr::left_join(predicted_value, by = stats::setNames(c(gen_name, heter_groups), c(gen_name, heter_groups))) |>
+      dplyr::select(!!dplyr::sym(gen_name), !!dplyr::sym(heter_groups), predicted.value, std.error, status)
+
+    #colnames(predicted_value)[colnames(predicted_value)%in%heter_groups] <- "Env"
+    return(as.double(predicted_value[tst, c("predicted.value")]))
+  }else {
+    predicted_value <- reference_order |>
+      dplyr::left_join(predicted_value, by = stats::setNames(c(gen_name), c(gen_name))) |>
+      dplyr::select(!!dplyr::sym(gen_name), predicted.value, std.error, status)
+
+
+    # predicted_value <- predicted_value[as.character(predicted_value[[gen_name]])%in%GID_tst, ]
+    # #predicted_value <-predicted_value[order(as.character(predicted_value[[gen_name]])%in%GID_tst), ]
+    # #### sik
+    # gen_namess <- as.character(predicted_value[[gen_name]])
+    # # Get the match positions of gen_names in GID_tst
+    # order_indices <- match(gen_namess, GID_tst)
+    # # Order the data frame based on these match positions
+    # predicted_value <- predicted_value[order(order_indices), ]
+    return(as.double(predicted_value[tst, "predicted.value"]))
+  }
+
+
 }
 
 

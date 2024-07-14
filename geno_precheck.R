@@ -43,7 +43,7 @@ geno_precheckOLDD <- function(object_geno = NULL,
                           ...) {
 
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   ## Check marker matrix is not null
   if (!is.null(object_geno)) {
 

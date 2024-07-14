@@ -63,7 +63,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
 
   }
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   ### Check if the user provide lable/name for the omics data
 
   if(inherits(omics_kernel_label,'list')){
@@ -214,7 +214,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                    Residual_value = (mod$model$y[tst] - mod$model$yHat[tst]),
                                    stringsAsFactors = FALSE)
 
-      colnames(residual_value)[c(1, 3)] <- c(gen_name, heter_groups)
+      colnames(residual_value)[c(1, 2)] <- c(gen_name, heter_groups)
 
     } else {
 
@@ -281,7 +281,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                    Residual_value = (mod$model$y - mod$model$yHat),
                                    stringsAsFactors = FALSE)
 
-      colnames(residual_value)[c(1, 3)] <- c(gen_name, heter_groups)
+      colnames(residual_value)[c(1, 2)] <- c(gen_name, heter_groups)
     }
 
     #### End MET

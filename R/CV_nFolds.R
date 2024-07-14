@@ -22,17 +22,17 @@ CV_nfolds <- function(
                "unstratified" ),
     replication = 1) {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
-  #if(length(pheno_data[, response]) < 2) stop(print(paste(msg, "y must be greater than 1")), call. = FALSE)
+  #if(length(pheno_data[[response]]) < 2) stop(print(paste(msg, "y must be greater than 1")), call. = FALSE)
 
-  y <- pheno_data[, response]
+  y <- pheno_data[[response]]
 
   if (nFolds ==1) stop(print(paste(msg, 'Number of nFolds should be greater than one for k-fold Cross_validation')), call. = FALSE)
 
   if(nFolds> length(y)) stop(print(paste(msg, "Y variable must be greater than number of nFolds")), call. = FALSE)
 
-  ID_GIDs = as.character(unique(pheno_data[, gen_name]))
+  ID_GIDs = as.character(unique(pheno_data[[gen_name]]))
 
   if (length(y)>length(ID_GIDs)){warning(paste(msg,'You have more than one environment. This Cross_validation method works best with one environment.'),
                                          call. = FALSE)}
@@ -48,7 +48,7 @@ CV_nfolds <- function(
 
   method <- match.arg(method)
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   if(replication>1){warning(paste(paste(msg,'You request for', replication), 'replications this might takes some time to run all the replications.'),
                             call. = FALSE)}

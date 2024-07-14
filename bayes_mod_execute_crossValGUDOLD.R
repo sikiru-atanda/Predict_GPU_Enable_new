@@ -561,7 +561,7 @@ bayes_mod_execute_crossvalGUDOLD <- function(object = NULL,
 #
 #   #if (Cross_validation=="CV1" | Cross_validation=="CV2"){
 #
-#   ENV = as.character(unique(pheno_data[, heter_groups]))
+#   ENV = as.character(unique(pheno_data[[heter_groups]]))
 #   yHatCV <- matrix(NA, nrow =nfolds, ncol = length(ENV))
 #   colnames(yHatCV) = ENV
 #   #yHatCV_MSE <- matrix(NA, nrow =nfolds, ncol = length(ENV))

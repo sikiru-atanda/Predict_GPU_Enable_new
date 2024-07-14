@@ -46,7 +46,7 @@ bayes_mod_execute <- function(pheno_data = NULL,
 
 
         fm <- BGLR::BGLR(
-          y=pheno_data[, response],
+          y=pheno_data[[response]],
           ETA=ETA,
           weights = weights,
           nIter = bayes_para[["nIter"]],

@@ -40,12 +40,12 @@ bayes_parameter_check <- function(
          )
   {
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n ==================================================\n"
 
   if(is.null(nIter) ){
     if(isTRUE(message)){
 
-      message(insight::print_color(paste(msg,paste("Number of iteration is missing. Default value of 26000 was assigned. \n Check if this appropriate for your data.")), "blue"))
+      message(insight::print_color(paste(msg,paste("\n Number of iteration is missing. Default value of 26000 was assigned. \n Check if this appropriate for your data.\n ")), "blue"))
 
     }
       nIter <- 200 # 26000
@@ -53,7 +53,7 @@ bayes_parameter_check <- function(
   } else {
 
     if(nIter< 16000){
-    message(paste( insight::print_color("WARNINGS\n", "red"),
+    message(paste( insight::print_color("\nWARNINGS\n", "red"),
                    insight::print_color(paste(msg,paste("Number of iteration is provided is less than 16000 which we consider optimal. \n Check if this appropriate for your data.")), "red")))
 
     }
@@ -71,8 +71,8 @@ bayes_parameter_check <- function(
   } else {
 
     if(burnIn< 1600){
-    message(paste( insight::print_color("WARNINGS\n", "red"),
-                   insight::print_color(paste(msg,paste("Number of burn-in provided is less than 1600 which we consider optimal. \n Check if this appropriate for your data.")), "red")))
+    message(paste( insight::print_color("\n WARNINGS\n", "red"),
+                   insight::print_color(paste(msg,paste("Number of burn-in provided is less than 1600 which we consider optimal. \n Check if this appropriate for your data.\n ")), "red")))
 
     }
 
@@ -81,7 +81,7 @@ bayes_parameter_check <- function(
   if(is.null(thin)){
     if(isTRUE(message)){
 
-      message(insight::print_color(paste(msg,paste("Number of thining is missing. Default value of 10 was assigned. \n Check if this appropriate for your data.")), "blue"))
+      message(insight::print_color(paste(msg,paste("\n Number of thining is missing. Default value of 10 was assigned. \n Check if this appropriate for your data.\n ")), "blue"))
 
     }
       thin <- 1 # 10
@@ -142,7 +142,7 @@ fixed_terms <- function(
 
   if(attr(fixed, "cleared")!="pass" & !inherits(fixed, "formula")) {
 
-    msg <- sprintf("==================================================\n")
+    msg <- "\n ==================================================\n"
     stop(msg, "The fixed term is not a class of type 'formula'. Example: ", "fixed = ~ X + Y")
   }
 
@@ -182,7 +182,7 @@ random_terms <- function(random = NULL,
                          pheno_data = NULL,
                          ...){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n ==================================================\n"
 
   random <- rand_fix_check(rand_fix_term = random,
                            term_type  = "random",
@@ -190,7 +190,7 @@ random_terms <- function(random = NULL,
 
   if(attr(random, "cleared")!="pass" && !inherits(random, "formula")) {
 
-    stop(msg, "The random term is not a class of type 'formula'. Example: ", "fixed = ~ X + Y")
+    stop(msg, "\n The random term is not a class of type 'formula'. Example: ", "fixed = ~ X + Y \n")
   }
 
   rand_term <- strsplit(as.character(random[2]), split = "[+]")[[1]]
@@ -229,17 +229,17 @@ fixed_term_model <- function(fixed_term = NULL,
                              fixed_term_model_bayesian = NULL,
                              message = TRUE){
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n ==================================================\n"
   if(is.null(fixed_term_model_bayesian)){
     if(isTRUE(message)){
-    warning(msg, "The model for fixed term(s) is missing. We fix it for you")
+    warning(msg, "The model for fixed term(s) is missing. We fix it for you.")
 }
     fixed_term_model_bayesian = 'FIXED'
   } else{
 
     if(fixed_term_model_bayesian!='FIXED'){
       if(isTRUE(message)){
-      warning(msg, "The model for fixed term(s) should be equal to FIXED. We fix it for you")
+      warning(msg, "The model for fixed term(s) should be equal to FIXED. We fix it for you.")
 }
     }
 
@@ -296,7 +296,7 @@ random_term_model <- function(rand_terms = NULL,
                               message = TRUE){
 
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n ==================================================\n"
 
   #####
   #### Check for Interaction and and non-interaction term
@@ -376,7 +376,7 @@ random_term_model <- function(rand_terms = NULL,
       if(length(mod_present_in_GS_model)!=0){
         #rand_mod_copy = mod_present_in_GS_model
         if(message){
-          warning(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed")
+          warning(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed.")
         }
         mod_len = length(rand_terms) - length(mod_present_in_GS_model)
 
@@ -425,13 +425,13 @@ random_term_model <- function(rand_terms = NULL,
     ### This will be used only for the genetic effect assuming the user only provide that
     if(length(rand_terms_model_bayesian)!= length(rand_terms)){
       if(isTRUE(message)){
-        warning(paste(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed"))
+        warning(paste(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed."))
       }
       ### Check GS_model to be consistent with models present in the engine
       mod_present_in_model_bayesian = rand_terms_model_bayesian[rand_terms_model_bayesian%in% valid_models]
       if(length(mod_present_in_model_bayesian)==0){
 
-        stop(msg,'Provided appropiate name for the Baysian model.')
+        stop(msg,'Provided appropiate name for the Baysian model.\n ')
 
       } else {
 
@@ -488,7 +488,7 @@ random_term_model <- function(rand_terms = NULL,
       }
       ### Check if the models term define is greater than the random term
       if(length(rand_terms_model_bayesian)>length(rand_terms)){
-        stop(print(paste(msg,'The number of model is greater than the random terms')), call. = FALSE)
+        stop(print(paste(msg,'The number of model is greater than the random terms.')), call. = FALSE)
       }
       ##
       if(length(mod_present_in_GS_model)!=0 & length(mod_present_in_model_bayesian)!=0){
@@ -570,7 +570,7 @@ random_term_model <- function(rand_terms = NULL,
 #                               message = TRUE)
 #   {
 #
-#   msg <- sprintf("==================================================\n")
+#   msg <- "\n==================================================\n"
 #   ### Each random term will have a specific model for parameter estimate.
 #   ## It is expected the user will provide model for each random term,
 #   ## In a scenario where the model provided is not equal to the number of random terms

@@ -53,7 +53,7 @@ grm_kernel_diagnostic_fix <- function(grm_kernel_data = NULL,
                               ){
 
 
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   grm_kernel_data_opti <-  NULL
   # Check input value

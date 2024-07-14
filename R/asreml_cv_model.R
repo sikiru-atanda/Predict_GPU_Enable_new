@@ -4,9 +4,11 @@
 #' Title
 #'
 #' @param pheno_dataa
-#' @param y
-#' @param code_asr_fit_cv
 #' @param tst
+#' @param response
+#' @param gen_name
+#' @param heter_groups
+#' @param asreml_models_prep_cv
 #'
 #' @return
 #' @export
@@ -15,16 +17,20 @@
 asreml_cv_model <- function(pheno_dataa = NULL,
                             response = NULL,
                             gen_name = NULL,
-                            #heter_groups = NULL,
+                            heter_groups = NULL,
                             asreml_models_prep_cv = NULL,
                             tst = NULL
                              ){
 
+  GIDs <- as.character(pheno_dataa[[gen_name]])
   asreml::asreml.options(trace=FALSE)
   names_in_inv_list <-  asreml_models_prep_cv[["names_in_inv_list"]]
   code_asr_fit_cv <-  asreml_models_prep_cv[["code_asr_fit"]]
+  #pheno_dataa[as.character(pheno_dataa[[gen_name]])%in%GIDs[tst], response] <- NA
   pheno_dataa[tst, response] <- NA
+  #pheno_dataa[tst, response] <- NA
   #gen_tst <- pheno_dataa[tst, gen_name]
+  code_asr_fit_cv[1] <-  gsub("trait", response, code_asr_fit_cv[1])
   code_asr_fit_cv[4] <- 'na.action=list(x="include",y="include"),data=pheno_dataa)'
   inv_list <- asreml_models_prep_cv[["inv_list"]]
   ####
@@ -68,6 +74,8 @@ asreml_cv_model <- function(pheno_dataa = NULL,
   }
   # Loop through each variable name in the list
 
+  result_model <-  tryCatch(
+    {
   ## Calls the current environment for evaluation
   eval(parse(text=str_mod_cv), envir=environment())
 
@@ -80,7 +88,14 @@ asreml_cv_model <- function(pheno_dataa = NULL,
       break
     }
   }
-
+      mod_cv
+    },
+  error = function(e) {
+    # Handle the error, you can print a message or take other actions
+    cat(paste("Asreml model fail:", conditionMessage(e), "\n"))
+    return(NULL)  # Return NULL or an appropriate value to indicate the failure
+  }
+  )
   # # Attempt to evaluate in the current environment
   # tryCatch({
   #   eval(parse(text = str_mod_cv), envir = environment())
@@ -91,12 +106,21 @@ asreml_cv_model <- function(pheno_dataa = NULL,
   #   eval(parse(text = str_mod_cv), envir = .GlobalEnv)
   # })
 
+if(!is.null(result_model)){
 
-
-  output <- list(model_cv = mod_cv,
-                 asreml_models_prep_cv = asreml_models_prep_cv
+  output <- list(model_cv = result_model,
+                 asreml_models_prep_cv = asreml_models_prep_cv,
+                 pheno_dataa = pheno_dataa
                  #gen_tst = gen_tst
                  )
+
+}else{
+  output <- list(model_cv = NULL,
+                 asreml_models_prep_cv = NULL,
+                 pheno_dataa = NULL
+                 #gen_tst = gen_tst
+  )
+}
 
 
   return(output)

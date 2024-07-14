@@ -28,7 +28,7 @@ random_terms_fit_new <- function(random = NULL,
                                  gen_name = NULL,
                                  pheno_data= NULL,
                                  ...){
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
   if (!is.null(random)){
     #if (length(all.vars(random))>1) {
     rand_term <- strsplit(as.character(random[2]), split = "[+]")[[1]] # random parts
@@ -99,7 +99,7 @@ random_terms_fit_new <- function(random = NULL,
 
 
     if (length(check_rand_inter)>=1){
-      if (length(pheno_data[,gen_name]) ==length(unique(pheno_data[,gen_name]))){
+      if (length(pheno_data[[gen_name]]) ==length(unique(pheno_data[[gen_name]]))){
         stop(print(paste(msg, "Phenotypic data contain single environment but you specify multi-environment analysis.")), call. = FALSE)
       }
       if (is.null(heter_groups)) {stop(print(paste(msg, heter_groups,"cannot be NULL")), call. = FALSE)}
@@ -111,7 +111,7 @@ random_terms_fit_new <- function(random = NULL,
       if(is.null(heter_groups)){stop(print(paste(msg, "Provide heter_groups to model specified variance-covariance structure")), call. = FALSE)}
 
       ### Check if the number of hetero.Grp is greater 5 or greater than 5
-      NN <-  nlevels(pheno_data[, heter_groups])
+      NN <-  nlevels(pheno_data[[heter_groups]])
       if (NN >=5 & isFALSE(grepl("fa", var_cov_str))){
 
         msg <- sprintf("\r==================================================\n")
@@ -331,7 +331,7 @@ random_terms_fit_new <- function(random = NULL,
     ######################################################################
     #### When Variance-Covariance Structure is missing. Compound Symmetry
     ####################################################################
-    if(is.null(var_cov_str) & (length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name])))){
+    if(is.null(var_cov_str) & (length(pheno_data[[gen_name]])>length(unique(pheno_data[[gen_name]])))){
 
       ###############################
       if (!is.null(fixed_term)){

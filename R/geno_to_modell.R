@@ -43,7 +43,7 @@ geno_to_model <- function(geno_data = NULL,
                           map_data = NULL,
                           message = TRUE,
                           ...) {
-  msg <- sprintf("==================================================\n")
+  msg <- "\n==================================================\n"
 
   check_and_prepare <- function(data,...) {
     geno_object <- geno_precheck(object_geno = data,
