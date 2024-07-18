@@ -34,6 +34,7 @@ Imports:
     patchwork,
     pls,
     randomForest,
+    reticulate,
     rlang,
     sommer,
     stats,
@@ -41,6 +42,7 @@ Imports:
     tensorflow,
     tibble,
     tidyr,
+    tools,
     utils,
     xgboost
 RoxygenNote: 7.3.0

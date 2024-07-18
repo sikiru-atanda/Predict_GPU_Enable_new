@@ -435,7 +435,7 @@ models_execute_crossval <- function(pheno_data = NULL,
     }
 
     len_y <- nrow(pheno_data)
-    y <- pheno_data[, trait]
+    y <- as.double(pheno_data[[trait]])
 
     if (cross_validation_meth %in% c(Kfolds_methods_avail, holds_out_methods_avail)) {
       ypred_cv <- matrix(data=NA, nrow=len_y, ncol=2)

@@ -1,4 +1,91 @@
 
+# Function to read data from various file types
+read_hapmap_file <- function(filepath) {
+  msg <- "\n==================================================\n"
+  file_extension <- tools::file_ext(filepath)
+
+  if (file_extension == "gz") {
+    # Read gzipped file
+    hapmap_data <- data.table::fread(filepath, sep='\t', header=TRUE, check.names=FALSE,
+                                     skip = "#",
+                                     na.strings=c(NA,"N","NN","B","V","H","D",".","-"))
+  } else if (file_extension == "zip") {
+    # Create a unique temporary directory
+    mainDir <- getwd()
+    systime <- format(Sys.time(), "%Y%m%d_%H%M%S")
+    systime <- gsub("[-: ]", "_", systime)
+    subDir <- paste("hapmap_unzip", systime, sep = "_")
+
+    temp_dir <- file.path(mainDir, subDir)
+    dir.create(temp_dir)
+
+    # Extract the filename inside the zip (assuming only one file)
+    unzip(filepath, exdir = temp_dir)
+    unzipped_files <- list.files(temp_dir, full.names = TRUE)
+
+    if (length(unzipped_files) != 1) {
+      unlink(temp_dir, recursive = TRUE)  # Remove the temporary directory
+      stop(paste(msg,"Zip file should contain exactly one file."), call. = FALSE)
+    }
+
+    hapmap_data <- data.table::fread(unzipped_files[1], sep='\t', header=TRUE,
+                                     skip = "#",
+                                     check.names = FALSE,
+                                     na.strings=c(NA,"N","NN","B","V","H","D",".","-"))
+
+    # Remove the temporary directory
+    unlink(temp_dir, recursive = TRUE)
+
+  } else if(file_extension == "txt"){
+
+    hapmap_data <- data.table::fread(unzipped_files[1], sep='\t', header=TRUE,
+                                     skip = "#",
+                                     check.names = FALSE,
+                                     na.strings=c(NA,"N","NN","B","V","H","D",".","-"))
+
+  } else {
+    # Read plain text file
+    stop(paste(msg, "Unknown file extension."), call. = FALSE)
+  }
+
+  return(hapmap_data)
+}
+
+# Function to check and ensure the first 11 columns
+check_hapmap_columns <- function(data) {
+
+  msg <- "\n==================================================\n"
+
+  required_columns <- c("rs#", "alleles", "chrom", "pos", "strand",
+                        "assembly", "center", "protLSID", "assayLSID",
+                        "panelLSID", "QCcode")
+
+  # Convert both the required columns and data column names to lowercase for comparison
+  data_columns <- tolower(colnames(data)[1:11])
+  required_columns_lower <- tolower(required_columns)
+
+  # Normalize "assembly#" to "assembly"
+  data_columns <- gsub("assembly#", "assembly", data_columns)
+
+  # Check if the first 11 columns match the required columns
+  if (all(data_columns[1:11] == required_columns_lower)) {
+    message(paste(msg,paste("The first 11 columns match the required HapMap format.",
+                            "Data succefully loaded for processing.")))
+    return(invisible())
+  } else {
+    # Generate an error message with a guided example
+    error_message <- paste(
+      "The first 11 columns do not match the required HapMap format.\n",
+      "Expected columns (case-insensitive, in order):\n",
+      paste(required_columns, collapse = ", "), "\n",
+      "Your columns:\n",
+      paste(colnames(data)[1:11], collapse = ", "), "\n",
+      "Please ensure your data matches the required format."
+    )
+    stop(paste(msg,error_message), call. = FALSE)
+  }
+}
+
 #' Quality Control and Recoding for HapMap Data
 #'
 #' Performs quality control checks and recodes HapMap genotype data. It allows for filtering based on minor allele frequency (MAF), heterozygosity, individual and SNP call rates, and optionally imputes missing data. The function can also recode genotype data into numeric formats.
@@ -15,7 +102,7 @@
 #' @param out_put_map A logical value indicating whether to output a map of SNP information.
 #' @param message A logical value indicating whether to display messages during processing.
 #' @param ... Additional arguments to be passed to underlying functions.
-#' @importFrom data.table := .SD .SDcols lapply
+#' @importFrom data.table := .SD .SDcols apply lapply
 #'
 #' @return A list containing three elements:
 #' \itemize{
@@ -39,7 +126,12 @@
 #' }
 #'
 #' @export
-#'
+
+
+#hapmap_file_path = "D:/PEA_BARI"
+
+#hapmap_file_name = 'HapMap_300_Aug25_Select_Chr_No_Filtering.hmp.txt.zip'
+
 hmp_qc_recode <- function(hapmap_file_name = NULL,
                           hapmap_file_path = NULL,
                           hapmap = NULL,
@@ -48,9 +140,9 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
                           ind_call_rate_threshold = 0.9,
                           snp_call_rate_threshold = 0.9,
                           #hwe_threshold = 0.001,  # Adjust as needed
-                          impute = FALSE,
+                          impute = TRUE,
                           recode_format = "0,1,2",  # Specify "0,1,2" or -1, 0, 1
-                          out_put_map = FALSE,
+                          out_put_map = TRUE,
                           message = TRUE,
                           ...
 )
@@ -68,51 +160,63 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
   maf_markers_removed <-  0
   snp_data <- NULL
 
+  # Define replacement vectors
+  heterozygous <- c('R', 'Y', 'S', 'W', 'K', 'M')
+  missing_values <- c(NA, "NA", "N", "NN", "B", "V", "H", "D", ".", "-")
+
   ###############################
 
   if(!is.null(hapmap_file_name) && !is.null(hapmap_file_path)){
+
     # Construct the full file path
     full_file_path <- file.path(hapmap_file_path, hapmap_file_name)
+    hapmap <-  read_hapmap_file(full_file_path)
     # Read the file using fread
-    hapmap <- data.table::fread(full_file_path,
-                                header = TRUE,
-                                skip = "#",
-                                check.names = FALSE,
-                                na.strings=c(NA,"N","NN","B","V","H","D",".","-"))
+    # hapmap <- data.table::fread(full_file_path,
+    #                             header = TRUE,
+    #                             skip = "#",
+    #                             check.names = FALSE,
+    #                             na.strings=c(NA,"N","NN","B","V","H","D",".","-"))
 
 
   } else if (!is.null(hapmap)){
 
-    for (j in 12:ncol(hapmap)) {
-      hapmap[[j]] <- lapply(hapmap[[j]], function(x) {
-        x[which(x %in% c(NA, "NA", "N", "NN", "B", "V", "H", "D", ".", "-"))] <- NA
-        return(x)
-      })
+    if(!inherits(hapmap, "data.table")) {
+
+      hapmap <- data.table::as.data.table(hapmap)
+
     }
+
 
   }else{
     if(is.null(hapmap)){
-      stop(print(paste(msg,"Hapmap data is missing.")), call. = FALSE)
+      stop((paste(msg,"Hapmap data is missing.")), call. = FALSE)
 
     }
 
   }
 
+  # Check the columns
+  check_hapmap_columns(hapmap)
 
-  if(isFALSE(data.table::is.data.table(hapmap))){
-
-    hapmap <- data.table::as.data.table(hapmap)
-  }
+  # if(isFALSE(data.table::is.data.table(hapmap))){
+  #
+  #   hapmap <- data.table::as.data.table(hapmap)
+  # }
   #### Check and to be sure the expected header for snps name is present.
   ## it is usually rs#
   snp_names_check <- grep("rs", colnames(hapmap)[1:11], ignore.case = TRUE)
   if(length(snp_names_check)==0 | length(snp_names_check)>1){
-    stop(print(paste(msg,"rs# header/column name is missing or provided wrongly.")), call. = FALSE)
+    stop(paste(msg,"rs# header/column name is missing or provided wrongly."), call. = FALSE)
   }
   #########
 
   # Remove monomorphic markers
   monomorphic_markers <- which(apply(hapmap[, 12:ncol(hapmap)], 1, function(x) length(table(x)) <= 1))
+  #monomorphic <- hapmap[, apply(.SD, 1, function(x) length(unique(x)) <= 1), .SDcols = 12:ncol(hapmap)]
+  #monomorphic_markers <- which(monomorphic)
+
+  #monomorphic_markers <- which(apply(hapmap[, 12:ncol(hapmap)], 1, function(x) length(table(x)) <= 1))
   if (length(monomorphic_markers) > 0) {
     if (isTRUE(message)) {
       message(insight::print_color(paste(msg, paste("Removing monomorphic markers:", length(monomorphic_markers))), "blue"))
@@ -134,6 +238,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
   if(!is.null(snp_call_rate_threshold)) {
     # Calculate individual call rate
     snp_call_rate <- rowMeans(is.na(hapmap[, 12:ncol(hapmap)]))
+    #snp_call_rate <- hapmap[, rowMeans(is.na(.SD)), .SDcols = 12:ncol(hapmap)]
 
     # Filter based on individual call rate
     #low_call_rate_snps <- which(snp_call_rate < snp_call_rate_threshold)
@@ -162,6 +267,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
   if(!is.null(ind_call_rate_threshold)) {
     # Calculate individual call rate
     ind_call_rate <- colMeans(is.na(hapmap[, 12:ncol(hapmap)]))
+    #ind_call_rate <- hapmap[, colMeans(is.na(.SD)), .SDcols = 12:ncol(hapmap)]
 
     # Filter based on SNP call rate
     #low_call_rate_inds <- which(ind_call_rate < ind_call_rate_threshold)
@@ -188,8 +294,16 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
   ## Begin process to remove heterozygo
   if(!is.null(het_threshold)) {
     heteroz <- apply(hapmap[, 12:ncol(hapmap)], 1, function(x){
-      return(length(which(x%in%c('R', 'Y', 'S', 'W', 'K', 'M')))/length(x))
+      return(length(which(x%in%heterozygous))/length(x))
     })
+
+    # heteroz <- hapmap[, {
+    #   row_heteroz <- apply(.SD, 1, function(x) sum(x %in% c('R', 'Y', 'S', 'W', 'K', 'M')) / length(x))
+    #   list(heteroz = row_heteroz)
+    # }, .SDcols = 12:ncol(hapmap)]
+    #
+    # # Convert to vector
+    # heteroz <- heteroz$heteroz
 
         #het_markers <- which(heteroz >= het_threshold)
     het_markers <- which(heteroz > het_threshold)
@@ -248,11 +362,16 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
 
   }
 
+
   if (!is.null(recode_format)) {
     hapmap2numeric_meth2_1_0 <- function(hapmap){
       hapmap_numeric <- apply(hapmap[, c(1, 2,12:ncol(hapmap)), with=FALSE], 1, function(x){
-        x[which(x%in%c('R', 'Y', 'S', 'W', 'K', 'M'))] <- 1
-        x[which(x%in%c(NA,"NA","N","NN","B","V","H","D",".","-"))] <- NA
+        # Replace heterozygous markers with 1
+        x[which(x %in% heterozygous)] <- 1
+
+        # Replace specific missing value indicators with NA
+        x[which(x %in% missing_values)] <- NA
+
         allele1 <- substr(x[2], 1, 1)
         allele2 <- substr(x[2], 3, 3)
         if(length(which(x==allele1)) >= length(which(x==allele2))){
@@ -266,9 +385,13 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
         return(x)
       })
       return(t(hapmap_numeric[-(1:2), ]))
+      #return(hapmap_numeric)
     }
 
+#sik = unlist(hapmap_numeric)
+
     hapmap2numeric_meth1_1 <- function(hapmap){
+
       hapmap_numeric <- apply(hapmap[, c(1, 2,12:ncol(hapmap)), with=FALSE], 1, function(x){
         x[which(x%in%c('R', 'Y', 'S', 'W', 'K', 'M'))] <- 0
         x[which(x%in%c(NA,"NA","N","NN","B","V","H","D",".","-"))] <- NA
@@ -286,7 +409,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
       })
 
 
-      return(t(hapmap_numeric[-(1:2), ]))
+      #return(t(hapmap_numeric[-(1:2), ]))
       #return(t(hapmap_numeric))
     }
 
@@ -304,7 +427,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
 
     }
 
-    rm(hapmap); gc()
+    #rm(hapmap); gc()
 
     if(isTRUE(impute)){
       if(any(is.na(snp_data[, 12:ncol(snp_data)]))==T) {
@@ -320,6 +443,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
     }
     # End
   }
+  original_row_names <- colnames(snp_data)[12:ncol(snp_data)]
   ##################
   ## Aggregate all the info
   #### Aggregate all the maker data
@@ -350,8 +474,8 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
    snp_names_index <- grep("rs", colnames(map), ignore.case = TRUE)
    snp_data <- t(snp_data[, 12:ncol(snp_data)])
    colnames(snp_data) <- as.data.frame(map)[, snp_names_index]
-
    snp_data <- apply(snp_data, 2, as.double)
+   rownames(snp_data) <- original_row_names
 
    class(snp_data) <- c("matrix", "array", "genotype")
 
@@ -369,6 +493,8 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
     colnames(snp_data) <- as.data.frame(map)[, snp_names_index]
 
     snp_data <- apply(snp_data, 2, as.double)
+
+    rownames(snp_data) <- original_row_names
 
     class(snp_data) <- c("matrix", "array", "genotype")
     rm(map); gc()

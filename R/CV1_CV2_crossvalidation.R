@@ -27,9 +27,9 @@ CV1_CV2_for_multi_environment <- function(
 
   msg <- "\n==================================================\n"
 
-  if (is.null(heter_groups)){stop(message(paste(msg,"Provide the a pointer (heter_groups) to the column contaning the environments")), call. = FALSE)}
+  if (is.null(heter_groups)){stop(paste(msg,"Provide the a pointer (heter_groups) to the column contaning the environments."), call. = FALSE)}
   if(CV>2){stop(message(paste(msg,"CV must be 1 or 2")), call. = FALSE)}
-  if(is.null(nfolds)){stop(message(paste(msg,"Provide value the number of desired folds")), call. = FALSE)}
+  if(is.null(nfolds)){stop(paste(msg,"Provide value the number of desired folds"), call. = FALSE)}
   ## Order the pheno_data data by gen_name and by Environment
   pheno_data = pheno_data[order(pheno_data[[gen_name]]), ]
   pheno_data = pheno_data[order(pheno_data[[heter_groups]]), ]
@@ -39,9 +39,9 @@ CV1_CV2_for_multi_environment <- function(
   ID_GIDs = as.character(unique(pheno_data[[gen_name]]))
   Envs_ID_GIDs = as.character(pheno_data[[gen_name]])
 
-  if(length(ID_GIDs)==length(Envs_ID_GIDs)){stop(message(paste(msg,'CV1 and CV2 works when number of environment is greater than 1')), call. = FALSE)}
+  if(length(ID_GIDs)==length(Envs_ID_GIDs)){stop(paste(msg,'CV1 and CV2 works when number of environment is greater than 1'), call. = FALSE)}
 
-  if(replication>1){warning(paste(paste(msg,'You request for', replication), 'replications this might takes some time to run all the replications.'),
+  if(replication>1){warning(paste(msg,paste('You request for', replication, 'replications this might takes some time to run all the replications.')),
                             call. = FALSE)}
 
   Rep_FoldCV = vector(mode = "list", length = replication)

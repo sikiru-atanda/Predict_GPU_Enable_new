@@ -62,10 +62,10 @@ grm_calculation <- function(
   ## order in the geno_clean data
 
   # Validate input
-  if(!is.matrix(geno_clean)) stop(msg, "snp/marker data must be a matrix.")
-  if(!is.null(weight) && !is.matrix(weight)) stop("weight must be a matrix if provided.")
+  if(!is.matrix(geno_clean)) stop(paste(msg, "snp/marker data must be a matrix."), call. = FALSE)
+  if(!is.null(weight) && !is.matrix(weight)) stop(paste(msg, "weight must be a matrix if provided."), call. = FALSE)
   if(!is.null(weight) && !all(rownames(weight) %in% colnames(geno_clean))) {
-    stop("Not all SNPs in weight are present in snp/marker data.")
+    stop(paste(msg,"Not all SNPs in weight are present in snp/marker data."), call. = FALSE)
   }
 
   gmatrix_method_available <- c("VanRaden",
@@ -75,15 +75,15 @@ grm_calculation <- function(
 
   if(!is.null(method)){
     if (!(method %in% gmatrix_method_available)) {
-      stop("Invalid genomic relationship method. Choose from: ",
-           paste(gmatrix_method_available, collapse = ", "), call. = FALSE)
+      stop(paste(msg,"Invalid genomic relationship method. Choose from: ",
+           paste(gmatrix_method_available, collapse = ", ")), call. = FALSE)
     }
   }
 
   if(!is.null(weight)){
 
     weight <- weight[match(colnames(geno_clean), rownames(weight)), , drop = FALSE]
-    if(!identical(colnames(geno_clean), rownames(weight))) stop("SNP order in weight does not match geno_clean.")
+    if(!identical(colnames(geno_clean), rownames(weight))) stop(paste(msg, "SNP order in weight does not match geno_clean."), call. = FALSE)
     #weight <- diag(as.vector(weight))
 
     # Literature
@@ -121,7 +121,7 @@ grm_calculation <- function(
   if (checkG!=0) stop(print(paste(msg, "SNP data must be coded 0, 1, 2")), call. = FALSE)
 
 
-  if(missing(method)) stop(print(paste(msg, "Select either VanRaden or Yang to compute geno_cleanmic relationship matrix")), call. = FALSE)
+  if(missing(method)) stop(paste(msg, "Select either VanRaden or Yang to compute geno_cleanmic relationship matrix"), call. = FALSE)
 
 
   N_Individuals <- nrow(geno_clean)  ## Number of informative SNP
@@ -240,7 +240,7 @@ grm_calculation <- function(
          },
          {
 
-           stop(print(paste(msg, "Select method to calculate geno_cleanmic relationship matrix")), call. = FALSE)
+           stop(paste(msg, "Select method to calculate geno_cleanmic relationship matrix"), call. = FALSE)
          })
 
 

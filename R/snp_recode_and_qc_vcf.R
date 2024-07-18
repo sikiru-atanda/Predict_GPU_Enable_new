@@ -80,7 +80,7 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
 
   }else{
     if(is.null(vcf_file)){
-      stop(print(paste(msg,"vcf file is missing.")), call. = FALSE)
+      stop(paste(msg,"vcf file is missing."), call. = FALSE)
     }
 
   }
@@ -265,7 +265,7 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
     }
 
   } else {
-    stop(print(paste(msg,"Invalid recode format. Use '0,1,2' or '-1,0,1'.")), call. = FALSE)
+    stop(paste(msg,"Invalid recode format. Use '0,1,2' or '-1,0,1'."), call. = FALSE)
 
   }
 }
