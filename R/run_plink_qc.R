@@ -1,7 +1,7 @@
 run_plink_qc <- function(input_file,
                          output_name,
                          output_format = NULL,
-                         plink_path = "D:/PredictProR/plink",
+                         #plink_path = "D:/PredictProR/plink",
                          remove_monomorphic = TRUE,
                          maf_threshold = NULL,
                          heterozygosity = 0.2,
@@ -132,15 +132,15 @@ run_plink_qc <- function(input_file,
 }
 
 
-# run_plink_qc(input_file = "sik.vcf.gz",
-#             output_name = "today",
-#             output_format = "vcf",
-#             recode = TRUE,
-#             remove_monomorphic = FALSE,
-#             maf_threshold = 0.05,
-#             heterozygosity = NULL,
-#             snp_call_rate = 0.95,
-#             allow_extra_chr = TRUE,
-#             individual_call_rate = NULL)
-#
-#
+run_plink_qc(input_file = "sik.vcf.gz",
+            output_name = "today",
+            output_format = "vcf",
+            recode = TRUE,
+            remove_monomorphic = FALSE,
+            maf_threshold = 0.05,
+            heterozygosity = NULL,
+            snp_call_rate = 0.95,
+            allow_extra_chr = TRUE,
+            individual_call_rate = NULL)
+
+

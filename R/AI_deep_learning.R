@@ -131,14 +131,11 @@ deep_learning_model <- function(pheno_object=NULL,
                                 validation_split = 0.2,
                                 early_stop = TRUE
 ) {
-  # Validate parameters
-  # if (is.null(X_train) || is.null(y_train)) {
-  #   stop("X_train and y_train must be provided.")
-  # }
 
+  msg <- "\n==================================================\n"
   y_train <- as.numeric(pheno_object[, response])
   if (para_tunning && is.null(param_grid)) {
-    stop("param_grid must be provided when tuning is enabled.")
+    stop(paste(msg, "param_grid must be provided when tuning is enabled."), call. = FALSE)
   }
 
   if(is.null(neurons_per_layer)) neurons_per_layer <- list(ncol(geno_omic_object)/2)

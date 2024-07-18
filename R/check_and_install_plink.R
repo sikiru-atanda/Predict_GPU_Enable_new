@@ -1,12 +1,26 @@
 
+# Function to remove existing PLINK versions
+remove_existing_plink <- function(plink_paths) {
+  for (path in plink_paths) {
+    tryCatch({
+      file.remove(path)
+      message(sprintf("Removed PLINK at '%s'", path))
+    }, error = function(e) {
+      message(sprintf("Failed to remove PLINK at '%s'", path))
+    })
+  }
+}
+
 # Helper function to get PLINK download URL based on OS
 get_plink_download_url <- function() {
+  msg <- "\n==================================================\n"
   if (tolower(Sys.info()["sysname"]) %in% c("linux", "unix")) {
     return("https://s3.amazonaws.com/plink1-assets/plink_linux_x86_64_20231211.zip")
   } else if (.Platform$OS.type == "windows") {
     return("https://s3.amazonaws.com/plink1-assets/plink_win64_20231211.zip")
   } else {
-    stop("Unsupported operating system.")
+
+    stop(paste(msg, "Unsupported operating system."), call. = FALSE)
   }
 }
 
@@ -60,9 +74,18 @@ check_and_install_plink <- function(min_version = "1.90") {
   if (length(valid_indices) > 0) {
     # Use the highest valid version
     highest_version_index <- valid_indices[which.max(valid_versions[valid_indices])]
-    plink_dir <- dirname(plink_paths[highest_version_index])
-    message(sprintf("Using PLINK at '%s'", plink_paths[highest_version_index]))
+    ### This part is added to ensure that only the verison that the command line is
+    ## written is used. In the future we can accomodate version plink2 if stable
+    ## version is available
+    # Remove lower versions
+    lower_versions <- setdiff(plink_paths, plink_paths[highest_version_index])
+    remove_existing_plink(lower_versions)
+
+   # plink_dir <- dirname(plink_paths[highest_version_index])
+    #message(sprintf("Using PLINK at '%s'", plink_paths[highest_version_index]))
+
   } else {
+    remove_existing_plink(plink_paths)
     plink_dir <- install_plink()
   }
 

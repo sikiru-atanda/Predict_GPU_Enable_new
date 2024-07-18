@@ -1,3 +1,21 @@
+
+
+# Function to validate the number of hidden layers against the neurons_per_layer list
+validate_layers <- function(num_hidden_layers, neurons_per_layer) {
+  msg <- "\n==================================================\n"
+  if (length(num_hidden_layers) != length(neurons_per_layer)) {
+    stop(paste(msg, "The length of num_hidden_layers must match the length of neurons_per_layer"), call. = FALSE)
+  }
+
+  for (i in seq_along(num_hidden_layers)) {
+    if (num_hidden_layers[i] != length(neurons_per_layer[[i]])) {
+      stop(paste(msg, paste("Mismatch in hidden layers and neurons per layer at", num_hidden_layers[i])), call. = FALSE)
+    }
+  }
+
+  return(TRUE)
+}
+
 #' Title
 #'
 #' @param X_train
@@ -21,11 +39,23 @@ grid_search_deep_learning <- function(X_train,
                                       early_stop = TRUE) {
   results <- list()
 
+  msg <- "\n==================================================\n"
+
   # Check if validation_split is within valid range
   if (early_stop && (validation_split < 0 || validation_split >= 1)) {
-    stop("Validation split must be between 0 and 1.")
+    stop(paste(msg, "Validation split must be between 0 and 1."), call. = FALSE)
   }
 
+  # Call the validation function
+ #test_neuron_hidden_layer <-  tryCatch({
+    validate_layers(param_grid$num_hidden_layers, param_grid$neurons_per_layer)
+  #   cat("Validation successful: The number of hidden layers matches the neurons per layer configuration.\n")
+  # }, error = function(e) {
+  #   cat("Validation error:", e$message, "\n")
+  #   return(NULL)
+  # })
+
+ # if(is.null(test_neuron_hidden_layer))
   # Generate all combinations of hyperparameters
   hyperparam_combinations <- expand.grid(param_grid)
 
@@ -40,7 +70,7 @@ grid_search_deep_learning <- function(X_train,
 
     # Ensure that the number of neurons_per_layer matches the number of num_hidden_layers
     if (length(neurons_per_layer) != num_hidden_layers) {
-      warning("Length of neurons_per_layer does not match num_hidden_layers. Skipping this combination.")
+      warning(paste(msg, "Length of neurons_per_layer does not match num_hidden_layers. Skipping this combination."), call. = FALSE)
       next
     }
 

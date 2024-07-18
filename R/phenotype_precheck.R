@@ -1,10 +1,24 @@
 
 # Validate terms in fixed and random effects are present in pheno_data
-validate_terms <- function(term, data, term_type, gen_name) {
+validate_terms <- function(term, data, term_type, gen_name, pheno_data) {
   msg <- "\n==================================================\n"
+
+  if (length(pheno_data[[gen_name]]) == length(unique(pheno_data[[gen_name]]))){
+    # Convert the formula to a character string
+    formula_str <- as.character(term)
+
+    # Check for the presence of a colon (:) in the formula string when the pheno data is a single location data
+    contains_colon <- grepl(":", formula_str)
+
+    if (any(contains_colon)) {
+      stop(paste(msg, paste("The", term_type, "effect contains interaction term but your phenotypic data is a single environment.")), call. = FALSE)
+
+    }
+  }
+
   term_vars <- all.vars(term)
   if (!all(term_vars %in% names(data))) {
-    stop(msg, "All variables indicated in argument ", term_type, " should be present in phenotypic data.")
+    stop(paste(msg, paste("All variables indicated in argument ", term_type, " should be present in phenotypic data.")), call. = FALSE)
   }
   #if(length(data[[gen_name]]) > length(unique(data[[gen_name]]))){
     missing_factors <- term_vars[!sapply(data[term_vars], is.factor)]
@@ -42,26 +56,26 @@ phenotype_precheck <- function(pheno_data = NULL,
 
   # Check for empty data
   if (nrow(pheno_data) == 0) {
-    stop(msg, 'No pheno_data records provided.')
+    stop(paste(msg, 'No pheno_data records provided.'), call. = FALSE)
   }
 
   # Ensure pheno_data is a data frame
   if (!inherits(pheno_data, 'data.frame')) {
-    if (isTRUE(message)) warning(msg, "'pheno_data' is not of class 'data.frame'. Converting it to a data frame.")
+    if (isTRUE(message)) warning(paste(msg, paste("pheno_data is not of class data.frame."," Converting it to a data frame.")))
     pheno_data <- as.data.frame(pheno_data)
   }
 
   # Check for presence of response variables
   missing_responses <- response[!response %in% colnames(pheno_data)]
   if (length(missing_responses) > 0) {
-    stop(msg, "The specified response variable(s) '", paste(missing_responses, collapse = "', '"), "' did not match with your data. Please check and use appropriately.")
+    stop(paste(msg, paste("The specified response variable(s) '", paste(missing_responses, collapse = "', '"), "' did not match with your data. Please check and use appropriately.")), call. = FALSE)
   }
 
   # Order by heter_groups if specified and present
   if (!is.null(heter_groups)) {
     missing_heter_grps <- heter_groups[!heter_groups %in% colnames(pheno_data)]
     if (length(missing_heter_grps) > 0) {
-      stop(msg, "The variable '", paste(missing_heter_grps, collapse = "', '"), "' did not match with your data. Please check and use appropriately.")
+      stop(paste(msg, paste("The variable '", paste(missing_heter_grps, collapse = "', '"), "' did not match with your data. Please check and use appropriately.")))
     } else {
       pheno_data <- pheno_data[order(pheno_data[[heter_groups]]), ]
     }
@@ -69,12 +83,12 @@ phenotype_precheck <- function(pheno_data = NULL,
 
   # Check for gen_name presence
   if (!gen_name %in% colnames(pheno_data)) {
-    stop(sprintf("The specified column '%s' in the pheno_data did not match with your data. Please check and use appropriately.", gen_name))
+    stop(paste(msg, paste("The specified column", gen_name,"in the pheno_data did not match with your data. Please check and use appropriately.")), call. = FALSE)
   }
 
   # Check for NA in gen_name column
   if (anyNA(pheno_data[[gen_name]]) || any(pheno_data[[gen_name]] == -999)) {
-    stop(msg, "Column '", gen_name, "' should not have NA/missing values.")
+    stop(paste(msg, paste("Column '", gen_name, "' should not have NA/missing values.")), call. = FALSE)
   }
 
   # Ensure response variables are numeric
@@ -85,16 +99,18 @@ phenotype_precheck <- function(pheno_data = NULL,
   zero_variance_responses <- response[sapply(pheno_data[response], function(x) var(x, na.rm = TRUE) == 0)]
   if (length(zero_variance_responses) > 0) {
     msg <- "The following variable(s) have zero variance and cannot be used for prediction model: "
-    stop(msg, paste(zero_variance_responses, collapse=", "), ". Check the raw data and model that generate the estimates.")
+    stop(paste(msg, paste(paste(zero_variance_responses, collapse=", "), ". Check the raw data and model that generate the estimates.")), call. = FALSE)
   }
 
+  ## check that the fixed and random term are specified correctly
 
   if (!is.null(fixed)) {
-    pheno_data <- validate_terms(fixed, pheno_data, "fixed", gen_name)
+
+    pheno_data <- validate_terms(fixed, pheno_data, "fixed", gen_name, pheno_data)
   }
 
   if (!is.null(random)) {
-    pheno_data <- validate_terms(random, pheno_data, "random", gen_name)
+    pheno_data <- validate_terms(random, pheno_data, "random", gen_name, pheno_data)
   }
 
   attr(pheno_data, "cleared") <- "pass"

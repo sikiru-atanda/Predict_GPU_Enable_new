@@ -22,10 +22,11 @@ deep_learning_model_utility <- function(X_train,
                                         batch_size,
                                         output_optimizer = "adam") {
 
+  msg <- "\n==================================================\n"
   # Error handling for output optimizer
   valid_optimizers <- c("adam", "adamax", "sgd", "rmsprop", "adadelta", "nadam")
   if (!(output_optimizer %in% valid_optimizers)) {
-    stop("Invalid output optimizer. Choose from: ", paste(valid_optimizers, collapse = ", "))
+    stop(paste(msg, "Invalid output optimizer. Choose from: ", paste(valid_optimizers, collapse = ", ")), call. = FALSE)
   }
 
   # Determines the input dimensionality based on the number of columns in X_train
@@ -44,7 +45,7 @@ deep_learning_model_utility <- function(X_train,
       model |> keras::layer_dense(units = neurons_per_layer[[i]], activation = 'relu')
     } else {
       # Handle case where there are fewer elements in neurons_per_layer than num_hidden_layers
-      warning("Fewer elements in neurons_per_layer than num_hidden_layers.")
+      warning(paste(msg, "Fewer elements in neurons_per_layer than num_hidden_layers."), call. = FALSE)
       break
     }
   }

@@ -665,7 +665,7 @@ model_execute <- function(
     # Check for gen_name presence
     if(!is.null(pheno_data)){
     if (!gen_name %in% colnames(pheno_data)) {
-      stop(sprintf("The specified column '%s' in the pheno_data did not match with your data. Please check and use appropriately.", gen_name))
+      stop(paste(msg, sprintf("The specified column '%s' in the pheno_data did not match with your data. Please check and use appropriately.", gen_name)), call. = FALSE)
     }
 
     }
@@ -1008,7 +1008,7 @@ model_execute <- function(
  ## Check if the pheno_data in the pheno_clean is declared model fit
  #if(attr(pheno_clean[[1]], "cleared")!="for_model_fit" && all(class(pheno_clean[[1]])!=c("data.frame"))) {
  if(attr(pheno_clean[["pheno_clean_data"]], "cleared")!="for_model_fit") {
-     stop(print(paste(msg,'pheno_data is not phenotype data')), call. = FALSE)
+     stop(paste(msg,'pheno_data is not phenotype data'), call. = FALSE)
 
  }
 
