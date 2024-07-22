@@ -46,6 +46,7 @@ phenotype_precheck <- function(pheno_data = NULL,
                                heter_groups = NULL,
                                random = NULL,
                                fixed = NULL,
+                               type_pheno = NULL,
                                ...) {
 
   msg <- "\n==================================================\n"
@@ -96,12 +97,17 @@ phenotype_precheck <- function(pheno_data = NULL,
   pheno_data[non_numeric_responses] <- lapply(pheno_data[non_numeric_responses], function(x) as.numeric(as.character(x)))
 
   # Check for zero variance in response variables
+if(!is.null(type_pheno)){
+  if(type_pheno !="test_set"){
   zero_variance_responses <- response[sapply(pheno_data[response], function(x) var(x, na.rm = TRUE) == 0)]
   if (length(zero_variance_responses) > 0) {
     msg <- "The following variable(s) have zero variance and cannot be used for prediction model: "
     stop(paste(msg, paste(paste(zero_variance_responses, collapse=", "), ". Check the raw data and model that generate the estimates.")), call. = FALSE)
   }
 
+  }
+
+}
   ## check that the fixed and random term are specified correctly
 
   if (!is.null(fixed)) {

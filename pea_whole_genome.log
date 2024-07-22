@@ -1,0 +1,22 @@
+PLINK v2.00a5.12 64-bit (25 Jun 2024)
+Options in effect:
+  --allow-extra-chr
+  --export vcf
+  --geno 0.100000
+  --maf 0.050000
+  --max-alleles 2
+  --min-alleles 2
+  --out pea_whole_genome
+  --vcf D:/PredictProR/initial_qc_data.vcf.gz
+
+Hostname: NM037201E-07958
+Working directory: D:\PredictProR
+Start time: Sat Jul 20 07:56:31 2024
+
+Random number seed: 1721480191
+32467 MiB RAM detected; reserving 16233 MiB for main workspace.
+Using up to 20 threads (change this with --threads).
+Error: Failed to open D:/PredictProR/initial_qc_data.vcf.gz : No such file or
+directory.
+
+End time: Sat Jul 20 07:56:31 2024
