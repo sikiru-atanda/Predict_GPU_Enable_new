@@ -182,6 +182,10 @@ results_handling <-  function(GS_model = NULL,
       if ("bayes_model" %in% names(res_model_output)) {
         res_model_output <- res_model_output[names(res_model_output) != "bayes_model"]
       }
+
+      if ("diagnostic_plots" %in% names(res_model_output)) {
+        res_model_output <- res_model_output[names(res_model_output) != "diagnostic_plots"]
+      }
     #for (i in 1:length(res_model_output)) {
 
       for(i in 1:length(res_model_output)){
@@ -255,9 +259,12 @@ results_handling <-  function(GS_model = NULL,
 
             } else {
               for(j in 1:length(res_model_output[[i]])){
+                if(!inherits(res_model_output[[i]][[j]], "gtable")){
                 write.csv(res_model_output[[i]][[j]],
                           file.path(pathout, paste(names(res_model_output[[i]][j]), "csv", sep = ".")),
                           row.names = FALSE)
+
+                }
 
               }
 
@@ -402,9 +409,17 @@ if(inherits(combined_plot, "gtable")){
                                GS_model, res_plot, res_plot_mean,
                                test_diagonistic_plots, res_plot_result_diagnostic,
                                res_plot_result_diagnostic_cv_only) {
+    msg <- "\n==================================================\n"
+    # Check if any required object is NULL
+    if ((is.null(res_model_output) & is.null(res_summary_stat)) & (is.null(test_diagonistic_plots) & is.null(res_plot_result_diagnostic))) {
+      cat(paste(msg,paste("The output", "from", GS_model,"is NULL.", "No output will be saved.\n")))
+      return("Failed: Required objects are NULL")
+    }
+
     mainDir <- getwd()
-    systime <- format(Sys.time(), "%Y%m%d_%H%M%S")
-    systime <- gsub("[-: ]", "_", systime)
+    #systime <- format(Sys.time(), "%Y%m%d_%H%M%S")
+    #systime <- gsub("[-: ]", "_", systime)
+    systime <- format(Sys.time(), "%m-%d-%Y_%I-%M%p")
     subDir <- paste(output_file_name, systime, sep = "_")
     subDir2 <- paste(paste(output_file_name, "New", sep="_"), systime, sep = "_")
 

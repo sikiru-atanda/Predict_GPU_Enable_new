@@ -43,42 +43,42 @@ PredictProR Product of NDSU!
 
 }
 
-ensure_keras_and_dependencies <- function() {
-  #library(reticulate)
-
-  # Set up virtual environment
-  venv_name <- "r-reticulate"
-
-  tryCatch({
-    # if (!reticulate::virtualenv_exists(venv_name)) {
-    #   reticulate::use_virtualenv(venv_name, required = TRUE)
-    # }
-
-
-
-    # Install numpy
-    if (!reticulate::py_module_available("numpy")) {
-      reticulate::py_install("numpy==1.24.2", envname = venv_name, pip = TRUE)
-    }
-
-    # Install TensorFlow and Keras using keras::install_keras
-    if (!reticulate::py_module_available("tensorflow")) {
-      keras::install_keras(method = "virtualenv", envname = venv_name)
-    }
-
-    keras::install_keras()
-    # Install keras-tuner
-    if (!reticulate::py_module_available("keras_tuner")) {
-      reticulate::py_install("keras-tuner", envname = venv_name, pip = TRUE)
-    }
-  }, error = function(e) {
-    message("Error installing Python packages: ", e$message)
-    message("Please ensure you have Python installed and accessible from R.")
-  })
-}
-
-# Run the function to ensure the environment and dependencies are set up
-ensure_keras_and_dependencies()
+# ensure_keras_and_dependencies <- function() {
+#   #library(reticulate)
+#
+#   # Set up virtual environment
+#   venv_name <- "r-reticulate"
+#
+#   tryCatch({
+#     # if (!reticulate::virtualenv_exists(venv_name)) {
+#     #   reticulate::use_virtualenv(venv_name, required = TRUE)
+#     # }
+#
+#
+#
+#     # Install numpy
+#     if (!reticulate::py_module_available("numpy")) {
+#       reticulate::py_install("numpy==1.24.2", envname = venv_name, pip = TRUE)
+#     }
+#
+#     # Install TensorFlow and Keras using keras::install_keras
+#     if (!reticulate::py_module_available("tensorflow")) {
+#       keras::install_keras(method = "virtualenv", envname = venv_name)
+#     }
+#
+#     keras::install_keras()
+#     # Install keras-tuner
+#     if (!reticulate::py_module_available("keras_tuner")) {
+#       reticulate::py_install("keras-tuner", envname = venv_name, pip = TRUE)
+#     }
+#   }, error = function(e) {
+#     message("Error installing Python packages: ", e$message)
+#     message("Please ensure you have Python installed and accessible from R.")
+#   })
+# }
+#
+# # Run the function to ensure the environment and dependencies are set up
+# ensure_keras_and_dependencies()
 
 # Now you can proceed with the deep learning model script
 

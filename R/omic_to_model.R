@@ -19,8 +19,11 @@ omic_to_model <- function(omic_data = NULL,
 
   msg <- "\n==================================================\n"
 
+  if (is.null(omic_data) & is.null(train_omic_data) & is.null(test_omic_data)) {
+    stop(paste(msg, 'Omic data is missing.'), call. = FALSE)
+  }
   # Check if omic_data is provided
-  if (!is.null(omic_data)) {
+  if (!is.null(omic_data) & is.null(train_omic_data) & is.null(test_omic_data)) {
     omic_object <- omic_precheck(object = omic_data, message = message,
                                  impute = impute_omic)
 
@@ -31,64 +34,42 @@ omic_to_model <- function(omic_data = NULL,
 
   } else {
     # Check if train_omic_data is provided
-    if (!is.null(train_omic_data)) {
-      train_omic_data <- omic_precheck(object = train_omic_data, message = message)
+    if (!is.null(train_omic_data) & is.null(test_omic_data)) {
+      omic_object <- omic_precheck(object = train_omic_data, message = message)
+
+      if(is.null(omic_object)){
+        stop(paste(msg, 'Train_omic_data did not pass the required test. Check the data.'), call. = FALSE)
+      }
     }
 
     # Check if test_omic_data is provided
-    if (!is.null(test_omic_data)) {
-      test_omic_data <- omic_precheck(object = test_omic_data, message = message)
-    }
+    if (!is.null(test_omic_data) & is.null(train_omic_data)) {
+      stop(paste(msg, 'Training set is missing.'), call. = FALSE)
+      # test_omic_data <- omic_precheck(object = test_omic_data, message = message)
+      #
+      # if(is.null(test_omic_data)){
+      #   stop(paste(msg, 'Test_omic_data did not pass the required test. Check the data.'), call. = FALSE)
+      # }
 
-    # Check if both train_omic_data and test_omic_data passed the checks and have matching columns
+    }
     if (!is.null(train_omic_data) && !is.null(test_omic_data)) {
-        if(attr(train_omic_data, "cleared") == "pass" &&
-        attr(test_omic_data, "cleared") == "pass"){
-      if(identical(colnames(train_omic_data), colnames(test_omic_data))){
-        omic_object <- rbind(train_omic_data, test_omic_data)
-      } else {
-        stop(print(paste(msg,'Colnames for train_omic_data and test_omic_data did not match.')), call. = FALSE)
+
+      if (!identical(colnames(train_geno_data), colnames(test_omic_data))) {
+
+        stop(paste(msg, 'Omic data not match in training and testing set data.'), call. = FALSE)
       }
 
-        } else {
-          stop(print(paste(msg,'Data is not object Omic_matrix')), call. = FALSE)
-        }
-          # Remove train_omic_data and test_omic_data from memory
-      rm(train_omic_data, test_omic_data)
+      omic_object <- rbind(train_omic_data, test_omic_data)
+      omic_object <- omic_precheck(object = omic_object, message = message)
 
-    } else if (!is.null(train_omic_data) && is.null(test_omic_data)) {
-      # Check if only train_omic_data is provided
-      message(paste(msg, 'Only train_omic_data is provided'))
-
-      # Check if train_omic_data passed the checks
-      if (attr(train_omic_data, "cleared") == "pass" && inherits(train_omic_data, c("matrix", "array"))) {
-        omic_object <- train_omic_data
-
-        # Remove train_omic_data from memory
-        rm(train_omic_data)
-      } else {
-        stop(print(paste(msg, 'Data is not of class Omic_matrix')), call. = FALSE)
-      }
-    } else if (is.null(train_omic_data) && !is.null(test_omic_data)) {
-      # Check if only test_omic_data is provided
-      if (isTRUE(message)) {
-        message(paste(msg, 'Only test_omic_data is provided'))
+      if(is.null(omic_object)){
+        stop(paste(msg, 'Omic data did not pass the required test. Check the data.'), call. = FALSE)
       }
 
-      # Check if test_omic_data passed the checks
-      if (attr(test_omic_data, "cleared") == "pass" && inherits(test_omic_data, c("matrix", "array"))) {
-        omic_object <- test_omic_data
 
-        # Remove test_omic_data from memory
-        rm(test_omic_data)
-      } else {
-        stop(print(paste(msg, 'Data is not of class Omic_matrix')), call. = FALSE)
-      }
-    } else {
-      # None of the omic data is provided
-      stop(print(paste(msg, 'No omic data provided')), call. = FALSE)
     }
-  }
+
+  } ### Ends
 
   # Set attribute to indicate readiness for model fit
   attr(omic_object, "cleared") <- "for_model_fit"
