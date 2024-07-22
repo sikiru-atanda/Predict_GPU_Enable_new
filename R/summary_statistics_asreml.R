@@ -28,6 +28,23 @@ summary_statistics_asreml <- function(mod=NULL,
                                       system_database = FALSE,
                                       ...){
   diagnostic_tst_plot <- NULL
+  if(!is.null(predicted_value)){
+    if(inherits(predicted_value, "data.frame")){
+      predicted_value <- predicted_value[, 1]
+    }
+  }
+  ###
+  if(!is.null(standard_errors)){
+    if(inherits(standard_errors, "data.frame")){
+      standard_errors <- standard_errors[, 1]
+    }
+  }
+  ##
+  if(!is.null(prediction_error_var)){
+    if(inherits(prediction_error_var, "data.frame")){
+      prediction_error_var <- prediction_error_var[, 1]
+    }
+  }
 ##browser()
   if(!is.null(eval_metrics)){
     Eval_met <- matrix(NA, nrow = length(eval_metrics), ncol = 1)

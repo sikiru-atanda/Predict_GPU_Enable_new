@@ -14,12 +14,12 @@ check_test_set <- function(test_set = NULL
   if (is.null(test_set)) return(NULL)
 
   if (!is.data.frame(test_set) && !is.matrix(test_set) && !is.vector(test_set)) {
-    stop(message(paste(msg, 'The testing set should be a dataframe, matrix, or a vector.')), call. = FALSE)
+    stop(paste(msg, 'The testing set should be a dataframe, matrix, or a vector.'), call. = FALSE)
   }
 
   if (is.data.frame(test_set) || is.matrix(test_set)) {
     if(ncol(test_set)>1){
-      stop(message(paste(msg, 'The testing set should be a dataframe, matrix with single column.')), call. = FALSE)
+      stop(paste(msg, 'The testing set should be a dataframe, matrix with single column.'), call. = FALSE)
     }
     test_set <- unique(test_set[, 1])
   } else {
@@ -51,7 +51,7 @@ pheno_geno_match <- function(object_geno = NULL,
     dplyr::summarise(Count = dplyr::n_distinct(!!rlang::sym(gen_name)))
 
   if(dplyr::n_distinct(env_counts$Count) > 1) {
-    stop(sprintf("%s are not consistent across all %s. Stopping.", gen_name, heter_groups))
+    stop(paste(msg,sprintf("%s are not consistent across all %s. Stopping.", gen_name, heter_groups)), call. = FALSE)
 
   } else {
     # Order genotypes consistently across environments then by environment
@@ -66,7 +66,7 @@ pheno_geno_match <- function(object_geno = NULL,
   ID_pheno <- as.character(unique(object_pheno[[gen_name]]))
 
   if (!isTRUE(all(ID_pheno %in% rownames(object_geno)))) {
-    stop(print(paste(msg, 'Not all individuals with phenotypic records have genotypic/omic records.')), call. = FALSE)
+    stop(paste(msg, 'Not all individuals with phenotypic records have genotypic/omic records.'), call. = FALSE)
   }
 
   if (!isTRUE(all(rownames(object_geno) %in% ID_pheno))) {

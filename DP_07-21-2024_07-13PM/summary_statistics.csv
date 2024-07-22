@@ -1,0 +1,11 @@
+"stat","summary"
+"Min","83.3"
+"Max","171.9"
+"Phenotype_Variance","243.109"
+"Residual_Variance",NA
+"Number_TrainingSet","135"
+"Number_TestingSet","33"
+"Number_Predictors","96"
+"GS_model","PartialLeastSquare"
+"stat","component"
+"summary","3"

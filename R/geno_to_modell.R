@@ -70,80 +70,98 @@ geno_to_model <- function(geno_data = NULL,
 
   if (!is.null(geno_data) && is.null(map_data) && is.null(test_geno_data) && is.null(train_geno_data)) {
     geno_object <- check_and_prepare(data = geno_data)
+    if(is.null(geno_object)){
+      stop(paste(msg, 'Genomic data did not pass the required test. Check the data.'), call. = FALSE)
+    }
 
   } else if (!is.null(geno_data) && !is.null(map_data) && is.null(test_geno_data) && is.null(train_geno_data)) {
     geno_object <- check_and_prepare(data = geno_data)
-
-
-    if (attr(geno_object[[1]], "cleared") != "pass" || !identical(class(geno_object[[1]]), c("matrix", "array"))) {
-      stop(print(paste(msg, 'Geno or the omic data did not pass the required test. Check the data.')), call. = FALSE)
+    if(is.null(geno_object)){
+      stop(paste(msg, 'Genomic data did not pass the required test. Check the data.'), call. = FALSE)
     }
+
+
+    # if (attr(geno_object[[1]], "cleared") != "pass" || !identical(class(geno_object[[1]]), c("matrix", "array"))) {
+    #   stop(paste(msg, 'Geno or the omic data did not pass the required test. Check the data.'), call. = FALSE)
+    # }
 
   } else {
-    if (!is.null(train_geno_data)) {
-      train_geno_data <- check_and_prepare(data = train_geno_data)
+    if (!is.null(train_geno_data) & is.null(test_geno_data)) {
+      geno_object <- check_and_prepare(data = train_geno_data)
+      if(is.null(geno_object)){
+        stop(paste(msg, 'Genomic data did not pass the required test. Check the data.'), call. = FALSE)
+      }
+      if (isTRUE(message)) {
+        message(insight::print_color(paste(msg, paste("Only train_geno_data is provided.")), "blue"))
+      }
+      # if ((attr(train_geno_data[[1]], "cleared") == "pass" && all(class(train_geno_data[[1]]) == c("matrix", "array")))) {
+      #   geno_object <- train_geno_data[[1]]
+      #   #class(geno_object) <- c("matrix", "array", "geno_data")
+      #   attr(geno_object, "cleared") <- "for_model_fit"
+      #   geno_object <- list(snps_matrix = geno_object,
+      #                       qc_metrics_and_summary_stat = train_geno_data[[2]])
+      #   rm(train_geno_data)
+      # }
 
     }
 
-    if (!is.null(test_geno_data)) {
+    if (!is.null(test_geno_data) & is.null(train_geno_data)) {
       test_geno_data <- check_and_prepare(data = test_geno_data)
+
+      if(is.null(test_geno_data)){
+        stop(paste(msg, 'Genomic data did not pass the required test. Check the data.'), call. = FALSE)
+      }
+
+      stop(paste(msg, 'Training set is missing.'), call. = FALSE)
+      # if (isTRUE(message)) {
+      #   message(paste(insight::print_color("WARNINGS\n", "blue"),
+      #                 insight::print_color(paste(msg, paste("Only the test_geno_data is provided.\n\t Check if this is correct.")), "blue")))
+      # }
+      # if ((attr(test_geno_data[[1]], "cleared") == "pass" && all(class(test_geno_data[[1]]) == c("matrix", "array")))) {
+      #   geno_object <- test_geno_data[[1]]
+      #   #class(geno_object) <- c("matrix", "array", "geno_data")
+      #   attr(geno_object, "cleared") <- "for_model_fit"
+      #   geno_object <- list(snps_matrix = geno_object,
+      #                       qc_metrics_and_summary_stat = test_geno_data[[2]])
+      #   rm(test_geno_data)
+      # }
 
     }
 
     if (!is.null(train_geno_data) && !is.null(test_geno_data)) {
-      if (((attr(test_geno_data[[1]], "cleared") == "pass" && all(class(test_geno_data[[1]]) == c("matrix", "array"))) &&
-           (attr(train_geno_data[[1]], "cleared") == "pass" && all(class(train_geno_data[[1]]) == c("matrix", "array"))))) {
+      # if (((attr(test_geno_data[[1]], "cleared") == "pass" && all(class(test_geno_data[[1]]) == c("matrix", "array"))) &&
+      #      (attr(train_geno_data[[1]], "cleared") == "pass" && all(class(train_geno_data[[1]]) == c("matrix", "array"))))) {
 
-        if (!identical(colnames(train_geno_data[[1]]), colnames(test_geno_data[[1]]))) {
-          if (dim(train_geno_data[[1]])[2] != 0 && dim(test_geno_data[[1]])[2] != 0) {
-            snp_names <- intersect(colnames(train_geno_data[[1]]), colnames(test_geno_data[[1]]))
-            train_geno_data[[1]] <- train_geno_data[[1]][, colnames(train_geno_data[[1]]) %in% snp_names]
-            test_geno_data[[1]] <- test_geno_data[[1]][, colnames(test_geno_data[[1]]) %in% snp_names]
+        if (!identical(colnames(train_geno_data), colnames(test_geno_data))) {
+          # if (dim(train_geno_data)[2] != 0 && dim(test_geno_data)[2] != 0) {
+          #   snp_names <- intersect(colnames(train_geno_data[[1]]), colnames(test_geno_data[[1]]))
+          #   train_geno_data[[1]] <- train_geno_data[[1]][, colnames(train_geno_data[[1]]) %in% snp_names]
+          #   test_geno_data[[1]] <- test_geno_data[[1]][, colnames(test_geno_data[[1]]) %in% snp_names]
+          #
+          #   geno_object <- list(snps_matrix = rbind(train_geno_data[[1]], test_geno_data[[1]]))
+          #   #class(geno_object) <- c("matrix", "array", "geno_data")
+          #   attr(geno_object, "cleared") <- "for_model_fit"
+          #   geno_object$qc_metrics_and_summary_stat <- train_geno_data[[2]]
 
-            geno_object <- list(snps_matrix = rbind(train_geno_data[[1]], test_geno_data[[1]]))
-            #class(geno_object) <- c("matrix", "array", "geno_data")
-            attr(geno_object, "cleared") <- "for_model_fit"
-            geno_object$qc_metrics_and_summary_stat <- train_geno_data[[2]]
-          } else {
-            stop(print(paste(msg, 'SNP/markers did not match in training and testing set data.')), call. = FALSE)
+            stop(paste(msg, 'SNP/markers did not match in training and testing set data.'), call. = FALSE)
           }
-        } else {
-          geno_object <- rbind(train_geno_data[[1]], test_geno_data[[1]])
+
+          geno_object <- rbind(train_geno_data, test_geno_data)
+          geno_object <- check_and_prepare(data = geno_object)
+          if(is.null(geno_object)){
+            stop(paste(msg, 'Genomic data did not pass the required test. Check the data.'), call. = FALSE)
+          }
+          # if (attr(geno_object[[1]], "cleared") != "pass" || !identical(class(geno_object[[1]]), c("matrix", "array"))) {
+          #   stop(paste(msg, 'Geno or the omic data did not pass the required test. Check the data.'), call. = FALSE)
+          # }
           #class(geno_object) <- c("matrix", "array", "geno_data")
-          attr(geno_object, "cleared") <- "for_model_fit"
-          geno_object <- list(snps_matrix = geno_object,
-                              qc_metrics_and_summary_stat = train_geno_data[[2]])
-        }
-      } else {
-        stop(print(paste(msg, 'SNP/marker data did not pass the required test. Check the data.')), call. = FALSE)
-      }
 
-    } else if (!is.null(train_geno_data) && is.null(test_geno_data)) {
-      if (isTRUE(message)) {
-        message(insight::print_color(paste(msg, paste("Only train_geno_data is provided.")), "blue"))
-      }
-      if ((attr(train_geno_data[[1]], "cleared") == "pass" && all(class(train_geno_data[[1]]) == c("matrix", "array")))) {
-        geno_object <- train_geno_data[[1]]
-        #class(geno_object) <- c("matrix", "array", "geno_data")
-        attr(geno_object, "cleared") <- "for_model_fit"
-        geno_object <- list(snps_matrix = geno_object,
-                            qc_metrics_and_summary_stat = train_geno_data[[2]])
-        rm(train_geno_data)
-      }
 
-    } else if (is.null(train_geno_data) && !is.null(test_geno_data)) {
-      if (isTRUE(message)) {
-        message(paste(insight::print_color("WARNINGS\n", "blue"),
-                      insight::print_color(paste(msg, paste("Only the test_geno_data is provided.\n\t Check if this is correct.")), "blue")))
-      }
-      if ((attr(test_geno_data[[1]], "cleared") == "pass" && all(class(test_geno_data[[1]]) == c("matrix", "array")))) {
-        geno_object <- test_geno_data[[1]]
-        #class(geno_object) <- c("matrix", "array", "geno_data")
-        attr(geno_object, "cleared") <- "for_model_fit"
-        geno_object <- list(snps_matrix = geno_object,
-                            qc_metrics_and_summary_stat = test_geno_data[[2]])
-        rm(test_geno_data)
-      }
+
+      # } else {
+      #   stop(paste(msg, 'SNP/marker data did not pass the required test. Check the data.'), call. = FALSE)
+      # }
+
     }
   }
 

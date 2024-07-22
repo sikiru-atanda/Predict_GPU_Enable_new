@@ -1,0 +1,8 @@
+"stat","summary"
+"Min","0.28"
+"Max","32.38"
+"Phenotype_Variance","42.853"
+"Residual_Variance","32.247"
+"Number_TrainingSet","135"
+"Number_TestingSet","33"
+"GS_model","BayesA"

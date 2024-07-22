@@ -160,6 +160,20 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
   maf_markers_removed <-  0
   snp_data <- NULL
 
+  if(!is.null(snp_call_rate_threshold)){
+    if (snp_call_rate_threshold < 0.5) {
+      snp_call_rate_threshold <- 1 - snp_call_rate_threshold
+    }
+
+  }
+
+  if(!is.null(ind_call_rate_threshold)){
+    if (ind_call_rate_threshold < 0.5) {
+      ind_call_rate_threshold <- 1 - ind_call_rate_threshold
+    }
+
+  }
+
   # Define replacement vectors
   heterozygous <- c('R', 'Y', 'S', 'W', 'K', 'M')
   missing_values <- c(NA, "NA", "N", "NN", "B", "V", "H", "D", ".", "-")
