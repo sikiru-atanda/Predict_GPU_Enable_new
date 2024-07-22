@@ -1,8 +1,0 @@
-"stat","summary"
-"Min","74.92"
-"Max","359.72"
-"Phenotype_Variance","3899.485"
-"Residual_Variance","2717.537"
-"Number_TrainingSet","135"
-"Number_TestingSet","33"
-"GS_model","BRR"

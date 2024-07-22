@@ -1,8 +1,0 @@
-"stat","summary"
-"Min","171.565"
-"Max","289.522"
-"Phenotype_Variance","558.799"
-"Residual_Variance","353.296"
-"Number_TrainingSet","135"
-"Number_TestingSet","33"
-"GS_model","RKHS"
