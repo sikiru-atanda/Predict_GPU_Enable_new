@@ -186,7 +186,7 @@ diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
                                                     low_reliability_thres = low_reliability_thres,
                                                     system_database = system_database)
 
-predicted_value <- data.frame(name = NA,
+predicted_value <- data.frame(name = rownames(datasets)[tst],
                               Predicted_value = mod$model$yHat[tst],
                               Standard_error = mod$model$SD.yHat[tst],
                               PEV = ((mod$model$SD.yHat)^2)[tst],
@@ -230,7 +230,7 @@ composite_reliability <- composite_reliability_tst(geno_trn = datasets,
                                                    apply_pca = TRUE)
 
 
-predicted_value <- data.frame(name = NA,
+predicted_value <- data.frame(name = rownames(datasets),
                               Predicted_value = mod$model$yHat,
                               Standard_error = mod$model$SD.yHat,
                               PEV = (mod$model$SD.yHat)^2,
@@ -279,17 +279,18 @@ colnames(predicted_value)[1] <- gen_name
 ### Residual value is only estimable for response value without NA
 
 if(length(tst)!=0){
-  residual_value <- data.frame(name = NA,
+  residual_value <- data.frame(name = rownames(datasets)[tst],
                                Predicted_value = mod$model$yHat[tst],
                                Residual_value = (mod$model$y[tst] - mod$model$yHat[tst]),
                                stringsAsFactors = FALSE)
 } else {
-  residual_value <- data.frame(name = NA,
+  residual_value <- data.frame(name =rownames(datasets),
                                Predicted_value = mod$model$yHat,
                                Residual_value = (mod$model$y - mod$model$yHat),
                                stringsAsFactors = FALSE)
 }
 
+colnames(residual_value)[1] <- gen_name
 #######################################
 BIN <- mod[["output_files_names"]][grepl("bin", mod[["output_files_names"]])]
 ### Extract Error variance
