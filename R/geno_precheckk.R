@@ -186,8 +186,8 @@ geno_precheck <- function(object_geno = NULL,
         message(insight::print_color(paste(msg, paste("Removing monomorphic markers:", length(monomorphic_markers))), "blue"))
       }
 
-        object_geno <- object_geno[, -monomorphic_markers]      
-        
+        object_geno <- object_geno[, -monomorphic_markers]
+
 
       #map_data <- map_data[-monomorphic_markers, ]
       total_mono <-  length(monomorphic_markers)
@@ -196,7 +196,7 @@ geno_precheck <- function(object_geno = NULL,
       if(isTRUE(message)) {
         message(insight::print_color(paste(msg, "No monomorphic markers to remove."), "blue"))
       }
-      total_mono = 0
+      total_mono <-  0
     }
     ###
     if(isTRUE(qc_filtering)){
@@ -308,6 +308,17 @@ geno_precheck <- function(object_geno = NULL,
   }
 
   object_geno <- handle_missing_values(data = object_geno)
+  ## check if there is duplicated snps
+  duplicated_columns <- colnames(object_geno)[duplicated(colnames(object_geno))]
+  if(length(duplicated_columns)>0){
+    stop(print(paste(msg,"Marker/snp data contain duplicate snps.")), call. = FALSE)
+  }
+
+  ## check duplicated rownames:
+  duplicated_rownames <- rownames(object_geno)[duplicated(rownames(object_geno))]
+  if(length(duplicated_rownames)>0){
+    stop(print(paste(msg,"Marker/snp data contain duplicate genotypes.")), call. = FALSE)
+  }
   #### Aggregate all the maker data
   #########################
   summary_stat_snp= data.frame(

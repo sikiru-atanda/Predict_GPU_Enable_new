@@ -774,7 +774,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
 
   if(is.null(Zg)){
 
-    if(!is.null(diagnostic_plots)){
+    #if(!is.null(diagnostic_plots)){
     res <- list(Coefficients = coefficients_list,
                 Estimated_breeding_value = estimated_breeding_value_list,
                 Total_estimated_breeding_value = sum_ebv,
@@ -783,16 +783,16 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                 diagnostic_plots = diagnostic_plots,
                 Variance_components = variance_components,
                 M_matrix_model_ready =  m_matrix_model_ready_list)
-    } else {
-      res <- list(Coefficients = coefficients_list,
-                  Estimated_breeding_value = estimated_breeding_value_list,
-                  Total_estimated_breeding_value = sum_ebv,
-                  Predicted_value =  predicted_value,
-                  Residual_value = residual_value,
-                  #diagnostic_plots = diagnostic_plots,
-                  Variance_components = variance_components,
-                  M_matrix_model_ready =  m_matrix_model_ready_list)
-    }
+    # } else {
+    #   res <- list(Coefficients = coefficients_list,
+    #               Estimated_breeding_value = estimated_breeding_value_list,
+    #               Total_estimated_breeding_value = sum_ebv,
+    #               Predicted_value =  predicted_value,
+    #               Residual_value = residual_value,
+    #               #diagnostic_plots = diagnostic_plots,
+    #               Variance_components = variance_components,
+    #               M_matrix_model_ready =  m_matrix_model_ready_list)
+    # }
 
   } else {
     res <- list(Coefficients = coefficients_list,
@@ -802,7 +802,8 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                 Total_Predicted_value = across_env_predicted_value,
                 Residual_value = residual_value,
                 Variance_components = variance_components,
-                M_matrix_model_ready =  m_matrix_model_ready_list
+                M_matrix_model_ready =  m_matrix_model_ready_list,
+                diagnostic_plots = diagnostic_plots
     )
 
   }

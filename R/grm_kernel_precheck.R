@@ -72,11 +72,25 @@ if (!is.null(grm_kernel_data)){
   if (is.null(colnames(grm_kernel_data))){
     stop(message(paste(msg,'Colnames containing individuals in the matrix is missing.')), call. = FALSE)
   }
+  ######
+  ## check if there is duplicated colnames
+  duplicated_columns <- colnames(grm_kernel_data)[duplicated(colnames(grm_kernel_data))]
+  if(length(duplicated_columns)>0){
+    stop(print(paste(msg,"The relationship matrix data contain duplicate snps.")), call. = FALSE)
+  }
+
+  ## check duplicated rownames:
+  duplicated_rownames <- rownames(grm_kernel_data)[duplicated(rownames(grm_kernel_data))]
+  if(length(duplicated_rownames)>0){
+    stop(print(paste(msg,"The relationship matrix data contain duplicate genotypes.")), call. = FALSE)
+  }
+  ######
+
   all_numeric <- all(apply(grm_kernel_data, c(1, 2), is.numeric))
 
   # Stop execution if any element is not numeric
   if (!all_numeric) {
-    stop(paste(msg, 'The data contains non-numeric values.'), call. = FALSE)
+    stop(paste(msg, 'The relationship matrix data contains non-numeric values.'), call. = FALSE)
   }
   ### Check if the matrix is in class matrix if not convert to class matrix
   if (!is.matrix(grm_kernel_data)) grm_kernel_data <- as.matrix(grm_kernel_data)
@@ -87,14 +101,14 @@ if (!is.null(grm_kernel_data)){
 
   #if(!isSymmetric.matrix(grm_kernel_data)) {stop(print(paste(msg,'grm_kernel_data is not symmetric')), call. = FALSE)}
   if(!isSymmetric.matrix(grm_kernel_data)) {
-    message(insight::print_color(paste(msg,paste("Relationsip Matrix is not symmetric'. We fix it.")), "blue"))
+    message(insight::print_color(paste(msg,paste("The relationsip matrix is not symmetric'. We fix it.")), "blue"))
     grm_kernel_data <- Matrix::forceSymmetric(grm_kernel_data)
     grm_kernel_data <- Matrix::as.matrix(grm_kernel_data)
   }
 
   if(isTRUE(bending) & !is.null(bend_value)){
   if(isFALSE(matrixcalc::is.positive.definite(grm_kernel_data))){
-    message(insight::print_color(paste(msg,paste("Relationsip Matrix is not positive definite. We fix it.")), "blue"))
+    message(insight::print_color(paste(msg,paste("The relationsip matrix is not positive definite. We fix it.")), "blue"))
     grm_kernel_data <- as.matrix(Matrix::nearPD(grm_kernel_data, posd.tol= bend_value, trace=FALSE)$mat)
   }
 
@@ -103,7 +117,7 @@ if (!is.null(grm_kernel_data)){
     if(isFALSE(matrixcalc::is.positive.definite(grm_kernel_data))){
       grm_kernel_data <- as.matrix(Matrix::nearPD(grm_kernel_data, posd.tol= bend_value, trace=FALSE)$mat)
       #message(paste(msg,"Relationsip Matrix is not positive definite. Set bending = TRUE to fix it"))
-      message(insight::print_color(paste(msg,paste("Relationsip Matrix is not positive definite.\n \t We fix it by bending to make the matrix stable.")), "blue"))
+      message(insight::print_color(paste(msg,paste("The relationsip Matrix is not positive definite.\n \t We fix it by bending to make the matrix stable.")), "blue"))
     }
   }
 
@@ -140,7 +154,7 @@ if (!is.null(grm_kernel_data)){
       if("potential_off_diag_with_duplicate"%in%names(res) | rcn < rcn_cutoff){
         #if("potential_off_diag_with_duplicate"%in%names(res)){
         message(paste(insight::print_color("WARNINGS\n", "blue"),
-                      insight::print_color(paste(msg,paste("Matrix contain duplicate(s) or still ill-conditioned which might be potential problem.\n \t Change the blending value eg. 0.05  etc.")), "blue")))
+                      insight::print_color(paste(msg,paste("The relationship matrix contain duplicate(s) or still ill-conditioned which might be potential problem.\n \t Change the blending value eg. 0.05  etc.")), "blue")))
 
         ncol_nrow <-  ncol(grm_kernel_data)
         grm_kernel_data <- (1-blending_value)*grm_kernel_data_ + blending_value*diag(x=1, nrow=ncol_nrow , ncol=ncol_nrow )
@@ -149,7 +163,7 @@ if (!is.null(grm_kernel_data)){
       } else {
         if(isTRUE(message)){
           message(paste( insight::print_color("WARNINGS\n", "blue"),
-                         insight::print_color(paste(msg,paste("Matrix contain duplicate(s) which might be potential problem.\n \t We fix it by blending using an identity matrix.")), "blue")))
+                         insight::print_color(paste(msg,paste("The relationship matrix contain duplicate(s) which might be potential problem.\n \t We fix it by blending using an identity matrix.")), "blue")))
 
         }
       }
@@ -176,7 +190,7 @@ if (!is.null(grm_kernel_data)){
     ## another blending_value value.
     if("potential_off_diag_with_duplicate"%in%names(res)){
       message(paste( insight::print_color("WARNINGS\n", "blue"),
-                     insight::print_color(paste(msg,paste("Matrix contain duplicate(s) which might be potential problem.\n \t Change the blending value eg. 0.05  etc.")), "blue")))
+                     insight::print_color(paste(msg,paste("The relationship matrix contain duplicate(s) which might be potential problem.\n \t Change the blending value eg. 0.05  etc.")), "blue")))
 
 
     }

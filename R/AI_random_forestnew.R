@@ -2,7 +2,7 @@
 
 # Function to train and predict using random for bootstrapping
 train_predict_randomForest <- function(data_label_geno, indices, test_geno, ntree = NULL,
-                                       mtry=NULL, maxnodes = NULL) {
+                                       mtry=NULL, maxnodes = NULL, nodesize=NULL) {
   train_data <- data_label_geno[, -1]
   y_train <- data_label_geno[, 1]
   # Subset the data
@@ -11,24 +11,26 @@ train_predict_randomForest <- function(data_label_geno, indices, test_geno, ntre
                                         y = y_train
                                         )
 
-  }else if(is.null(mtry) & is.null(maxnodes)){
+  }else if((is.null(mtry) & is.null(maxnodes)) & is.null(nodesize)){
     model <- randomForest::randomForest(x = train_data,
                                         y = y_train,
                                         ntree = ntree)
 
-  } else if (!is.null(mtry) & is.null(maxnodes)){
-    model <- randomForest::randomForest(x = train_data,
-                                        y = y_train,
-                                        ntree = ntree,
-                                        mtry = mtry)
-
-
-  } else if (!is.null(mtry) & !is.null(maxnodes)){
+  } else if ((!is.null(mtry) & is.null(maxnodes)) & !is.null(nodesize)){
     model <- randomForest::randomForest(x = train_data,
                                         y = y_train,
                                         ntree = ntree,
                                         mtry = mtry,
-                                        maxnodes = maxnodes)
+                                        nodesize = nodesize)
+
+
+  } else if ((!is.null(mtry) & !is.null(maxnodes)) & !is.null(nodesize)){
+    model <- randomForest::randomForest(x = train_data,
+                                        y = y_train,
+                                        ntree = ntree,
+                                        mtry = mtry,
+                                        maxnodes = maxnodes,
+                                        nodesize = nodesize)
 
 
   } else {
@@ -155,40 +157,86 @@ AI_randomForest <- function(pheno_object=NULL,
 
     #n_features <- ncol(geno_omic_object)
 
-    if(isTRUE(mtry)){
+    if(isTRUE(rf_paras_tunning$mtry)){
       mtry <- c(sqrt(ncol(geno_omic_object)), sqrt(ncol(geno_omic_object))/2, ncol(geno_omic_object)/3)
     } else {
       stop(print(paste(msg,"set mtry equal TRUE: mtry = TRUE")), call. = FALSE)
 
     }
 
+    ##
+    # For the random forest method in caret, only the mtry parameter
+    # is typically tuned, and the other parameters are usually
+    # passed directly to the random forest function
     AI_grid <- expand.grid(
       mtry = mtry,
-      ntree = para_tunning$ntree,
-      nodesize = para_tunning$nodesize,
-      maxnodes = para_tunning$maxnodes  # NULL means no limit
+      ntree = rf_paras_tunning$ntree,
+      nodesize = rf_paras_tunning$nodesize,
+      maxnodes = rf_paras_tunning$maxnodes  # NULL means no limit
     )
 
-    AI_trcontrol = caret::trainControl(method = "cv",
-                                       number = AI_cv_nfolds,
-                                       verboseIter = TRUE,
-                                       returnData = FALSE,
-                                       returnResamp = "all",
-                                       allowParallel = TRUE)
+    # AI_trcontrol = caret::trainControl(method = "cv",
+    #                                    number = AI_cv_nfolds,
+    #                                    verboseIter = TRUE,
+    #                                    returnData = FALSE,
+    #                                    returnResamp = "all",
+    #                                    allowParallel = TRUE)
 
     if(!is.null(geno_omic_object) & !is.null(pheno_object)) {
       GID <- rownames(geno_omic_object)
-      AI_fit <-  caret::train(x = geno_omic_object,
-                            y = y_train_scaled,
-                            trControl = AI_trcontrol,
-                            tuneGrid = AI_grid,
-                            method = "rf")
+
+      train_rf_model <- function(mtry, ntree, nodesize, maxnodes) {
+        set.seed(123)
+        rf_model <- randomForest::randomForest(
+          x = geno_omic_object,
+          y = y_train_scaled,
+          mtry = mtry,
+          ntree = ntree,
+          nodesize = nodesize,
+          maxnodes = maxnodes
+        )
+        return(rf_model)
+      }
+      # Iterate over the parameter grid and evaluate models
+      results <- lapply(1:nrow(AI_grid), function(i) {
+        params <- AI_grid[i, ]
+        rf_model <- train_rf_model(
+          mtry = params$mtry,
+          ntree = params$ntree,
+          nodesize = params$nodesize,
+          maxnodes = params$maxnodes
+        )
+
+        # Evaluate the model using a suitable metric (e.g., accuracy, RMSE)
+        predictions <- stats::predict(rf_model, geno_omic_object)
+        performance <- caret::postResample(pred = predictions, obs = y_train_scaled)
+
+        return(list(
+          params = params,
+          performance = performance
+        ))
+      })
+
+      # Find the best model based on performance metric (e.g., RMSE)
+      best_model <- results[[which.min(sapply(results, function(x) x$performance[["RMSE"]]))]]
+
+      # Extract the best parameters
+      best_params <- best_model$params
+      # AI_fit <-  caret::train(x = geno_omic_object,
+      #                       y = y_train_scaled,
+      #                       trControl = AI_trcontrol,
+      #                       tuneGrid = AI_grid,
+      #                       # ntree = rf_paras_tunning$ntree,
+      #                       # nodesize = rf_paras_tunning$nodesize,
+      #                       # maxnodes = rf_paras_tunning$maxnodes,
+      #                       method = "rf")
 
     }
     ####### Start when their is no need for tunning
-    ntree <-  AI_fit$bestTune$ntree
-    maxnodes <-  AI_fit$bestTune$maxnodes
-    mtry <-  AI_fit$bestTune$mtry
+    ntree <-  best_params$ntree
+    maxnodes <-  best_params$maxnodes
+    mtry <-  best_params$mtry
+    nodesize <- best_params$nodesize
 
   }
 
@@ -212,6 +260,7 @@ AI_randomForest <- function(pheno_object=NULL,
                                 ntree = ntree,
                                 maxnodes = maxnodes,
                                 mtry = mtry,
+                                nodesize = nodesize,
                                 R = n_bootstrap,  # Number of bootstrap samples
                                 #sim = "ordinary",
                                 test_geno = geno_omic_test_object
