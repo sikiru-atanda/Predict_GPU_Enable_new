@@ -607,8 +607,12 @@ diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = boot_results,
                                                     low_reliability_thres = low_reliability_thres,
                                                     system_database = system_database)
 
-
+if(isFALSE(para_tunning)){
   model_para <- c(nrounds = xgb_fit$niter, xgb_fit$params)
+} else{
+  model_para <- unlist(xgb_fit$bestTune)
+
+}
 
   model_para <- as.data.frame(unlist(model_para))
   model_para <-  data.frame(stat = rownames(model_para),

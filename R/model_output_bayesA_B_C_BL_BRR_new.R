@@ -204,11 +204,11 @@ predicted_value <- data.frame(name = rownames(datasets)[tst],
 } else{
 
 result_rel_MPIW <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
-                                              predictions = mod$model$yHat,
-                                              standard_errors = mod$model$SD.yHat,
-                                              confidence_level = confidence_level,
-                                              model_for_CI_cal = "Bayes",
-                                              boot_results = NULL)
+                                                      predictions = mod$model$yHat,
+                                                      standard_errors = mod$model$SD.yHat,
+                                                      confidence_level = confidence_level,
+                                                      model_for_CI_cal = "Bayes",
+                                                      boot_results = NULL)
 
 result_rel <-  reliability_thresholds(prediction_error_var = (mod$model$SD.yHat)^2,
                                       genetic_var = var(mod$model$yHat),
@@ -387,7 +387,7 @@ for (i in seq_along(datasets)) {
                       Prediction_error_variance = res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["PEV"]],
                       Reliability = res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["Reliability"]])
 
-
+      if(length(tst)>0) sum_ebv <- sum_ebv[tst, ]
       if(length(tst)!=0){
         residual_value[, 1] <- rownames(dataset)[tst]
 
@@ -401,7 +401,11 @@ for (i in seq_along(datasets)) {
       if(length(datasets)>1){
         if(i==1) gid_name <- rownames(dataset)
         #predicted_value[, 1] <- gid_name
-        residual_value[, 1] <- gid_name
+        if(length(tst)!=0){
+        residual_value[, 1] <- gid_name[tst]
+        } else {
+          residual_value[, 1] <- gid_name
+        }
         ##### Treat sum_EBV
         if(i==length(datasets)){
         #pev <- apply(sum_posterior, 1, var)
@@ -424,6 +428,7 @@ for (i in seq_along(datasets)) {
                         Prediction_error_variance = pev,
                         Reliability = rel)
 
+        if(length(tst)>0) sum_ebv <- sum_ebv[tst, ]
         # predicted_value <- predicted_value |>
         #   dplyr::mutate(
         #                 #Standard_error = sqrt(pev),
@@ -437,7 +442,7 @@ for (i in seq_along(datasets)) {
 
     }
 
-if(length(tst)>0) sum_ebv <- sum_ebv[tst, ]
+#
     #}
   } ## End
 
@@ -522,20 +527,21 @@ if(!is.null(print_lable)){
 }
 
 
-if(is.null(tst) | length(tst)==0){
-
-  res <- list(Coefficients = coefficients_list,
-              Estimated_breeding_value = estimated_breeding_value_list,
-              Total_estimated_breeding_value = sum_ebv,
-              Predicted_value =  predicted_value,
-              Residual_value = residual_value,
-              Variance_components = variance_components,
-              M_matrix_model_ready =  m_matrix_model_ready_list
-
-  )
-
-} else {
-  if(!is.null(diagnostic_plots)){
+# if(is.null(tst) | length(tst)==0){
+#
+#   res <- list(Coefficients = coefficients_list,
+#               Estimated_breeding_value = estimated_breeding_value_list,
+#               Total_estimated_breeding_value = sum_ebv,
+#               Predicted_value =  predicted_value,
+#               Residual_value = residual_value,
+#               Variance_components = variance_components,
+#               M_matrix_model_ready =  m_matrix_model_ready_list,
+#               diagnostic_plots  = NULL
+#
+#   )
+#
+# } else {
+#   if(!is.null(diagnostic_plots)){
   res <- list(Coefficients = coefficients_list,
               Estimated_breeding_value = estimated_breeding_value_list,
               Total_estimated_breeding_value = sum_ebv,
@@ -544,17 +550,18 @@ if(is.null(tst) | length(tst)==0){
               Variance_components = variance_components,
               M_matrix_model_ready =  m_matrix_model_ready_list,
               diagnostic_plots  = diagnostic_plots)
-  } else {
-    res <- list(Coefficients = coefficients_list,
-                Estimated_breeding_value = estimated_breeding_value_list,
-                Total_estimated_breeding_value = sum_ebv,
-                Predicted_value =  predicted_value,
-                Residual_value = residual_value,
-                Variance_components = variance_components,
-                M_matrix_model_ready =  m_matrix_model_ready_list
-                )
-  }
-}
+#   } else {
+#     res <- list(Coefficients = coefficients_list,
+#                 Estimated_breeding_value = estimated_breeding_value_list,
+#                 Total_estimated_breeding_value = sum_ebv,
+#                 Predicted_value =  predicted_value,
+#                 Residual_value = residual_value,
+#                 Variance_components = variance_components,
+#                 M_matrix_model_ready =  m_matrix_model_ready_list,
+#                 diagnostic_plots  = NULL
+#                 )
+#   }
+# } # sik
  ### remove the generated output files from the working directory
  unlink(mod[["output_files_names"]])
 return(res)

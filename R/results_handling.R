@@ -183,6 +183,10 @@ results_handling <-  function(GS_model = NULL,
         res_model_output <- res_model_output[names(res_model_output) != "bayes_model"]
       }
 
+      if ("bayes_result" %in% names(res_model_output)) {
+        res_model_output <- res_model_output[["bayes_result"]]
+      }
+
       if ("diagnostic_plots" %in% names(res_model_output)) {
         res_model_output <- res_model_output[names(res_model_output) != "diagnostic_plots"]
       }

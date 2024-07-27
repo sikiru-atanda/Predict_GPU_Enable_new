@@ -82,7 +82,7 @@ check_and_install_plink <- function(min_version = "2.0", vcf_file_path) {
 
 run_plink_qc <- function(input_file,
                          output_name,
-                         output_format = "vcf.gz",
+                         output_format = "vcf",
                          vcf_file_path = NULL,
                          min_version = "2.0",
                          remove_monomorphic = TRUE,
@@ -93,6 +93,8 @@ run_plink_qc <- function(input_file,
                          individual_call_rate = NULL) {
 
   msg <- "\n==================================================\n"
+
+  tryCatch({
   # Ensure vcf_file_path is provided
   if (is.null(vcf_file_path)) {
     stop(paste(msg, "vcf_file_path must be provided."), call. = FALSE)
@@ -176,6 +178,14 @@ run_plink_qc <- function(input_file,
   }
 
   message(paste(msg, "PLINK2 QC and recoding complete. Output files are prefixed with '", output_name, "'"))
+
+  return("Success")
+
+}, error = function(e) {
+  message("An error occurred: ", e$message)
+  return("Failed")
+})
+
 }
 
 # Example usage

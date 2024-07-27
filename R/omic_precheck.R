@@ -38,6 +38,17 @@ omic_precheck <- function(object = NULL,
     }
     ## Check for Na and remove
     object <- handle_missing_values(data = object)
+    ## check if there is duplicated snps
+    duplicated_columns <- colnames(object)[duplicated(colnames(object))]
+    if(length(duplicated_columns)>0){
+      stop(print(paste(msg,"Omic data contain duplicate features/predictors.")), call. = FALSE)
+    }
+
+    ## check duplicated rownames:
+    duplicated_rownames <- rownames(object)[duplicated(rownames(object))]
+    if(length(duplicated_rownames)>0){
+      stop(print(paste(msg,"Omic data contain duplicate genotypes.")), call. = FALSE)
+    }
     # ## Check for Na and remove
     # Na_col.omit <- which((colSums(is.na(object))==0)==FALSE)
     #

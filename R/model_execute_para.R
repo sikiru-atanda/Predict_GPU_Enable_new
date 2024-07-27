@@ -298,30 +298,33 @@ model_execute <- function(
     validation_split = 0.2,
     early_stop = TRUE,
     xgb_paras_tunning= list(Iter_tune = seq(500, 5000, 500), # number of boosting iterations
-                         learning_rate_tune = c(0.01, 0.05, 0.1), # learning rate, low value means model is more robust to overfitting
-                         max_depth = c(3, 6, 9),
-                         gamma = c(0, 0.01, 0.1),
-                         colsample_bytree = c(0.5, 0.75, 1),
-                         min_child_weight = c(1, 3, 5),
-                         subsample = c(0.5, 0.75, 1),
-                         L2_tune = c(0, 0.5, 1), #  for linear gbL2 Regularization (Ridge Regression)
-                         L1_tune = c(0, 0.5, 1)),
-    rf_paras_tunning = list(mtry = TRUE,
-                            ntree = c(500, 1000, 1500),
-                            nodesize = c(1, 5, 10),
-                            maxnodes = c(30, 50, NULL)),
+                            learning_rate_tune = c(0.01, 0.05, 0.1), # learning rate, low value means model is more robust to overfitting
+                            max_depth = c(3, 6, 9),
+                            rate_drop = c(0.1, 0.15, 0.2),
+                            skip_drop = c(0.4, 0.5, 0.55),
+                            xgb_gamma = c(0, 0.01, 0.1),
+                            colsample_bytree = c(0.5, 0.75, 1),
+                            min_child_weight = c(1, 3, 5),
+                            subsample = c(0.5, 0.75, 1),
+                            L2_tune = c(0, 0.5, 1), #  for linear gbL2 Regularization (Ridge Regression)
+                            L1_tune = c(0, 0.5, 1)),
+    rf_paras_tunning= list(mtry = TRUE,
+                           ntree = c(500, 1000, 1500),
+                           nodesize = c(1, 5, 10),
+                           maxnodes = c(30, 50, NULL)),  # NULL means no limit),
     pls_paras_tunning= list(ncomp = 10),
-    svm_paras_tunning= list(
-      kernel = c("radial", "linear", "polynomial"),
+    svm_paras_tunning=list(
+      kernel = c("Gaussian", "Linear",
+                 "Polynomial", "Hyperbolic_tangent"),
       #cost = 10^seq(-2, 2, by = 1),
+      offset_value = seq(-2, 2, length.out = 5),
       sigma = c(0.01, 0.05, 0.1),
       C = c(1, 10, 100), ## for radial kernel
-      degree = c(2, 3, 4),  # Default values, used only for polynomial
+      gamma_value = 10^seq(-4, -1, length.out = 4),
+      degree = c(3, 4),  # Default values, used only for polynomial
       scale = c(0.1, 1) # used only for polynomial
     ),
-    knn_paras_tunning = list(k = seq(3, 21, by = 2),
-                             weight = c("uniform", "distance"),
-                             metric = c("euclidean", "manhattan")),
+    knn_paras_tunning= list(k = seq(3, 21, by = 2)),
     k = 5,
     lasso_paras_tunning= list(lambda_tune=seq(0.000001,0.9,length.out=100)^4),
     rr_paras_tunning = NULL,
@@ -399,6 +402,37 @@ model_execute <- function(
 #browser()
     msg <- "\n==================================================\n"
 
+    ######
+    geno_data_process <- NULL
+    if(!is.null(vcf_file_name) & !is.null(vcf_file_path)){
+      geno_data_process <- vcf_qc_recode(vcf_file_name = vcf_file_name,
+                                 vcf_file_path = vcf_file_path,
+                                 maf_threshold = maf_threshold,
+                                 het_threshold =het_threshold,
+                                 ind_call_rate_threshold = ind_call_rate_threshold,
+                                 snp_call_rate_threshold = snp_call_rate_threshold,
+                                 impute = impute,
+                                 recode_format = recode_format,
+                                 out_put_map = out_put_map,
+                                 message = message)
+
+    } else {
+      if(!is.null(hapmap_file_name) & !is.null(hapmap_file_path)){
+        geno_data_process <- hmp_qc_recode(hapmap_file_name = hapmap_file_name,
+                                   hapmap_file_path = hapmap_file_path,
+                                   hapmap = hapmap,
+                                   maf_threshold = maf_threshold,
+                                   het_threshold =het_threshold,
+                                   ind_call_rate_threshold = ind_call_rate_threshold,
+                                   snp_call_rate_threshold = snp_call_rate_threshold,
+                                   impute = impute,
+                                   recode_format = recode_format,
+                                   out_put_map = out_put_map,
+                                   message = message)
+      }
+
+
+    }
 
     eval_metrics_available <- c("accuracy", "mean_squared_error", "bias",
                                 "root_mean_squared_error", "relative_squared_error",
@@ -682,6 +716,11 @@ model_execute <- function(
     #     }
     #   }
     # }
+
+    if(!is.null(geno_data_process)){
+      geno_data <- geno_data_process[["snps_matrix"]]
+
+    }
 
     ## Check for scenrio where user provide pheno_train and pheno_test.
     ## Corresponding train and test geno or omic data must be provided
@@ -1014,35 +1053,7 @@ model_execute <- function(
 
  }
 
- ######
- if(!is.null(vcf_file) | (!is.null(vcf_file_name) & !is.null(vcf_file_path))){
-   geno_data <- vcf_qc_recode(vcf_file_name = vcf_file_name,
-                              vcf_file_path = vcf_file_path,
-                              vcf_file = vcf_file,
-                              maf_threshold = maf_threshold,
-                              het_threshold =het_threshold,
-                              ind_call_rate_threshold = ind_call_rate_threshold,
-                              snp_call_rate_threshold = snp_call_rate_threshold,
-                              impute = impute,
-                              recode_format = recode_format,
-                              out_put_map = out_put_map,
-                              message = message)
- } else {
-   if(!is.null(hapmap) | (!is.null(hapmap_file_name) & !is.null(hapmap_file_path))){
-     geno_data <- hmp_qc_recode(hapmap_file_name = hapmap_file_name,
-                                hapmap_file_path = hapmap_file_path,
-                                hapmap = hapmap,
-                                maf_threshold = maf_threshold,
-                                het_threshold =het_threshold,
-                                ind_call_rate_threshold = ind_call_rate_threshold,
-                                snp_call_rate_threshold = snp_call_rate_threshold,
-                                impute = impute,
-                                recode_format = recode_format,
-                                out_put_map = out_put_map,
-                                message = message)
-   }
 
- }
 
  #### Get the clean geno_data ready for model fit
  ## The geno_to_model function depend on geno_precheck function. The expected
@@ -1070,7 +1081,7 @@ model_execute <- function(
                                    ind_call_rate_threshold = ind_call_rate_threshold,
                                    snp_call_rate_threshold = snp_call_rate_threshold,
                                    impute = impute,
-                                   qc_filtering = qc_filtering,
+                                   qc_filtering = if(!is.null(geno_data_process)) FALSE else qc_filtering,
                                    message = message,
                                    heter_groups = heter_groups)
 
@@ -1449,7 +1460,16 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
 
  }
 
+ ### When vcf or hapmap format was presented and QC filtering is omitted in the
+ ## second stage
+
+ if(!is.null(geno_data_process)){
+   geno_qc_stat <-  geno_data_process[["qc_metrics_and_summary_stat"]]
+   rm(geno_data_process); gc()
+ } else{
  geno_qc_stat <- if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL
+
+ }
 
 
  if(isTRUE(cv_evaluation_only) && isTRUE(cross_validation)){
@@ -2303,7 +2323,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
  for (res in seq_along(results)) {
    tryCatch({
      processed_result <- results_handling(
-       GS_model = if("GS_model" %in% names(results[[res]])) results[[res]][["GS_model"]] else NULL,
+       GS_model = if(GS_model %in% names(results[[res]])) results[[res]][[GS_model]] else NULL,
        res_model_output = if("res_model_output" %in% names(results[[res]])) results[[res]][["res_model_output"]] else NULL,
        res_summary_stat = if("res_summary_stat" %in% names(results[[res]])) results[[res]][["res_summary_stat"]] else NULL,
        res_plot = best_models_ggplot_rep,

@@ -99,6 +99,7 @@ AI_pls <- function(pheno_object=NULL,
   if(isTRUE(para_tunning)){
 
     ncomp <- pls_paras_tunning$ncomp
+
   cv_results <- caret::train(x = geno_omic_object,
                              y = y_train_scaled,
                              method = "pls",

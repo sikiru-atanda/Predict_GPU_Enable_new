@@ -149,6 +149,12 @@ AI_svm <- function(pheno_object=NULL,
     # create hyperparameter grid
 
     # Include gamma for kernels that need it (not needed for linear unless specified)
+
+    # Initialize tuning grids
+    tuning_grid_radial <- NULL
+    tuning_grid_poly <- NULL
+    tuning_grid_linear <- NULL
+
     if ("Gaussian" %in% svm_paras_tunning$kernel) {
       svm_paras_tunning$kernel <- "radial"
       tuning_grid_radial <- expand.grid(sigma = svm_paras_tunning$sigma,
@@ -167,20 +173,38 @@ AI_svm <- function(pheno_object=NULL,
       tuning_grid_linear <- expand.grid(C = data.frame(C =svm_paras_tunning$C))
     }
 
-    if ("Hyperbolic_tangent" %in% svm_paras_tunning$kernel) {
-      svm_paras_tunning$kernel <- "sigmoid"
-      tuning_grid_linear <- expand.grid(C = data.frame(C =svm_paras_tunning$C),
-                                        gamma = data.frame(C =svm_paras_tunning$gamma_value),
-                                        coef0 = data.frame(C =svm_paras_tunning$offset_value))
-    }
+    # if ("Hyperbolic_tangent" %in% svm_paras_tunning$kernel) {
+    #   svm_paras_tunning$kernel <- "sigmoid"
+    #   tuning_grid_linear <- expand.grid(C = data.frame(C =svm_paras_tunning$C),
+    #                                     gamma = data.frame(C =svm_paras_tunning$gamma_value),
+    #                                     coef0 = data.frame(C =svm_paras_tunning$offset_value))
+    # }
     ###
     # List of SVM models to evaluate
-    svm_models <- list(
-      svmRadial = list(method = "svmRadial", tuneGrid = tuning_grid_radial),
-      svmPoly = list(method = "svmPoly", tuneGrid = tuning_grid_poly),
-      svmLinear = list(method = "svmLinear", tuneGrid = tuning_grid_linear)
-      #svmSigmoid = list(method = "svmSigmoid", tuneGrid = tuning_grid_linear)
-    )
+    # List of SVM models to evaluate
+    svm_models <- list()
+
+    if (!is.null(tuning_grid_radial)) {
+      svm_models$svmRadial <- list(method = "svmRadial", tuneGrid = tuning_grid_radial)
+    }
+
+    if (!is.null(tuning_grid_poly)) {
+      svm_models$svmPoly <- list(method = "svmPoly", tuneGrid = tuning_grid_poly)
+    }
+
+    if (!is.null(tuning_grid_linear)) {
+      svm_models$svmLinear <- list(method = "svmLinear", tuneGrid = tuning_grid_linear)
+    }
+
+    # if (!is.null(tuning_grid_sigmoid)) {
+    #   svm_models$svmSigmoid <- list(method = "svmSigmoid", tuneGrid = tuning_grid_sigmoid)
+    # }
+    # svm_models <- list(
+    #   svmRadial = list(method = "svmRadial", tuneGrid = tuning_grid_radial),
+    #   svmPoly = list(method = "svmPoly", tuneGrid = tuning_grid_poly),
+    #   svmLinear = list(method = "svmLinear", tuneGrid = tuning_grid_linear)
+    #   #svmSigmoid = list(method = "svmSigmoid", tuneGrid = tuning_grid_linear)
+    # )
 
     AI_trcontrol = caret::trainControl(method = "cv",
                                        number = AI_cv_nfolds,
@@ -191,6 +215,7 @@ AI_svm <- function(pheno_object=NULL,
 
     # Train the SVM model using caret for parameter tuning
     # Function to train and evaluate models
+
     train_and_evaluate <- function(model_info, data, labels, control) {
       caret::train(
         x = data,
@@ -208,6 +233,10 @@ AI_svm <- function(pheno_object=NULL,
                         data = geno_omic_object,
                         labels = pheno_object[, response],
                         control = AI_trcontrol)
+
+
+
+
 
       # Apply the function to the results
       best_model_info <- select_best_model(results)
