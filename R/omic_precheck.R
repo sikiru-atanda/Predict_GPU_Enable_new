@@ -37,7 +37,7 @@ omic_precheck <- function(object = NULL,
       stop('The omic data contains non-numeric values', call. = FALSE)
     }
     ## Check for Na and remove
-    object <- handle_missing_values(data = object)
+    object <- handle_missing_values(data = object) ## this fxn is present in geno_precheckk
     ## check if there is duplicated snps
     duplicated_columns <- colnames(object)[duplicated(colnames(object))]
     if(length(duplicated_columns)>0){

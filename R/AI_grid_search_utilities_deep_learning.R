@@ -7,12 +7,13 @@ validate_layers <- function(num_hidden_layers, neurons_per_layer) {
     stop(paste(msg, "The length of num_hidden_layers must match the length of neurons_per_layer"), call. = FALSE)
   }
 
+if(length(num_hidden_layers)>1){
   for (i in seq_along(num_hidden_layers)) {
     if (num_hidden_layers[i] != length(neurons_per_layer[[i]])) {
       stop(paste(msg, paste("Mismatch in hidden layers and neurons per layer at", num_hidden_layers[i])), call. = FALSE)
     }
   }
-
+}
   return(TRUE)
 }
 

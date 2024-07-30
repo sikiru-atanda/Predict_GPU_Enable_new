@@ -1,5 +1,5 @@
 
-handle_missing_values <- function(data, na_threshold = 0.2) {
+handle_missing_values <- function(data, na_threshold = 0.9, impute=TRUE) {
 
   # Check if the input has row names
   if (is.null(rownames(data))) {
@@ -13,36 +13,53 @@ handle_missing_values <- function(data, na_threshold = 0.2) {
   # Check if the input is a matrix or a data frame
   is_matrix <- is.matrix(data)
 
-  # Convert matrix to data frame for easier handling
-  if (is_matrix) {
+  #Convert matrix to data frame for easier handling
+  if (isFALSE(is_matrix)) {
     data <- as.data.frame(data)
   }
 
-  # Calculate the proportion of NA values in each column
-  na_proportion <- colMeans(is.na(data))
+  if(is.null(na_threshold)) na_threshold <- 0.9
+  if(!is.null(na_threshold)){
+    if (na_threshold < 0.5) {
+      na_threshold <- 1 - na_threshold
+    }
 
-  # Identify columns to remove (proportion of NAs > threshold)
-  cols_to_remove <- na_proportion > na_threshold
-
-  if (any(cols_to_remove)) {
-    sapply(names(na_proportion[cols_to_remove]), function(col) {
-      cat(sprintf("Column '%s' has %.2f%% NAs, which is above the threshold. Removing column.\n",
-                  col, na_proportion[col] * 100))
-    })
   }
 
-  # Remove the columns with high proportion of NAs
-  data <- data[, !cols_to_remove, drop = FALSE]
+  snps_call_rate <- colMeans(is.na(data[, 1:ncol(data)]))
+
+  low_call_rate_snps <- which(snps_call_rate > na_threshold)
+
+  if (length(low_call_rate_snps) > 0) {
+
+      message(insight::print_color(paste(msg, paste("Removing snps/features with high missing rate:", length(low_call_rate_snps))), "blue"))
+
+
+  data <- data[, -low_call_rate_snps, with = FALSE]
+
+  }
 
   # Impute remaining NAs with column medians
-  cols_to_impute <- names(na_proportion[!cols_to_remove & na_proportion > 0])
-  if (length(cols_to_impute) > 0) {
-    sapply(cols_to_impute, function(col) {
-      cat(sprintf("Column '%s' has %.2f%% NAs, which is within the threshold. Imputing NAs with median.\n",
-                  col, na_proportion[col] * 100))
-      data[[col]][is.na(data[[col]])] <- median(data[[col]], na.rm = TRUE)
-    })
+  if(isTRUE(impute)){
+    if(any(is.na(data[, 1:ncol(data)]))==T) {
+      #This function will impute the missing values
+      for(j in 1:ncol(data)){
+        tmp <- data[,j]
+        tmp = as.double(as.character(unlist(tmp)))
+        data[,j] <- ifelse(is.na(tmp),round(median(tmp,na.rm=T)),tmp)
+      }
+
+    }
+
   }
+  # cols_to_impute <- names(na_proportion[!cols_to_remove & na_proportion > 0])
+  # if (length(cols_to_impute) > 0) {
+  #   sapply(cols_to_impute, function(col) {
+  #     cat(sprintf("Column '%s' has %.2f%% NAs, which is within the threshold. Imputing NAs with median.\n",
+  #                 col, na_proportion[col] * 100))
+  #     data[[col]][is.na(data[[col]])] <- median(data[[col]], na.rm = TRUE)
+  #   })
+  # }
 
   # Convert back to matrix if the original input was a matrix
   if (is_matrix) {
