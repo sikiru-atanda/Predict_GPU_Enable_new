@@ -20,6 +20,7 @@ deep_learning_model_utility <- function(X_train,
                                         learning_rate,
                                         epochs,
                                         batch_size,
+                                        dropout_rate,
                                         output_optimizer = "adam") {
 
   msg <- "\n==================================================\n"
@@ -29,8 +30,14 @@ deep_learning_model_utility <- function(X_train,
     stop(paste(msg, "Invalid output optimizer. Choose from: ", paste(valid_optimizers, collapse = ", ")), call. = FALSE)
   }
 
-  # Determines the input dimensionality based on the number of columns in X_train
+  validate_layers(num_hidden_layers, neurons_per_layer)
   input_dim <- ncol(X_train)
+
+  np <- reticulate::import("numpy")
+  X_train <- np$array(as.matrix(X_train))
+  y_train <- np$array(y_train)
+  # Determines the input dimensionality based on the number of columns in X_train
+
   # Initializes a sequential Keras model
   model <- keras::keras_model_sequential()
 
@@ -43,6 +50,10 @@ deep_learning_model_utility <- function(X_train,
     if (i <= length(neurons_per_layer)) {
       # Adds each hidden layer to the model with the specified number of neurons and activation function
       model |> keras::layer_dense(units = neurons_per_layer[[i]], activation = 'relu')
+      # Adds dropout to the layer if dropout_rate is provided
+      if (!is.null(dropout_rate)) {
+        model |> keras::layer_dropout(rate = dropout_rate)
+      }
     } else {
       # Handle case where there are fewer elements in neurons_per_layer than num_hidden_layers
       warning(paste(msg, "Fewer elements in neurons_per_layer than num_hidden_layers."), call. = FALSE)

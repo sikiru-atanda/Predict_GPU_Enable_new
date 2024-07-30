@@ -12,8 +12,7 @@ LazyData: true
 Depends: R (>= 4.1.0)
 Enhances: 
     asreml
-Imports: 
-    ASRgenomics,
+Imports:     
     BGLR,
     boot,
     caret,
@@ -46,3 +45,4 @@ Imports:
     utils,
     xgboost
 RoxygenNote: 7.3.0
+
