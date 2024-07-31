@@ -134,7 +134,7 @@ check_hapmap_columns <- function(data) {
 
 hmp_qc_recode <- function(hapmap_file_name = NULL,
                           hapmap_file_path = NULL,
-                          hapmap = NULL,
+                          #hapmap = NULL,
                           maf_threshold = 0.01,
                           het_threshold = 0.1,
                           ind_call_rate_threshold = 0.9,
@@ -432,10 +432,10 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
 
       # Convert Hapmap allele into numeric
       snp_data <- hapmap2numeric_meth2_1_0(hapmap)
-      snp_data <-  cbind(hapmap[, 1:11], snp_data)
+      #snp_data <-  cbind(hapmap[, 1:11], snp_data)
       } else if (recode_format == "-1,0,1") {
         snp_data <- hapmap2numeric_meth1_1(hapmap[, 12:ncol(hapmap)])
-        snp_data <-  cbind(hapmap[, 1:11], snp_data)
+        #snp_data <-  cbind(hapmap[, 1:11], snp_data)
     } else {
       stop("Invalid recode format. Use '0,1,2' or '-1,0,1'.")
 
@@ -444,10 +444,13 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
     #rm(hapmap); gc()
 
     if(isTRUE(impute)){
-      if(any(is.na(snp_data[, 12:ncol(snp_data)]))==T) {
+      #if(any(is.na(snp_data[, 12:ncol(snp_data)]))==T) {
+      if(any(is.na(snp_data[, 1:ncol(snp_data)]))==T) {
         #This function will impute the missing values
-        for(j in 12:ncol(snp_data)){
-          tmp <- snp_data[,j, with=FALSE]
+        #for(j in 12:ncol(snp_data)){
+        for(j in 1:ncol(snp_data)){
+          #tmp <- snp_data[,j, with=FALSE]
+          tmp <- snp_data[,j]
           tmp = as.double(as.character(unlist(tmp)))
           snp_data[,j] <- ifelse(is.na(tmp),round(mean(tmp,na.rm=T)),tmp)
         }
@@ -457,7 +460,8 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
     }
     # End
   }
-  original_row_names <- colnames(snp_data)[12:ncol(snp_data)]
+  #original_row_names <- colnames(snp_data)[12:ncol(snp_data)]
+  original_row_names <- colnames(snp_data)
   ##################
   ## Aggregate all the info
   #### Aggregate all the maker data
@@ -484,11 +488,13 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
   ######
 
   if(isTRUE(out_put_map) & !is.null(snp_data)){
-   map <-   snp_data[, 1:11]
+   #map <-   snp_data[, 1:11]
+   map <-  hapmap[, 1:11]
    snp_names_index <- grep("rs", colnames(map), ignore.case = TRUE)
-   snp_data <- t(snp_data[, 12:ncol(snp_data)])
+   #snp_data <- t(snp_data[, 12:ncol(snp_data)])
+   snp_data <- t(snp_data[, 1:ncol(snp_data)])
    colnames(snp_data) <- as.data.frame(map)[, snp_names_index]
-   snp_data <- apply(snp_data, 2, as.double)
+   #snp_data <- apply(snp_data, 2, as.double)
    rownames(snp_data) <- original_row_names
 
    class(snp_data) <- c("matrix", "array", "genotype")
@@ -501,12 +507,14 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
 
 
   } else if(isFALSE(out_put_map) & !is.null(snp_data)){
-    map <-   snp_data[, 1:11]
+    #map <-   snp_data[, 1:11]
+    map <-  hapmap[, 1:11]
     snp_names_index <- grep("rs", colnames(map), ignore.case = TRUE)
-    snp_data <- t(snp_data[, 12:ncol(snp_data)])
+    #snp_data <- t(snp_data[, 12:ncol(snp_data)])
+    snp_data <- t(snp_data[, 1:ncol(snp_data)])
     colnames(snp_data) <- as.data.frame(map)[, snp_names_index]
 
-    snp_data <- apply(snp_data, 2, as.double)
+    #snp_data <- apply(snp_data, 2, as.double)
 
     rownames(snp_data) <- original_row_names
 
