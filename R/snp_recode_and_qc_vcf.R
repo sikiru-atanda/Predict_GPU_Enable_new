@@ -446,12 +446,30 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
                                                     num_cores = num_cores)
 
 
+
   vcf_processed_data <- vcf_processed[["vcf_processed_data"]]
   total_het_snps_removed <- vcf_processed[["total_het_markers_removed"]]
    total_genotypes_removed <- vcf_processed[["total_genotypes_removed"]]
    if(is.null(total_het_snps_removed) || is.na(total_het_snps_removed)) total_het_snps_removed <- 0
    if(is.null(total_genotypes_removed) || is.na(total_genotypes_removed)) total_genotypes_removed <- 0
   ##################
+
+   if(isTRUE(impute)){
+     #if(any(is.na(snp_data[, 12:ncol(snp_data)]))==T) {
+     if(any(is.na(vcf_processed_data[, 10:ncol(vcf_processed_data)]))==T) {
+       #This function will impute the missing values
+       #for(j in 12:ncol(snp_data)){
+       for(j in 10:ncol(vcf_processed_data)){
+         #tmp <- snp_data[,j, with=FALSE]
+         tmp <- vcf_processed_data[,j]
+         tmp = as.double(as.character(unlist(tmp)))
+         vcf_processed_data[,j] <- ifelse(is.na(tmp),round(mean(tmp,na.rm=T)),tmp)
+       }
+
+     }
+
+   }
+
   ## Aggregate all the info
   #### Aggregate all the maker data
   summary_stat_snp= data.frame(
