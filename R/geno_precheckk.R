@@ -115,21 +115,21 @@ geno_precheck <- function(object_geno = NULL,
   msg <- "\n==================================================\n"
   if (!is.null(object_geno)) {
     if("data.table" %in% class(object_geno)){
-      stop(print(paste(msg,'Genomic data must be data.frame or matrix not character.')), call. = FALSE)
+      stop(paste(msg,'Genomic data must be data.frame or matrix not character.'), call. = FALSE)
     }
-    if(inherits(object_geno, "character")) stop(print(paste(msg,'Genomic data should be data.frame or matrix not character.')), call. = FALSE)
+    if(inherits(object_geno, "character")) stop(paste(msg,'Genomic data should be data.frame or matrix not character.'), call. = FALSE)
     if (!is.matrix(object_geno)) {
       object_geno <- as.matrix(object_geno)
     }
 
     # Check row and column names in object_geno.
     if (is.null(rownames(object_geno)) || is.null(colnames(object_geno))) {
-      stop(print(paste(msg,"Individual or marker names not assigned to rows or columns of 'object_geno'.")), call. = FALSE)
+      stop(paste(msg,"Individual or marker names not assigned to rows or columns of 'object_geno'."), call. = FALSE)
       }
 
    AA <-  detect_genomic_coding(object_geno = object_geno)
    if(AA=="SNP (0, 1, 2, -1)") {
-     stop(print(paste(msg,"SNP recoding is decoded wrongly as (0,1,2-1).\n Snp recode should either be SNP: (-1, 0, 1) or (0, 1, 2).")), call. = FALSE)
+     stop(paste(msg,"SNP recoding is decoded wrongly as (0,1,2-1).\n Snp recode should either be SNP: (-1, 0, 1) or (0, 1, 2)."), call. = FALSE)
 
    } else if(AA=="SNP (-1, 0, 1)"){
      object_geno <- object_geno + 1
@@ -164,7 +164,7 @@ geno_precheck <- function(object_geno = NULL,
 
    # Stop execution if any element is not numeric
    if (!all_numeric) {
-     stop('The geno data contains non-numeric values', call. = FALSE)
+     stop(paste(msg, 'The geno data contains non-numeric values'), call. = FALSE)
    }
     # Check if allele dosage are not in  0, 1, 2 format but -1, 0, 1 format
   #   check_geno <- which(object_geno == -1)
@@ -320,7 +320,7 @@ geno_precheck <- function(object_geno = NULL,
    ####
 
   } else {
-    stop(print(paste(msg,"Marker/snp data cannot be empty.")), call. = FALSE)
+    stop(paste(msg,"Marker/snp data cannot be empty."), call. = FALSE)
 
   }
 
@@ -328,13 +328,13 @@ geno_precheck <- function(object_geno = NULL,
   ## check if there is duplicated snps
   duplicated_columns <- colnames(object_geno)[duplicated(colnames(object_geno))]
   if(length(duplicated_columns)>0){
-    stop(print(paste(msg,"Marker/snp data contain duplicate snps.")), call. = FALSE)
+    stop(paste(msg,"Marker/snp data contain duplicate snps."), call. = FALSE)
   }
 
   ## check duplicated rownames:
   duplicated_rownames <- rownames(object_geno)[duplicated(rownames(object_geno))]
   if(length(duplicated_rownames)>0){
-    stop(print(paste(msg,"Marker/snp data contain duplicate genotypes.")), call. = FALSE)
+    stop(paste(msg,"Marker/snp data contain duplicate genotypes."), call. = FALSE)
   }
   #### Aggregate all the maker data
   #########################

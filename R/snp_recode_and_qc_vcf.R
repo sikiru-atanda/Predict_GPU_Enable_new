@@ -460,8 +460,8 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
        #This function will impute the missing values
        #for(j in 12:ncol(snp_data)){
        for(j in 10:ncol(vcf_processed_data)){
-         #tmp <- snp_data[,j, with=FALSE]
-         tmp <- vcf_processed_data[,j]
+         tmp <- vcf_processed_data[,j, with=FALSE]
+         #tmp <- vcf_processed_data[,j]
          tmp = as.double(as.character(unlist(tmp)))
          vcf_processed_data[,j] <- ifelse(is.na(tmp),round(mean(tmp,na.rm=T)),tmp)
        }
@@ -500,6 +500,12 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
     vcf_processed_data <- t(vcf_processed_data[, 10:ncol(vcf_processed_data)])
     vcf_processed_data <- as.matrix(vcf_processed_data)
     colnames(vcf_processed_data) <- as.character(map[, 3]) ### it assumed the snps name are in col 3
+
+    if (!is.numeric(vcf_processed_data)) {
+      # Apply as.numeric to each element in the matrix
+      vcf_processed_data <- apply(vcf_processed_data, c(1, 2), as.numeric)
+    }
+
     if(!is.null(recode_format)){
       class(vcf_processed_data) <- c("matrix", "array", "genotype")
     }
@@ -523,6 +529,13 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
     #colnames(vcf_file) <- as.character(map[, 3][[1]]) ### it assumed the snps name are in col 3
     vcf_processed_data <- as.matrix(vcf_processed_data)
     colnames(vcf_processed_data) <-  as.character(map[, 3]) ### it assumed the snps name are in col 3
+    #####
+    if (!is.numeric(vcf_processed_data)) {
+      # Apply as.numeric to each element in the matrix
+      vcf_processed_data <- apply(vcf_processed_data, c(1, 2), as.numeric)
+    }
+
+
     if(!is.null(recode_format)){
       class(vcf_processed_data) <- c("matrix", "array", "genotype")
     }
