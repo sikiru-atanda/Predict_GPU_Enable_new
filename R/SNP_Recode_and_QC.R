@@ -30,7 +30,8 @@ standardize_snp_format <- function(snp) {
     return(NA)
   }
   # Remove potential separator characters and convert to uppercase
-  snp <- gsub("[:/]", "", toupper(snp))
+  #snp <- gsub("[:/]", "", toupper(snp))
+  snp <- gsub("[:/_]", "", toupper(snp))
   # If the SNP is a double code, convert it to IUPAC code
   if (nchar(snp) == 2) {
     snp <- double_code_to_IUPAC(snp)
@@ -308,7 +309,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
   if (!all(first_geno[, 1] %in% valid_IUPAC)) {
 
     # Construct an informative error message
-    error_message <- paste(
+    error_message_stop <- paste(
       msg,  # Custom message passed into the function
       "Please provide valid IUPAC codes.",
       "Examples of valid codes include:",
@@ -320,7 +321,13 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
       "Valid IUPAC codes was not provided. We fix it for you.")
     hapmap <- IUPAC_hapmap_compatible(hapmap)
     # Stop execution and return the error message
-    message(error_message)
+    first_geno <- as.data.frame(hapmap[, 12])
+    if (!all(first_geno[, 1] %in% valid_IUPAC)) {
+
+      stop(paste(msg, error_message_stop), call. = FALSE)
+    } else {
+      message(paste(msg, error_message))
+    }
 
   }
 
@@ -660,6 +667,20 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
 }
 
 
+# convert_to_double_letter <- function(df, cols) {
+#   # Define the mapping for single nucleotides and IUPAC codes
+#   double_letter_map <- c(
+#     "A" = "A:A", "C" = "C:C", "G" = "G:G", "T" = "T:T",
+#     "M" = "A:C", "R" = "A:G", "W" = "A:T",
+#     "S" = "C:G", "Y" = "C:T", "K" = "G:T"
+#   )
+#
+#   # Apply the mapping to the specified columns
+#   df[, cols] <- lapply(df[, cols], function(column) {
+#     sapply(column, function(value) double_letter_map[value])
+#   })
+#   return(df)
+# }
 
 # # Define the function to convert single nucleotide values to double letters
 # convert_to_double_letter <- function(df, cols) {
