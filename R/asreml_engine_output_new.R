@@ -1,27 +1,17 @@
 
-#' Remove Variables from the Global Environment
+#' Remove Variables from Global Environment
 #'
 #' This function removes specified variables from the global environment.
-#' It iterates through a list of variable names, checks if each exists in the
-#' global environment, and if so, removes it.
 #'
-#' @param var_names A character vector containing the names of the variables to be removed.
+#' @param var_names A character vector of variable names to remove from the global environment.
 #'
+#' @return None. The specified variables are removed from the global environment if they exist.
 #' @examples
-#' # Define some variables in the global environment
-#' a <- 1
-#' b <- 2
-#' c <- 3
-#' # Now remove 'a' and 'b' from the global environment
-#' remove_from_global(c("a", "b"))
-#'
-#' @return Invisible NULL. The function is used for its side effect of
-#' removing variables and does not return a value.
-#'
-#' @note If a specified variable does not exist in the global environment,
-#' the function will silently skip it without any message. Uncomment the print
-#' statements in the function body to enable logging of actions taken.
-#'
+#' \dontrun{
+#'   var1 <- 1
+#'   var2 <- 2
+#'   remove_from_global(c("var1", "var2"))
+#' }
 #' @export
 
 remove_from_global <- function(var_names) {
@@ -35,30 +25,27 @@ remove_from_global <- function(var_names) {
   }
 }
 
-#' Calculate Coefficients Using with out from Asreml model
+#' Calculate Coefficients for ASReml Models
 #'
-#' This function calculates coefficients based on a genetic relationship matrix and estimated breeding values (EBVs), optionally considering heterogeneity across groups. It returns a data frame of coefficients for each variable or group, depending on the input parameters.
+#' This function calculates coefficients for ASReml models given the genetic matrix and estimated breeding values.
 #'
-#' @param gmatrix A square, symmetric matrix representing the genetic relationships among individuals.
-#' @param ebv A numeric vector of estimated breeding values corresponding to the individuals in `gmatrix`.
-#' @param heter_groups A character string specifying the name of the column in the returned data frame that will contain the heterogeneity groups. This parameter is optional; if not provided, the function assumes homogeneity across all individuals.
-#' @param heter_grp A vector indicating the heterogeneity group for each individual. If `heter_groups` is not NULL, this parameter must be provided.
-#' @param gid_name A character vector or string specifying the names of the variables or genetic IDs to be included in the output data frame. If `heter_groups` is not NULL, `gid_name` represents the names to be repeated for each heterogeneity group.
+#' @param gmatrix A matrix of genetic data.
+#' @param ebv A numeric vector of estimated breeding values.
+#' @param heter_groups A factor or vector specifying the heterogeneity groups.
+#' @param heter_grp A factor or vector specifying the unique heterogeneity groups.
+#' @param gid_name A character vector of genotype IDs.
 #'
-#' @return A data frame with coefficients calculated for each variable specified by `gid_name` or for each heterogeneity group, depending on whether heterogeneity was considered. The data frame structure varies based on the input parameters:
-#' - When heterogeneity is not considered, returns a data frame with variables or genetic IDs and their corresponding coefficients.
-#' - When heterogeneity is considered, returns a data frame with variables/genetic IDs, the specified heterogeneity groups, and the coefficients for each group.
-#'
+#' @return A data frame containing the coefficients for the ASReml models.
 #' @examples
-#' # Example usage without considering heterogeneity
-#' gmatrix <- matrix(c(1, 0.5, 0.5, 1), nrow = 2)
-#' ebv <- c(100, 150)
-#' cal_coeff_asreml(gmatrix, ebv, NULL, NULL, c("Var1", "Var2"))
-#'
-#' # Example usage considering heterogeneity
-#' heter_grp <- c("Env1", "Env2", "Env1", "Env2")
-#' cal_coeff_asreml(gmatrix, ebv, "Environment", heter_grp, c("Var1", "Var2"))
-#'
+#' \dontrun{
+#'   gmatrix <- matrix(rnorm(100), nrow=10)
+#'   ebv <- rnorm(10)
+#'   heter_groups <- factor(rep(1:2, each=5))
+#'   heter_grp <- unique(heter_groups)
+#'   gid_name <- as.character(1:10)
+#'   coefficients <- cal_coeff_asreml(gmatrix, ebv, heter_groups, heter_grp, gid_name)
+#'   print(coefficients)
+#' }
 #' @export
 cal_coeff_asreml <- function(gmatrix,
                              ebv,
@@ -89,37 +76,56 @@ cal_coeff_asreml <- function(gmatrix,
   return(coeff)
 }
 
-#' Perform ASReml Model Output Processing and Analysis
+#' Extract and Process ASReml Model Output
 #'
-#' This function processes the output from an ASReml model, performing various tasks such as updating the model, summarizing coefficients, predicting values, and handling multiple kernels or genomic matrices. It supports handling heterogeneity in residuals, multiple omics kernels, and environmental grouping. It is designed to work with complex multi-environment genetic models.
+#' This function extracts and processes the output from ASReml models, including coefficients, predicted values, and variance components.
 #'
-#' @param mod_asreml An `asreml` object containing the fitted model.
-#' @param pheno_data A data frame of phenotypic data.
-#' @param response A character string specifying the response variable in `pheno_data`.
-#' @param gmatrix A genomic relationship matrix.
-#' @param omic1_kernel A kernel matrix for the first omics data type (optional).
-#' @param omic2_kernel A kernel matrix for the second omics data type (optional).
-#' @param omic3_kernel A kernel matrix for the third omics data type (optional).
-#' @param omics_kernel_label A list specifying labels for the omics kernels (optional).
-#' @param heter_groups A character string specifying the column in `pheno_data` that defines heterogeneous groups for residual variances (optional).
-#' @param gen_name A character string specifying the name of the genotype column in `pheno_data`.
-#' @param var_cov_str A string indicating the variance-covariance structure to be used in the model (optional).
-#' @param heter_resid Logical indicating if heterogeneous residuals are considered (optional).
-#' @param pworkspace The size of the workspace for the ASReml algorithm in bytes.
-#' @param maxit The maximum number of iterations for the ASReml algorithm.
-#' @param ... Additional arguments passed to the underlying ASReml functions.
+#' @param mod_asreml A list containing the fitted ASReml model and related information.
+#' @param pheno_data A data frame containing the phenotypic data.
+#' @param response A string specifying the response variable in the phenotypic data.
+#' @param gmatrix A matrix of genetic data.
+#' @param omic1_kernel An optional kernel matrix for the first omic data.
+#' @param omic2_kernel An optional kernel matrix for the second omic data.
+#' @param omic3_kernel An optional kernel matrix for the third omic data.
+#' @param omics_kernel_label A list of labels for the omic kernel matrices.
+#' @param heter_groups A factor or vector specifying the heterogeneity groups.
+#' @param gen_name A string specifying the column name for the genotypic data.
+#' @param var_cov_str An optional string specifying the variance-covariance structure.
+#' @param heter_resid An optional string specifying the heterogeneity of residuals.
+#' @param pworkspace A numeric value specifying the workspace for ASReml. Default is 1e15.
+#' @param maxit An integer specifying the maximum number of iterations for ASReml. Default is 50.
+#' @param ... Additional arguments to be passed to underlying functions.
 #'
-#' @return A list containing several components, including coefficients, the ASReml model, estimated breeding values, variance components, and matrices ready for modeling.
-#'
-#' @details
-#' The function updates the given `asreml` model, extracts and summarizes the variance components, predicts breeding values, and calculates reliability and prediction error variance. It handles both single and multi-environment trial data, allowing for the inclusion of multiple omics data types through kernel matrices. Variance components can be extracted based on specified structures, and the function is capable of dealing with heterogeneity in residuals.
-#'
+#' @return A list containing the processed ASReml model output, including coefficients, predicted values, and variance components.
 #' @examples
-#' # This is a complex function designed to be used within a specific workflow
-#' # involving ASReml-R models. Example usage would require setting up an ASReml model
-#' # and then calling this function with the appropriate arguments.
-#'
+#' \dontrun{
+#'   # Mock preparation of ASReml model components
+#'   mod_asreml <- list(
+#'     model = "asreml_model",
+#'     str_mod = "model_string",
+#'     gen_pos = "genetic_position",
+#'     inter_gen_pos = "interaction_genetic_position",
+#'     names_in_inv_list = c("GID"),
+#'     rand_term = "random_term"
+#'   )
+#'   pheno_data <- data.frame(
+#'     GID = 1:10,
+#'     Trait = rnorm(10),
+#'     Group = factor(rep(1:2, each = 5))
+#'   )
+#'   response <- "Trait"
+#'   gmatrix <- matrix(rnorm(100), nrow = 10)
+#'   result <- asreml_mod_output_new(
+#'     mod_asreml = mod_asreml,
+#'     pheno_data = pheno_data,
+#'     response = response,
+#'     gmatrix = gmatrix
+#'   )
+#'   print(result)
+#' }
 #' @export
+#'
+
 asreml_mod_output_new <- function(
     mod_asreml = NULL,
     pheno_data = NULL,
@@ -142,12 +148,7 @@ asreml_mod_output_new <- function(
 )
 {
 
-
-  # msg <- sprintf("==================================================\n")
-
   msg <- "\n==================================================\n"
-
-  #cat(msg)
 
   ##### Print lable
   if(inherits(omics_kernel_label,'list')){
@@ -627,26 +628,6 @@ asreml_mod_output_new <- function(
 
       # Bind all data frames into a single data frame
       combined_df <- dplyr::bind_rows(estimated_breeding_value_listt)
-      # Aggregate total BLUP and standard error across all environments
-      # total_summarized_blup <- combined_df |>
-      #   dplyr::group_by(!!rlang::sym(gen_name)) |>
-      #   dplyr::summarise(
-      #     total_BLUP = sum(BLUP, na.rm = TRUE),
-      #     total_Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
-      #     .groups = 'drop'
-      #   )
-      #
-      # # Calculate the Prediction Error Variance
-      # summarized_blup <- total_summarized_blup |>
-      #   dplyr::mutate(Prediction_error_variance = total_Standard_error^2)
-
-      # # Group by the user-specified environment/location and sum the BLUP values
-      # summarized_blup <- combined_df |>
-      #   dplyr::group_by(!!rlang::sym(gen_name), !!rlang::sym(heter_groups)) |>
-      #   dplyr::summarise(BLUP = sum(BLUP, na.rm = TRUE),
-      #                    Standard_error = mean(Standard_error, na.rm = TRUE),
-      #                    Prediction_error_variance = mean(Prediction_error_variance, na.rm = TRUE))
-      # summarized_blup <- as.data.frame(summarized_blup)
 
     }
 
@@ -673,23 +654,6 @@ asreml_mod_output_new <- function(
       # Bind all data frames into a single data frame
       combined_df <- dplyr::bind_rows(estimated_breeding_value_listt)
 
-      # if(!is.null(heter_groups)){
-      #
-      #   # Aggregate total BLUP and standard error across all environments
-      #   total_summarized_blup <- combined_df |>
-      #     dplyr::group_by(!!rlang::sym(gen_name)) |>
-      #     dplyr::summarise(
-      #       total_BLUP = sum(BLUP, na.rm = TRUE),
-      #       total_Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
-      #       .groups = 'drop'
-      #     )
-      #
-      #   # Calculate the Prediction Error Variance
-      #   summarized_blup <- total_summarized_blup |>
-      #     dplyr::mutate(Prediction_error_variance = total_Standard_error^2)
-      #
-      #   summarized_blup <- as.data.frame(summarized_blup)
-
       }
 
 
@@ -706,17 +670,6 @@ asreml_mod_output_new <- function(
       }
 
       combined_df <- dplyr::bind_rows(estimated_breeding_value_listt)
-
-      # # Group by GID and sum the BLUP values for each GID
-      # summarized_blup <- combined_df |>
-      #   dplyr::group_by(!!rlang::sym(gen_name)) |>
-      #   dplyr::summarise(BLUP = sum(BLUP, na.rm = TRUE),
-      #                    Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)))
-      # summarized_blup$Prediction_error_variance <- (summarized_blup$Standard_error)^2
-      #
-      #
-      # summarized_blup <- as.data.frame(summarized_blup)
-
 
     }
 
@@ -919,12 +872,6 @@ asreml_mod_output_new <- function(
         # Bind all data frames into a single data frame
         combined_df <- dplyr::bind_rows(estimated_breeding_value_list_t)
 
-        # Group by the user-specified environment/location and sum the BLUP values
-        # summarized_blup <- combined_df |>
-        #   dplyr::group_by(!!rlang::sym(gen_name), !!rlang::sym(heter_groups)) |>
-        #   dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
-        # summarized_blup <- as.data.frame(summarized_blup)
-
       }
 
       ### For compound symmetric
@@ -950,17 +897,6 @@ asreml_mod_output_new <- function(
         # Bind all data frames into a single data frame
         combined_df <- dplyr::bind_rows(estimated_breeding_value_list_t)
 
-        # if(!is.null(heter_groups)){
-        #
-        #   summarized_blup <- combined_df |>
-        #     dplyr::group_by(!!rlang::sym(gen_name)) |>
-        #     dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
-        #
-        #   summarized_blup <- as.data.frame(summarized_blup)
-        #
-        # }
-
-
       }
 
       if(is.null(var_cov_str) & is.null(inter_gen_pos)){
@@ -974,13 +910,6 @@ asreml_mod_output_new <- function(
         }
 
         combined_df <- dplyr::bind_rows(estimated_breeding_value_list_t)
-
-        # Group by GID and sum the BLUP values for each GID
-        # summarized_blup <- combined_df |>
-        #   dplyr::group_by(!!rlang::sym(gen_name)) |>
-        #   dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
-        #
-        # summarized_blup <- as.data.frame(summarized_blup)
 
 
       }
@@ -1046,162 +975,6 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
 } else {
   stop(paste(msg, "Different names were provided."), call. = FALSE)
 }
-
-  ## Intialize step to calculate EBV across environment for each omics
-  # for (i in seq_along(datasets)) {
-  #   dataset <- datasets[[i]]
-  #   if (!is.null(dataset)) {
-  #   if(!is.null(Zg)){
-  #     ZgZg <- Zg%*%dataset%*%t(Zg)
-  #     suppressMessages({
-  #     ZgZg <- grm_kernel_precheck(ZgZg)
-  #     })
-  #
-  #   }
-  #     ## This function calcuate EBV for each omics
-  #     coefficients_list[[paste("coefficient",dataset_names[i], sep = "_")]] <- cal_coeff_asreml(gmatrix = if(!is.null(Zg)) ZgZg else dataset,
-  #                                                                                               ebv = estimated_breeding_value_list[[i]][, "BLUP"],
-  #                                                                                               heter_groups = heter_groups,
-  #                                                                                               heter_grp = all_envs_for_met,
-  #                                                                                               gid_name = rownames(dataset))
-  #
-  #     sum_estimated_breeding_value <- sum_estimated_breeding_value + estimated_breeding_value_list[[i]][["BLUP"]]
-  #
-  #     #colnames(estimated_breeding_value_list[[i]])[which("BLUP"%in%colnames(estimated_breeding_value_list[[i]]))] <- "sik" # Estimated_breeding_value
-  #
-  #     if(dataset_names[i]=="gmatrix"){
-  #       m_matrix_model_ready_list[[paste(gsub("gmatrix", "geno", dataset_names[i]), "model_ready", sep = "_")]] <- dataset
-  #     } else{
-  #       m_matrix_model_ready_list[[paste(gsub("_kernel", "", dataset_names[i]), "model_ready", sep = "_")]] <- dataset
-  #     }
-  #        }
-  #
-  #   ##############
-  #   if(length(datasets)==1){
-  #
-  #     if(is.null(Zg)){
-  #       # sum_ebv <- data.frame(name = rownames(dataset),
-  #       #                       Estimated_breeding_value = sum_estimated_breeding_value,
-  #       #                       stringsAsFactors = FALSE)
-  #       #
-  #       # colnames(sum_ebv)[1] <- gen_name
-  #
-  #       combined_dff <- dplyr::bind_rows(estimated_breeding_value_list)
-  #       summarized_blup_use <- combined_dff |>
-  #         dplyr::group_by(!!rlang::sym(gen_name))|>
-  #         dplyr::summarise(
-  #           BLUP = sum(BLUP, na.rm = TRUE),
-  #           Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
-  #           #Reliability = NA,
-  #           .groups = 'drop'  # Ensure the resulting data frame is not grouped
-  #         )
-  #
-  #       # Calculate the Prediction Error Variance
-  #       sum_ebv <- summarized_blup_use |>
-  #         dplyr::mutate(Prediction_error_variance = Standard_error^2,
-  #                Reliability = NA)
-  #     } else{
-  #       # sum_ebv <- data.frame(name =rownames(dataset),
-  #       #                       Env = all_envs_for_met,
-  #       #                       Estimated_breeding_value = sum_estimated_breeding_value,
-  #       #                       stringsAsFactors = FALSE)
-  #       #
-  #       # colnames(sum_ebv)[1:2] <- c(gen_name, heter_groups)
-  #       combined_dff <- dplyr::bind_rows(estimated_breeding_value_list)
-  #       summarized_blup_use <- combined_dff |>
-  #         dplyr::group_by(!!rlang::sym(gen_name))|>
-  #         dplyr::summarise(
-  #           BLUP = sum(BLUP, na.rm = TRUE),
-  #           Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
-  #           #Reliability = NA,
-  #           .groups = 'drop'  # Ensure the resulting data frame is not grouped
-  #         )
-  #
-  #       # Calculate the Prediction Error Variance
-  #       sum_ebv <- summarized_blup_use |>
-  #         dplyr::mutate(Prediction_error_variance = Standard_error^2,
-  #                        Reliability = NA)
-  #     }
-  #     # sum_ebv <- sum_ebv |>
-  #     #   dplyr::mutate(Standard_error = estimated_breeding_value_list[[i]][, "Standard_error"],
-  #     #                 Prediction_error_variance = estimated_breeding_value_list[[i]][, "Prediction_error_variance"],
-  #     #                 Reliability = estimated_breeding_value_list[[i]][, "Reliability"])
-  #
-  #
-  #     if(length(tst)!=0){
-  #       residual_value[, 1] <- rownames(dataset)[tst]
-  #     }else {
-  #
-  #       residual_value[, 1] <- rownames(dataset)
-  #     }
-  #
-  #   } else{
-  #
-  #     if(length(datasets)>1){
-  #       if(i==1) gid_name <- rownames(dataset)
-  #       predicted_value[, 1] <- gid_name
-  #       residual_value[, 1] <- gid_name
-  #       ##### Treat sum_EBV
-  #       if(i==length(datasets)){
-  #
-  #         if(is.null(Zg)){
-  #           # sum_ebv <- data.frame(name = gid_name,
-  #           #                       Estimated_breeding_value = sum_estimated_breeding_value,
-  #           #                       stringsAsFactors = FALSE)
-  #           #
-  #           # colnames(sum_ebv)[1] <- gen_name
-  #           combined_dff <- dplyr::bind_rows(estimated_breeding_value_list)
-  #           summarized_blup_use <- combined_dff |>
-  #             dplyr::group_by(!!rlang::sym(gen_name))|>
-  #             dplyr::summarise(
-  #               BLUP = sum(BLUP, na.rm = TRUE),
-  #               Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
-  #               #Reliability = NA,
-  #               .groups = 'drop'  # Ensure the resulting data frame is not grouped
-  #             )
-  #
-  #           # Calculate the Prediction Error Variance
-  #           sum_ebv <- summarized_blup_use |>
-  #             dplyr::mutate(Prediction_error_variance = Standard_error^2,
-  #                           Reliability = NA)
-  #
-  #         } else{
-  #           # sum_ebv <- data.frame(name = gid_name,
-  #           #                       Env = all_envs_for_met,
-  #           #                       Estimated_breeding_value = sum_estimated_breeding_value,
-  #           #                       stringsAsFactors = FALSE)
-  #           #
-  #           # colnames(sum_ebv)[1:2] <- c(gen_name, heter_groups)
-  #           combined_dff <- dplyr::bind_rows(estimated_breeding_value_list)
-  #           summarized_blup_use <- combined_dff |>
-  #             dplyr::group_by(!!rlang::sym(gen_name))|>
-  #             dplyr::summarise(
-  #               BLUP = sum(BLUP, na.rm = TRUE),
-  #               Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
-  #               #Reliability = NA,
-  #               .groups = 'drop'  # Ensure the resulting data frame is not grouped
-  #             )
-  #
-  #           # Calculate the Prediction Error Variance
-  #           sum_ebv <- summarized_blup_use |>
-  #             dplyr::mutate(Prediction_error_variance = Standard_error^2,
-  #                           Reliability = NA)
-  #         }
-  #
-  #         # sum_ebv <- sum_ebv |>
-  #         #   dplyr::mutate(Standard_error = NA,
-  #         #                 Prediction_error_variance =NA,
-  #         #                 Reliability = NA)
-  #
-  #         # predicted_value <- predicted_value |>
-  #         #   dplyr::mutate(Standard_error = ifelse(!is.na(pev), sqrt(pev), NA),
-  #         #                 Prediction_error_variance = pev,
-  #         #                 Reliability = rel)
-  #
-  #       }
-  #     } ##
-  #   }
-  # }
 
   ## Intialize step to calculate EBV across environment for each omics
   for (i in seq_along(datasets)) {
