@@ -1,19 +1,55 @@
 
-
-
-#' Title
+#' Cross-Validation for ASReml Models
 #'
-#' @param pheno_dataa
-#' @param tst
-#' @param response
-#' @param gen_name
-#' @param heter_groups
-#' @param asreml_models_prep_cv
+#' This function performs cross-validation for ASReml models using the provided phenotypic data.
 #'
-#' @return
-#' @export
+#' @param pheno_dataa A data frame containing the phenotypic data.
+#' @param response A string specifying the response variable in the phenotypic data.
+#' @param gen_name A string specifying the column name for the genotypic data.
+#' @param heter_groups A factor or vector specifying the heterogeneity groups.
+#' @param asreml_models_prep_cv A list containing the prepared ASReml model components for cross-validation.
+#' @param tst An integer vector specifying the indices of the test set in the phenotypic data.
+#'
+#' @return A list containing the fitted cross-validation model, the prepared ASReml model components, and the modified phenotypic data.
+#' \itemize{
+#'   \item{model_cv}{The fitted ASReml cross-validation model.}
+#'   \item{asreml_models_prep_cv}{The prepared ASReml model components.}
+#'   \item{pheno_dataa}{The modified phenotypic data with missing values for the test set.}
+#' }
 #'
 #' @examples
+#' \dontrun{
+#'   # Toy example phenotypic data
+#'   pheno_data <- data.frame(
+#'     GID = 1:10,
+#'     Trait = rnorm(10),
+#'     Group = factor(rep(1:2, each = 5))
+#'   )
+#'
+#'   # Mock preparation of ASReml model components for cross-validation
+#'   asreml_models_prep_cv <- list(
+#'     names_in_inv_list = c("GID"),
+#'     code_asr_fit = c("Trait ~ 1 + Group", "random = ~ GID", "residual = ~ units", ""),
+#'     inv_list = list(GID = diag(10))
+#'   )
+#'
+#'   # Indices of the test set
+#'   tst_indices <- c(1, 3, 5, 7, 9)
+#'
+#'   # Perform cross-validation for ASReml models
+#'   result <- asreml_cv_model(
+#'     pheno_dataa = pheno_data,
+#'     response = "Trait",
+#'     gen_name = "GID",
+#'     heter_groups = pheno_data$Group,
+#'     asreml_models_prep_cv = asreml_models_prep_cv,
+#'     tst = tst_indices
+#'   )
+#'   print(result)
+#' }
+#'
+#' @export
+
 asreml_cv_model <- function(pheno_dataa = NULL,
                             response = NULL,
                             gen_name = NULL,
@@ -37,36 +73,6 @@ asreml_cv_model <- function(pheno_dataa = NULL,
   #code.asr[1] <- paste('mod<-', code.asr[1], sep='')
   code_asr_fit_cv[1] <- paste('mod_cv<-', code_asr_fit_cv[1], sep='')
   str_mod_cv <- paste(code_asr_fit_cv[1],code_asr_fit_cv[2],code_asr_fit_cv[3],code_asr_fit_cv[4],sep=',')
-
-  ## This is useful because asreml want the inv_object in the current environment
-  ## though present in the global environment. so this call it from the global
-  ## to the current environment
-  # Loop through each name in the list
-  #cat(names_in_inv_list)
-  # if(is.null(names_in_inv_list)| length(names_in_inv_list)==0){
-  #   message("it is null")
-  # }
-  #
-  # # Assign the object to the current environment with the same name
-  #
-  # for (name in names_in_inv_list) {
-  #   message(names_in_inv_list)
-  #   # Check if the object exists in the global environment
-  #   #if (exists(name, envir = .GlobalEnv)) {
-  #   if (name %in% ls(envir = .GlobalEnv)) {
-  #     # Get the object from the global environment
-  #     obj <- get(name, envir = .GlobalEnv)
-  #
-  #     # Assign the object to the current environment with the same name
-  #     assign(name, obj, envir = environment())
-  #     # Print a confirmation message
-  #     message(paste("Object", name, "has been copied to the current environment."))
-  #
-  #   } else {
-  #     # Print a message if the object does not exist in the global environment
-  #     message(paste("Object", name, "not found in the global environment."))
-  #   }
-  # }
 
   ##### THis is important for asreml inorder to update the model if need be
   for (i in seq_along(inv_list)) {
@@ -96,15 +102,6 @@ asreml_cv_model <- function(pheno_dataa = NULL,
     return(NULL)  # Return NULL or an appropriate value to indicate the failure
   }
   )
-  # # Attempt to evaluate in the current environment
-  # tryCatch({
-  #   eval(parse(text = str_mod_cv), envir = environment())
-  # }, error = function(e) {
-  #   # If an error occurs, check for the missing object in the global environment
-  #   message("Error occurred: ", e$message)
-  #   message("Attempting to execute in the global environment...")
-  #   eval(parse(text = str_mod_cv), envir = .GlobalEnv)
-  # })
 
 if(!is.null(result_model)){
 

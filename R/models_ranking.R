@@ -7,6 +7,8 @@
 # Function to rank models for each metric
 rank_models <- function(data, metric) {
 
+  msg <- "\n==================================================\n"
+
   # List of metrics that need to be minimized (lower is better)
   minimize_metrics <- c("mean_squared_error", "bias",
                         "root_mean_squared_error", "relative_squared_error",
@@ -20,7 +22,9 @@ rank_models <- function(data, metric) {
   } else if(metric %in% maximize_metrics) {
     dplyr::arrange(data, trait, dplyr::desc(!!dplyr::sym(metric)))
   } else {
-    stop("unknown metric")
+    stop(paste0(msg,
+                "Unknown evaluation metric: '", metric, "'. Please select from the following metrics: ",
+                paste(c(minimize_metrics, maximize_metrics), collapse = ", ")))
   }
 
   # Apply the ranking

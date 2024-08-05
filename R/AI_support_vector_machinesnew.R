@@ -1,3 +1,30 @@
+#' Select the Best Model Based on Preferred Metrics
+#'
+#' This function selects the best model from a list of models based on specified preferred metrics such as RMSE, Accuracy, and MAE.
+#'
+#' @param model_list A list of models to be evaluated. Each model should have a `results` component containing performance metrics.
+#' @param preferred_metrics A character vector specifying the preferred metrics for selecting the best model. Default is c("RMSE", "Accuracy", "MAE").
+#'
+#' @return A list containing the best model, its name, and the associated metrics.
+#' \itemize{
+#'   \item{BestModel}{The model object that has the best performance based on the preferred metrics.}
+#'   \item{BestModelName}{The name of the best model.}
+#'   \item{Metrics}{A named vector of the best metric scores.}
+#' }
+#'
+#' @examples
+#' \dontrun{
+#'   # Toy example models with mock performance metrics
+#'   model1 <- list(results = data.frame(RMSE = 0.5, Accuracy = 0.8, MAE = 0.3))
+#'   model2 <- list(results = data.frame(RMSE = 0.6, Accuracy = 0.85, MAE = 0.4))
+#'   model_list <- list(model1 = model1, model2 = model2)
+#'
+#'   # Select the best model based on RMSE, Accuracy, and MAE
+#'   best_model_info <- select_best_model(model_list)
+#'   print(best_model_info)
+#' }
+#'
+#' @export
 select_best_model <- function(model_list,
                               preferred_metrics=c("RMSE", "Accuracy", "MAE")) {
 
@@ -32,7 +59,80 @@ select_best_model <- function(model_list,
 
   list(BestModel=model_list[[best_model_name]], BestModelName=best_model_name, Metrics=scores[[best_model_index]])
 }
-
+#####
+#' Train and Evaluate SVM Models with Automated Tuning
+#'
+#' This function trains and evaluates Support Vector Machine (SVM) models using automated parameter tuning and cross-validation.
+#'
+#' @param pheno_object A data frame containing the phenotypic data.
+#' @param geno_omic_object A matrix or data frame containing the genotypic or omic data for training.
+#' @param geno_omic_test_object A matrix or data frame containing the genotypic or omic data for testing.
+#' @param response A string specifying the response variable in the phenotypic data.
+#' @param gen_name A string specifying the column name for the genotypic data.
+#' @param message A logical value indicating whether to display messages during processing.
+#' @param scaling A logical value indicating whether to scale the genotypic data.
+#' @param centering A logical value indicating whether to center the genotypic data.
+#' @param omic_count An optional integer specifying the number of omic features.
+#' @param para_tunning A logical value indicating whether to perform parameter tuning.
+#' @param AI_cv_nfolds An integer specifying the number of cross-validation folds. Default is 5.
+#' @param svm_paras_tunning A list of SVM parameter tuning grids.
+#' @param svm_kernel A string specifying the SVM kernel type. Default is "Gaussian".
+#' @param svm_type A string specifying the SVM type. Default is "eps-regression".
+#' @param sigma_value A numeric value specifying the sigma parameter for the Gaussian kernel. Default is 0.1.
+#' @param C_value A numeric value specifying the cost parameter for the SVM. Default is 1.
+#' @param degree_value An integer specifying the degree parameter for the polynomial kernel. Default is 3.
+#' @param scale_value A numeric value specifying the scale parameter for the polynomial kernel. Default is 1.
+#' @param offset_value A numeric value specifying the offset parameter for the polynomial and sigmoid kernels. Default is 0.
+#' @param gamma_value A numeric value specifying the gamma parameter for the Gaussian and sigmoid kernels. Default is NULL.
+#' @param CI_width_thresholds A numeric vector specifying the confidence interval width thresholds. Default is c(0.33, 0.66).
+#' @param high_reliability_thres A numeric value specifying the high reliability threshold. Default is 0.9.
+#' @param low_reliability_thres A numeric value specifying the low reliability threshold. Default is 0.5.
+#' @param n_components An integer specifying the number of components for PCA. Default is 20.
+#' @param threshold A numeric value specifying the threshold for feature selection. Default is 100.
+#' @param target A string specifying the target data set for predictions. Default is "test_set".
+#' @param iqr_multiplier A numeric value specifying the IQR multiplier for outlier detection. Default is 1.5.
+#' @param interval_width_high_threshold A numeric value specifying the high threshold for interval width. Default is NULL.
+#' @param interval_width_low_threshold A numeric value specifying the low threshold for interval width. Default is NULL.
+#' @param interval_width_moderate_threshold A numeric value specifying the moderate threshold for interval width. Default is NULL.
+#' @param n_bootstrap An integer specifying the number of bootstrap samples. Default is 100.
+#' @param system_database A logical value indicating whether to use the system database. Default is FALSE.
+#' @param ... Additional arguments to be passed to underlying functions.
+#'
+#' @return A list containing the model parameters, predicted values, and diagnostic plots.
+#'
+#' @examples
+#' \dontrun{
+#'   # Toy example phenotypic data
+#'   pheno_data <- data.frame(
+#'     ID = 1:10,
+#'     Trait = rnorm(10)
+#'   )
+#'
+#'   # Toy example genotypic data
+#'   geno_data <- matrix(rnorm(100), nrow = 10, ncol = 10)
+#'   colnames(geno_data) <- paste0("Marker", 1:10)
+#'
+#'   # Train and evaluate SVM models
+#'   result <- AI_svm(
+#'     pheno_object = pheno_data,
+#'     geno_omic_object = geno_data,
+#'     geno_omic_test_object = geno_data,
+#'     response = "Trait",
+#'     gen_name = "ID",
+#'     para_tunning = TRUE,
+#'     AI_cv_nfolds = 3,
+#'     svm_paras_tunning = list(
+#'       kernel = c("Gaussian", "Linear"),
+#'       sigma = c(0.01, 0.05),
+#'       C = c(1, 10)
+#'     ),
+#'     svm_kernel = "Gaussian",
+#'     n_bootstrap = 10
+#'   )
+#'   print(result)
+#' }
+#'
+#' @export
 
 AI_svm <- function(pheno_object=NULL,
                     geno_omic_object=NULL,
@@ -117,38 +217,8 @@ AI_svm <- function(pheno_object=NULL,
                         #scale=scale_value
                         )
 
-  # Perform scaling if required
-  # if (isTRUE(scaling)) {
-  #   if (!is.null(geno_omic_object)) {
-  #     geno_omic_object <- scale(geno_omic_object, center=TRUE, scale=TRUE)
-  #   }
-  #   if (!is.null(geno_omic_test_object)) {
-  #     geno_omic_test_object <- scale(geno_omic_test_object, center=TRUE, scale=TRUE)
-  #   }
-  # }
-
   # Parameter tuning and model training
   if (isTRUE(para_tunning)) {
-    # Setup for caret to handle SVM training and cross-validation
-    # train_control <- caret::trainControl(method="cv", number=AI_cv_nfolds,
-    #                               verboseIter=TRUE, returnData=FALSE,
-    #                               returnResamp="all", allowParallel=TRUE)
-    #
-    # # Define the tuning grid based on the svm_paras_tunning structure
-    # tuning_grid <- expand.grid(kernel=svm_paras_tunning$kernel,
-    #                            degree=svm_paras_tunning$degree,
-    #                            #scale=svm_paras_tunning$scale,
-    #                            C=svm_paras_tunning$C
-    #                            #gamma=1 / (2 * svm_paras_tunning$sigma^2)
-    #                            )  # Convert sigma to gamma
-
-    # # Train the SVM model using caret for parameter tuning
-    # svm_model <- caret::train(x=geno_omic_object, y=pheno_object[, response],
-    #                           method="svmRadial",  # Change depending on kernel choice
-    #                           trControl=train_control, tuneGrid=tuning_grid)
-    # create hyperparameter grid
-
-    # Include gamma for kernels that need it (not needed for linear unless specified)
 
     # Initialize tuning grids
     tuning_grid_radial <- NULL
@@ -173,15 +243,6 @@ AI_svm <- function(pheno_object=NULL,
       tuning_grid_linear <- expand.grid(C = data.frame(C =svm_paras_tunning$C))
     }
 
-    # if ("Hyperbolic_tangent" %in% svm_paras_tunning$kernel) {
-    #   svm_paras_tunning$kernel <- "sigmoid"
-    #   tuning_grid_linear <- expand.grid(C = data.frame(C =svm_paras_tunning$C),
-    #                                     gamma = data.frame(C =svm_paras_tunning$gamma_value),
-    #                                     coef0 = data.frame(C =svm_paras_tunning$offset_value))
-    # }
-    ###
-    # List of SVM models to evaluate
-    # List of SVM models to evaluate
     svm_models <- list()
 
     if (!is.null(tuning_grid_radial)) {
@@ -196,15 +257,6 @@ AI_svm <- function(pheno_object=NULL,
       svm_models$svmLinear <- list(method = "svmLinear", tuneGrid = tuning_grid_linear)
     }
 
-    # if (!is.null(tuning_grid_sigmoid)) {
-    #   svm_models$svmSigmoid <- list(method = "svmSigmoid", tuneGrid = tuning_grid_sigmoid)
-    # }
-    # svm_models <- list(
-    #   svmRadial = list(method = "svmRadial", tuneGrid = tuning_grid_radial),
-    #   svmPoly = list(method = "svmPoly", tuneGrid = tuning_grid_poly),
-    #   svmLinear = list(method = "svmLinear", tuneGrid = tuning_grid_linear)
-    #   #svmSigmoid = list(method = "svmSigmoid", tuneGrid = tuning_grid_linear)
-    # )
 
     AI_trcontrol = caret::trainControl(method = "cv",
                                        number = AI_cv_nfolds,
@@ -273,7 +325,6 @@ AI_svm <- function(pheno_object=NULL,
 
         }
       }
-      #svm_model <- best_model_info$BestModel
 
       # Function to fit SVM and make predictions
       svm_predict_boost <- function(data, indices,
@@ -287,17 +338,7 @@ AI_svm <- function(pheno_object=NULL,
                                     best_kernel,
                                     svm_type
                                     ) {
-        # geno <- data$geno
-        # pheno <- data$pheno
-        # geno_test <- data$geno_test
-        # best_C <- data$best_C
-        # best_sigma <- data$best_sigma
-        # best_degree <- data$best_degree
-        # best_scale <- data$best_scale
-        # best_gamma <- data$best_gamma
-        # best_coef0 <- data$best_coef0
-        # best_kernel <- data$best_kernel
-        # response <- data$response
+
         x_train <- data[indices, -1]  # ensure 'drop = FALSE' to keep the data frame structure if one column
         y_train <- data[indices, 1]
 
@@ -326,19 +367,6 @@ AI_svm <- function(pheno_object=NULL,
         return(predictions)
       }
 
-      # data_list <- list(
-      #   geno = geno_omic_object,
-      #   pheno = pheno_object,
-      #   geno_test = geno_omic_test_object,
-      #   best_C = best_C,
-      #   best_sigma = best_sigma,
-      #   best_degree = best_degree,
-      #   best_scale = best_scale,
-      #   best_gamma = best_gamma,
-      #   best_coef0 = best_coef0,
-      #   best_kernel = best_kernel,
-      #   response = response  # Make sure to define which column is your response
-      # )
       # Bootstrapping
       boot_results <- boot::boot(data = data, statistic = svm_predict_boost,
                                  R = n_bootstrap,
@@ -352,12 +380,6 @@ AI_svm <- function(pheno_object=NULL,
                                  best_kernel = best_kernel,
                                  #response = response,
                                  svm_type = svm_type)
-      # Calculate standard error of the predictions
-      # prediction_se <- apply(boot_results$t, 2, sd)  # Assuming predictions are in rows
-      # PEV <- apply(boot_results$t, 2, var)
-      #
-      # # Standard errors of predictions
-      # predictions <- apply(boot_results$t, 2, mean)
 
       # Train SVM without parameter tuning
   } else {
@@ -457,44 +479,7 @@ AI_svm <- function(pheno_object=NULL,
       )
 
     }
-    # Calculate standard error of the predictions
-    # prediction_se <- apply(boot_results$t, 2, sd)  # Assuming predictions are in rows
-    # PEV <- apply(boot_results$t, 2, var)
-    #
-    # # Standard errors of predictions
-    # predictions <- apply(boot_results$t, 2, mean)
 
-    # Define the SVM model based on the kernel type
-    # if ("linear" %in% kernel_type) {
-    #   svm_model <- e1071::svm(x = geno_omic_object, y = pheno_object[, response], kernel = kernel_type, cost = kernel_params$cost)
-    # } else if ("radial" %in% kernel_type) {
-    #   if (!"gamma" %in% para_names) {
-    #     svm_model <- e1071::svm(x = geno_omic_object, y = pheno_object[, response], cost = kernel_params$cost)
-    #   } else {
-    #     svm_model <- e1071::svm(x = geno_omic_object, y = pheno_object[, response], cost = kernel_params$cost,
-    #                             gamma = kernel_params$gamma)
-    #   }
-    # } else if ("polynomial" %in% kernel_type) {
-    #   if (all(c("scale", "degree") %in% para_names)) {
-    #     svm_model <- e1071::svm(x = geno_omic_object, y = pheno_object[, response], cost = kernel_params$cost, degree = kernel_params$degree, scale = kernel_params$scale)
-    #   } else {
-    #     svm_model <- e1071::svm(x = geno_omic_object, y = pheno_object[, response])
-    #   }
-    # } else if ("sigmoid" %in% kernel_type) {
-    #   if ("coef0" %in% para_names) {
-    #     svm_model <- e1071::svm(x = geno_omic_object, y = pheno_object[, response], cost = kernel_params$cost, coef0 = kernel_params$coef0)
-    #   } else {
-    #     svm_model <- e1071::svm(x = geno_omic_object, y = pheno_object[, response])
-    #   }
-    # }
-
-    # if (!is.null(geno_omic_test_object)) {
-    #   predictions <- stats::predict(svm_model, geno_omic_test_object)
-    #   name_source <- rownames(geno_omic_test_object)
-    # } else {
-    #   predictions <- stats::predict(svm_model, geno_omic_object)
-    #   name_source <- rownames(geno_omic_object)
-    # }
   }
 
   # Predict using the trained model

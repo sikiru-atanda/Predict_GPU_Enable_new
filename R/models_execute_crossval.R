@@ -589,6 +589,30 @@ models_execute_crossval <- function(pheno_data = NULL,
       results_eval_metrics_reps <- NULL
     }
 
+    # if (cross_validation_meth %in% CVs_multi_envs_methods_avail & isFALSE(handle_error)) {
+    #   ypred_cv <- as.data.frame(ypred_cv)
+    #   ypred_cv[, 'y'] <- as.double(ypred_cv[, 'y'])
+    #   ypred_cv[, 'yhat'] <- as.double(ypred_cv[, 'yhat'])
+    #
+    #   results_eval_metrics_reps_use <- as.data.frame(results_eval_metrics_reps_use)
+    #   for (eva in 1:length(eval_metrics)) {
+    #     sik <- unlist(doBy::lapplyBy(~Env, data=ypred_cv,
+    #                                  function(x) { evaluation_metrics(x$yhat, x$y, eval_metrics = eval_metrics[eva]) }))
+    #     for (s in 1:length(sik)) {
+    #       results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups] %in% names(sik)[s], c("Rep", eval_metrics[eva])] <- c(repp, sik[s])
+    #     }
+    #   }
+    #   results_eval_metrics_reps <- rbind(results_eval_metrics_reps_use, results_eval_metrics_reps)
+    # } else {
+    #   if (!cross_validation_meth %in% CVs_multi_envs_methods_avail) {
+    #     for (eva in 1:length(eval_metrics)) {
+    #       results_eval_metrics_reps[repp, eval_metrics[eva]] <- evaluation_metrics(y_observed = ypred_cv[tst, "y"],
+    #                                                                                y_predicted = ypred_cv[tst, "yhat"],
+    #                                                                                eval_metrics = eval_metrics[eva])
+    #     }
+    #   }
+    # }
+
     if (cross_validation_meth %in% CVs_multi_envs_methods_avail & isFALSE(handle_error)) {
       ypred_cv <- as.data.frame(ypred_cv)
       ypred_cv[, 'y'] <- as.double(ypred_cv[, 'y'])
@@ -596,19 +620,32 @@ models_execute_crossval <- function(pheno_data = NULL,
 
       results_eval_metrics_reps_use <- as.data.frame(results_eval_metrics_reps_use)
       for (eva in 1:length(eval_metrics)) {
-        sik <- unlist(doBy::lapplyBy(~Env, data=ypred_cv,
-                                     function(x) { evaluation_metrics(x$yhat, x$y, eval_metrics = eval_metrics[eva]) }))
-        for (s in 1:length(sik)) {
-          results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups] %in% names(sik)[s], c("Rep", eval_metrics[eva])] <- c(repp, sik[s])
+        sik <- unlist(doBy::lapplyBy(~Env, data=ypred_cv, function(x) {
+          tryCatch({
+            evaluation_metrics(x$yhat, x$y, eval_metrics = eval_metrics[eva])
+          }, error = function(e) {
+            return(NULL)
+          })
+        }))
+        if (!is.null(sik)) {
+          for (s in 1:length(sik)) {
+            if (!is.null(sik[s])) {
+              results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups] %in% names(sik)[s], c("Rep", eval_metrics[eva])] <- c(repp, sik[s])
+            }
+          }
         }
       }
       results_eval_metrics_reps <- rbind(results_eval_metrics_reps_use, results_eval_metrics_reps)
     } else {
       if (!cross_validation_meth %in% CVs_multi_envs_methods_avail) {
         for (eva in 1:length(eval_metrics)) {
-          results_eval_metrics_reps[repp, eval_metrics[eva]] <- evaluation_metrics(y_observed = ypred_cv[tst, "y"],
-                                                                                   y_predicted = ypred_cv[tst, "yhat"],
-                                                                                   eval_metrics = eval_metrics[eva])
+          tryCatch({
+            results_eval_metrics_reps[repp, eval_metrics[eva]] <- evaluation_metrics(y_observed = ypred_cv[tst, "y"],
+                                                                                     y_predicted = ypred_cv[tst, "yhat"],
+                                                                                     eval_metrics = eval_metrics[eva])
+          }, error = function(e) {
+            results_eval_metrics_reps[repp, eval_metrics[eva]] <- NA
+          })
         }
       }
     }
@@ -622,14 +659,24 @@ models_execute_crossval <- function(pheno_data = NULL,
 
 
   # Process the results
+  # filtered_results <- lapply(results, function(res) {
+  #   if (!is.null(res$eval_metrics_reps) && !is.null(res$ypred_cv_Reps_all)) {
+  #     return(res)
+  #   } else {
+  #     return(NULL)
+  #   }
+  # })
+
+  # Process the results
   filtered_results <- lapply(results, function(res) {
     if (!is.null(res$eval_metrics_reps) && !is.null(res$ypred_cv_Reps_all)) {
-      return(res)
-    } else {
-      return(NULL)
+      # Check if any element in eval_metrics_reps or ypred_cv_Reps_all is NA
+      if (all(!is.na(unlist(res$eval_metrics_reps))) && all(!is.na(unlist(res$ypred_cv_Reps_all)))) {
+        return(res)
+      }
     }
+    return(NULL)
   })
-
   # Remove NULL elements
   filtered_results <- Filter(Negate(is.null), filtered_results)
 

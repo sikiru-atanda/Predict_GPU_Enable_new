@@ -1,6 +1,18 @@
 
 
-# Mapping for double codes to IUPAC single-letter codes
+#' Convert Double Nucleotide Code to IUPAC Single-Letter Code
+#'
+#' Converts a double nucleotide code to its corresponding IUPAC single-letter code.
+#'
+#' @param double_code A string representing a double nucleotide code (e.g., "AA", "AT").
+#'
+#' @return A single-letter IUPAC code corresponding to the double nucleotide code.
+#'
+#' @examples
+#' double_code_to_IUPAC("AA") # Returns "A"
+#' double_code_to_IUPAC("AT") # Returns "W"
+#'
+
 double_code_to_IUPAC <- function(double_code) {
   iupac_map <- list(
     "AA" = "A", "TT" = "T",
@@ -24,7 +36,19 @@ double_code_to_IUPAC <- function(double_code) {
   return(iupac_map[[double_code]])
 }
 
-# Function to standardize SNP format (handles both single and double formats)
+#' Standardize SNP Format
+#'
+#' Standardizes SNP format by converting double nucleotide codes to IUPAC single-letter codes.
+#'
+#' @param snp A string representing a SNP in either single or double format.
+#'
+#' @return A standardized SNP in IUPAC single-letter code.
+#'
+#' @examples
+#' standardize_snp_format("A/T") # Returns "W"
+#' standardize_snp_format("AA")  # Returns "A"
+#'
+
 standardize_snp_format <- function(snp) {
   if (is.na(snp)) {
     return(NA)
@@ -39,7 +63,19 @@ standardize_snp_format <- function(snp) {
   return(snp)
 }
 
-# Recoding logic for hapmap format
+#' Standardize SNP Format in HapMap Data Frame
+#'
+#' Standardizes SNP format in a HapMap data frame to be IUPAC compatible.
+#'
+#' @param hapmap A data frame containing HapMap genotype data starting from the 12th column.
+#'
+#' @return A HapMap data frame with standardized SNP format.
+#'
+#' @examples
+#' hapmap <- data.frame(rs = 1:3, alleles = c("A/T", "C/G", "A/A"), X1 = c("AA", "CC", "AT"), X2 = c("TA", "GC", "AA"))
+#' IUPAC_hapmap_compatible(hapmap)
+#'
+
 IUPAC_hapmap_compatible <- function(hapmap) {
 
   # Identify the SNP columns (starting from the 12th column)
@@ -59,7 +95,18 @@ IUPAC_hapmap_compatible <- function(hapmap) {
 
 }
 
-
+#' Remove Multiallelic Markers
+#'
+#' Removes markers with more than three alleles from a HapMap data frame.
+#'
+#' @param hapmap A data frame containing HapMap genotype data.
+#'
+#' @return A HapMap data frame with multiallelic markers removed.
+#'
+#' @examples
+#' hapmap <- data.frame(rs = 1:3, alleles = c("A/T/G", "C/G", "A/A"), X1 = c("A", "C", "A"), X2 = c("T", "G", "A"))
+#' remove_multiallelic_markers(hapmap)
+#'
 remove_multiallelic_markers <- function(hapmap) {
   # Ensure the input is a data.table
   #setDT(hapmap)
@@ -82,7 +129,19 @@ remove_multiallelic_markers <- function(hapmap) {
   return(hapmap)
 }
 
-# Function to read data from various file types
+#' Read HapMap File
+#'
+#' Reads a HapMap file from various formats (plain text, gzipped, or zipped).
+#'
+#' @param filepath A string specifying the path to the HapMap file.
+#'
+#' @return A data.table containing the HapMap data.
+#'
+#' @examples
+#' # Assuming you have a HapMap file at the specified path
+#' hapmap_data <- read_hapmap_file("path/to/hapmap_file.txt.gz")
+#'
+
 read_hapmap_file <- function(filepath) {
   msg <- "\n==================================================\n"
   file_extension <- tools::file_ext(filepath)
@@ -134,7 +193,20 @@ read_hapmap_file <- function(filepath) {
   return(hapmap_data)
 }
 
-# Function to check and ensure the first 11 columns
+#' Check HapMap Columns
+#'
+#' Checks and ensures that the first 11 columns of the HapMap data match the required format.
+#'
+#' @param data A data frame containing HapMap data.
+#'
+#' @return Throws an error if the columns do not match; otherwise, returns invisibly.
+#'
+#' @examples
+#' hapmap <- data.frame(rs = 1:3, alleles = c("A/T", "C/G", "A/A"), chrom = 1:3, pos = 1:3, strand = "+", assembly = NA,
+#'                      center = NA, protLSID = NA, assayLSID = NA, panelLSID = NA, QCcode = NA, X1 = c("AA", "CC", "AT"), X2 = c("TA", "GC", "AA"))
+#' check_hapmap_columns(hapmap)
+#'
+
 check_hapmap_columns <- function(data) {
 
   msg <- "\n==================================================\n"
@@ -175,7 +247,6 @@ check_hapmap_columns <- function(data) {
 #'
 #' @param hapmap_file_name A string specifying the name of the HapMap file to be processed. If NULL, `hapmap` must be provided.
 #' @param hapmap_file_path A string specifying the path to the directory containing the HapMap file. If NULL, `hapmap` must be provided.
-#' @param hapmap An optional data.table object containing HapMap data. If NULL, `hapmap_file_name` and `hapmap_file_path` must be provided.
 #' @param maf_threshold A numeric value specifying the threshold for minor allele frequency (MAF). Markers below this threshold will be removed.
 #' @param het_threshold A numeric value specifying the threshold for heterozygosity. Markers above this threshold will be removed.
 #' @param ind_call_rate_threshold A numeric value specifying the threshold for individual call rate. Individuals below this threshold will be removed.
@@ -196,8 +267,28 @@ check_hapmap_columns <- function(data) {
 #'
 #' @examples
 #' \dontrun{
-#'   result <- hmp_qc_recode(hapmap_file_name = "sample_data.txt",
-#'                           hapmap_file_path = "path/to/data",
+#'   # Save the example data to a file
+#'   example_hapmap <- data.table::data.table(
+#'     `rs#` = c("rs1", "rs2", "rs3", "rs4"),
+#'     alleles = c("A/T", "C/G", "A/A", "G/T"),
+#'     chrom = c(1, 1, 2, 2),
+#'     pos = c(100, 200, 300, 400),
+#'     strand = c("+", "+", "-", "-"),
+#'     assembly = c("v1", "v1", "v1", "v1"),
+#'     center = c("C1", "C1", "C1", "C1"),
+#'     protLSID = c("p1", "p1", "p1", "p1"),
+#'     assayLSID = c("a1", "a1", "a1", "a1"),
+#'     panelLSID = c("panel1", "panel1", "panel1", "panel1"),
+#'     QCcode = c(NA, NA, NA, NA),
+#'     Sample1 = c("AA", "CC", "AA", "GG"),
+#'     Sample2 = c("TT", "GG", "AA", "TT"),
+#'     Sample3 = c("AT", "CG", "AA", "GT")
+#'   )
+#'   data.table::fwrite(example_hapmap, "example_hapmap.txt", sep = "\t")
+#'
+#'   # Run the function with the example data
+#'   result <- hmp_qc_recode(hapmap_file_name = "example_hapmap.txt",
+#'                           hapmap_file_path = ".",
 #'                           maf_threshold = 0.05,
 #'                           het_threshold = 0.1,
 #'                           ind_call_rate_threshold = 0.95,
@@ -210,19 +301,12 @@ check_hapmap_columns <- function(data) {
 #'
 #' @export
 
-
-#hapmap_file_path = "D:/PEA_BARI"
-
-#hapmap_file_name = 'HapMap_300_Aug25_Select_Chr_No_Filtering.hmp.txt.zip'
-
 hmp_qc_recode <- function(hapmap_file_name = NULL,
                           hapmap_file_path = NULL,
-                          #hapmap = NULL,
                           maf_threshold = 0.01,
                           het_threshold = 0.1,
                           ind_call_rate_threshold = 0.9,
                           snp_call_rate_threshold = 0.9,
-                          #hwe_threshold = 0.001,  # Adjust as needed
                           impute = TRUE,
                           recode_format = "0,1,2",  # Specify "0,1,2" or -1, 0, 1
                           out_put_map = TRUE,
@@ -259,6 +343,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
   valid_IUPAC <- c('A', 'C', 'G', 'T', 'U', 'W', 'S', 'M', 'K', 'R', 'Y', 'B', 'D', 'H', 'V', 'N')
   ###############################
 
+  if(!is.null(hapmap_file_name) & is.null(hapmap_file_path)) hapmap_file_path <- getwd()
   if(!is.null(hapmap_file_name) && !is.null(hapmap_file_path)){
 
     # Construct the full file path
@@ -272,17 +357,8 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
     #                             na.strings=c(NA,"N","NN","B","V","H","D",".","-"))
 
 
-  } else if (!is.null(hapmap)){
-
-    if(!inherits(hapmap, "data.table")) {
-
-      hapmap <- data.table::as.data.table(hapmap)
-
-    }
-
-
   }else{
-    if(is.null(hapmap)){
+    if(is.null(hapmap_file_path) & is.null(hapmap_file_name)){
       stop((paste(msg,"Hapmap data is missing.")), call. = FALSE)
 
     }
@@ -483,6 +559,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
 
   }
 
+  ### remove markers that is with reference allele greater than 2
   hapmap <- remove_multiallelic_markers(hapmap)
 
 
@@ -517,8 +594,8 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
     hapmap2numeric_meth1_1 <- function(hapmap){
 
       hapmap_numeric <- apply(hapmap[, c(1, 2,12:ncol(hapmap)), with=FALSE], 1, function(x){
-        x[which(x%in%c('R', 'Y', 'S', 'W', 'K', 'M'))] <- 0
-        x[which(x%in%c(NA,"NA","N","NN","B","V","H","D",".","-"))] <- NA
+        x[which(x%in% heterozygous)] <- 0
+        x[which(x%in% missing_values)] <- NA
         allele1 <- substr(x[2], 1, 1)
         allele2 <- substr(x[2], 3, 3)
         if(length(which(x==allele1)) >= length(which(x==allele2))){
@@ -547,7 +624,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
       snp_data <- hapmap2numeric_meth1_1(hapmap[, 12:ncol(hapmap)])
       #snp_data <-  cbind(hapmap[, 1:11], snp_data)
     } else {
-      stop("Invalid recode format. Use '0,1,2' or '-1,0,1'.")
+      stop(paste(msg, "Invalid recode format. Use '0,1,2' or '-1,0,1'."), call. = FALSE)
 
     }
 
