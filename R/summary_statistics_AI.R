@@ -137,6 +137,7 @@ summary_statistics_AI <- function(predicted_object= NULL,
     # mm <-  data.frame(stat = names(model_parameters),
     #                 summary = unlist(model_parameters))
     # Check if any entry in the summary column matches the specific type when number of neuron is greater than 1
+    if(is.data.frame(model_parameters)){
     for (i in 1:nrow(model_parameters)) {
       if (is.numeric(model_parameters$summary[[i]]) &&
           length(model_parameters$summary[[i]]) > 1) {
@@ -147,12 +148,17 @@ summary_statistics_AI <- function(predicted_object= NULL,
 
         mm <- data.frame(stat = replicated_stat, summary = flattened_summary, stringsAsFactors = FALSE)
 
-        print(mm)
+
       } else {
         mm <-  data.frame(stat = names(model_parameters),
                           summary = unlist(model_parameters))
       }
     }
+
+    } else {
+      mm <-  data.frame(stat = names(model_parameters),
+                        summary = unlist(model_parameters))
+  }
 
 
     rownames(mm) <- NULL
