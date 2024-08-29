@@ -211,24 +211,24 @@ composite_reliability_tst <- function(geno_trn = NULL,
   # }
 
   # Calculate Mahalanobis distances
-  mahalanobis_reliability <- mahalanobis_distances_testSet(geno_trn = geno_trn,
-                                                          geno_tst = geno_tst,
-                                                          geno_tst_trn = geno_tst_trn,
-                                                          names_tst = names_tst,
-                                                          names_trn = names_trn,
-                                                          n_components = n_components,
-                                                          threshold = threshold,
-                                                          target = target,
-                                                          apply_pca = apply_pca)
-
-  if(isTRUE(is.na(mahalanobis_reliability))){
-    return(list(trustworthiness=NA,
-                proportion_high_reliability = NA,
-                proportion_medium_reliability = NA,
-                proportion_low_reliability = NA,
-                reliability_percentage = NA,
-                reliability_score = NA))
-  }
+  # mahalanobis_reliability <- mahalanobis_distances_testSet(geno_trn = geno_trn,
+  #                                                         geno_tst = geno_tst,
+  #                                                         geno_tst_trn = geno_tst_trn,
+  #                                                         names_tst = names_tst,
+  #                                                         names_trn = names_trn,
+  #                                                         n_components = n_components,
+  #                                                         threshold = threshold,
+  #                                                         target = target,
+  #                                                         apply_pca = apply_pca)
+  #
+  # if(isTRUE(is.na(mahalanobis_reliability))){
+  #   return(list(trustworthiness=NA,
+  #               proportion_high_reliability = NA,
+  #               proportion_medium_reliability = NA,
+  #               proportion_low_reliability = NA,
+  #               reliability_percentage = NA,
+  #               reliability_score = NA))
+  # }
 
   # Calculate Mahalanobis distance thresholds
   # q75 <- stats::quantile(mahalanobis_dist, 0.75, na.rm = TRUE)
@@ -269,8 +269,8 @@ composite_reliability_tst <- function(geno_trn = NULL,
   noise_reliability <- ifelse(interval_width < interval_width_high_threshold, 1,
                               ifelse(interval_width < interval_width_low_threshold, 0.5, 0))
   # Aggregate reliability scores
-  reliability_score <- rowMeans(cbind(noise_reliability, mahalanobis_reliability))
-
+  #reliability_score <- rowMeans(cbind(noise_reliability, mahalanobis_reliability))
+  reliability_score <- noise_reliability
   # Calculate the proportion of high reliability predictions
   proportion_high_reliability <- mean(reliability_score == 1)
 

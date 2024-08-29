@@ -12,20 +12,17 @@ LazyData: true
 Depends: R (>= 4.1.0)
 Enhances: 
     asreml
-Imports:     
+Imports: 
     BGLR,
     boot,
     caret,
-    corpcor,
-    crayon,
+    corpcor,    
     data.table,
     doBy,
     dplyr,
     glmnet,
     gridExtra,
-    insight,
-    keras,
-    kernlab,
+    insight,    
     MASS,
     Matrix,
     matrixcalc,
@@ -33,16 +30,16 @@ Imports:
     patchwork,
     pls,
     randomForest,
-    reticulate,
-    rlang,
+    reticulate,    
     sommer,
     stats,
-    stringr,
-    tensorflow,
+    stringr,    
     tibble,
     tidyr,
     tools,
     utils,
     xgboost
 RoxygenNote: 7.3.0
-
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3

@@ -94,6 +94,7 @@ AI_randomForest <- function(pheno_object=NULL,
                             ntree=500,
                             mtry = NULL,
                             maxnodes = NULL,
+                            nodesize = NULL,
                             importance=TRUE,
                             CI_width_thresholds = c(0.33, 0.66),
                             high_reliability_thres = 0.9,
@@ -131,25 +132,7 @@ AI_randomForest <- function(pheno_object=NULL,
   # Predict on the training data and get the scaled values
   y_train_scaled <- stats::predict(y_scaler, as.data.frame(as.matrix(y_train)))[, 1]
 
-  # if(!is.null(geno_omic_object)){
-  #   if(isTRUE(scaling)){
-  #     geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = TRUE)
-  #   } else{
-  #     if(isTRUE(centering) && !is.null(omic_count)){
-  #       geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = FALSE)
-  #     }
-  #   }
-  # }
 
-  # if(!is.null(geno_omic_test_object)){
-  #   if(isTRUE(scaling)){
-  #     geno_omic_test_object <- scale(geno_omic_test_object, center = TRUE, scale = TRUE)
-  #   } else{
-  #     if(isTRUE(centering) && !is.null(omic_count)){
-  #       geno_omic_test_object <- scale(geno_omic_test_object, center = TRUE, scale = FALSE)
-  #     }
-  #   }
-  # }
   #########################
 
   if(isTRUE(para_tunning)){
@@ -323,9 +306,9 @@ AI_randomForest <- function(pheno_object=NULL,
                                                           genetic_var = genetic_var,
                                                           confidence_level = 0.95,
                                                           model_for_CI_cal = "ML",
-                                                          composite_reliability_score = composite_reliability$reliability_score,
-                                                          composite_reliability = composite_reliability$trustworthiness,
-                                                          composite_reliability_percentage = composite_reliability$reliability_percentage,
+                                                          #composite_reliability_score = composite_reliability$reliability_score,
+                                                          #composite_reliability = composite_reliability$trustworthiness,
+                                                          #composite_reliability_percentage = composite_reliability$reliability_percentage,
                                                           #threshold = NULL,
                                                           high_reliability_thres = high_reliability_thres,
                                                           low_reliability_thres = low_reliability_thres,
@@ -335,7 +318,7 @@ AI_randomForest <- function(pheno_object=NULL,
 
     } else {
 
-      stop(print(paste(msg,"Training set missing.")), call. = FALSE)
+      stop(paste(msg,"Training set missing."), call. = FALSE)
 
 
     }

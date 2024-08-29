@@ -171,9 +171,7 @@ AI_Xgb <- function(pheno_object=NULL,
                    n_bootstrap = 100,
                    early_stop_for_iteration_xgb = FALSE,
                    system_database = FALSE,
-                   ...
-
-){
+                   ...){
 #browser()
   msg <- "\n==================================================\n"
   if(!is.null(geno_omic_object)){
@@ -434,7 +432,7 @@ if(xgb_booster=="gblinear"){
 
     } else {
 
-      stop(print(paste(msg,'Missing training set.')), call. = FALSE)
+      stop(paste(msg,'Missing training set.'), call. = FALSE)
 
     }
 
@@ -581,8 +579,8 @@ AI_preds <- data.frame(name = GID,
                        Reliability = result_rel$reliability,
                        Reliability_remarks = result_rel$remarks,
                        Reliability_percentage = result_rel$reliability_percentage,
-                       Composite_reliability = composite_reliability$trustworthiness,
-                       Composite_reliability_percentage = composite_reliability$reliability_percentage,
+                       #Composite_reliability = composite_reliability$trustworthiness,
+                       #Composite_reliability_percentage = composite_reliability$reliability_percentage,
                        stringsAsFactors = FALSE)
 
 
@@ -599,25 +597,33 @@ diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = boot_results,
                                                     genetic_var = genetic_var,
                                                     confidence_level = 0.95,
                                                     model_for_CI_cal = "ML",
-                                                    composite_reliability_score = composite_reliability$reliability_score,
-                                                    composite_reliability = composite_reliability$trustworthiness,
-                                                    composite_reliability_percentage = composite_reliability$reliability_percentage,
+                                                    #composite_reliability_score = composite_reliability$reliability_score,
+                                                    #composite_reliability = composite_reliability$trustworthiness,
+                                                    #composite_reliability_percentage = composite_reliability$reliability_percentage,
                                                     #threshold = NULL,
                                                     high_reliability_thres = high_reliability_thres,
                                                     low_reliability_thres = low_reliability_thres,
                                                     system_database = system_database)
 
 if(isFALSE(para_tunning)){
-  model_para <- c(nrounds = xgb_fit$niter, xgb_fit$params)
+  #model_para <- c(nrounds = xgb_fit$niter, xgb_fit$params)
+   model_para <-  data.frame(stat = "nrounds",
+                            summary = nrounds,
+                            stringsAsFactors = FALSE)
 } else{
   model_para <- unlist(xgb_fit$bestTune)
-
-}
-
   model_para <- as.data.frame(unlist(model_para))
+
   model_para <-  data.frame(stat = rownames(model_para),
                             summary = model_para,
                             stringsAsFactors = FALSE)
+
+}
+
+  #model_para <- as.data.frame(unlist(model_para))
+  # model_para <-  data.frame(stat = rownames(model_para),
+  #                           summary = model_para,
+  #                           stringsAsFactors = FALSE)
 
   colnames(model_para)[1:2] <- c("stat", "summary")
 
