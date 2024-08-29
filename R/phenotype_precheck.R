@@ -72,6 +72,9 @@ phenotype_precheck <- function(pheno_data = NULL,
     stop(paste(msg, paste("The specified response variable(s) '", paste(missing_responses, collapse = "', '"), "' did not match with your data. Please check and use appropriately.")), call. = FALSE)
   }
 
+  if(any(colnames(pheno_data) %in% c("NA", "Na", "na"))){
+     stop(paste(msg, "Column names can't contain NA."))
+  }
   # Order by heter_groups if specified and present
   if (!is.null(heter_groups)) {
     missing_heter_grps <- heter_groups[!heter_groups %in% colnames(pheno_data)]

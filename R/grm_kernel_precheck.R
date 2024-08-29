@@ -72,6 +72,10 @@ if (!is.null(grm_kernel_data)){
   if (is.null(colnames(grm_kernel_data))){
     stop(message(paste(msg,'Colnames containing individuals in the matrix is missing.')), call. = FALSE)
   }
+
+  if(any(colnames(grm_kernel_data) %in% c("NA", "Na", "na")) || any(rownames(grm_kernel_data) %in% c("NA", "Na", "na"))){
+    stop(paste(msg, "Column or Row names can't contain NA."))
+  }
   ######
   ## check if there is duplicated colnames
   duplicated_columns <- colnames(grm_kernel_data)[duplicated(colnames(grm_kernel_data))]

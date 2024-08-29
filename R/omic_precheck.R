@@ -26,7 +26,9 @@ omic_precheck <- function(object = NULL,
       object <- as.matrix(object)
     }
 
-
+    if(any(colnames(object) %in% c("NA", "Na", "na"))){
+      stop(paste(msg, "Column names can't contain NA."))
+    }
 
     #if (is.numeric(object)==FALSE) {stop(print(paste(msg,'The data contains non-numeric value')), call. = FALSE)}
     # Check if all elements in the matrix are numeric
@@ -49,6 +51,8 @@ omic_precheck <- function(object = NULL,
     if(length(duplicated_rownames)>0){
       stop(print(paste(msg,"Omic data contain duplicate genotypes.")), call. = FALSE)
     }
+
+
     # ## Check for Na and remove
     # Na_col.omit <- which((colSums(is.na(object))==0)==FALSE)
     #
