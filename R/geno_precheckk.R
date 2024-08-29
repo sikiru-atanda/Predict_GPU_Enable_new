@@ -127,6 +127,10 @@ geno_precheck <- function(object_geno = NULL,
       stop(paste(msg,"Individual or marker names not assigned to rows or columns of 'object_geno'."), call. = FALSE)
       }
 
+    if(any(colnames(object_geno) %in% c("NA", "Na", "na"))){
+      stop(paste(msg, "Column names can't contain NA."))
+    }
+
    AA <-  detect_genomic_coding(object_geno = object_geno)
    if(AA=="SNP (0, 1, 2, -1)") {
      stop(paste(msg,"SNP recoding is decoded wrongly as (0,1,2-1).\n Snp recode should either be SNP: (-1, 0, 1) or (0, 1, 2)."), call. = FALSE)
