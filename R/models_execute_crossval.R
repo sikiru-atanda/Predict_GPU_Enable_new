@@ -24,7 +24,7 @@ set_parallel_plan <- function(n_trait,
     if(is.null(num_cores)){
 
       num_cores <-  parallel::detectCores()
-      num_cores <- num_cores*0.7
+      num_cores <- num_cores*0.5
     }
     future::plan(plan_type, workers = num_cores)
   } else {
@@ -66,6 +66,28 @@ predict_with_model <- function(model = NULL,
                                    xgb_objective = additional_params$xgb_objective,xgb_sample_type = additional_params$xgb_sample_type,
                                    xgb_normalize_type = additional_params$xgb_normalize_type,
                                    early_stop_for_iteration_xgb = additional_params$early_stop_for_iteration_xgb),
+         "deep_learning_model" = deep_learning_model(y = y, omics = omics_data, tst = tst,
+                                                     scaling = additional_params$scaling,
+                                                     centering = additional_params$centering,
+                                                     num_hidden_layers = additional_params$num_hidden_layers,
+                                                     neurons_per_layer = additional_params$neurons_per_layer,
+                                                     learning_rate_dp = additional_params$learning_rate_dp,
+                                                     epochs = additional_params$epochs,
+                                                     batch_size = additional_params$batch_size,
+                                                     l2_regularizer_dp = additional_params$l2_regularizer_dp,
+                                                     dropout_rate = additional_params$dropout_rate,
+                                                     crossval = additional_params$crossval,
+                                                     omic_count = additional_params$omic_count,
+                                                     early_stop = additional_params$early_stop,
+                                                     deep_learning_model = additional_params$deep_learning_model,
+                                                     n_blocks = additional_params$n_blocks,
+                                                     dense_layers_cnn = additional_params$dense_layers_cnn,
+                                                     kernel_size = additional_params$kernel_size,
+                                                     n_neurons_per_block = additional_params$n_neurons_per_block,
+                                                     attention_on_final_layer = additional_params$attention_on_final_layer,
+                                                     attention_across_multiple_layers = additional_params$attention_across_multiple_layers,
+                                                     batch_normalization = additional_params$batch_normalization
+                                                     ),
          "RandomForest" = AI_randomforest_cv(y = y, omics = omics_data, tst = tst,
                                              scaling = additional_params$scaling,
                                              centering = additional_params$centering, ntree = additional_params$ntree,
@@ -193,6 +215,24 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     degree_value = 3,        # Default degree for polynomial kernel
                                     scale_value  = 1,         # Default scale for polynomial kernel
                                     offset_value = 1,
+                                    num_hidden_layers = 1,
+                                    neurons_per_layer = 64,
+                                    learning_rate_dp = 0.001,
+                                    epochs = 10,
+                                    batch_size = 32 ,
+                                    l2_regularizer_dp = 0.001,
+                                    dropout_rate = 0.5,
+                                    validation_split = 0.2,
+                                    early_stop = TRUE,
+                                    deep_learning_model = "mlp_with_attention",
+                                    n_blocks = 2,
+                                    dense_layers_cnn = c(128, 64),
+                                    kernel_size = 3,
+                                    n_neurons_per_block = NULL,
+                                    attention_on_final_layer = TRUE,
+                                    attention_across_multiple_layers = FALSE,
+                                    batch_normalization = TRUE,
+                                    crossval = TRUE,
                                     ...){
 
  #browser()
@@ -275,17 +315,36 @@ models_execute_crossval <- function(pheno_data = NULL,
                             gen_name = gen_name,
                             pheno_data = pheno_data,
                             #response = trait,
-                            heter_groups = heter_groups)
+                            heter_groups = heter_groups,
+                            num_hidden_layers = num_hidden_layers,
+                            neurons_per_layer = neurons_per_layer,
+                            learning_rate_dp = learning_rate_dp,
+                            epochs = epochs,
+                            batch_size = batch_size,
+                            l2_regularizer_dp = l2_regularizer_dp,
+                            dropout_rate = dropout_rate,
+                            crossval = crossval,
+                            early_stop = early_stop,
+                            deep_learning_model = deep_learning_model,
+                            n_blocks = n_blocks,
+                            dense_layers_cnn = dense_layers_cnn,
+                            kernel_size = kernel_size,
+                            n_neurons_per_block =n_neurons_per_block,
+                            attention_on_final_layer = attention_on_final_layer,
+                            attention_across_multiple_layers = attention_across_multiple_layers,
+                            batch_normalization = batch_normalization
+                            )
 
 
   AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare",
                        "SupportVectorMachine", "K-NearestNeighbors", "Lasso",
-                       "Ridge_Regression")
+                       "Ridge_Regression", "deep_learning_model")
 
   bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
   bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
 
 
+  dp_models <- c("mlp_with_attention", "mlp", "ResNet", "cnn")
 
   asreml_model <- "GBLUP"
   #
@@ -357,7 +416,7 @@ models_execute_crossval <- function(pheno_data = NULL,
     # Automatically determine the number of cores and use half of them
     detected_cores <- parallel::detectCores(logical = TRUE)
     # For non-Windows systems, consider physical cores only
-    num_cores <- round(detected_cores * 0.5)
+    num_cores <- round(detected_cores * 0.7)
 
     set_parallel_plan(n_trait = n_trait,
                       n_model= n_model,
@@ -382,6 +441,12 @@ models_execute_crossval <- function(pheno_data = NULL,
     trait <- as.character(task_row$response)
     rep <- as.integer(task_row$replication)
     model <- as.character(task_row$modell)
+
+    if(any(model%in%dp_models)){
+     additional_params$deep_learning_model <- model
+     #model_use <- model
+     model <- "deep_learning_model"
+    }
 
     if (is.null(heter_groups)) {
       y_scaler <- caret::preProcess(as.data.frame(as.matrix(pheno_data[[trait]])), method = c("center", "scale"))
@@ -522,6 +587,7 @@ models_execute_crossval <- function(pheno_data = NULL,
           tryCatch({
             ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = omics_data,
                                                         tst = tst, additional_params = additional_params)
+
           }, error = function(e) {
             message(paste("Error in processing AI model", model, "for", trait, ": ", e$message))
             handle_error <<- TRUE
@@ -575,7 +641,8 @@ models_execute_crossval <- function(pheno_data = NULL,
           tryCatch({
             ypred_cv[tst, "yhat"] <- predict_with_model(model = model, y = yNA, omics_data = omics_data,
                                                         tst = tst, additional_params = additional_params)
-          }, error = function(e) {
+
+            }, error = function(e) {
             message(paste("Error in processing AI model", model, "for", trait, ": ", e$message))
             handle_error <<- TRUE
           })
@@ -649,6 +716,8 @@ models_execute_crossval <- function(pheno_data = NULL,
         }
       }
     }
+
+    if(model == "deep_learning_model") model <- as.character(task_row$modell)
 
     list(trait = trait,
          rep = rep,

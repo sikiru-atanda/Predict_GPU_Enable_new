@@ -290,9 +290,20 @@ model_execute <- function(
     message= TRUE,
     system_database = FALSE,
     num_hidden_layers = 1,
-    neurons_per_layer = NULL,
+    neurons_per_layer = 64,
+    n_blocks = 2,
+    n_neurons_per_block = NULL,
+    kernel_size = 3,
+    dense_layers_cnn = c(128, 64),
+    learning_rate_dp = 0.001,
     epochs = 10,
     batch_size = 32 ,
+    l2_regularizer_dp = 0.001,
+    dropout_rate = 0.5,
+    attention_on_final_layer = TRUE,
+    attention_across_multiple_layers = FALSE,
+    batch_normalization = TRUE,
+    deep_learning_model = "mlp_with_attention", #"mlp", "ResNet", "cnn"
     para_tunning = FALSE,
     param_grid = NULL,
     validation_split = 0.2,
@@ -351,6 +362,7 @@ model_execute <- function(
     xgb_sample_type = "uniform",
     xgb_normalize_type = "tree",
     ntree=500, ## RF
+    nodesize =NULL,
     mtry = NULL, ## RF
     maxnodes = NULL, ## RF
     importance=TRUE, ## RF
@@ -395,7 +407,6 @@ model_execute <- function(
     plot_dpi = 300,
     plot_filename = "trait",
     Plot_name_result_diagnostic = NULL,
-
     ...
 ) {
 
@@ -451,15 +462,91 @@ model_execute <- function(
 
     AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare",
                          "SupportVectorMachine", "K-NearestNeighbors", "Lasso",
-                         "Ridge_Regression", "deep_learning_model")
+                         "Ridge_Regression", "deep_learning_model",
+                         "mlp","mlp_with_attention", "ResNet", "cnn")
+
     bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
     bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
 
     asreml_model <- "GBLUP"
 
+    if (any(c(GS_model, GS_model_cv) %in% c(bayes_valid_models,
+                                            bayes_gblup_valid_models,
+                                            asreml_model))){
+      if(is.null(random)){
+        stop(paste(msg, "Selected model(s) required random term."), call. = FALSE)
+      }
+    }
+
 
     all_models_avail <- c(AI_valid_models, bayes_valid_models,
                           bayes_gblup_valid_models, asreml_model)
+
+    dp_models <- c("mlp_with_attention", "mlp", "ResNet", "cnn")
+
+
+      if (any(c(GS_model, GS_model_cv) %in% dp_models)) {
+        # warning(
+        #   paste(
+        #     msg,
+        #     "Your selected model requires a Python environment.\n",
+        #     "To set up the necessary Python environment for this package, please run the following script:\n",
+        #     "source(system.file('setup_environment.R', package = 'PredictProR'))\n",
+        #     "This setup script is designed to be user-friendly, even for users with minimal coding experience.\n",
+        #     "It automates the entire process, including the installation of `reticulate`, ensuring Miniconda is installed, creating a virtual environment, and installing all essential Python packages."
+        #   )
+        # , call. = FALSE)
+        if (!reticulate::py_module_available("tensorflow") || !reticulate::py_module_available("keras")) {
+          stop(paste(msg,
+                     paste(
+                       msg,
+                       "Your selected model requires a Python environment.\n",
+                       "To set up the necessary Python environment for this package, please run the following script:\n",
+                       "source(system.file('setup_environment.R', package = 'PredictProR'))\n",
+                       "This setup script is designed to be user-friendly, even for users with minimal coding experience.\n",
+                       "It automates the entire process, including the installation of `reticulate`, ensuring Miniconda is installed, creating a virtual environment, and installing all essential Python packages."
+                     )
+                     # paste(
+                     #   "Model execution halted due to missing Python environment.\n",
+                     #   "Please run the following script to set up the environment:\n",
+                     #   "source(system.file('setup_environment.R', package = 'PredictProR'))"
+                     # )
+          ), call. = FALSE)
+        }
+        # stop(paste(msg,
+        #   paste(
+        #     "Model execution halted due to missing Python environment.\n",
+        #     "Please run the following script to set up the environment:\n",
+        #     "source(system.file('setup_environment.R', package = 'PredictProR'))"
+        #   )
+        # ), call. = FALSE)
+      }
+
+
+
+    if(any(c(GS_model, GS_model_cv)%in%c("mlp_with_attention", "mlp", "cnn"))){
+      if(is.null(neurons_per_layer)&& is.null(num_hidden_layers)){
+        stop(paste(msg, "neurons_per_layer and num_hidden_layers can't be NULL."), call. = FALSE)
+      }
+
+      if (isTRUE(para_tunning)) {
+        validate_layers(num_hidden_layers, neurons_per_layer)
+      }
+    }
+
+    if("ResNet"%in%c(GS_model, GS_model_cv)){
+      #if(is.null(n_neurons_per_block) || is.null(n_blocks)){
+      if(is.null(n_blocks)){
+        stop(paste(msg, "n_blocks can't be NULL."), call. = FALSE)
+      }
+
+      if(!is.null(n_blocks) && !is.null(n_neurons_per_block)){
+      if(n_blocks!=length(n_neurons_per_block)){
+        stop(paste(msg, paste("Mismatch in hidden number of block and neurons per layer at", n_neurons_per_block)), call. = FALSE)
+      }
+
+      }
+    }
 
 #####
     holds_out_methods_avail <- c("Hold_Out",
@@ -477,6 +564,7 @@ model_execute <- function(
                                       "CV2",
                                       "Repeated_CV1",
                                       "Repeated_CV2")
+
     all_cv_methods_avail <- c(holds_out_methods_avail,
                               Kfolds_methods_avail,
                               CVs_multi_envs_methods_avail)
@@ -1383,7 +1471,8 @@ model_execute <- function(
                                                  cross_validation = TRUE)
    }
 
-   cv_results <- models_execute_crossval(pheno_data = pheno_data,
+   cv_results <-   tryCatch({
+                models_execute_crossval(pheno_data = pheno_data,
                                         test_set = test_set,
                                         response = response,
                                         gen_name = gen_name,
@@ -1422,7 +1511,34 @@ model_execute <- function(
                                         C_value  = C_value,             # Default cost parameter
                                         degree_value = degree_value,        # Default degree for polynomial kernel
                                         scale_value  = scale_value,         # Default scale for polynomial kernel
-                                        offset_value = offset_value)
+                                        offset_value = offset_value,
+                                        early_stop = early_stop,
+                                        deep_learning_model = deep_learning_model,
+                                        n_blocks = n_blocks,
+                                        dense_layers_cnn = dense_layers_cnn,
+                                        kernel_size = kernel_size,
+                                        n_neurons_per_block =n_neurons_per_block,
+                                        attention_on_final_layer = attention_on_final_layer,
+                                        attention_across_multiple_layers = attention_across_multiple_layers,
+                                        batch_normalization = batch_normalization,
+                                        num_hidden_layers = num_hidden_layers,
+                                        neurons_per_layer = neurons_per_layer,
+                                        learning_rate_dp = learning_rate_dp,
+                                        epochs = epochs,
+                                        batch_size = batch_size,
+                                        l2_regularizer_dp = l2_regularizer_dp,
+                                        dropout_rate = dropout_rate)
+
+   }, error = function(e) {
+     message(paste("Error in cross-validation", e$message))
+     return(NULL)
+   })
+
+   if(length(cv_results)==0) {
+     warning(paste(msg, paste("Error in cross-validation.",
+                               "No result for cross-validation.", "Check the model and the data to ensure the data is correct and the model(s) is well specified.")), call. = FALSE)
+     return(NULL)
+   }
 
 if(cross_validation_meth%in%c("CV1",
                               "CV2",
@@ -1483,7 +1599,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                            test_diagonistic_plots = NULL,
                            res_plot_result_diagnostic_cv_only = cv_results_predicted_vs_observed$predicted_vs_observed_plots,
                            res_mod_results_cv_per_trait_model = cv_results_predicted_vs_observed$mod_res_per_trait_per_model,
-                           geno_qc_stat = geno_qc_stat,
+                           geno_qc_stat = NULL,
                            cv_results_processed = cv_results_processed,
                            system_database = system_database,
                            plot_filename = "CV_results",
@@ -1549,6 +1665,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                      sys_name = sys_name)
  }
 
+
  #results_use = results
 
  results <- future.apply::future_lapply(seq_len(nrow(best_models)), function(i) {
@@ -1556,6 +1673,11 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
 
    response <- as.character(task_row$trait)
    GS_model <- as.character(task_row$model)
+
+   if(any(GS_model%in%dp_models)){
+     deep_learning_modell <- as.character(task_row$model)
+     GS_model <- "deep_learning_model"
+   }
 
    if(!GS_model%in%AI_valid_models) {
      model_for_CI_cal <-"Bayes"
@@ -2234,17 +2356,36 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
            gen_name = gen_name,
            num_hidden_layers = num_hidden_layers,
            neurons_per_layer = neurons_per_layer,
-           learning_rate = learning_rate,
+           learning_rate_dp = learning_rate_dp,
+           l2_regularizer_dp = l2_regularizer_dp,
+           batch_normalization = batch_normalization,
+           dropout_rate = dropout_rate,
            epochs = epochs,
            batch_size = batch_size,
+           n_blocks = n_blocks,
+           n_neurons_per_block = n_neurons_per_block,
            validation_split = validation_split,
            early_stop = early_stop,
+           kernel_size = kernel_size,
+           deep_learning_model = deep_learning_modell,
+           attention_on_final_layer = attention_on_final_layer,
+           attention_across_multiple_layers = attention_across_multiple_layers,
            message = message,
            scaling = scaling,
            centering = centering,
            omic_count = ml_dat_res[["omic_count"]],
            para_tunning = para_tunning,
-           param_grid = dpl_paras_tunning
+           param_grid = dpl_paras_tunning,
+           CI_width_thresholds = CI_width_thresholds,
+           high_reliability_thres = high_reliability_thres,
+           low_reliability_thres = low_reliability_thres,
+           threshold = threshold,
+           target = "test_set",
+           interval_width_low_threshold = interval_width_low_threshold,
+           interval_width_high_threshold = interval_width_high_threshold,
+           interval_width_moderate_threshold = interval_width_moderate_threshold,
+           n_bootstrap = n_bootstrap,
+           crossval = FALSE
          )
        }, error = function(e) {
          cat(paste(msg, "Error in deep learning model:", conditionMessage(e), "\n"))
@@ -2267,7 +2408,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                 })
 
 
-
+if(GS_model == "deep_learning_model") GS_model <- as.character(task_row$model)
     ######
      # Check the result of the model fitting process
      if (is.null(res_model_output)) {
@@ -2368,641 +2509,3 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
 } ## end of function
 
 
-# for (res in seq_along(results)) {
-#
-#   #names(results[[1]])
-#
-#
-#   processed_result <- results_handling(GS_model = if("GS_model" %in% names(results[[res]])) results[[res]][["GS_model"]] else NULL,
-#                           res_model_output = if("res_model_output" %in% names(results[[res]])) results[[res]][["res_model_output"]] else NULL,
-#                           res_summary_stat = if("res_summary_stat" %in% names(results[[res]])) results[[res]][["res_summary_stat"]] else NULL,
-#                           res_plot = best_models_ggplot_rep,
-#                           res_plot_mean = best_models_ggplot_mean,
-#                           res_plot_result_diagnostic = cv_results_predicted_vs_observed$predicted_vs_observed_plots[[res]],
-#                           test_diagonistic_plots = results[[res]]$res_model_output$diagnostic_plots,
-#                           res_mod_results_cv_per_trait_model = cv_results_predicted_vs_observed$mod_res_per_trait_per_model,
-#                           geno_qc_stat = geno_qc_stat,
-#                           res_plot_result_diagnostic_cv_only = NULL,
-#                           cv_results_processed = cv_results_processed,
-#                           system_database = system_database,
-#                           plot_filename = if(!is.null(names(results)[res])) names(results)[res] else paste("trait", res, sep = "_"),
-#                           #Plot_name_result_diagnostic = if(!is.null(names(res_mod_results_cv_per_trait_model)[res])) names(results)[res] else paste("trait_diganostic", res, sep = "_"),
-#                           plot_extension = plot_extension,
-#                           plot_width = plot_width,
-#                           plot_height = plot_height,
-#                           plot_units = plot_units,
-#                           plot_dpi = plot_dpi)
-#
-#   # If returning as a list, append the processed result to the all_results list
-#   if(isTRUE(system_database)) {
-#     all_results[[length(all_results) + 1]] <- processed_result
-#     names(all_results)[res] <- if(!is.null(names(results)[res])) names(results)[res] else paste("trait", res, sep = "_")
-#   }
-#   # Otherwise, the results_handling function handles file creation and saving
-# }
-
-
-
-# res_model_output <- NULL  # Initialize res_model_output
-#
-# res_model_output <- switch(GS_model,
-#                            "Xgboost" = {
-#                              tryCatch({
-#                                AI_Xgb(
-#                                  pheno_object = ml_dat_res[["pheno_clean_data"]],
-#                                  response = response,
-#                                  geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#                                  geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#                                  message = message,
-#                                  gen_name = gen_name,
-#                                  scaling = scaling,
-#                                  centering = centering,
-#                                  omic_count = ml_dat_res[["omic_count"]],
-#                                  AI_cv_nfolds = AI_cv_nfolds,
-#                                  para_tunning = para_tunning,
-#                                  xgb_paras_tunning = xgb_paras_tunning,
-#                                  resample_method_tune = resample_method_tune,
-#                                  number_of_fold_tune = number_of_fold_tune,
-#                                  learning_rate = learning_rate,
-#                                  xgb_gamma = xgb_gamma,
-#                                  xgb_lambda = xgb_lambda,
-#                                  xgb_alpha = xgb_alpha,
-#                                  max_depth = max_depth,
-#                                  subsample = subsample,
-#                                  xgb_booster = xgb_booster,
-#                                  colsample_bytree = colsample_bytree,
-#                                  alpha = alpha,
-#                                  lambda = lambda,
-#                                  iteration = iteration,
-#                                  xgb_rate_drop = xgb_rate_drop,
-#                                  xgb_skip_drop = xgb_skip_drop,
-#                                  xgb_objective = xgb_objective,
-#                                  xgb_sample_type = xgb_sample_type,
-#                                  xgb_normalize_type = xgb_normalize_type,
-#                                  early_stop_for_iteration_xgb = early_stop_for_iteration_xgb,
-#                                  N_feature_impo = N_feature_impo,
-#                                  CI_width_thresholds = CI_width_thresholds,
-#                                  high_reliability_thres = high_reliability_thres,
-#                                  low_reliability_thres = low_reliability_thres,
-#                                  n_components = n_components,
-#                                  threshold = threshold,
-#                                  target = "test_set",
-#                                  interval_width_low_threshold = interval_width_low_threshold,
-#                                  interval_width_high_threshold = interval_width_high_threshold,
-#                                  interval_width_moderate_threshold = interval_width_moderate_threshold,
-#                                  n_bootstrap = n_bootstrap
-#                                )
-#                              }, error = function(e) {
-#                                cat("Error in Xgboost model:", conditionMessage(e), "\n")
-#                                NULL
-#                              })
-#                            },
-#                            "RandomForest" = {
-#                              tryCatch({
-#                                AI_randomForest(
-#                                  pheno_object = ml_dat_res[["pheno_clean_data"]],
-#                                  response = response,
-#                                  geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#                                  geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#                                  message = message,
-#                                  gen_name = gen_name,
-#                                  scaling = scaling,
-#                                  centering = centering,
-#                                  omic_count = ml_dat_res[["omic_count"]],
-#                                  AI_cv_nfolds = AI_cv_nfolds,
-#                                  para_tunning = para_tunning,
-#                                  rf_paras_tunning = rf_paras_tunning,
-#                                  ntree = ntree,
-#                                  mtry = mtry,
-#                                  maxnodes = maxnodes,
-#                                  importance = importance,
-#                                  CI_width_thresholds = CI_width_thresholds,
-#                                  high_reliability_thres = high_reliability_thres,
-#                                  low_reliability_thres = low_reliability_thres,
-#                                  n_components = n_components,
-#                                  threshold = threshold,
-#                                  target = "test_set",
-#                                  interval_width_low_threshold = interval_width_low_threshold,
-#                                  interval_width_high_threshold = interval_width_high_threshold,
-#                                  interval_width_moderate_threshold = interval_width_moderate_threshold,
-#                                  n_bootstrap = n_bootstrap
-#                                )
-#                              }, error = function(e) {
-#                                cat("Error in RandomForest model:", conditionMessage(e), "\n")
-#                                NULL
-#                              })
-#                            },
-#                            "PartialLeastSquare" = {
-#                              tryCatch({
-#                                AI_pls(
-#                                  pheno_object = ml_dat_res[["pheno_clean_data"]],
-#                                  response = response,
-#                                  geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#                                  geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#                                  message = message,
-#                                  gen_name = gen_name,
-#                                  scaling = scaling,
-#                                  centering = centering,
-#                                  omic_count = ml_dat_res[["omic_count"]],
-#                                  para_tunning = para_tunning,
-#                                  ncomp = ncomp,
-#                                  pls_paras_tunning = pls_paras_tunning,
-#                                  resample_method_tune = resample_method_tune,
-#                                  N_feature_impo = N_feature_impo,
-#                                  CI_width_thresholds = CI_width_thresholds,
-#                                  high_reliability_thres = high_reliability_thres,
-#                                  low_reliability_thres = low_reliability_thres,
-#                                  n_components = n_components,
-#                                  threshold = threshold,
-#                                  target = "test_set",
-#                                  interval_width_low_threshold = interval_width_low_threshold,
-#                                  interval_width_high_threshold = interval_width_high_threshold,
-#                                  interval_width_moderate_threshold = interval_width_moderate_threshold,
-#                                  n_bootstrap = n_bootstrap
-#                                )
-#                              }, error = function(e) {
-#                                cat("Error in PartialLeastSquare model:", conditionMessage(e), "\n")
-#                                NULL
-#                              })
-#                            },
-#                            "SupportVectorMachine" = {
-#                              tryCatch({
-#                                AI_svm(
-#                                  pheno_object = ml_dat_res[["pheno_clean_data"]],
-#                                  response = response,
-#                                  geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#                                  geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#                                  message = message,
-#                                  gen_name = gen_name,
-#                                  scaling = scaling,
-#                                  centering = centering,
-#                                  omic_count = ml_dat_res[["omic_count"]],
-#                                  AI_cv_nfolds = AI_cv_nfolds,
-#                                  para_tunning = para_tunning,
-#                                  svm_paras_tunning = svm_paras_tunning,
-#                                  svm_type = svm_type,
-#                                  svm_kernel = svm_kernel,
-#                                  sigma_value = sigma_value,
-#                                  C_value = C_value,
-#                                  degree_value = degree_value,
-#                                  scale_value = scale_value,
-#                                  offset_value = offset_value,
-#                                  gamma_value = gamma_value,
-#                                  CI_width_thresholds = CI_width_thresholds,
-#                                  high_reliability_thres = high_reliability_thres,
-#                                  low_reliability_thres = low_reliability_thres,
-#                                  n_components = n_components,
-#                                  threshold = threshold,
-#                                  target = "test_set",
-#                                  interval_width_low_threshold = interval_width_low_threshold,
-#                                  interval_width_high_threshold = interval_width_high_threshold,
-#                                  interval_width_moderate_threshold = interval_width_moderate_threshold,
-#                                  n_bootstrap = n_bootstrap
-#                                )
-#                              }, error = function(e) {
-#                                cat("Error in SupportVectorMachine model:", conditionMessage(e), "\n")
-#                                NULL
-#                              })
-#                            },
-#                            "K-NearestNeighbors" = {
-#                              tryCatch({
-#                                AI_knn(
-#                                  pheno_object = ml_dat_res[["pheno_clean_data"]],
-#                                  response = response,
-#                                  geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#                                  geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#                                  message = message,
-#                                  gen_name = gen_name,
-#                                  scaling = scaling,
-#                                  centering = centering,
-#                                  omic_count = ml_dat_res[["omic_count"]],
-#                                  AI_cv_nfolds = AI_cv_nfolds,
-#                                  para_tunning = para_tunning,
-#                                  knn_paras_tunning = knn_paras_tunning,
-#                                  k = k,
-#                                  CI_width_thresholds = CI_width_thresholds,
-#                                  high_reliability_thres = high_reliability_thres,
-#                                  low_reliability_thres = low_reliability_thres,
-#                                  n_components = n_components,
-#                                  threshold = threshold,
-#                                  target = "test_set",
-#                                  interval_width_low_threshold = interval_width_low_threshold,
-#                                  interval_width_high_threshold = interval_width_high_threshold,
-#                                  interval_width_moderate_threshold = interval_width_moderate_threshold,
-#                                  n_bootstrap = n_bootstrap
-#                                )
-#                              }, error = function(e) {
-#                                cat("Error in K-NearestNeighbors model:", conditionMessage(e), "\n")
-#                                NULL
-#                              })
-#                            },
-#                            "Lasso" = {
-#                              tryCatch({
-#                                AI_RidgeRegression_Lasso(
-#                                  pheno_object = ml_dat_res[["pheno_clean_data"]],
-#                                  response = response,
-#                                  geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#                                  geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#                                  gen_name = gen_name,
-#                                  para_tunning = para_tunning,
-#                                  AI_cv_nfolds = AI_cv_nfolds,
-#                                  lasso_paras_tunning = lasso_paras_tunning,
-#                                  message = message,
-#                                  scaling = scaling,
-#                                  centering = centering,
-#                                  omic_count = ml_dat_res[["omic_count"]],
-#                                  GS_model = GS_model,
-#                                  lambda_rr = lambda_rr,
-#                                  CI_width_thresholds = CI_width_thresholds,
-#                                  high_reliability_thres = high_reliability_thres,
-#                                  low_reliability_thres = low_reliability_thres,
-#                                  n_components = n_components,
-#                                  threshold = threshold,
-#                                  target = "test_set",
-#                                  interval_width_low_threshold = interval_width_low_threshold,
-#                                  interval_width_high_threshold = interval_width_high_threshold,
-#                                  interval_width_moderate_threshold = interval_width_moderate_threshold,
-#                                  n_bootstrap = n_bootstrap
-#                                )
-#                              }, error = function(e) {
-#                                cat("Error in Lasso model:", conditionMessage(e), "\n")
-#                                NULL
-#                              })
-#                            },
-#                            "Ridge_Regression" = {
-#                              tryCatch({
-#                                AI_RidgeRegression_Lasso(
-#                                  pheno_object = ml_dat_res[["pheno_clean_data"]],
-#                                  response = response,
-#                                  geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#                                  geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#                                  gen_name = gen_name,
-#                                  para_tunning = para_tunning,
-#                                  AI_cv_nfolds = AI_cv_nfolds,
-#                                  lasso_paras_tunning = rr_paras_tunning,
-#                                  message = message,
-#                                  scaling = scaling,
-#                                  centering = centering,
-#                                  omic_count = ml_dat_res[["omic_count"]],
-#                                  GS_model = GS_model,
-#                                  lambda_rr = lambda_rr,
-#                                  CI_width_thresholds = CI_width_thresholds,
-#                                  high_reliability_thres = high_reliability_thres,
-#                                  low_reliability_thres = low_reliability_thres,
-#                                  n_components = n_components,
-#                                  threshold = threshold,
-#                                  target = "test_set",
-#                                  interval_width_low_threshold = interval_width_low_threshold,
-#                                  interval_width_high_threshold = interval_width_high_threshold,
-#                                  interval_width_moderate_threshold = interval_width_moderate_threshold,
-#                                  n_bootstrap = n_bootstrap
-#                                )
-#                              }, error = function(e) {
-#                                cat("Error in Ridge_Regression model:", conditionMessage(e), "\n")
-#                                NULL
-#                              })
-#                            },
-#                            "deep_learning_model" = {
-#                              tryCatch({
-#                                deep_learning_model(
-#                                  pheno_object = ml_dat_res[["pheno_clean_data"]],
-#                                  geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#                                  geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#                                  response = response,
-#                                  gen_name = gen_name,
-#                                  num_hidden_layers = num_hidden_layers,
-#                                  neurons_per_layer = neurons_per_layer,
-#                                  learning_rate = learning_rate,
-#                                  epochs = epochs,
-#                                  batch_size = batch_size,
-#                                  validation_split = validation_split,
-#                                  early_stop = early_stop,
-#                                  message = message,
-#                                  scaling = scaling,
-#                                  centering = centering,
-#                                  omic_count = ml_dat_res[["omic_count"]],
-#                                  para_tunning = para_tunning,
-#                                  param_grid = dpl_paras_tunning
-#                                )
-#                              }, error = function(e) {
-#                                cat("Error in deep_learning_model:", conditionMessage(e), "\n")
-#                                NULL
-#                              })
-#                            },
-#                            {
-#                              stop("Select method to calculate geno_omic relationship matrix", call. = FALSE)
-#                            }
-# )
-
-# res_model_output
-
-
-# switch(GS_model,
-#        "Xgboost" = {
-#          tryCatch({
-#            res_model_output <- AI_Xgb(
-#              pheno_object = ml_dat_res[["pheno_clean_data"]],
-#              response = response,
-#              geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#              geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#              message = message,
-#              gen_name = gen_name,
-#              scaling = scaling,
-#              centering = centering,
-#              omic_count = ml_dat_res[["omic_count"]],
-#              AI_cv_nfolds = AI_cv_nfolds,
-#              para_tunning = para_tunning,
-#              xgb_paras_tunning = xgb_paras_tunning,
-#              resample_method_tune = resample_method_tune,
-#              number_of_fold_tune = number_of_fold_tune,
-#              learning_rate = learning_rate,
-#              xgb_gamma = xgb_gamma,
-#              xgb_lambda = xgb_lambda,
-#              xgb_alpha = xgb_alpha,
-#              max_depth = max_depth,
-#              subsample = subsample,
-#              xgb_booster = xgb_booster,
-#              colsample_bytree = colsample_bytree,
-#              alpha = alpha,
-#              lambda = lambda,
-#              iteration = iteration,
-#              xgb_rate_drop = xgb_rate_drop,
-#              xgb_skip_drop = xgb_skip_drop,
-#              xgb_objective = xgb_objective,
-#              xgb_sample_type = xgb_sample_type,
-#              xgb_normalize_type = xgb_normalize_type,
-#              early_stop_for_iteration_xgb = early_stop_for_iteration_xgb,
-#              N_feature_impo = N_feature_impo,
-#              CI_width_thresholds = CI_width_thresholds,
-#              high_reliability_thres = high_reliability_thres,
-#              low_reliability_thres = low_reliability_thres,
-#              n_components = n_components,
-#              threshold = threshold,
-#              target = "test_set",
-#              interval_width_low_threshold = interval_width_low_threshold,
-#              interval_width_high_threshold = interval_width_high_threshold,
-#              interval_width_moderate_threshold = interval_width_moderate_threshold,
-#              n_bootstrap = n_bootstrap
-#            )
-#            #res_model_output
-#          }, error = function(e) {
-#            cat("Error in Xgboost model:", conditionMessage(e), "\n")
-#            #return(NULL)
-#            NULL
-#          })
-#        },
-#        "RandomForest" = {
-#          tryCatch({
-#            res_model_output <- AI_randomForest(
-#              pheno_object = ml_dat_res[["pheno_clean_data"]],
-#              response = response,
-#              geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#              geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#              message = message,
-#              gen_name = gen_name,
-#              scaling = scaling,
-#              centering = centering,
-#              omic_count = ml_dat_res[["omic_count"]],
-#              AI_cv_nfolds = AI_cv_nfolds,
-#              para_tunning = para_tunning,
-#              rf_paras_tunning = rf_paras_tunning,
-#              ntree = ntree,
-#              mtry = mtry,
-#              maxnodes = maxnodes,
-#              importance = importance,
-#              CI_width_thresholds = CI_width_thresholds,
-#              high_reliability_thres = high_reliability_thres,
-#              low_reliability_thres = low_reliability_thres,
-#              n_components = n_components,
-#              threshold = threshold,
-#              target = "test_set",
-#              interval_width_low_threshold = interval_width_low_threshold,
-#              interval_width_high_threshold = interval_width_high_threshold,
-#              interval_width_moderate_threshold = interval_width_moderate_threshold,
-#              n_bootstrap = n_bootstrap
-#            )
-#            #res_model_output
-#          }, error = function(e) {
-#            cat("Error in RandomForest model:", conditionMessage(e), "\n")
-#            #return(NULL)
-#            NULL
-#          })
-#        },
-#        "PartialLeastSquare" = {
-#          tryCatch({
-#            res_model_output <- AI_pls(
-#              pheno_object = ml_dat_res[["pheno_clean_data"]],
-#              response = response,
-#              geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#              geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#              message = message,
-#              gen_name = gen_name,
-#              scaling = scaling,
-#              centering = centering,
-#              omic_count = ml_dat_res[["omic_count"]],
-#              para_tunning = para_tunning,
-#              ncomp = ncomp,
-#              pls_paras_tunning = pls_paras_tunning,
-#              resample_method_tune = resample_method_tune,
-#              N_feature_impo = N_feature_impo,
-#              CI_width_thresholds = CI_width_thresholds,
-#              high_reliability_thres = high_reliability_thres,
-#              low_reliability_thres = low_reliability_thres,
-#              n_components = n_components,
-#              threshold = threshold,
-#              target = "test_set",
-#              interval_width_low_threshold = interval_width_low_threshold,
-#              interval_width_high_threshold = interval_width_high_threshold,
-#              interval_width_moderate_threshold = interval_width_moderate_threshold,
-#              n_bootstrap = n_bootstrap
-#            )
-#            #res_model_output
-#          }, error = function(e) {
-#            cat("Error in PartialLeastSquare model:", conditionMessage(e), "\n")
-#            #return(NULL)
-#            NULL
-#          })
-#        },
-#        "SupportVectorMachine" = {
-#          tryCatch({
-#            res_model_output <- AI_svm(
-#              pheno_object = ml_dat_res[["pheno_clean_data"]],
-#              response = response,
-#              geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#              geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#              message = message,
-#              gen_name = gen_name,
-#              scaling = scaling,
-#              centering = centering,
-#              omic_count = ml_dat_res[["omic_count"]],
-#              AI_cv_nfolds = AI_cv_nfolds,
-#              para_tunning = para_tunning,
-#              svm_paras_tunning = svm_paras_tunning,
-#              svm_type = svm_type,
-#              svm_kernel = svm_kernel,
-#              sigma_value = sigma_value,
-#              C_value = C_value,
-#              degree_value = degree_value,
-#              scale_value = scale_value,
-#              offset_value = offset_value,
-#              gamma_value = gamma_value,
-#              CI_width_thresholds = CI_width_thresholds,
-#              high_reliability_thres = high_reliability_thres,
-#              low_reliability_thres = low_reliability_thres,
-#              n_components = n_components,
-#              threshold = threshold,
-#              target = "test_set",
-#              interval_width_low_threshold = interval_width_low_threshold,
-#              interval_width_high_threshold = interval_width_high_threshold,
-#              interval_width_moderate_threshold = interval_width_moderate_threshold,
-#              n_bootstrap = n_bootstrap
-#            )
-#            #res_model_output
-#          }, error = function(e) {
-#            cat("Error in SupportVectorMachine model:", conditionMessage(e), "\n")
-#            #return(NULL)
-#            NULL
-#          })
-#        },
-#        "K-NearestNeighbors" = {
-#          tryCatch({
-#            res_model_output <- AI_knn(
-#              pheno_object = ml_dat_res[["pheno_clean_data"]],
-#              response = response,
-#              geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#              geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#              message = message,
-#              gen_name = gen_name,
-#              scaling = scaling,
-#              centering = centering,
-#              omic_count = ml_dat_res[["omic_count"]],
-#              AI_cv_nfolds = AI_cv_nfolds,
-#              para_tunning = para_tunning,
-#              knn_paras_tunning = knn_paras_tunning,
-#              k = k,
-#              CI_width_thresholds = CI_width_thresholds,
-#              high_reliability_thres = high_reliability_thres,
-#              low_reliability_thres = low_reliability_thres,
-#              n_components = n_components,
-#              threshold = threshold,
-#              target = "test_set",
-#              interval_width_low_threshold = interval_width_low_threshold,
-#              interval_width_high_threshold = interval_width_high_threshold,
-#              interval_width_moderate_threshold = interval_width_moderate_threshold,
-#              n_bootstrap = n_bootstrap
-#            )
-#            #res_model_output
-#          }, error = function(e) {
-#            cat("Error in K-NearestNeighbors model:", conditionMessage(e), "\n")
-#            #return(NULL)
-#            NULL
-#          })
-#        },
-#        "Lasso" = {
-#          tryCatch({
-#            res_model_output <- AI_RidgeRegression_Lasso(
-#              pheno_object = ml_dat_res[["pheno_clean_data"]],
-#              response = response,
-#              geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#              geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#              gen_name = gen_name,
-#              para_tunning = para_tunning,
-#              AI_cv_nfolds = AI_cv_nfolds,
-#              lasso_paras_tunning = lasso_paras_tunning,
-#              message = message,
-#              scaling = scaling,
-#              centering = centering,
-#              omic_count = ml_dat_res[["omic_count"]],
-#              GS_model = GS_model,
-#              lambda_rr = lambda_rr,
-#              CI_width_thresholds = CI_width_thresholds,
-#              high_reliability_thres = high_reliability_thres,
-#              low_reliability_thres = low_reliability_thres,
-#              n_components = n_components,
-#              threshold = threshold,
-#              target = "test_set",
-#              interval_width_low_threshold = interval_width_low_threshold,
-#              interval_width_high_threshold = interval_width_high_threshold,
-#              interval_width_moderate_threshold = interval_width_moderate_threshold,
-#              n_bootstrap = n_bootstrap
-#            )
-#            #res_model_output
-#          }, error = function(e) {
-#            cat("Error in Lasso model:", conditionMessage(e), "\n")
-#            #return(NULL)
-#            NULL
-#          })
-#        },
-#        "Ridge_Regression" = {
-#          tryCatch({
-#            res_model_output <- AI_RidgeRegression_Lasso(
-#              pheno_object = ml_dat_res[["pheno_clean_data"]],
-#              response = response,
-#              geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#              geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#              gen_name = gen_name,
-#              para_tunning = para_tunning,
-#              AI_cv_nfolds = AI_cv_nfolds,
-#              lasso_paras_tunning = rr_paras_tunning,
-#              message = message,
-#              scaling = scaling,
-#              centering = centering,
-#              omic_count = ml_dat_res[["omic_count"]],
-#              GS_model = GS_model,
-#              lambda_rr = lambda_rr,
-#              CI_width_thresholds = CI_width_thresholds,
-#              high_reliability_thres = high_reliability_thres,
-#              low_reliability_thres = low_reliability_thres,
-#              n_components = n_components,
-#              threshold = threshold,
-#              target = "test_set",
-#              interval_width_low_threshold = interval_width_low_threshold,
-#              interval_width_high_threshold = interval_width_high_threshold,
-#              interval_width_moderate_threshold = interval_width_moderate_threshold,
-#              n_bootstrap = n_bootstrap
-#            )
-#            #res_model_output
-#          }, error = function(e) {
-#            cat("Error in Ridge_Regression model:", conditionMessage(e), "\n")
-#            #return(NULL)
-#            NULL
-#          })
-#        },
-#        "deep_learning_model" = {
-#          tryCatch({
-#            res_model_output <- deep_learning_model(
-#              pheno_object = ml_dat_res[["pheno_clean_data"]],
-#              geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#              geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#              response = response,
-#              gen_name = gen_name,
-#              num_hidden_layers = num_hidden_layers,
-#              neurons_per_layer = neurons_per_layer,
-#              learning_rate = learning_rate,
-#              epochs = epochs,
-#              batch_size = batch_size,
-#              validation_split = validation_split,
-#              early_stop = early_stop,
-#              message = message,
-#              scaling = scaling,
-#              centering = centering,
-#              omic_count = ml_dat_res[["omic_count"]],
-#              para_tunning = para_tunning,
-#              param_grid = dpl_paras_tunning
-#            )
-#            #res_model_output
-#          }, error = function(e) {
-#            cat("Error in deep_learning_model:", conditionMessage(e), "\n")
-#            NULL
-#            #return(NULL)
-#          })
-#        },
-#        {
-#          stop("Select method to calculate geno_omic relationship matrix", call. = FALSE)
-#        }
-# )
-# }, error = function(e) {
-#   # Handle the error, you can print a message or take other actions
-#   cat("Error:", conditionMessage(e), "\n")
-#   return(NULL)  # Return NULL or an appropriate value to indicate the failure
-# })

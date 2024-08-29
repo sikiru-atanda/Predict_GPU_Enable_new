@@ -77,41 +77,7 @@ zipMMatrixModelReady <- function(pathout,
 #'
 #' @examples
 
-# results_handling_final <- function(results,
-#                                    best_models_ggplot_rep = NULL,
-#                                    best_models_ggplot_mean = NULL,
-#                                    cv_results_processed = NULL,
-#                                    geno_qc_stat = NULL,
-#                                    system_database = TRUE,
-#                                    plot_extension = "jpeg",
-#                                    plot_width = 17,
-#                                    plot_height = 12,
-#                                    plot_units = "in",
-#                                    plot_dpi = 300){
-#   for (res in 1:length(results)) {
-#
-#     #names(results[[1]])
-#
-#
-#     return(results_handling(GS_model = if("GS_model" %in% names(results[[res]])) results[[res]][["GS_model"]] else NULL,
-#                             res_model_output = if("res_model_output" %in% names(results[[res]])) results[[res]][["res_model_output"]] else NULL,
-#                             res_summary_stat = if("res_summary_stat" %in% names(results[[res]])) results[[res]][["res_summary_stat"]] else NULL,
-#                             res_plot = best_models_ggplot_rep,
-#                             res_plot_mean = best_models_ggplot_mean,
-#                             geno_qc_stat = geno_qc_stat,
-#                             cv_results_processed = cv_results_processed,
-#                             system_database = system_database,
-#                             plot_filename = if(!is.null(names(results)[res])) names(results)[res] else paste("trait", res, sep = "_"),
-#                             plot_extension = plot_extension,
-#                             plot_width = plot_width,
-#                             plot_height = plot_height,
-#                             plot_units = plot_units,
-#                             plot_dpi = plot_dpi))
-#
-#   }
-#
-#
-# }
+
 
 #' Title
 #'
@@ -158,16 +124,6 @@ results_handling <-  function(GS_model = NULL,
                               plot_units = "in",
                               plot_dpi = 300
                               ){
-
-
-  # if(!is.null(geno_qc_stat)){
-  #
-  #   res_model_output[["geno_qc_stat"]] <- geno_qc_stat
-  #
-  # }
-
-  ############
-
 
   saveOutput <- function(res_model_output,
                          res_summary_stat,
@@ -334,10 +290,6 @@ results_handling <-  function(GS_model = NULL,
 
 
     if(!is.null(res_plot_result_diagnostic)){
-      #traits <- names(res_plot_result_diagnostic)
-
-      #for (trait in traits) {
-
 
         models <-   names(res_plot_result_diagnostic$predicted_vs_observed_plots)
 
@@ -415,8 +367,15 @@ if(inherits(combined_plot, "gtable")){
                                res_plot_result_diagnostic_cv_only) {
     msg <- "\n==================================================\n"
     # Check if any required object is NULL
-    if ((is.null(res_model_output) & is.null(res_summary_stat)) & (is.null(test_diagonistic_plots) & is.null(res_plot_result_diagnostic))) {
-      cat(paste(msg,paste("The output", "from", GS_model,"is NULL.", "No output will be saved.\n")))
+    # if ((is.null(res_model_output) && is.null(res_summary_stat)) && (is.null(test_diagonistic_plots) && is.null(res_plot_result_diagnostic))) {
+    #   cat(paste(msg,paste("The output", "from", GS_model,"is NULL.", "No output will be saved.\n")))
+    #   return("Failed: Required objects are NULL")
+    # }
+
+    if (is.null(res_model_output) && is.null(res_summary_stat) &&
+        is.null(res_plot) && is.null(res_plot_mean) &&
+        is.null(test_diagonistic_plots) && is.null(res_plot_result_diagnostic)) {
+
       return("Failed: Required objects are NULL")
     }
 
@@ -468,20 +427,6 @@ if(inherits(combined_plot, "gtable")){
                           plot_height,
                           plot_units,
                           plot_dpi) {
-#browser()
-    # if (exists("GS_modeluse")) {
-    #   GS_model <- GS_modeluse
-    # }
-
-    # if (GS_model %in% c("Xgboost")) {
-    #   output <- list(model_results = res_model_output,
-    #                  summary_statistic = res_summary_stat)
-    #   if (exists("test_set_")) {
-    #     output$res_plot <- res_plot
-    #   }
-    #   return(output)
-
-    #} else if (GS_model %in% c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS", "GBLUP_BRR", "GBLUP")) {
 
       if (isFALSE(system_database)) {
         output <- saveOutputAndZip(res_model_output = res_model_output,
@@ -529,7 +474,5 @@ if(inherits(combined_plot, "gtable")){
                      plot_units = plot_units,
                      plot_dpi = plot_dpi))
 
-  #out <-  list(res_model_output, res_summary_stat)
-  #return(out)
 } ## end of function
 

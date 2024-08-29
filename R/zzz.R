@@ -43,77 +43,204 @@ PredictProR Product of NDSU!
 
 }
 
+
 # .onLoad <- function(libname, pkgname) {
-#   required_packages <- c("reticulate", "tensorflow", "keras")
+#   if (!reticulate::py_module_available("tensorflow") || !reticulate::py_module_available("keras")) {
+#     packageStartupMessage("TensorFlow and/or Keras not found. Please run 'setup_environment.R' to install the necessary dependencies.")
+#   }
+# }
+
+
+# .onLoad <- function(libname, pkgname) {
+#   # install_if_missing <- function(pkg) {
+#   #   if (!requireNamespace(pkg, quietly = TRUE)) {
+#   #     install.packages(pkg)
+#   #   }
+#   # }
+#   #
+#   # required_packages <- c("reticulate", "tensorflow", "keras")
+#   # lapply(required_packages, install_if_missing)
+#   #
+#   # library(reticulate)
 #
-#   # Check for required packages and install if missing
-#   for (pkg in required_packages) {
+#   # Check if Miniconda is already installed
+#   conda_installed <- tryCatch({
+#     reticulate::conda_binary()
+#     TRUE
+#   }, error = function(e) {
+#     FALSE
+#   })
+#
+#   if (!conda_installed) {
+#     message("Python is not installed. Installing Miniconda Python...")
+#     reticulate::install_miniconda()
+#   } else {
+#     message("Miniconda is already installed.")
+#   }
+#
+#   # Create or use an existing virtual environment
+#   env_name <- "myenv"
+#   if (!reticulate::virtualenv_exists(env_name)) {
+#     message("Creating a virtual environment...")
+#     reticulate::virtualenv_create(env_name, python_version = "3.8")  # Specify a compatible Python version
+#   } else {
+#     message("Using existing virtual environment: ", env_name)
+#   }
+#
+#   # Use the virtual environment
+#   reticulate::use_virtualenv(env_name, required = TRUE)
+#
+#   install_python_package <- function(package_name, version = NULL) {
+#     tryCatch({
+#       message(paste("Installing", package_name, "in the Python environment..."))
+#       reticulate::py_install(package_name, envname = env_name, pip = TRUE, version = version)
+#       message(paste(package_name, "installed successfully."))
+#     }, error = function(e) {
+#       message(paste("Failed to install", package_name, ":", e$message))
+#     })
+#   }
+#
+#   ensure_numpy <- function(required_version = "1.26.4") {
+#     tryCatch({
+#       result <- reticulate::py_run_string("import numpy; version = numpy.__version__")
+#       current_version <- as.character(result$version)
+#       message(paste("Current NumPy version:", current_version))
+#       if (utils::compareVersion(current_version, required_version) != 0) {
+#         message(paste("Installing/upgrading NumPy to version:", required_version))
+#         install_python_package("numpy", version = required_version)
+#       } else {
+#         message("Required NumPy version is already installed.")
+#       }
+#     }, error = function(e) {
+#       message("Failed to ensure NumPy version:", e$message)
+#       install_python_package("numpy", version = required_version)
+#     })
+#   }
+#
+#   ensure_tf_keras <- function() {
+#     tryCatch({
+#       reticulate::py_run_string("import tensorflow")
+#       reticulate::py_run_string("import keras")
+#     }, error = function(e) {
+#       message("TensorFlow and/or Keras not found in the Python environment. Installing...")
+#       install_python_package("tensorflow", version = "2.10.0")  # Specify compatible versions
+#       install_python_package("keras", version = "2.10.0")
+#     })
+#   }
+#
+#   # Run the pip update and ensure necessary packages
+#   update_pip <- function() {
+#     tryCatch({
+#       reticulate::py_run_string("import pip")
+#       reticulate::py_install("pip", envname = env_name, pip = TRUE)
+#     }, error = function(e) {
+#       message("pip is not available. Installing pip...")
+#       install_python_package("pip")
+#     })
+#   }
+#
+#   update_pip()
+#   ensure_numpy()
+#   ensure_tf_keras()
+# }
+
+
+
+
+# .onLoad <- function(libname, pkgname) {
+#   # Helper function to install R packages if they are not already installed
+#   install_if_missing <- function(pkg) {
 #     if (!requireNamespace(pkg, quietly = TRUE)) {
 #       install.packages(pkg)
 #     }
 #   }
 #
-#   # Load the packages
-#   lapply(required_packages, library, character.only = TRUE)
+#   # List of required R packages
+#   required_packages <- c("reticulate", "tensorflow", "keras")
 #
-#   # Function to check if Python is installed and meets the minimum version requirement
-#   check_python <- function(min_version = "3.0.0") {
-#     python <- reticulate::py_discover_config()
-#     if (is.null(python$python)) {
-#       message("Python not found.")
-#       return(FALSE)
-#     } else {
-#       current_version <- reticulate::py_version()
-#       if (is.null(current_version)) {
-#         message("Unable to determine Python version.")
-#         return(FALSE)
-#       } else {
-#         message(paste("Python version found:", current_version))
-#         return(compareVersion(current_version, min_version) >= 0)
-#       }
-#     }
-#   }
+#   # Install required R packages
+#   lapply(required_packages, install_if_missing)
 #
-#   # Ensure Python is installed and has the required version
-#   if (!check_python()) {
-#     message("Python 3 is not installed or the version is too low. Installing Miniconda with Python 3.")
+#   # Load reticulate
+#   library(reticulate)
+#
+#   # Function to run a shell command and capture output
+#   run_shell_command <- function(command) {
 #     tryCatch({
-#       if (!file.exists(reticulate::miniconda_path())) {
-#         reticulate::install_miniconda()
-#       }
-#       if (!any(reticulate::conda_list()$name == "r-reticulate")) {
-#         reticulate::conda_create("r-reticulate", packages = c("python=3.10", "numpy"))
-#       }
-#       reticulate::use_condaenv("r-reticulate", required = TRUE)
+#       result <- system(command, intern = TRUE)
+#       message(paste("Command output:", paste(result, collapse = "\n")))
+#       return(result)
 #     }, error = function(e) {
-#       message("Failed to install or configure Miniconda: ", e$message)
-#       stop("Miniconda installation or configuration failed.")
+#       message(paste("Failed to run command:", command, "Error:", e$message))
 #     })
-#   } else {
-#     reticulate::use_python(reticulate::py_discover_config()$python)
 #   }
 #
-#   # Ensure numpy is installed in the Python environment
-#   tryCatch({
-#     reticulate::py_install("numpy", envname = "r-reticulate")
-#   }, error = function(e) {
-#     message("Failed to install numpy: ", e$message)
-#     stop("Numpy installation failed.")
-#   })
+#   # Function to install a package using pip in the Python environment
+#   install_python_package <- function(package_name) {
+#     tryCatch({
+#       message(paste("Installing", package_name, "in the Python environment..."))
+#       run_shell_command(paste("python -m pip install --upgrade", package_name))
+#       message(paste(package_name, "installed successfully."))
+#     }, error = function(e) {
+#       message(paste("Failed to install", package_name, ":", e$message))
+#     })
+#   }
 #
-#   # Install TensorFlow and Keras if not installed
-#   tryCatch({
-#     tf_config <- tensorflow::tf_config()
-#     if (is.null(tf_config) || is.null(tf_config$installed) || !tf_config$installed) {
-#       message("TensorFlow not found. Installing TensorFlow and Keras.")
-#       tensorflow::install_tensorflow(extra_packages = "tensorflow-probability")
-#       keras::install_keras()
-#     }
-#   }, error = function(e) {
-#     message("Failed to install TensorFlow or Keras: ", e$message)
-#     stop("TensorFlow or Keras installation failed.")
-#   })
+#   # Ensure pip is installed and up-to-date
+#   ensure_pip <- function() {
+#     tryCatch({
+#       reticulate::py_run_string("import pip")
+#     }, error = function(e) {
+#       message("pip not found. Installing pip...")
+#       install_python_package("pip")
+#     })
+#   }
 #
-#   message("All dependencies are loaded and configured.")
+#   update_pip <- function() {
+#     tryCatch({
+#       run_shell_command("python -m pip install --upgrade pip")
+#       message("pip has been updated.")
+#     }, error = function(e) {
+#       message("Failed to update pip: ", e$message)
+#     })
+#   }
+#
+#   # Ensure NumPy is installed with the correct version
+#   ensure_numpy <- function(required_version = "1.26.4") {
+#     tryCatch({
+#       # Check current numpy version
+#       current_version <- reticulate::py_run_string("import numpy; print(numpy.__version__)")
+#       current_version <- as.character(current_version)
+#       message(paste("Current NumPy version:", current_version))
+#       if (current_version != required_version) {
+#         message(paste("Installing/upgrading NumPy to version:", required_version))
+#         install_python_package(paste("numpy==", required_version, sep = ""))
+#       } else {
+#         message("Required NumPy version is already installed.")
+#       }
+#     }, error = function(e) {
+#       message("Failed to ensure NumPy version:", e$message)
+#     })
+#   }
+#
+#   # Ensure TensorFlow and Keras are installed
+#   ensure_tf_keras <- function() {
+#     tryCatch({
+#       reticulate::py_run_string("import tensorflow")
+#       reticulate::py_run_string("import keras")
+#     }, error = function(e) {
+#       message("TensorFlow and/or Keras not found in the Python environment.")
+#       install_python_package("tensorflow")
+#       install_python_package("keras")
+#     })
+#   }
+#
+#   # Run the pip update and ensure necessary packages
+#   ensure_pip()
+#   update_pip()
+#   ensure_numpy()
+#   ensure_tf_keras()
 # }
-
+#
+#
+#

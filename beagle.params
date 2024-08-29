@@ -1,3 +1,0 @@
-marker = snp_data.plink
-impute = true
-output = imputed_data

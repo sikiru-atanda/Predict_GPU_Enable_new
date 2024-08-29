@@ -79,6 +79,31 @@ phenotype_precheck <- function(pheno_data = NULL,
       stop(paste(msg, paste("The variable '", paste(missing_heter_grps, collapse = "', '"), "' did not match with your data. Please check and use appropriately.")))
     } else {
       pheno_data <- pheno_data[order(pheno_data[[heter_groups]]), ]
+
+      # Check the number of genotypes in each environment
+      genotype_count <- pheno_data |>
+        dplyr::group_by(!!rlang::sym(heter_groups)) |>
+        dplyr::summarize(count = dplyr::n_distinct(!!rlang::sym(gen_name)))
+      if(length(unique(genotype_count$count)) == 1) {
+        stop(paste(msg, "Genotype counts are NOT identical across all environments."), call. = FALSE)
+      }
+
+      # Check if the genotype names are identical across all environments
+      genotype_names_by_env <- pheno_data |>
+        dplyr::group_by(!!rlang::sym(heter_groups)) |>
+        dplyr::summarize(gen_names_list = list(sort(trimws(as.character(unique(!!rlang::sym(gen_name)))))))
+
+      # Compare genotype names across environments element by element
+      # Using base R to achieve the same functionality
+      all_identical <- all(sapply(seq_along(genotype_names_by_env$gen_names_list[-1]), function(i) {
+        identical(genotype_names_by_env$gen_names_list[[i]], genotype_names_by_env$gen_names_list[[1]])
+      }))
+
+
+      if(!all_identical) {
+        stop(paste(msg,"Genotype names are NOT identical across all environments."), call. = FALSE)
+      }
+
     }
   }
 
