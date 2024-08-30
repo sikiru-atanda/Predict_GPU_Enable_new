@@ -686,22 +686,45 @@ models_execute_crossval <- function(pheno_data = NULL,
       ypred_cv[, 'yhat'] <- as.double(ypred_cv[, 'yhat'])
 
       results_eval_metrics_reps_use <- as.data.frame(results_eval_metrics_reps_use)
+
       for (eva in 1:length(eval_metrics)) {
-        sik <- unlist(doBy::lapplyBy(~Env, data=ypred_cv, function(x) {
-          tryCatch({
-            evaluation_metrics(x$yhat, x$y, eval_metrics = eval_metrics[eva])
-          }, error = function(e) {
-            return(NULL)
-          })
-        }))
+        sik <- ypred_cv |>
+          dplyr::group_by(Env) |>
+          dplyr::summarise(
+            eval_metric = tryCatch(
+              evaluation_metrics(yhat, y, eval_metrics = eval_metrics[eva]),
+              error = function(e) NULL
+            )
+          )
+
         if (!is.null(sik)) {
-          for (s in 1:length(sik)) {
-            if (!is.null(sik[s])) {
-              results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups] %in% names(sik)[s], c("Rep", eval_metrics[eva])] <- c(repp, sik[s])
+          for (i in 1:nrow(sik)) {
+            if (!is.null(sik$eval_metric[i])) {
+              results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups] == sik$Env[i], c("Rep", eval_metrics[eva])] <- c(repp, sik$eval_metric[i])
             }
           }
         }
       }
+
+      # ### doBy
+      # for (eva in 1:length(eval_metrics)) {
+      #   sik <- unlist(doBy::lapplyBy(~Env, data=ypred_cv, function(x) {
+      #     tryCatch({
+      #       evaluation_metrics(x$yhat, x$y, eval_metrics = eval_metrics[eva])
+      #     }, error = function(e) {
+      #       return(NULL)
+      #     })
+      #   }))
+      #   if (!is.null(sik)) {
+      #     for (s in 1:length(sik)) {
+      #       if (!is.null(sik[s])) {
+      #         results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups] %in% names(sik)[s], c("Rep", eval_metrics[eva])] <- c(repp, sik[s])
+      #       }
+      #     }
+      #   }
+      # }
+
+
       results_eval_metrics_reps <- rbind(results_eval_metrics_reps_use, results_eval_metrics_reps)
     } else {
       if (!cross_validation_meth %in% CVs_multi_envs_methods_avail) {

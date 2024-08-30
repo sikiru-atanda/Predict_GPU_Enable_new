@@ -87,9 +87,11 @@ phenotype_precheck <- function(pheno_data = NULL,
       genotype_count <- pheno_data |>
         dplyr::group_by(!!rlang::sym(heter_groups)) |>
         dplyr::summarize(count = dplyr::n_distinct(!!rlang::sym(gen_name)))
-      if(length(unique(genotype_count$count)) == 1) {
+
+      if(length(unique(genotype_count$count)) != 1) {
         stop(paste(msg, "Genotype counts are NOT identical across all environments."), call. = FALSE)
       }
+
 
       # Check if the genotype names are identical across all environments
       genotype_names_by_env <- pheno_data |>
