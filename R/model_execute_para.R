@@ -445,6 +445,7 @@ model_execute <- function(
 
     }
 
+    if(isTRUE(cross_validation) && !is.null(GS_model)) GS_model <- NULL
     eval_metrics_available <- c("accuracy", "mean_squared_error", "bias",
                                 "root_mean_squared_error", "relative_squared_error",
                                 "mean_absolute_error", "mean_absolute_percent_error", "kendalls_tau")
@@ -860,7 +861,7 @@ model_execute <- function(
 
     error_message <- paste(msg, "Bayes Alphabets and machine learning models require omics or geno data.")
     # Check if GS_model is not null and belongs to valid models
-    if (!is.null(GS_model) && any(GS_model %in% c(AI_valid_models, bayes_valid_models))) {
+    if (!is.null(GS_model) && any(GS_model %in% c(AI_valid_models, bayes_valid_models)) && isFALSE(cross_validation)) {
       # Check if all conditions are true
       if (condition11 && condition12 && condition13 && condition14) {
         stop(paste(msg,error_message), call. = FALSE)
