@@ -10,13 +10,16 @@
 #' @examples
 omic_precheck <- function(object = NULL,
                           message = TRUE,
-                          impute = FALSE){
+                          impute=TRUE,
+                          na_threshold =0.9,
+                          imputation_method = "knn", #median, mean
+                          impute_knn_k = 5){
   msg <- "\n==================================================\n"
   if(!is.null(object)){
     if("data.table" %in% class(object)){
-      stop(print(paste(msg,'Omic data must be data.frame or matrix not character.')), call. = FALSE)
+      stop(paste(msg,'Omic data must be data.frame or matrix not character.'), call. = FALSE)
     }
-    if(inherits(object, "character")) stop(print(paste(msg,'Omic data should be data.frame or matrix not character.')), call. = FALSE)
+    if(inherits(object, "character")) stop(paste(msg,'Omic data should be data.frame or matrix not character.'), call. = FALSE)
     #if(class(object)[[1]]!="matrix"){
     if(!inherits(object, "matrix")){
       if(isTRUE(message)){
@@ -39,17 +42,19 @@ omic_precheck <- function(object = NULL,
       stop('The omic data contains non-numeric values', call. = FALSE)
     }
     ## Check for Na and remove
-    object <- handle_missing_values(data = object) ## this fxn is present in geno_precheckk
+    object <- handle_missing_values(data = object,  na_threshold =  na_threshold,
+                                    impute=impute, imputation_method = imputation_method,
+                                    impute_knn_k = impute_knn_k) ## this fxn is present in geno_precheckk
     ## check if there is duplicated snps
     duplicated_columns <- colnames(object)[duplicated(colnames(object))]
     if(length(duplicated_columns)>0){
-      stop(print(paste(msg,"Omic data contain duplicate features/predictors.")), call. = FALSE)
+      stop(paste(msg,"Omic data contain duplicate features/predictors."), call. = FALSE)
     }
 
     ## check duplicated rownames:
     duplicated_rownames <- rownames(object)[duplicated(rownames(object))]
     if(length(duplicated_rownames)>0){
-      stop(print(paste(msg,"Omic data contain duplicate genotypes.")), call. = FALSE)
+      stop(paste(msg,"Omic data contain duplicate genotypes."), call. = FALSE)
     }
 
 

@@ -1,14 +1,17 @@
 
-handle_missing_values <- function(data, na_threshold = 0.9, impute=TRUE) {
+handle_missing_values <- function(data, na_threshold = 0.9, impute=TRUE, imputation_method = "knn",
+                                  impute_knn_k = 5) {
 
+  if(is.null(impute_knn_k)) impute_knn_k <- 5
+  msg <- "\n==================================================\n"
   # Check if the input has row names
   if (is.null(rownames(data))) {
-    stop("The feature matrix or data.frame must have row names.")
+    stop(paste( msg, "The feature matrix or data.frame must have row names."), call. = FALSE)
   }
 
   # Check for NA values in row names
   if (any(is.na(rownames(data)))) {
-    stop("The feature matrix or data.frame row names must not contain NA values.")
+    stop(paste(msg, "The feature matrix or data.frame row names must not contain NA values."), call. = FALSE)
   }
   # Check if the input is a matrix or a data frame
   is_matrix <- is.matrix(data)
@@ -43,10 +46,31 @@ handle_missing_values <- function(data, na_threshold = 0.9, impute=TRUE) {
   if(isTRUE(impute)){
     if(any(is.na(data[, 1:ncol(data)]))==T) {
       #This function will impute the missing values
+      if(imputation_method =="median" | imputation_method == "mean"){
       for(j in 1:ncol(data)){
         tmp <- data[,j]
         tmp = as.double(as.character(unlist(tmp)))
+        if(imputation_method =="median"){
         data[,j] <- ifelse(is.na(tmp),round(median(tmp,na.rm=T)),tmp)
+
+        }
+        if(imputation_method =="mean"){
+          data[,j] <- ifelse(is.na(tmp),round(mean(tmp,na.rm=T)),tmp)
+
+        }
+      }
+
+      } else {
+        if(imputation_method=="knn"){
+          if(ncol(data)>=200){
+            imputed_snp_data <- handle_large_scale_knn(data = data, k = impute_knn_k,
+                                                       chunk_size = 50, num_cores=NULL)
+            data <- imputed_snp_data
+          } else {
+            data <- impute_chunk(data, k = impute_knn_k)
+          }
+
+        }
       }
 
     }
@@ -108,7 +132,9 @@ geno_precheck <- function(object_geno = NULL,
                           het_threshold = 0.2,
                           ind_call_rate_threshold = 0.9,
                           snp_call_rate_threshold = 0.9,
-                          impute = TRUE,
+                          impute=TRUE,
+                          imputation_method = "knn", #median, mean
+                          impute_knn_k = 5,
                           message = TRUE,
                           ...) {
   # ... (input validation, if necessary)
@@ -328,7 +354,9 @@ geno_precheck <- function(object_geno = NULL,
 
   }
 
-  object_geno <- handle_missing_values(data = object_geno)
+  object_geno <- handle_missing_values(data = object_geno,
+                                       impute=impute, imputation_method = imputation_method,
+                                       impute_knn_k = impute_knn_k)
   ## check if there is duplicated snps
   duplicated_columns <- colnames(object_geno)[duplicated(colnames(object_geno))]
   if(length(duplicated_columns)>0){
