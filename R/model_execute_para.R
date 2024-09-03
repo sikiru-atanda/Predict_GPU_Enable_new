@@ -497,22 +497,18 @@ model_execute <- function(
         #     "It automates the entire process, including the installation of `reticulate`, ensuring Miniconda is installed, creating a virtual environment, and installing all essential Python packages."
         #   )
         # , call. = FALSE)
-        if (!reticulate::py_module_available("tensorflow") || !reticulate::py_module_available("keras")) {
-          stop(paste(msg,
-                     paste(
-                       msg,
-                       "Your selected model requires a Python environment.\n",
-                       "To set up the necessary Python environment for this package, please run the following script:\n",
-                       "source(system.file('setup_environment.R', package = 'PredictProR'))\n",
-                       "This setup script is designed to be user-friendly, even for users with minimal coding experience.\n",
-                       "It automates the entire process, including the installation of `reticulate`, ensuring Miniconda is installed, creating a virtual environment, and installing all essential Python packages."
-                     )
-                     # paste(
-                     #   "Model execution halted due to missing Python environment.\n",
-                     #   "Please run the following script to set up the environment:\n",
-                     #   "source(system.file('setup_environment.R', package = 'PredictProR'))"
-                     # )
-          ), call. = FALSE)
+        if (!reticulate::py_module_available("tensorflow") ||
+            !reticulate::py_module_available("keras") ||
+            !reticulate::py_module_available("numpy")) {
+
+          setup_instructions <- paste(
+            "To set up the necessary Python environment for this package, please run the following script:\n",
+            "source(system.file('setup_environment.R', package = 'PredictProR'))\n",
+            "This setup script is designed to be user-friendly, even for users with minimal coding experience.\n",
+            "It automates the entire process, including the installation of `reticulate`, ensuring Miniconda is installed, creating a virtual environment, and installing all essential Python packages."
+          )
+
+          stop(paste(msg, setup_instructions), call. = FALSE)
         }
         # stop(paste(msg,
         #   paste(
