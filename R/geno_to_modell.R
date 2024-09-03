@@ -40,6 +40,8 @@ geno_to_model <- function(geno_data = NULL,
                           ind_call_rate_threshold = 0.9,
                           snp_call_rate_threshold = 0.9,
                           impute = TRUE,
+                          imputation_method = "knn",
+                          impute_knn_k = 5,
                           map_data = NULL,
                           message = TRUE,
                           ...) {
@@ -53,6 +55,8 @@ geno_to_model <- function(geno_data = NULL,
                                  ind_call_rate_threshold = ind_call_rate_threshold,
                                  snp_call_rate_threshold = snp_call_rate_threshold,
                                  impute = impute,
+                                 imputation_method = imputation_method,
+                                 impute_knn_k = impute_knn_k,
                                  #map_data  = map_data,
                                  message = message)
 

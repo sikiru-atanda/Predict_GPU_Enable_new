@@ -228,7 +228,6 @@ model_execute <- function(
     test_omics_label = list(test_omic1_data = NULL,
                             test_omic2_data = NULL,
                             test_omic3_data = NULL),
-    impute_omic = FALSE,
     coefficient_1 = NULL,
     coefficient_2 = NULL,
     coefficient_3 = NULL,
@@ -282,7 +281,11 @@ model_execute <- function(
     het_threshold = 0.1,
     ind_call_rate_threshold = 0.9,
     snp_call_rate_threshold = 0.9,
-    impute = FALSE,
+    impute = TRUE,
+    impute_omic = TRUE,
+    imputation_method = "knn",
+    impute_knn_k = 5,
+    na_threshold = 0.9,
     recode_format = "0,1,2",  # Specify "0,1,2" or -1, 0, 1
     out_put_map = FALSE,
     map_data = NULL,
@@ -1166,6 +1169,8 @@ model_execute <- function(
                                    ind_call_rate_threshold = ind_call_rate_threshold,
                                    snp_call_rate_threshold = snp_call_rate_threshold,
                                    impute = impute,
+                                   imputation_method = imputation_method,
+                                   impute_knn_k = impute_knn_k,
                                    qc_filtering = if(!is.null(geno_data_process)) FALSE else qc_filtering,
                                    message = message,
                                    heter_groups = heter_groups)
@@ -1186,7 +1191,10 @@ model_execute <- function(
                                 train_set = train_set,
                                 message = message,
                                 heter_groups = heter_groups,
-                                impute_omic = impute_omic)
+                                impute_omic = impute_omic,
+                                imputation_method = imputation_method,
+                                impute_knn_k = impute_knn_k,
+                                na_threshold = na_threshold)
 
  # Process omic2 data
  omic2_res <- process_omic_data(omic_data = omic2_data,
@@ -1199,7 +1207,10 @@ model_execute <- function(
                                 train_set = train_set,
                                 message = message,
                                 heter_groups = heter_groups,
-                                impute_omic = impute_omic)
+                                impute_omic = impute_omic,
+                                imputation_method = imputation_method,
+                                impute_knn_k = impute_knn_k,
+                                na_threshold = na_threshold)
 
  # Process omic3 data
  omic3_res <- process_omic_data(omic_data = omic3_data,
@@ -1212,7 +1223,10 @@ model_execute <- function(
                                 train_set = train_set,
                                 message = message,
                                 heter_groups = heter_groups,
-                                impute_omic = impute_omic)
+                                impute_omic = impute_omic,
+                                imputation_method = imputation_method,
+                                impute_knn_k = impute_knn_k,
+                                na_threshold = na_threshold)
  #################
  geno_omic_model_ready_list <- list()
  gmatrix_kernel_model_ready_list <- list()

@@ -30,7 +30,7 @@ omic_precheck <- function(object = NULL,
     }
 
     if(any(colnames(object) %in% c("NA", "Na", "na"))){
-      stop(paste(msg, "Column names can't contain NA."))
+      stop(paste(msg, "Column names can't contain NA."), call. = FALSE)
     }
 
     #if (is.numeric(object)==FALSE) {stop(print(paste(msg,'The data contains non-numeric value')), call. = FALSE)}
@@ -39,7 +39,7 @@ omic_precheck <- function(object = NULL,
 
     # Stop execution if any element is not numeric
     if (!all_numeric) {
-      stop('The omic data contains non-numeric values', call. = FALSE)
+      stop(paste(msg,'The omic data contains non-numeric values', call. = FALSE), call. = FALSE)
     }
     ## Check for Na and remove
     object <- handle_missing_values(data = object,  na_threshold =  na_threshold,

@@ -41,7 +41,9 @@ process_geno_data <- function(geno_data = NULL,
                               het_threshold = NULL,
                               ind_call_rate_threshold = NULL,
                               snp_call_rate_threshold = NULL,
-                              impute = NULL,
+                              impute = FALSE,
+                              imputation_method = "knn",
+                              impute_knn_k = 5,
                               qc_filtering = NULL,
                               message = TRUE,
                               heter_groups = heter_groups,
@@ -59,6 +61,8 @@ process_geno_data <- function(geno_data = NULL,
                                 ind_call_rate_threshold = ind_call_rate_threshold,
                                 snp_call_rate_threshold = snp_call_rate_threshold,
                                 impute = impute,
+                                imputation_method = imputation_method,
+                                impute_knn_k = impute_knn_k,
                                 map_data = map_data,
                                 qc_filtering = if (inherits(geno_data, "list")) NULL else qc_filtering,
                                 message = message)
@@ -178,6 +182,9 @@ process_omic_data <- function(omic_data = NULL,
                               scale = FALSE,
                               message = message,
                               impute_omic = FALSE,
+                              imputation_method = "knn",
+                              impute_knn_k = 5,
+                              na_threshold = 0.9,
                               ...) {
 
   ##browser()
@@ -188,7 +195,10 @@ process_omic_data <- function(omic_data = NULL,
                                    train_omic_data = train_omic_data,
                                    test_omic_data = test_omic_data,
                                    message = message,
-                                   impute_omic = impute_omic)
+                                   impute_omic = impute_omic,
+                                   imputation_method = imputation_method,
+                                   impute_knn_k = impute_knn_k,
+                                   na_threshold = na_threshold)
 
     if (attr(cleaned_dataa, "cleared") != "for_model_fit" && all(class(cleaned_dataa) != c("matrix", "array"))) {
       stop(print(paste(msg, 'Data is not fit for model')), call. = FALSE)
