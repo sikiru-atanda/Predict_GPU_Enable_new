@@ -15,6 +15,9 @@ omic_to_model <- function(omic_data = NULL,
                           test_omic_data = NULL,
                           message = TRUE,
                           impute_omic = FALSE,
+                          imputation_method = "knn",
+                          impute_knn_k = 5,
+                          na_threshold = 0.9,
                           ...) {
 
   msg <- "\n==================================================\n"
@@ -25,7 +28,11 @@ omic_to_model <- function(omic_data = NULL,
   # Check if omic_data is provided
   if (!is.null(omic_data) & is.null(train_omic_data) & is.null(test_omic_data)) {
     omic_object <- omic_precheck(object = omic_data, message = message,
-                                 impute = impute_omic)
+                                 impute = impute_omic,
+                                 imputation_method = imputation_method,
+                                 impute_knn_k = impute_knn_k,
+                                 na_threshold = na_threshold,
+                                 message = message)
 
     # Check if omic_object passed the checks and is of the correct class
     if (attr(omic_object, "cleared") != "pass" || !inherits(omic_object, c("matrix", "array"))) {
@@ -35,7 +42,12 @@ omic_to_model <- function(omic_data = NULL,
   } else {
     # Check if train_omic_data is provided
     if (!is.null(train_omic_data) & is.null(test_omic_data)) {
-      omic_object <- omic_precheck(object = train_omic_data, message = message)
+      omic_object <- omic_precheck(object = train_omic_data,
+                                   impute = impute_omic,
+                                   imputation_method = imputation_method,
+                                   impute_knn_k = impute_knn_k,
+                                   na_threshold = na_threshold,
+                                   message = message)
 
       if(is.null(omic_object)){
         stop(paste(msg, 'Train_omic_data did not pass the required test. Check the data.'), call. = FALSE)
@@ -54,13 +66,18 @@ omic_to_model <- function(omic_data = NULL,
     }
     if (!is.null(train_omic_data) && !is.null(test_omic_data)) {
 
-      if (!identical(colnames(train_geno_data), colnames(test_omic_data))) {
+      if (!identical(colnames(train_omic_data), colnames(test_omic_data))) {
 
         stop(paste(msg, 'Omic data not match in training and testing set data.'), call. = FALSE)
       }
 
       omic_object <- rbind(train_omic_data, test_omic_data)
-      omic_object <- omic_precheck(object = omic_object, message = message)
+      omic_object <- omic_precheck(object = omic_object,
+                                   impute = impute_omic,
+                                   imputation_method = imputation_method,
+                                   impute_knn_k = impute_knn_k,
+                                   na_threshold = na_threshold,
+                                   message = message)
 
       if(is.null(omic_object)){
         stop(paste(msg, 'Omic data did not pass the required test. Check the data.'), call. = FALSE)
