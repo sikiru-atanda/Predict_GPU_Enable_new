@@ -27,7 +27,6 @@
 #'
 #' @importFrom stats colMeans
 #' @importFrom dplyr rename rownames_to_column
-#' @import tibble
 #' @export
 
 

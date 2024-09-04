@@ -111,14 +111,18 @@ if (!is.null(grm_kernel_data)){
   }
 
   if(isTRUE(bending) & !is.null(bend_value)){
-  if(isFALSE(matrixcalc::is.positive.definite(grm_kernel_data))){
+  #if(isFALSE(matrixcalc::is.positive.definite(grm_kernel_data))){
+    if(isFALSE(matrix_diagonistic_check(grm_kernel_data,
+                                        matrix_diagnostic="is_positive_definite"))){
     message(insight::print_color(paste(msg,paste("The relationsip matrix is not positive definite. We fix it.")), "blue"))
     grm_kernel_data <- as.matrix(Matrix::nearPD(grm_kernel_data, posd.tol= bend_value, trace=FALSE)$mat)
   }
 
   } else {
 #### If bending is False check for user to see the matrix is not ill-conditioned for model fit
-    if(isFALSE(matrixcalc::is.positive.definite(grm_kernel_data))){
+    #if(isFALSE(matrixcalc::is.positive.definite(grm_kernel_data))){
+    if(isFALSE(matrix_diagonistic_check(grm_kernel_data,
+                                        matrix_diagnostic="is_positive_definite"))){
       grm_kernel_data <- as.matrix(Matrix::nearPD(grm_kernel_data, posd.tol= bend_value, trace=FALSE)$mat)
       #message(paste(msg,"Relationsip Matrix is not positive definite. Set bending = TRUE to fix it"))
       message(insight::print_color(paste(msg,paste("The relationsip Matrix is not positive definite.\n \t We fix it by bending to make the matrix stable.")), "blue"))

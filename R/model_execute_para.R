@@ -490,16 +490,8 @@ model_execute <- function(
 
 
       if (any(c(GS_model, GS_model_cv) %in% dp_models)) {
-        # warning(
-        #   paste(
-        #     msg,
-        #     "Your selected model requires a Python environment.\n",
-        #     "To set up the necessary Python environment for this package, please run the following script:\n",
-        #     "source(system.file('setup_environment.R', package = 'PredictProR'))\n",
-        #     "This setup script is designed to be user-friendly, even for users with minimal coding experience.\n",
-        #     "It automates the entire process, including the installation of `reticulate`, ensuring Miniconda is installed, creating a virtual environment, and installing all essential Python packages."
-        #   )
-        # , call. = FALSE)
+
+
         if (!reticulate::py_module_available("tensorflow") ||
             !reticulate::py_module_available("keras") ||
             !reticulate::py_module_available("numpy")) {
@@ -513,25 +505,27 @@ model_execute <- function(
 
           stop(paste(msg, setup_instructions), call. = FALSE)
         }
-        # stop(paste(msg,
-        #   paste(
-        #     "Model execution halted due to missing Python environment.\n",
-        #     "Please run the following script to set up the environment:\n",
-        #     "source(system.file('setup_environment.R', package = 'PredictProR'))"
-        #   )
-        # ), call. = FALSE)
+
       }
 
 
 
     if(any(c(GS_model, GS_model_cv)%in%c("mlp_with_attention", "mlp", "cnn"))){
-      if(is.null(neurons_per_layer)&& is.null(num_hidden_layers)){
-        stop(paste(msg, "neurons_per_layer and num_hidden_layers can't be NULL."), call. = FALSE)
+      if(is.null(neurons_per_layer)){
+        stop(paste(msg, "neurons_per_layer can't be NULL."), call. = FALSE)
       }
 
       if (isTRUE(para_tunning)) {
         validate_layers(num_hidden_layers, neurons_per_layer)
+      } else {
+        if(!is.null(num_hidden_layers)){
+          if (num_hidden_layers != length(neurons_per_layer)) {
+            stop(paste(msg, "The length of num_hidden_layers must match the length of neurons_per_layer"), call. = FALSE)
+          }
+
+        }
       }
+
     }
 
     if("ResNet"%in%c(GS_model, GS_model_cv)){
