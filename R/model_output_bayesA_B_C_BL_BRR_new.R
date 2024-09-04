@@ -27,7 +27,7 @@ process_var_u <- function(file, posindex, GS_model) {
     var_u <- scan(file, what = numeric(), sep = "\n", quiet = TRUE)
 
   }else {
-    if(GS_model%in%c("BayesA", "BayesC", "lambda")){
+    if(GS_model%in%c("BayesA", "BayesC", "lambda")){ # lambda
       var_u <- utils::read.table(file)
     } else {
       if(GS_model=="BayesB"){
@@ -37,7 +37,8 @@ process_var_u <- function(file, posindex, GS_model) {
 
     }
     #var_u <- as.data.frame(tidyr::separate_rows(var_u))[posindex, 1]
-    var_u <- as.data.frame(tidyr::separate_rows(var_u))[, 1]
+    #var_u <- as.data.frame(tidyr::separate_rows(var_u))[, 1]
+    var_u <- var_u[, 1]
 
   }
   #Var_U_Se_omics <- standard_deviation(Var_U)

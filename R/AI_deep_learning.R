@@ -180,7 +180,7 @@ deep_learning_model <- function(pheno_object=NULL,
                                 ...) {
 #browser()
   msg <- "\n==================================================\n"
-
+  if(is.null(dense_layers_cnn)) dense_layers_cnn <-  64
   if(!is.null(geno_omic_object)){
     scaler <- caret::preProcess(geno_omic_object, method = c("center", "scale"))
     geno_omic_object <- stats::predict(scaler, geno_omic_object)
@@ -216,9 +216,9 @@ deep_learning_model <- function(pheno_object=NULL,
 
   if(is.null(neurons_per_layer)&& !is.null(num_hidden_layers)){
     if(!is.null(geno_omic_object) && isFALSE(crossval)){
-    neurons_per_layer = generate_dynamic_layers(input_size = ncol(geno_omic_object), num_hidden_layers = num_hidden_layers, scaling_factor = 0.5)
+    neurons_per_layer <- generate_dynamic_layers(input_size = ncol(geno_omic_object), num_hidden_layers = num_hidden_layers, scaling_factor = 0.5)
     } else if(!is.null(omics_data) && isTRUE(crossval)){
-      neurons_per_layer = generate_dynamic_layers(input_size = ncol(omics_data), num_hidden_layers = num_hidden_layers, scaling_factor = 0.5)
+      neurons_per_layer <- generate_dynamic_layers(input_size = ncol(omics_data), num_hidden_layers = num_hidden_layers, scaling_factor = 0.5)
 
     } else {
       stop(paste(msg, "neurons_per_layer and num_hidden_layers can't be NULL."), call. = FALSE)
@@ -228,8 +228,8 @@ deep_learning_model <- function(pheno_object=NULL,
 
 
   if(deep_learning_model == "ResNet"){
-    if(is.null(n_blocks)) n_blocks <- 2
-    if(is.null(dense_layers_cnn)) dense_layers_cnn <-  64
+    if(is.null(n_blocks)) n_blocks <- 1
+    #if(is.null(dense_layers_cnn)) dense_layers_cnn <-  64
       if(is.null(n_neurons_per_block)&& !is.null(n_blocks)){
         if(!is.null(geno_omic_object) && isFALSE(crossval)){
         n_neurons_per_block <-  generate_dynamic_layers(input_size = ncol(geno_omic_object), num_hidden_layers = n_blocks, scaling_factor = 0.5)
@@ -247,6 +247,18 @@ deep_learning_model <- function(pheno_object=NULL,
 
     neurons_per_layer <- n_neurons_per_block
     num_hidden_layers <- n_blocks
+  } else {
+    if(is.null(num_hidden_layers)) num_hidden_layers <- 1
+    if(is.null(neurons_per_layer)&& !is.null(num_hidden_layers)){
+      if(!is.null(geno_omic_object) && isFALSE(crossval)){
+        neurons_per_layer <-  generate_dynamic_layers(input_size = ncol(geno_omic_object), num_hidden_layers = num_hidden_layers, scaling_factor = 0.5)
+
+      } else if(!is.null(omics_data) && isTRUE(crossval)){
+        neurons_per_layer <-  generate_dynamic_layers(input_size = ncol(omics_data), num_hidden_layers = num_hidden_layers, scaling_factor = 0.5)
+      } else {
+        stop(paste(msg, "neurons_per_layer and num_hidden_layers can't be NULL."), call. = FALSE)
+      }
+    }
   }
 
   if(!is.null(num_hidden_layers) && !is.list(num_hidden_layers)) num_hidden_layers <- as.integer(num_hidden_layers) else num_hidden_layers <- as.integer(1)

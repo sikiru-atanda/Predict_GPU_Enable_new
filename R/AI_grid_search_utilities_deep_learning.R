@@ -4,6 +4,7 @@
 validate_layers <- function(num_hidden_layers, neurons_per_layer) {
   msg <- "\n==================================================\n"
   if(is.null(num_hidden_layers) || is.null(neurons_per_layer)){
+    if(length(num_hidden_layers)==1 && num_hidden_layers>1) num_hidden_layers <- seq(1:num_hidden_layers)
   if (length(num_hidden_layers) != length(neurons_per_layer)) {
     stop(paste(msg, "The length of num_hidden_layers must match the length of neurons_per_layer"), call. = FALSE)
   }
@@ -66,6 +67,15 @@ grid_search_deep_learning <- function(X_train,
 }
     neurons_per_layer <- n_neurons_per_block
     num_hidden_layers <- n_blocks
+    if(length(num_hidden_layers)==1 && num_hidden_layers>1) num_hidden_layers <- seq(1:num_hidden_layers)
+
+    if(!is.null(param_grid$n_blocks)){
+      if(length(param_grid$n_blocks)==1 && param_grid$n_blocks>1) param_grid$n_blocks <- seq(1:param_grid$n_blocks)
+      names(param_grid)[names(param_grid)%in%"n_blocks"] <- "num_hidden_layers"
+    }
+    if(!is.null(param_grid$n_neurons_per_block)){
+      names(param_grid)[names(param_grid)%in%"n_neurons_per_block"] <- "neurons_per_layer"
+    }
   }
 
   X_train <- np$array(as.matrix(X_train))
@@ -78,6 +88,9 @@ grid_search_deep_learning <- function(X_train,
   # Call the validation function
  #test_neuron_hidden_layer <-  tryCatch({
     validate_layers(param_grid$num_hidden_layers, param_grid$neurons_per_layer)
+    if(!is.null(param_grid$num_hidden_layers)){
+      if(length(param_grid$num_hidden_layers)==1 && param_grid$num_hidden_layers>1) param_grid$num_hidden_layers <- seq(1:param_grid$num_hidden_layers)
+    }
   #   cat("Validation successful: The number of hidden layers matches the neurons per layer configuration.\n")
   # }, error = function(e) {
   #   cat("Validation error:", e$message, "\n")

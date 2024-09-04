@@ -487,9 +487,19 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
 
   summary_stat_snp <- summary_stat_snp |>
     t() |>
-    as.data.frame() |>
-    tibble::rownames_to_column(var = "metric") |>
+    as.data.frame()
+
+  summary_stat_snp <- summary_stat_snp |>
+    dplyr::mutate(metric = rownames(summary_stat_snp)) |>
+    dplyr::select(metric, V1) |>
     dplyr::rename(stat = V1)
+
+  # summary_stat_snp <- summary_stat_snp |>
+  #   t() |>
+  #   as.data.frame() |>
+  #   tibble::rownames_to_column(var = "metric") |>
+  #   dplyr::rename(stat = V1)
+  rownames(summary_stat_snp) <- NULL
 
   rm(vcf_processed); gc()
   #########################
