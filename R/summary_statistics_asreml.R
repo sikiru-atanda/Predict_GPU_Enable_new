@@ -137,7 +137,8 @@ summary_statistics_asreml <- function(mod=NULL,
       for (i in 1:length(eval_metrics)){
 
         Eval_met[i, ] <- evaluation_metrics(y_observed = as.double(pheno_data[[response]]),
-                                            y_predicted = as.double(predicted_value[["Predicted_value"]]),
+                                            #y_predicted = as.double(predicted_value[["Predicted_value"]]),
+                                            y_predicted = as.double(predicted_value),
                                             eval_metrics = eval_metrics[i])
 
       }

@@ -460,30 +460,30 @@ deep_learning_model_utilityy <- function(X_train,
   if(deep_learning_model == "ResNet"){
 
     model_dp <- build_resnet_model(input_shape = input_shape,
-                                 n_blocks = num_hidden_layers,
-                                 n_neurons_per_block = neurons_per_layer,
-                                 l2_regularizer_dp = l2_regularizer_dp,
-                                 dropout_rate = dropout_rate,
-                                 loss_function = loss_function,
-                                 optimizer = optimizer,
-                                 metric = metric,
-                                 output_activation = output_activation)
+                                   n_blocks = num_hidden_layers,
+                                   n_neurons_per_block = neurons_per_layer,
+                                   l2_regularizer_dp = l2_regularizer_dp,
+                                   dropout_rate = dropout_rate,
+                                   loss_function = loss_function,
+                                   optimizer = optimizer,
+                                   metric = metric,
+                                   output_activation = output_activation)
   }
 
   if(deep_learning_model =="cnn"){
     model_dp <- build_cnn_model(input_shape = input_shape,
-                              num_hidden_layers = num_hidden_layers,
-                              neurons_per_layer = neurons_per_layer,
-                              l2_regularizer_dp = l2_regularizer_dp,
-                              dropout_rate = dropout_rate,
-                              dense_layers_cnn = dense_layers_cnn,
-                              kernel_size = kernel_size,
-                              batch_normalization = batch_normalization,
-                              optimizer = optimizer,
-                              metric = metric,
-                              loss_function = loss_function,
-                              output_activation = output_activation,
-                              validation_split = validation_split)
+                                num_hidden_layers = num_hidden_layers,
+                                neurons_per_layer = neurons_per_layer,
+                                l2_regularizer_dp = l2_regularizer_dp,
+                                dropout_rate = dropout_rate,
+                                dense_layers_cnn = dense_layers_cnn,
+                                kernel_size = kernel_size,
+                                batch_normalization = batch_normalization,
+                                optimizer = optimizer,
+                                metric = metric,
+                                loss_function = loss_function,
+                                output_activation = output_activation,
+                                validation_split = validation_split)
   }
   # Compile the model
   #model_dp <- keras::keras_model(inputs = input, outputs = output)
@@ -504,260 +504,14 @@ deep_learning_model_utilityy <- function(X_train,
 
   # Fit the model
   model_fit <- model_dp$fit(x = X_train,
-                         y = y_train,
-                         epochs = epochs,
-                         batch_size = batch_size,
-                         validation_split = validation_split,
-                         verbose = 0, callbacks = callbacks)
+                           y = y_train,
+                           epochs = epochs,
+                           batch_size = batch_size,
+                           validation_split = validation_split,
+                           verbose = 0, callbacks = callbacks)
 
   return(model_dp)
 }
 
 
 
-# deep_learning_model_utilityy <- function(X_train,
-#                                         y_train,
-#                                         num_hidden_layers,
-#                                         neurons_per_layer,
-#                                         learning_rate,
-#                                         epochs,
-#                                         batch_size,
-#                                         l2_regularizer_dp = 0.001,
-#                                         dropout_rate = 0.5,
-#                                         para_tunning = FALSE,
-#                                         output_optimizer = "adam",
-#                                         deep_learning_model = "mlp_with_attention", ## ResNets
-#                                         attention_on_final_layer = TRUE,
-#                                         attention_across_multiple_layers = FALSE,
-#                                         batch_normalization = TRUE,
-#                                         validation_split = 0.2) {
-#
-#   msg <- "\n==================================================\n"
-#
-#   if(!is.null(batch_size))   batch_size <- as.integer(batch_size)
-#   if(!is.null(epochs)) epochs <- as.integer(epochs)
-#   if(!is.null(learning_rate)) learning_rate <- as.numeric(learning_rate)
-#
-#   if(isTRUE(attention_on_final_layer) && isTRUE(attention_across_multiple_layers)) attention_across_multiple_layers <- FALSE
-#
-#
-#   # Validate optimizer
-#   valid_optimizers <- c("adam", "adamax", "sgd", "rmsprop", "adadelta", "nadam")
-#   # Error handling for output optimizer
-#   if (!(output_optimizer %in% valid_optimizers)) {
-#     stop(paste(msg, "Invalid output optimizer. Choose from: ", paste(valid_optimizers, collapse = ", ")), call. = FALSE)
-#   }
-#
-#   # Validate hidden layers and neurons per layer
-#   if (isTRUE(para_tunning)) {
-#   validate_layers(num_hidden_layers, neurons_per_layer)
-#   }
-#
-#   if(inherits(neurons_per_layer, "list")) neurons_per_layer <- unlist(neurons_per_layer)
-#   if(inherits(num_hidden_layers, "list")) num_hidden_layers <- unlist(num_hidden_layers)
-#   if(length(num_hidden_layers)>1) stop(paste(msg, "num_hidden_layers should be vector of length 1"), call. = FALSE)
-#   if (num_hidden_layers!= length(neurons_per_layer)) {
-#     stop(paste(msg, paste("Mismatch in hidden layers and neurons per layer at", num_hidden_layers)), call. = FALSE)
-#   }
-#
-#
-#   # Convert input data to numpy arrays
-#   np <- reticulate::import("numpy")
-#   X_train <- np$array(as.matrix(X_train), dtype = "float32")
-#   y_train <- np$array(y_train, dtype = "float32")
-#
-#   # Define the input layer
-#   input_dim <- ncol(X_train)
-#
-#   # Determines the input dimensionality based on the number of columns in X_train
-#
-#   if(deep_learning_model == "mlp_with_attention" && isFALSE(attention_across_multiple_layers)){
-#   # Initializes a sequential Keras model
-#   input <- keras::layer_input(shape = c(input_dim))
-#
-#   # Define the layers
-#   if(isFALSE(batch_normalization)){
-#   output <- input |>
-#     keras::layer_dense(units = neurons_per_layer[1], activation = 'relu')
-#   } else {
-#     output <- input |>
-#       keras::layer_dense(units = neurons_per_layer[1], activation = NULL)
-#       keras::layer_batch_normalization() |>
-#       keras::layer_activation('relu')
-#   }
-#
-#   # L2 Regularization: Helps in reducing the magnitude of weights,
-#   # which discourages the model from becoming too complex and
-#   # overfitting to the training data.
-#   # Import the necessary Keras regularizer
-#   tf <- reticulate::import("tensorflow")
-#   keras <- reticulate::import("keras")
-#
-#   if (!is.null(l2_regularizer_dp)) {
-#     l2 <- keras$regularizers$l2(as.numeric(l2_regularizer_dp))
-#   }
-#   # } else {
-#   #   l2 <- keras$regularizers$l2(0.001)
-#   # }
-#
-#
-#     # Adding the hidden layers
-#     if (length(neurons_per_layer) > 1) {
-#       for (i in 2:length(neurons_per_layer)) {
-#         if(isFALSE(batch_normalization)){
-#         if(!is.null(l2_regularizer_dp)){
-#         output <- output |>
-#           keras::layer_dense(units = neurons_per_layer[i],
-#                              activation = 'relu',
-#                              kernel_regularizer = l2)  # Apply L2 regularization
-#         } else {
-#           output <- output |>
-#             keras::layer_dense(units = neurons_per_layer[i],
-#                                activation = 'relu'
-#                               )
-#         }
-#
-#         } else {
-#           if(!is.null(l2_regularizer_dp)){
-#             output <- output |>
-#               keras::layer_dense(units = neurons_per_layer[i],
-#                                  activation = NULL,
-#                                  kernel_regularizer = l2) |>  # Apply L2 regularization
-#               keras::layer_batch_normalization() |>
-#               keras::layer_activation('relu')
-#           } else {
-#             output <- output |>
-#               keras::layer_dense(units = neurons_per_layer[i],
-#                                  activation = NULL)
-#               keras::layer_batch_normalization() |>
-#               keras::layer_activation('relu')
-#           }
-#         }
-#         # Dropout: Randomly drops out a fraction of neurons during training,
-#         # which forces the model to learn more robust features by not relying
-#         # too heavily on any individual neuron.
-#         # Adds dropout to the layer if dropout_rate is provided
-#         if (!is.null(dropout_rate) && is.numeric(dropout_rate) && dropout_rate > 0 && dropout_rate < 1) {
-#           output <- output |>
-#             keras::layer_dropout(rate = dropout_rate)
-#         }
-#       }
-#     }
-#
-#   } else {
-#   if(deep_learning_model == "mlp_with_attention" && isTRUE(attention_across_multiple_layers)){
-#     # Collect the outputs of each hidden layer
-#     hidden_layers <- list()
-#
-#     for (i in 1:num_hidden_layers) {
-#       output <- if (i == 1) {
-#         if(isFALSE(batch_normalization)){
-#         input |> keras::layer_dense(units = neurons_per_layer[i], activation = 'relu')
-#         } else {
-#           input |> keras::layer_dense(units = neurons_per_layer[i], activation = NULL)|>
-#           keras::layer_batch_normalization() |>
-#           keras::layer_activation('relu')
-#         }
-#       } else {
-#         if(isFALSE(batch_normalization)){
-#         hidden_layers[[i-1]] |> keras::layer_dense(units = neurons_per_layer[i],
-#                                                    activation = 'relu',
-#                                                    kernel_regularizer = l2)
-#         } else {
-#           hidden_layers[[i-1]] |> keras::layer_dense(units = neurons_per_layer[i],
-#                                                      activation = NULL,
-#                                                      kernel_regularizer = l2)|>
-#             keras::layer_batch_normalization() |>
-#             keras::layer_activation('relu')
-#         }
-#       }
-#
-#       if (!is.null(dropout_rate) && dropout_rate > 0) {
-#         output <- output |> keras::layer_dropout(rate = dropout_rate)
-#       }
-#
-#       hidden_layers[[i]] <- output
-#     }
-#
-#     # Concatenate or sum all hidden layer outputs for attention
-#     concatenated_output <- keras::layer_concatenate(hidden_layers)
-#
-#     # Attention mechanism applied to the aggregated output
-#     attention_probs <- concatenated_output |> keras::layer_dense(units = sum(neurons_per_layer), activation = 'softmax')
-#     attention_output <- keras::layer_multiply(list(concatenated_output, attention_probs))
-#
-#   }
-# }
-#   # Create the model
-#
-#
-#   # Determine the appropriate loss function, activation function, and metric based on the nature of the response variable
-#   if (length(unique(y_train))!= length(y_train) & length(unique(y_train)) == 2) {
-#     loss_function <- 'binary_crossentropy'
-#     output_activation <- 'sigmoid'  # For binary classification
-#     metric <- 'accuracy'            # Accuracy is suitable
-#   } else if (length(unique(y_train))!= length(y_train) && length(unique(y_train)) > 2 && length(unique(y_train)) < 10) {
-#     loss_function <- 'categorical_crossentropy'
-#     output_activation <- 'softmax'  # For multi-class classification
-#     metric <- 'accuracy'            # Accuracy might be suitable but consider other metrics
-#   } else {
-#     loss_function <- 'mean_squared_error'
-#     output_activation <- 'linear'    # For regression
-#     metric <- 'mean_absolute_error' # Use MAE for regression
-#   }
-#
-#   if(deep_learning_model == "mlp_with_attention" && isTRUE(attention_on_final_layer)){
-#     # Attention mechanism
-#     attention_probs <- output |> keras::layer_dense(units = neurons_per_layer[num_hidden_layers], activation = 'softmax')
-#     attention_output <- keras::layer_multiply(list(output, attention_probs))
-#
-#     output <- attention_output |>
-#       keras::layer_dense(units = 1, activation = output_activation)
-#
-#   } else if(deep_learning_model == "mlp_with_attention" && isTRUE(attention_across_multiple_layers)){
-#
-#     output <- attention_output |>
-#       keras::layer_dense(units = 1, activation = output_activation)
-#
-#   } else {
-#   # Adding the output layer with appropriate activation function
-#   output <- output |> keras::layer_dense(units = 1, activation = output_activation)
-#
-#   }
-#
-#   model <- keras::keras_model(inputs = input, outputs = output)
-#   # Initialize output optimizer based on user input
-#   switch(output_optimizer,
-#          adam = output_optimizer <- keras::optimizer_adam(learning_rate = learning_rate),
-#          adamax = output_optimizer <- keras::optimizer_adamax(learning_rate = learning_rate),
-#          sgd = output_optimizer <- keras::optimizer_sgd(learning_rate = learning_rate),
-#          rmsprop = output_optimizer <- keras::optimizer_rmsprop(learning_rate = learning_rate),
-#          adadelta = output_optimizer <- keras::optimizer_adadelta(learning_rate = learning_rate),
-#          nadam = output_optimizer <- keras::optimizer_nadam(learning_rate = learning_rate)
-#   )
-#
-#   model <- keras::keras_model(inputs = input, outputs = output)
-#   model$compile(
-#     loss = loss_function,
-#     optimizer = output_optimizer,
-#     metrics = list(metric)
-#   )
-#
-#   print_dot_callback <- keras::callback_lambda(
-#     on_epoch_end = function(epoch, logs) {
-#       if (epoch %% 20 == 0) cat("\n")
-#       cat(".")
-#     })
-#
-#   early_stop <- keras::callback_early_stopping(monitor = c("val_loss"),
-#                                                mode='min', patience =50)
-#
-#   model_fit <- model$fit(x=X_train,
-#                          y=y_train,
-#                          epochs=epochs,
-#                          batch_size =batch_size,
-#                          validation_split=validation_split,
-#                          verbose=0, callbacks = list(early_stop,print_dot_callback))
-#
-#   return(model)
-# }

@@ -57,12 +57,15 @@ single_predicted_vs_observed_result_plots_process <- function(results,
     # Filter data for the current model
     dat <- combined_results[combined_results[["model"]] == mod, ]
 
+    traits <- unique(dat$trait)
     # Initialize a list to store results per trait for the current model
     mod_res_per_trait <- list()
 
     # Iterate through each trait
     for (tt in traits) {
       # Filter data for the current trait and extract 'yhat'
+      dattt <- dat[dat[["trait"]] == tt, ]
+      reps <- unique(dattt$rep)
       datt <- as.numeric(dat[dat[["trait"]] == tt, "yhat"])
 
       # Convert 'yhat' to matrix format
