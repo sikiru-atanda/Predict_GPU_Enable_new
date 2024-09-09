@@ -1,25 +1,30 @@
 
 
-generate_dynamic_layers <- function(input_size, num_hidden_layers, scaling_factor = 0.5) {
+generate_dynamic_layers <- function(input_size, num_hidden_layers, scaling_factor = 0.5, max_neurons = 1000) {
 
   msg <- "\n==================================================\n"
 
-  if(length(num_hidden_layers)>1 || length(num_hidden_layers) == 0 ){
+  if (length(num_hidden_layers) > 1 || length(num_hidden_layers) == 0) {
     stop(paste(msg, "num_hidden_layers should be a vector of length 1", call. = FALSE))
   }
 
   layers <- numeric(num_hidden_layers)
 
-  # The first hidden layer could start as a fraction of the input size
-  layers[1] <- floor(input_size * scaling_factor)
+  # Cap the input size to prevent large layers
+  capped_input_size <- ifelse(input_size >= 1000, max_neurons, input_size)
 
-  # Subsequent layers reduce in size, following the scaling factor
+  # The first hidden layer could start as a fraction of the (capped) input size
+  layers[1] <- min(floor(capped_input_size * scaling_factor), max_neurons)
+
+  # Subsequent layers reduce in size, following the scaling factor and capped by max_neurons
   for (i in 2:num_hidden_layers) {
-    layers[i] <- floor(layers[i - 1] * scaling_factor)
+    layers[i] <- min(floor(layers[i - 1] * scaling_factor), max_neurons)
+    if (layers[i] < 1) break  # Stop adding layers if neurons fall below 1
   }
 
-  return(layers)
+  return(layers[layers > 0])  # Return only valid layers
 }
+
 
 # Function to train and predict using dp for bootstrapping
 train_predict_deeplearning <- function(data_label_geno, indices, test_geno,
