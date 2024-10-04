@@ -335,6 +335,14 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
                            out_put_map = TRUE,
                            batch_size = 2000,
                            num_cores = NULL,
+                           ld_pruning = FALSE,         # LD pruning option
+                           ld_pruning_method = "indep-pairwise", # LD pruning method
+                           window_size = 50,           # Window size for LD pruning
+                           step_size = 5,              # Step size for LD pruning
+                           r2_threshold = 0.2,         # r² threshold for LD pruning
+                           use_kb_window = TRUE,      # Use kb for window size in LD pruning
+                           phased = TRUE,             # Option for phased LD pruning
+                           use_founders = FALSE,
                            #beagle_path = "D:/PredictProR",
                            message = TRUE) {
 
@@ -384,7 +392,15 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
                        heterozygosity = NULL,
                        snp_call_rate = snp_call_rate_threshold,
                        allow_extra_chr = TRUE,
-                       individual_call_rate = NULL)
+                       individual_call_rate = NULL,
+                       ld_pruning = ld_pruning,         # LD pruning option
+                       ld_pruning_method = ld_pruning_method, # LD pruning method
+                       window_size = window_size,           # Window size for LD pruning
+                       step_size = step_size,              # Step size for LD pruning
+                       r2_threshold = r2_threshold,         # r² threshold for LD pruning
+                       use_kb_window = use_kb_window,      # Use kb for window size in LD pruning
+                       phased = TRUE,             # Option for phased LD pruning
+                       use_founders = FALSE)
 
   if(res == "Failed"){
     stop(paste(msg,paste(paste("Processing of the vcf file failed.",

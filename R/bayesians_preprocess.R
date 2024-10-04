@@ -143,7 +143,7 @@ fixed_terms <- function(
   if(attr(fixed, "cleared")!="pass" & !inherits(fixed, "formula")) {
 
     msg <- "\n ==================================================\n"
-    stop(msg, "The fixed term is not a class of type 'formula'. Example: ", "fixed = ~ X + Y")
+    stop(paste(msg, "The fixed term is not a class of type 'formula'. Example: ", "fixed = ~ X + Y"), call. = FALSE)
   }
 
    fixed_term <- strsplit(as.character(fixed[2]), split = "[+]")[[1]]
@@ -190,7 +190,7 @@ random_terms <- function(random = NULL,
 
   if(attr(random, "cleared")!="pass" && !inherits(random, "formula")) {
 
-    stop(msg, "\n The random term is not a class of type 'formula'. Example: ", "fixed = ~ X + Y \n")
+    stop(paste(msg, "\n The random term is not a class of type 'formula'. Example: ", "fixed = ~ X + Y \n"), call. = FALSE)
   }
 
   rand_term <- strsplit(as.character(random[2]), split = "[+]")[[1]]
@@ -232,14 +232,14 @@ fixed_term_model <- function(fixed_term = NULL,
   msg <- "\n ==================================================\n"
   if(is.null(fixed_term_model_bayesian)){
     if(isTRUE(message)){
-    warning(msg, "The model for fixed term(s) is missing. We fix it for you.")
+    warning(paste(msg, "The model for fixed term(s) is missing. We fix it for you."), call. = FALSE)
 }
-    fixed_term_model_bayesian = 'FIXED'
+    fixed_term_model_bayesian <-  'FIXED'
   } else{
 
     if(fixed_term_model_bayesian!='FIXED'){
       if(isTRUE(message)){
-      warning(msg, "The model for fixed term(s) should be equal to FIXED. We fix it for you.")
+      warning(paste(msg, "The model for fixed term(s) should be equal to FIXED. We fix it for you."), call. = FALSE)
 }
     }
 
@@ -312,8 +312,8 @@ random_term_model <- function(rand_terms = NULL,
   if(length(rand_terms_no_inter)!=0){
     ## Check if gen_name is present and store the position
     gen_pos_mod <-   match(gen_name, rand_terms)
-    if(length(gen_pos_mod)==0){stop(print(paste(message(msg), paste(gen_name, "effect is missing"))), call. = FALSE)}
-    if(length(gen_pos_mod)>1){stop(print(paste(message(msg), paste(gen_name, "effect should not be greater than 1"))), call. = FALSE)}
+    if(length(gen_pos_mod)==0){stop(paste(message(msg), paste(gen_name, "effect is missing")), call. = FALSE)}
+    if(length(gen_pos_mod)>1){stop(paste(message(msg), paste(gen_name, "effect should not be greater than 1")), call. = FALSE)}
     ## Extract other terms from the rand_terms_no_inter  expect the gen_name
     rand_terms_no_inter_no_gen <-  rand_terms_no_inter[!rand_terms_no_inter%in%gen_name]
     ## Get the position of other terms (No interaction) in the random that is not gen_name
@@ -367,12 +367,12 @@ random_term_model <- function(rand_terms = NULL,
       ### Check GS_model to be consistent with models present in the engine
       mod_present_in_GS_model = GS_model[GS_model%in% valid_models]
       if(length(mod_present_in_GS_model)==length(rand_terms)){
-        rand_terms_model_bayesian = GS_model
+        rand_terms_model_bayesian <-  GS_model
         #rand_mod_copy = GS_model
       }
       ### if GS_model is less than the length of rand_terms
     } else{
-      mod_present_in_GS_model = GS_model[GS_model%in% valid_models]
+      mod_present_in_GS_model <-  GS_model[GS_model%in% valid_models]
       if(length(mod_present_in_GS_model)!=0){
         #rand_mod_copy = mod_present_in_GS_model
         if(message){
@@ -412,7 +412,7 @@ random_term_model <- function(rand_terms = NULL,
 
 
       } else {
-        stop(print(paste(msg,'Provided appropiate name for the Baysian model.')), call. = FALSE)
+        stop(paste(msg,'Provided appropiate name for the Baysian model.'), call. = FALSE)
       }
     }
 
@@ -431,7 +431,7 @@ random_term_model <- function(rand_terms = NULL,
       mod_present_in_model_bayesian = rand_terms_model_bayesian[rand_terms_model_bayesian%in% valid_models]
       if(length(mod_present_in_model_bayesian)==0){
 
-        stop(msg,'Provided appropiate name for the Baysian model.\n ')
+        stop(paste(msg,'Provided appropiate name for the Baysian model.\n '), call. = FALSE)
 
       } else {
 
@@ -444,8 +444,8 @@ random_term_model <- function(rand_terms = NULL,
       rand_terms_model_bayesian[gen_pos_mod] <- GS_model[1]
 
       ## For other terms in random effect aside gen_name
-      if((!is.null(non_gen_pos_mod) & length(non_gen_pos_mod)==0) & !is.na(non_gen_pos_mod)){
-
+      #if((!is.null(non_gen_pos_mod) & length(non_gen_pos_mod)==0) & !is.na(non_gen_pos_mod)){
+      if(!is.null(non_gen_pos_mod)){
         rand_terms_model_bayesian[non_gen_pos_mod] <-  "BRR"
 
       } ## end
@@ -479,16 +479,16 @@ random_term_model <- function(rand_terms = NULL,
  ### Check which GS_model the user supply, it has it to match the available models
       mod_present_in_GS_model <- GS_model[GS_model%in% valid_models]
       if(length(mod_present_in_GS_model)==0){
-        stop(print(paste(msg,'Provided appropiate name for the baysian model in GS_model.')), call. = FALSE)
+        stop(paste(msg,'Provided appropiate name for the baysian model in GS_model.'), call. = FALSE)
       }
       ### Check which rand_terms_model_bayesian the user supply, it has it to match the available models
       mod_present_in_model_bayesian <- rand_terms_model_bayesian[rand_terms_model_bayesian%in% valid_models]
       if(length(mod_present_in_model_bayesian)==0){
-        stop(print(paste(msg,'Provided appropiate name for the baysian model in rand_terms_model_bayesian.')), call. = FALSE)
+        stop(paste(msg,'Provided appropiate name for the baysian model in rand_terms_model_bayesian.'), call. = FALSE)
       }
       ### Check if the models term define is greater than the random term
       if(length(rand_terms_model_bayesian)>length(rand_terms)){
-        stop(print(paste(msg,'The number of model is greater than the random terms.')), call. = FALSE)
+        stop(paste(msg,'The number of model is greater than the random terms.'), call. = FALSE)
       }
       ##
       if(length(mod_present_in_GS_model)!=0 & length(mod_present_in_model_bayesian)!=0){
@@ -516,7 +516,7 @@ random_term_model <- function(rand_terms = NULL,
       ###
       ###  rand_terms_model_bayesian[gen_pos_mod] = GS_model[1]
       ## For other terms in random effect aside gen_name
-      if((!is.null(non_gen_pos_mod) & length(non_gen_pos_mod)==0) & !is.na(non_gen_pos_mod)){
+      if(!is.null(non_gen_pos_mod)){
 
         rand_terms_model_bayesian[non_gen_pos_mod] <-  "BRR"
 

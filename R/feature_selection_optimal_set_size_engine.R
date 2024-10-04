@@ -92,8 +92,10 @@ cv_with_replication_stability <- function(X, y, n_folds = 5,
   ))
 }
 
-sequential_feature_selection <- function(sorted_markers, start_marker_count = 10,
-                                         X, y, n_tree = 500, num_cores = 10){
+sequential_feature_selection <- function(sorted_markers,
+                                         start_marker_count = 10,
+                                         X, y, n_tree = 500,
+                                         num_cores = 10){
   # Define the range of marker subsets to evaluate
   marker_subsets <- seq(start_marker_count, length(sorted_markers), by = start_marker_count)  # Adjust step size as needed
 
@@ -107,7 +109,7 @@ sequential_feature_selection <- function(sorted_markers, start_marker_count = 10
     # Automatically determine the number of cores and use half of them
     detected_cores <- parallel::detectCores(logical = TRUE)
     # For non-Windows systems, consider physical cores only
-    num_cores <- round(detected_cores * 0.5)
+    num_cores <- round(detected_cores * 0.7)
 
     set_parallel_plan_rf(replication = length(marker_subsets),
                          num_cores = num_cores,
@@ -158,7 +160,48 @@ feature_selection_rf <- function(X, y, n_folds = 5, replication = 10,
                                                            X = X, y = y, n_tree = n_tree, num_cores = num_cores)
     }
 
-    return(optimal_markers_size)
+    return(list(sorted_markers = sorted_markers,
+                optimal_markers_size = optimal_markers_size))
   }
 
 }
+
+
+# # Create a toy dataset
+# set.seed(123)
+#
+# n_samples <- 100  # Number of samples
+# n_markers <- 20   # Number of markers (features)
+#
+# # Generate marker data with some noise
+# X <- matrix(rnorm(n_samples * n_markers), nrow = n_samples, ncol = n_markers)
+# colnames(X) <- paste0("Marker", 1:n_markers)
+#
+# # Generate a target variable with a linear combination of a few markers
+# y <- 0.5 * X[, 1] - 0.3 * X[, 2] + 0.2 * X[, 3] + rnorm(n_samples)
+#
+# # Convert X to a data frame for easier handling with dplyr
+# X <- as.data.frame(X)
+#
+# result <- feature_selection_rf(X, y, n_folds = 5, replication = 5, n_tree = 500,
+#                                threshold = 0.8,
+#                                optimal_marker_set = FALSE)
+# # print(result$SelectedMarkers)
+#
+#
+# This method ranks features based on their selection frequency across replications,
+# which can be more intuitive and easier to interpret when dealing with a large number of markers.
+# It also provides a direct way to select an optimal subset of markers.
+#
+# Sequential Feature Selection: By aggregating importance scores across multiple replications,
+# this method can be more robust to noise and variability in the data.
+# It also naturally accounts for feature interactions since the entire model is retrained in each replication.
+# Permutation Importance: Permutation importance can be sensitive to correlated features.
+# If two features are highly correlated, shuffling one may not significantly decrease accuracy,
+# leading to underestimation of its importance.
+
+
+# result <- feature_selection_rf(X, y, n_folds = 5, replication = 5, n_tree = 500,
+#                                                                threshold = 0.8,
+#                                                                optimal_marker_set = TRUE)
+# print(result$optimal_markers_size)

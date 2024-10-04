@@ -27,7 +27,7 @@ omic_to_model <- function(omic_data = NULL,
   }
   # Check if omic_data is provided
   if (!is.null(omic_data) & is.null(train_omic_data) & is.null(test_omic_data)) {
-    omic_object <- omic_precheck(object = omic_data, message = message,
+    omic_object <- omic_precheck(object = omic_data,
                                  impute = impute_omic,
                                  imputation_method = imputation_method,
                                  impute_knn_k = impute_knn_k,
