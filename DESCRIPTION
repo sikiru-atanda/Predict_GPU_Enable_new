@@ -13,7 +13,7 @@ Depends: R (>= 4.1.0)
 Enhances: 
     asreml
 Imports: 
-    BGLR,
+    BGLR (== 1.1.0),
     boot,
     caret,
     corpcor,

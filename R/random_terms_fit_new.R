@@ -46,20 +46,20 @@ random_terms_fit_new <- function(random = NULL,
     rand_term_no_inter_no_gen <-  rand_term_no_inter[!rand_term_no_inter%in%gen_name]
     ## Get the position of other terms in the random that is not gen_name
     non_gen_pos <- match(rand_term_no_inter_no_gen, rand_term)
-    if(anyNA(non_gen_pos)){non_gen_pos = NULL}
+    if(anyNA(non_gen_pos)){non_gen_pos <- NULL}
 
     if(length(check_rand_inter)!=0){
 
       test_present_of_geno <-  grep(gen_name, check_rand_inter, value = TRUE)
-      if(anyNA(test_present_of_geno)) {test_present_of_geno = NULL}
+      if(anyNA(test_present_of_geno)) {test_present_of_geno <- NULL}
 
       if(length(test_present_of_geno)!=0){
 
         inter_gen_pos <-  match(test_present_of_geno, rand_term)
-        if(anyNA(inter_gen_pos)){inter_gen_pos = NULL}
+        if(anyNA(inter_gen_pos)){inter_gen_pos <-  NULL}
 
         non_gen_inter_test <- check_rand_inter[!check_rand_inter%in%test_present_of_geno]
-        if(anyNA(non_gen_inter_test)){non_gen_inter_test = NULL}
+        if(anyNA(non_gen_inter_test)){non_gen_inter_test <-  NULL}
 
       } else {
 
@@ -85,7 +85,7 @@ random_terms_fit_new <- function(random = NULL,
     }
 
     gen_pos <- match(gen_name, rand_term)
-    if(anyNA(gen_pos)){gen_pos = NULL}
+    if(anyNA(gen_pos)){gen_pos <-  NULL}
     if(length(gen_pos)>1){
       stop(message(paste(msg, "Genotype main effect cannot be present more than one time in the model")), call. = FALSE)
     }
@@ -100,21 +100,21 @@ random_terms_fit_new <- function(random = NULL,
 
     if (length(check_rand_inter)>=1){
       if (length(pheno_data[[gen_name]]) ==length(unique(pheno_data[[gen_name]]))){
-        stop(print(paste(msg, "Phenotypic data contain single environment but you specify multi-environment analysis.")), call. = FALSE)
+        stop(paste(msg, "Phenotypic data contain single environment but you specify multi-environment analysis."), call. = FALSE)
       }
-      if (is.null(heter_groups)) {stop(print(paste(msg, heter_groups,"cannot be NULL")), call. = FALSE)}
+      if (is.null(heter_groups)) {stop(paste(msg, heter_groups,"cannot be NULL"), call. = FALSE)}
     }
 
 
     if(!is.null(var_cov_str)){
 
-      if(is.null(heter_groups)){stop(print(paste(msg, "Provide heter_groups to model specified variance-covariance structure")), call. = FALSE)}
+      if(is.null(heter_groups)){stop(paste(msg, "Provide heter_groups to model specified variance-covariance structure"), call. = FALSE)}
 
       ### Check if the number of hetero.Grp is greater 5 or greater than 5
       NN <-  nlevels(pheno_data[[heter_groups]])
       if (NN >=5 & isFALSE(grepl("fa", var_cov_str))){
 
-        msg <- sprintf("\r==================================================\n")
+        #msg <- "\n==================================================\n"
 
         warning(paste(msg, "The number of", heter_groups, " is", NN,  "consider using factor analytic model"), immediate. = TRUE, call. =FALSE)
       }
@@ -122,15 +122,15 @@ random_terms_fit_new <- function(random = NULL,
       ### This check if heterogeneous group/environment/location is present in the fixed term
       if (!is.null(fixed_term)){
         check_heter_grp_fixed  <-  match(heter_groups, fixed_term)
-        if(anyNA(check_heter_grp_fixed)) {check_heter_grp_fixed = NULL}
+        if(anyNA(check_heter_grp_fixed)) {check_heter_grp_fixed <-  NULL}
       } else {
-        check_heter_grp_fixed = NULL
+        check_heter_grp_fixed <-  NULL
       }
 
 
       if (!is.null(rand_term)){
         check_heter_grp_rand  <-  match(heter_groups, rand_term)
-        if(anyNA(check_heter_grp_rand)) {check_heter_grp_rand = NULL}
+        if(anyNA(check_heter_grp_rand)) {check_heter_grp_rand <- NULL}
       } else {
         check_heter_grp_rand <-  NULL
       }
@@ -252,7 +252,7 @@ random_terms_fit_new <- function(random = NULL,
                                                         paste(paste(paste0('vm(', gen_name), sep = ',', names_in_inv_list[i]), ")", sep=""), sep = ":")))
             } else{
               if(isTRUE(grepl("fa", var_cov_str))) {
-                N_fa = substr(var_cov_str, 3, 100)
+                N_fa <- substr(var_cov_str, 3, 100)
                 random <- stats::update(random,
                                       paste("~ . +",paste(paste0("fa",paste0("(",paste0(heter_groups, ",", N_fa),")")),
                                                           paste(paste(paste0('vm(', gen_name), sep = ',', names_in_inv_list[i]), ")", sep=""), sep = ":")))
@@ -276,32 +276,32 @@ random_terms_fit_new <- function(random = NULL,
       ### use this step to drop the orginal GID:Env
       if(!is.null(inter_gen_pos) & length(gen_pos)==0){
         rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
-        rand_termCopy = gsub(" ", "", rand_termCopy)
+        rand_termCopy <-  gsub(" ", "", rand_termCopy)
         #inter_gen_pos_copy = match(rand_term[inter_gen_pos], rand_termCopy)
         if(!is.null(heter_groups)){
-          inter_gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
+          inter_gen_pos_copy <-  match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
           if(anyNA(inter_gen_pos_copy)){
-            inter_gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
+            inter_gen_pos_copy <-  match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
           }
 
         }
-        random = stats::formula(stats::drop.terms(stats::terms(random),inter_gen_pos_copy, keep.response = F))
+        random <-  stats::formula(stats::drop.terms(stats::terms(random),inter_gen_pos_copy, keep.response = F))
       } ### End
 
       ### If user provide GID, GID:Env
       if(!is.null(inter_gen_pos) & !is.null(gen_pos)){
         ### use this step to drop the original GID and GID:Env
         rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
-        rand_termCopy = gsub(" ", "", rand_termCopy)
+        rand_termCopy <-  gsub(" ", "", rand_termCopy)
         #inter_gen_pos_copy = match(rand_term[inter_gen_pos], rand_termCopy)
         if(!is.null(heter_groups)){
-          inter_gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
+          inter_gen_pos_copy <-  match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
           if(anyNA(inter_gen_pos_copy)){
-            inter_gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
+            inter_gen_pos_copy <-  match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
           }
         }
-        gen_pos_copy = match(rand_term[gen_pos], rand_termCopy)
-        random = stats::formula(stats::drop.terms(stats::terms(random), c(gen_pos_copy,inter_gen_pos_copy), keep.response = F))
+        gen_pos_copy <-  match(rand_term[gen_pos], rand_termCopy)
+        random <-  stats::formula(stats::drop.terms(stats::terms(random), c(gen_pos_copy,inter_gen_pos_copy), keep.response = F))
       }
 
       # End of when only gen_pos and inter_gen_pos are provided
@@ -324,9 +324,9 @@ random_terms_fit_new <- function(random = NULL,
       }
       ### use this step to drop the orginal GID and GID:Env
       rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
-      rand_termCopy = gsub(" ", "", rand_termCopy)
-      gen_pos_copy = match(rand_term[gen_pos], rand_termCopy)
-      random = stats::formula(stats::drop.terms(stats::terms(random), gen_pos_copy, keep.response = F))
+      rand_termCopy <-  gsub(" ", "", rand_termCopy)
+      gen_pos_copy <-  match(rand_term[gen_pos], rand_termCopy)
+      random <-  stats::formula(stats::drop.terms(stats::terms(random), gen_pos_copy, keep.response = F))
     }
     ######################################################################
     #### When Variance-Covariance Structure is missing. Compound Symmetry
@@ -335,16 +335,16 @@ random_terms_fit_new <- function(random = NULL,
 
       ###############################
       if (!is.null(fixed_term)){
-        check_heter_grp_fixed  = match(heter_groups, fixed_term)
+        check_heter_grp_fixed  <-  match(heter_groups, fixed_term)
       } else {
-        check_heter_grp_fixed = NULL
+        check_heter_grp_fixed <-  NULL
       }
 
 
       if (!is.null(rand_term)){
-        check_heter_grp_rand  = match(heter_groups, rand_term)
+        check_heter_grp_rand  <-  match(heter_groups, rand_term)
       } else {
-        check_heter_grp_rand = NULL
+        check_heter_grp_rand <-  NULL
       }
 
       #if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv"){
@@ -357,7 +357,7 @@ random_terms_fit_new <- function(random = NULL,
           # Adding fixed factors
           if (!is.null(fixed_term )) {
             ### Update the fixed term if not null
-            fixed =  stats::update(fixed,
+            fixed <-   stats::update(fixed,
                                    paste("~ . +", heter_groups))
 
             fixed_term <- strsplit(as.character(fixed[2]), split = "[+]")[[1]]
@@ -421,19 +421,19 @@ random_terms_fit_new <- function(random = NULL,
         ### use this step to drop the original GID and GID:Env
         rand_termCopy <- strsplit(as.character(random[2]), split = "[+]")[[1]]
 
-        rand_termCopy = gsub(" ", "", rand_termCopy)
+        rand_termCopy <-  gsub(" ", "", rand_termCopy)
 
         #inter_gen_pos_copy = match(rand_term[inter_gen_pos], rand_termCopy)
         if(!is.null(heter_groups)){
-          inter_gen_pos_copy = match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
+          inter_gen_pos_copy <-  match(paste(gen_name,heter_groups, sep = ":"),rand_termCopy)
           if(anyNA(inter_gen_pos_copy)){
-            inter_gen_pos_copy= match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
+            inter_gen_pos_copy <-  match(paste(heter_groups,gen_name, sep = ":"),rand_termCopy)
           }
 
         }
-        gen_pos_copy = match(rand_term[gen_pos], rand_termCopy)
+        gen_pos_copy <-  match(rand_term[gen_pos], rand_termCopy)
 
-        random = stats::formula(stats::drop.terms(stats::terms(random), c(gen_pos_copy,inter_gen_pos_copy), keep.response = F))
+        random <-  stats::formula(stats::drop.terms(stats::terms(random), c(gen_pos_copy,inter_gen_pos_copy), keep.response = F))
 
       }
 
@@ -445,7 +445,7 @@ random_terms_fit_new <- function(random = NULL,
     ####################################################
 
     ranTerms <- strsplit(as.character(random[2]), split = "[+]")[[1]]
-    ranTerms = gsub(" ", "", ranTerms)
+    ranTerms <-  gsub(" ", "", ranTerms)
 
     for (r in 1:length(ranTerms)) {
 

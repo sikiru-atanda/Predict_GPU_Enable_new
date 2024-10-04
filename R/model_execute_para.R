@@ -287,6 +287,14 @@ model_execute <- function(
     impute_knn_k = 5,
     na_threshold = 0.9,
     recode_format = "0,1,2",  # Specify "0,1,2" or -1, 0, 1
+    ld_pruning = FALSE,         # LD pruning option
+    ld_pruning_method = "indep-pairwise", # LD pruning method
+    window_size = 50,           # Window size for LD pruning
+    step_size = 5,              # Step size for LD pruning
+    r2_threshold = 0.2,         # r² threshold for LD pruning
+    use_kb_window = TRUE,      # Use kb for window size in LD pruning
+    phased = TRUE,             # Option for phased LD pruning
+    use_founders = FALSE,
     out_put_map = FALSE,
     map_data = NULL,
     qc_filtering = TRUE,
@@ -427,6 +435,13 @@ model_execute <- function(
                                  snp_call_rate_threshold = snp_call_rate_threshold,
                                  impute = impute,
                                  recode_format = recode_format,
+                                 ld_pruning = ld_pruning,         # LD pruning option
+                                 ld_pruning_method = ld_pruning_method, # LD pruning method
+                                 window_size = window_size,           # Window size for LD pruning
+                                 step_size = step_size,              # Step size for LD pruning
+                                 r2_threshold = r2_threshold,         # r² threshold for LD pruning
+                                 use_kb_window = use_kb_window,      # Use kb for window size in LD pruning
+                                 phased = TRUE,
                                  out_put_map = out_put_map,
                                  message = message)
 
@@ -461,7 +476,8 @@ model_execute <- function(
 
     # Define available models and variance structures
     var_cov_str_available <- c("us","corgh","corgv",
-                               "corh","corv","fa1","fa2", "fa3", "fa4",
+                               "corh","corv","fa1",
+                               "fa2", "fa3", "fa4",
                                "rr1","rr2", "rr3", "rr4")
 
     AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare",
