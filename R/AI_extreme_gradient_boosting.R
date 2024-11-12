@@ -1,6 +1,6 @@
 
 # Cross-validation function
-early_stop_for_nround_xgb <- function(X, y, n_folds=5, max_rounds=500, early_stop_rounds=10, params = NULL) {
+early_stop_for_nround_xgb <- function(X, y, n_folds=5, max_rounds=500, early_stop_rounds=50, params = NULL) {
 
   if(isFALSE(is.matrix(X))) X <- as.matrix(X)
 
@@ -129,17 +129,17 @@ AI_Xgb <- function(pheno_object=NULL,
                    centering = FALSE,
                    omic_count = NULL,
                    para_tunning = FALSE,
-                   xgb_paras_tunning= list(Iter_tune = seq(500, 5000, 500), # number of boosting iterations
-                                        learning_rate_tune = c(0.01, 0.05, 0.1), # learning rate, low value means model is more robust to overfitting
-                                        max_depth = c(3, 6, 9),
-                                        rate_drop = c(0.1, 0.15, 0.2),
-                                        skip_drop = c(0.4, 0.5, 0.55),
-                                        xgb_gamma = c(0, 0.01, 0.1),
-                                        colsample_bytree = c(0.5, 0.75, 1),
-                                        min_child_weight = c(1, 3, 5),
-                                        subsample = c(0.5, 0.75, 1),
-                                        L2_tune = c(0, 0.5, 1), #  for linear gbL2 Regularization (Ridge Regression)
-                                        L1_tune = c(0, 0.5, 1)), # for linear gb
+                   xgb_paras_tunning= list(Iter_tune = seq(500, 10000, 500), # number of boosting iterations
+                                        learning_rate_tune = seq(0.001, 0.3, 0.005), # learning rate, low value means model is more robust to overfitting
+                                        max_depth = seq(3, 15, 2),
+                                        rate_drop = seq(0.05, 0.5, 0.05),
+                                        skip_drop = seq(0.05, 1, 0.1),
+                                        xgb_gamma = seq(0, 1, 0.01),
+                                        colsample_bytree = seq(0.1, 1, 0.1),
+                                        min_child_weight = seq(1, 10, 2),
+                                        subsample = seq(0.2, 1, 0.1),
+                                        L2_tune = seq(0, 1, 0.01), #  for linear gbL2 Regularization (Ridge Regression)
+                                        L1_tune = seq(0, 1, 0.01)), # for linear gb
                    resample_method_tune = "cv", # c("cv","boot")
                    number_of_fold_tune = 5,
                    learning_rate = 0.01,

@@ -220,7 +220,7 @@ grm_calculation <- function(
 
   }
 
-
+  Epistasis
 
   switch(method,
          "VanRaden" = {
@@ -234,6 +234,9 @@ grm_calculation <- function(
          },
          "weighted_GRM"={
            Ga <- weighted_GRM(geno_clean, weight)
+         },
+         "Epistasis"={
+           Ga <- Epistasis(geno_clean, freq)
          },
          "weightedGRM_AlleleFreq"={
            Ga <- weightedGRM_AlleleFreq(geno_clean, weight)

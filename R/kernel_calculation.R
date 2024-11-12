@@ -27,8 +27,8 @@
 #'
 kernel_calculation <- function(
     M_matrix_clean = NULL,
-    scaling = FALSE,
-    centering = TRUE,
+    scaling = TRUE,
+    centering = FALSE,
     theta = NULL,
     alpha = 0.5,
     gamma = 1,
@@ -363,7 +363,7 @@ kernel_calculation <- function(
            KRM <- Linear_kernel(M_matrix_clean)
          },
          "Composite_kernel" = {
-           KRM <- composite_kernel(M_matrix_clean, theta, alpha)
+           KRM <- Composite_kernel(M_matrix_clean, theta, alpha)
          },
          # "Anova_radial_basis_kernel" = {
          #   KRM <- Anova_radial_basis_kernel(M_matrix_clean, gamma)
