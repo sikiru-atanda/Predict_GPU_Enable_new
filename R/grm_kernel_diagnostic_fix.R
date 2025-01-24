@@ -44,7 +44,7 @@
 #'This process was infer from ASRgenomics.
 #'It was modified and improved to suite the objective in this package
 #' @export
-grm_kernel_diagnostic_fix <- function(grm_kernel_data = NULL,
+grm_kernel_diagnostic_fixOLD <- function(grm_kernel_data = NULL,
                               high_diag_cut_off = 1.2,
                               low_diag_cut_off = 0.8,
                               duplicate_cut_off = 0.95,
@@ -132,7 +132,7 @@ if (isTRUE(optimize_diagonal) & nrow(diag_element_remove) > 0){
 
   } else if((!is.null(diag_element_remove) & is.null(potential_duplicate)) &  nrow(diag_element_remove)>0){
 
-    res <-  list(lean_matrix = grm_kernel_data_opti,
+    res <-  list(clean_matrix = grm_kernel_data_opti,
                potential_diag_to_remove = diag_element_remove)
 
   } else if((!is.null(diag_element_remove) & !is.null(potential_duplicate)) &  ((nrow(diag_element_remove)>0) & (nrow(potential_duplicate)>0))){

@@ -1119,6 +1119,66 @@ model_execute <- function(
     # validateMultiEnvironment(pheno_data, gen_name, heter_groups, heter_resid, var_cov_str, GS_model, var_cov_str_available,cross_validation, GS_model_cv, msg)
     # validateModelRequirements(GS_model, GS_model_cv, bayes_gblup_valid_models, condition1, condition1_1, condition2, cross_validation, msg)
 
+
+datasets_geno_omic <- list(geno_data, omic1_data, omic2_data, omic3_data)
+dataset_names_geno_omic <- c("geno_data", "omic1_data", "omic2_data", "omic3_data")
+
+geno_omic_rownames_check <- check_names_consistency(datasets_geno_omic, dataset_names_geno_omic)
+
+if(isFALSE(geno_omic_rownames_check)){
+  stop(paste(msg, paste("The omic/and or genotypic data do not have onsistent rownames.",
+                        "provide genomic or omics data with consistent rownames.")), call. = FALSE)
+}
+
+###
+datasets_gmatrix_omic_kernel <- list(gmatrix, omic1_kernel, omic2_kernel, omic3_kernel)
+dataset_names_gmatrix_omic_kernel <- c("gmatrix", "omic1_kernel", "omic2_kernel", "omic3_kernel")
+
+gmatrix_omic_kernel_rownames_check <- check_names_consistency(datasets_gmatrix_omic_kernel, dataset_names_gmatrix_omic_kernel)
+
+if(isFALSE(gmatrix_omic_kernel_rownames_check)){
+  stop(paste(msg, paste("The omic_kernel/and or gmatrix data do not have onsistent row and column names.",
+                        "provide  omic_kernel/and or gmatrix data with consistent row and column names.")), call. = FALSE)
+}
+
+datasets_index <- which(!sapply(datasets_geno_omic, is.null))
+datasets_index_kernel <- which(!sapply(datasets_gmatrix_omic_kernel, is.null))
+
+if(length(datasets_index)!=0 && length(datasets_index_kernel)!=0){
+  datasets_index_kernel <- NULL
+}
+
+if (length(datasets_index) != 0) {
+
+  if(length(rownames(datasets_geno_omic[[1]])) > length(unique(pheno_data[[gen_name]]))){
+    diff_gid <- setdiff(rownames(datasets_geno_omic[[1]]),
+                        unique(pheno_data[[gen_name]]))
+
+  pheno_data <-  add_extra_gid_from_geno_omic_to_pheno(geno_data = datasets_geno_omic[[1]],
+                                                       pheno_data = pheno_data,
+                                                       gen_name = gen_name,
+                                                       response_var = response,
+                                                       heter_group = heter_groups)
+
+  }
+}
+
+#####
+
+if (length(datasets_index_kernel) != 0) {
+
+  if(length(rownames(datasets_gmatrix_omic_kernel[[1]])) > length(unique(pheno_data[[gen_name]]))){
+    diff_gid <- setdiff(rownames(datasets_gmatrix_omic_kernel[[1]]),
+                        unique(pheno_data[[gen_name]]))
+
+    pheno_data <-  add_extra_gid_from_geno_omic_to_pheno(geno_data = datasets_gmatrix_omic_kernel[[1]],
+                                                         pheno_data = pheno_data,
+                                                         gen_name = gen_name,
+                                                         response_var = response,
+                                                         heter_group = heter_groups)
+
+  }
+}
 ### Check phenotype_to_model for details
  #    This serve as gateway between phenotype-precheck function and readiness of
  #    the phenotypic data for model fitting.
@@ -1383,6 +1443,56 @@ model_execute <- function(
  }
 
  ### Ends
+
+ ###################Genetic space test
+
+ if ("test_set" %in% names(pheno_clean)) {
+   test_set <- pheno_clean[["test_set"]]
+
+   test_set <- as.character(unique(test_set))
+
+   datasets_index_kernel <- which(!sapply(gmatrix_kernel_model_ready_list, is.null))
+   datasets_index_geno_omic <- which(!sapply(geno_omic_model_ready_list, is.null))
+
+   if (length(datasets_index_geno_omic) != 0) {
+     M <- geno_omic_model_ready_list[datasets_index_geno_omic]
+     M <- do.call(rbind, M)
+
+     sik <- tryCatch({
+       evaluate_genetic_space(M = M,
+                              train_ids = setdiff(rownames(M), test_set),
+                              test_ids = test_set)
+     }, error = function(e) {
+       message("Error in evaluating genetic space with geno and/or omic data: ", e$message)
+       NULL
+     })
+   } else if (length(datasets_index_kernel) != 0) {
+     M <- gmatrix_kernel_model_ready_list[[1]]
+     sik <- tryCatch({
+       evaluate_genetic_space(M = M,
+                              train_ids = setdiff(rownames(M), test_set),
+                              test_ids = test_set)
+     }, error = function(e) {
+       message("Error in evaluating genetic space with kernel data: ", e$message)
+       NULL
+     })
+   } else {
+     sik <- NULL
+   }
+
+   if (!is.null(sik)) {
+     tryCatch({
+       if (!is.null(sik$plot)) {
+         print(sik$plot)
+         genetic_space_recommendation(recommendation = sik$recommendation)
+       }
+     }, error = function(e) {
+       message("Error processing 'sik': ", e$message)
+     })
+   }
+ }
+
+ #######################
 #################################################################
 ############# Cross-Validation Start
 
