@@ -289,274 +289,346 @@ fixed_term_model <- function(fixed_term = NULL,
 #' print(adjusted_models)
 #'
 #' @export
+
 random_term_model <- function(rand_terms = NULL,
                               GS_model = NULL,
                               gen_name = NULL,
                               rand_terms_model_bayesian = NULL,
-                              message = TRUE){
+                              message = TRUE) {
+  msg <- "\n==================================================\n"
 
+  # Check for interaction and non-interaction terms
+  rand_terms_no_inter <- rand_terms[!grepl(":", rand_terms)]
+  rand_terms_inter <- rand_terms[grepl(":", rand_terms)]
 
-  msg <- "\n ==================================================\n"
-
-  #####
-  #### Check for Interaction and and non-interaction term
-  ## No interaction term
-  rand_terms_no_inter <-  rand_terms[!grepl(":", rand_terms)]
-
-  ## Interaction term
-  check_rand_inter <-  rand_terms[grepl(":", rand_terms)]
-
-  non_gen_pos_mod <- NULL
-
-  ## Start with the No interaction terms
-  if(length(rand_terms_no_inter)!=0){
-    ## Check if gen_name is present and store the position
-    gen_pos_mod <-   match(gen_name, rand_terms)
-    if(length(gen_pos_mod)==0){stop(paste(message(msg), paste(gen_name, "effect is missing")), call. = FALSE)}
-    if(length(gen_pos_mod)>1){stop(paste(message(msg), paste(gen_name, "effect should not be greater than 1")), call. = FALSE)}
-    ## Extract other terms from the rand_terms_no_inter  expect the gen_name
-    rand_terms_no_inter_no_gen <-  rand_terms_no_inter[!rand_terms_no_inter%in%gen_name]
-    ## Get the position of other terms (No interaction) in the random that is not gen_name
-    non_gen_pos_mod <- match(rand_terms_no_inter_no_gen, rand_terms)
-
+  # Validate gen_name presence
+  gen_pos <- match(gen_name, rand_terms)
+  if (is.na(gen_pos)) {
+    stop(paste(msg, gen_name, "effect is missing"), call. = FALSE)
+  }
+  if (sum(rand_terms == gen_name) > 1) {
+    stop(paste(msg, gen_name, "effect should not appear more than once"), call. = FALSE)
   }
 
-  ######## Initialize step For model adjustment for the random term with interaction
+  # Separate non-genotype terms
+  non_gen_terms <- rand_terms_no_inter[rand_terms_no_inter != gen_name]
 
-  if(length(check_rand_inter)!=0){
+  # Identify interaction terms involving gen_name
+  inter_gen_terms <- rand_terms_inter[grepl(gen_name, rand_terms_inter)]
+  non_gen_inter_terms <- setdiff(rand_terms_inter, inter_gen_terms)
 
-    test_present_of_geno <-  grep(gen_name, check_rand_inter, value = TRUE)
-
-    if(length(test_present_of_geno)!=0 | !is.na(test_present_of_geno)){
-
-      inter_gen_pos_mod <-  match(test_present_of_geno, rand_terms)
-
-      non_gen_inter_test <-   check_rand_inter[!check_rand_inter%in%test_present_of_geno]
-
-    } else {
-
-      non_gen_inter_test <-  NULL
-
-      inter_gen_pos_mod <-  NULL
-    }
-
-    if(!is.null(non_gen_inter_test)){
-
-      inter_non_gen_pos_mod <-  match(non_gen_inter_test, rand_terms)
-
-    }
-
-  } ## End
-
-  ### Each random term will have a specific model for parameter estimate.
-  ## It is expected the user will provide model for each random term,
-  ## In a scenario where the model provided is not equal to the number of random terms
-  ## or no model was provided at all. This next line of code take care of it.
-
-  ### If user provide only the GS_model and random terms model is missing
-  ### Especially when there is more than one random term
-
+  # Default valid Bayesian models
   valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS")
-  if(is.null(rand_terms_model_bayesian) & !is.null(GS_model)){
-    #warning(paste(msg, "The model for ranom term(s) is missing. We fix it for you"))
 
-    ## Check to see which GS_model(s) the user provide
-    #if(!is.null(GS_model)){
-    ### Here the GS_model is of length rand_terms
-    if(length(GS_model)==length(rand_terms)){
-      ### Check GS_model to be consistent with models present in the engine
-      mod_present_in_GS_model = GS_model[GS_model%in% valid_models]
-      if(length(mod_present_in_GS_model)==length(rand_terms)){
-        rand_terms_model_bayesian <-  GS_model
-        #rand_mod_copy = GS_model
+  # Validate and assign models
+  assign_models <- function(rand_terms, provided_models, default_model) {
+    # Validate provided models
+    if (!is.null(provided_models)) {
+      valid_provided <- provided_models[provided_models %in% valid_models]
+      if (length(valid_provided) != length(rand_terms)) {
+        warning(paste(msg, "Provided models do not match the number of random terms. Using defaults."))
+        return(rep(default_model, length(rand_terms)))
       }
-      ### if GS_model is less than the length of rand_terms
-    } else{
-      mod_present_in_GS_model <-  GS_model[GS_model%in% valid_models]
-      if(length(mod_present_in_GS_model)!=0){
-        #rand_mod_copy = mod_present_in_GS_model
-        if(message){
-          warning(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed.")
-        }
-        mod_len = length(rand_terms) - length(mod_present_in_GS_model)
-
-        rand_terms_model_bayesian = c(mod_present_in_GS_model,  rep("BRR",  mod_len))
-        rand_terms_model_bayesian[gen_pos_mod] <- GS_model[1]
-
-        ## For other terms in random effect aside gen_name
-        if(!is.null(non_gen_pos_mod)){
-
-          rand_terms_model_bayesian[non_gen_pos_mod] <-  "BRR"
-
-        } ## end
-
-        #### Random interaction terms
-        if(length(check_rand_inter)!=0){
-          ### For gen_name part of interaction
-          if(!is.na(inter_gen_pos_mod) | length(inter_gen_pos_mod)!=0){
-
-            ### This account for multi-kernel
-            rand_terms_model_bayesian[inter_gen_pos_mod] <- "RKHS"
-
-
-          }
-
-          ### For Non gen_name part of interaction
-          if(length(non_gen_inter_test)!=0){
-
-            rand_terms_model_bayesian[non_gen_inter_test] <- "BRR"
-
-          }
-
-        } ## End of random interaction terms
-
-
-      } else {
-        stop(paste(msg,'Provided appropiate name for the Baysian model.'), call. = FALSE)
-      }
+      return(valid_provided)
     }
+    # Assign default model if none provided
+    return(rep(default_model, length(rand_terms)))
+  }
 
-    #}
+  # Assign models for each term
+  rand_terms_model_bayesian <- assign_models(rand_terms, rand_terms_model_bayesian, "BRR")
+  if (!is.null(GS_model)) {
+    GS_model <- assign_models(rand_terms, GS_model, "BRR")
+    rand_terms_model_bayesian[gen_pos] <- GS_model[1]
+  }
 
-  } else if (!is.null(rand_terms_model_bayesian) & is.null(GS_model)){
-    # if(length(rand_terms_model_bayesian)!= length(rand_terms)){
-    #   warning(paste(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed"))
-    # }
-    ### This will be used only for the genetic effect assuming the user only provide that
-    if(length(rand_terms_model_bayesian)!= length(rand_terms)){
-      if(isTRUE(message)){
-        warning(paste(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed."))
-      }
-      ### Check GS_model to be consistent with models present in the engine
-      mod_present_in_model_bayesian = rand_terms_model_bayesian[rand_terms_model_bayesian%in% valid_models]
-      if(length(mod_present_in_model_bayesian)==0){
-
-        stop(paste(msg,'Provided appropiate name for the Baysian model.\n '), call. = FALSE)
-
-      } else {
-
-        mod_len <-  (length(rand_terms) - length(mod_present_in_model_bayesian))
-        rand_terms_model_bayesian <-  c(mod_present_in_GS_model,  rep("BRR",  mod_len))
-        #rand_mod_copy = rand_terms_model_bayesian
-
-      }
-
-      rand_terms_model_bayesian[gen_pos_mod] <- GS_model[1]
-
-      ## For other terms in random effect aside gen_name
-      #if((!is.null(non_gen_pos_mod) & length(non_gen_pos_mod)==0) & !is.na(non_gen_pos_mod)){
-      if(!is.null(non_gen_pos_mod)){
-        rand_terms_model_bayesian[non_gen_pos_mod] <-  "BRR"
-
-      } ## end
-
-      #### Random interaction terms
-      if(length(check_rand_inter)!=0){
-        ### For gen_name part of interaction
-        if(!is.na(inter_gen_pos_mod) | length(inter_gen_pos_mod)!=0){
-
-          ### This account for multi-kernel
-          rand_terms_model_bayesian[inter_gen_pos_mod] <-  "RKHS"
-
-
-        }
-
-        ### For Non gen_name part of interaction
-        if(length(non_gen_inter_test)!=0){
-
-          rand_terms_model_bayesian[non_gen_inter_test] <-  "BRR"
-
-        }
-
-      } ## End of random interaction terms
-
+  # Handle interaction terms
+  if (length(rand_terms_inter) > 0) {
+    if (length(inter_gen_terms) > 0) {
+      rand_terms_model_bayesian[match(inter_gen_terms, rand_terms)] <- "RKHS"
     }
+    if (length(non_gen_inter_terms) > 0) {
+      rand_terms_model_bayesian[match(non_gen_inter_terms, rand_terms)] <- "BRR"
+    }
+  }
 
-  }else {
+  # Final check for consistency
+  if (length(rand_terms_model_bayesian) != length(rand_terms)) {
+    stop(paste(msg, "Mismatch between random terms and assigned models."), call. = FALSE)
+  }
 
-    ### When user provide provide both GS_model and rand_terms_model_bayesian
-    if(!is.null(rand_terms_model_bayesian) & !is.null(GS_model)){
- ### Check which GS_model the user supply, it has it to match the available models
-      mod_present_in_GS_model <- GS_model[GS_model%in% valid_models]
-      if(length(mod_present_in_GS_model)==0){
-        stop(paste(msg,'Provided appropiate name for the baysian model in GS_model.'), call. = FALSE)
-      }
-      ### Check which rand_terms_model_bayesian the user supply, it has it to match the available models
-      mod_present_in_model_bayesian <- rand_terms_model_bayesian[rand_terms_model_bayesian%in% valid_models]
-      if(length(mod_present_in_model_bayesian)==0){
-        stop(paste(msg,'Provided appropiate name for the baysian model in rand_terms_model_bayesian.'), call. = FALSE)
-      }
-      ### Check if the models term define is greater than the random term
-      if(length(rand_terms_model_bayesian)>length(rand_terms)){
-        stop(paste(msg,'The number of model is greater than the random terms.'), call. = FALSE)
-      }
-      ##
-      if(length(mod_present_in_GS_model)!=0 & length(mod_present_in_model_bayesian)!=0){
-
-        ## Combined all the models
-        rand_terms_model_bayesian  <- c(GS_model, rand_terms_model_bayesian)
-
-        if(length(rand_terms_model_bayesian)!= length(rand_terms)){
-
-          if(length(rand_terms_model_bayesian)>length(rand_terms)){
-            #stop(print(paste(msg,'The number of model is greater than the random terms')), call. = FALSE)
-            rand_terms_model_bayesian <-  rand_terms_model_bayesian[length(rand_terms)]
-            }
-
-          if(length(rand_terms_model_bayesian)<length(rand_terms)){
-          mod_len <-  (length(rand_terms) - length(rand_terms_model_bayesian))
-          rand_terms_model_bayesian <-  c(rand_terms_model_bayesian,  rep("BRR",  mod_len))
-
-          }
-
-        }
-
-        rand_terms_model_bayesian[gen_pos_mod] <-  GS_model[1]
-      }
-      ###
-      ###  rand_terms_model_bayesian[gen_pos_mod] = GS_model[1]
-      ## For other terms in random effect aside gen_name
-      if(!is.null(non_gen_pos_mod)){
-
-        rand_terms_model_bayesian[non_gen_pos_mod] <-  "BRR"
-
-      } ## end
-
-      #### Random interaction terms
-      if(length(check_rand_inter)!=0){
-        ### For gen_name part of interaction
-        if(!is.na(inter_gen_pos_mod) | length(inter_gen_pos_mod)!=0){
-
-          ### This account for multi-kernel
-          rand_terms_model_bayesian[inter_gen_pos_mod] <-  "RKHS"
-
-
-        }
-
-        ### For Non gen_name part of interaction
-        if(length(non_gen_inter_test)!=0){
-
-          rand_terms_model_bayesian[non_gen_inter_test] <-  "BRR"
-
-        }
-
-      } ## End of random interaction terms
-
-
-
-    } ## Sik
-
-
-  } #ENd
-  ####
-
-
-
-
-  #} ## End else
   return(rand_terms_model_bayesian)
-
 }
+
+
+# random_term_model <- function(rand_terms = NULL,
+#                               GS_model = NULL,
+#                               gen_name = NULL,
+#                               rand_terms_model_bayesian = NULL,
+#                               message = TRUE){
+#
+#
+#   msg <- "\n ==================================================\n"
+#
+#   #####
+#   #### Check for Interaction and and non-interaction term
+#   ## No interaction term
+#   rand_terms_no_inter <-  rand_terms[!grepl(":", rand_terms)]
+#
+#   ## Interaction term
+#   check_rand_inter <-  rand_terms[grepl(":", rand_terms)]
+#
+#   non_gen_pos_mod <- NULL
+#
+#   ## Start with the No interaction terms
+#   if(length(rand_terms_no_inter)!=0){
+#     ## Check if gen_name is present and store the position
+#     gen_pos_mod <-   match(gen_name, rand_terms)
+#     if(length(gen_pos_mod)==0){stop(paste(message(msg), paste(gen_name, "effect is missing")), call. = FALSE)}
+#     if(length(gen_pos_mod)>1){stop(paste(message(msg), paste(gen_name, "effect should not be greater than 1")), call. = FALSE)}
+#     ## Extract other terms from the rand_terms_no_inter  expect the gen_name
+#     rand_terms_no_inter_no_gen <-  rand_terms_no_inter[!rand_terms_no_inter%in%gen_name]
+#     ## Get the position of other terms (No interaction) in the random that is not gen_name
+#     non_gen_pos_mod <- match(rand_terms_no_inter_no_gen, rand_terms)
+#
+#   }
+#
+#   ######## Initialize step For model adjustment for the random term with interaction
+#
+#   if(length(check_rand_inter)!=0){
+#
+#     test_present_of_geno <-  grep(gen_name, check_rand_inter, value = TRUE)
+#
+#     if(length(test_present_of_geno)!=0 | !is.na(test_present_of_geno)){
+#
+#       inter_gen_pos_mod <-  match(test_present_of_geno, rand_terms)
+#
+#       non_gen_inter_test <-   check_rand_inter[!check_rand_inter%in%test_present_of_geno]
+#
+#     } else {
+#
+#       non_gen_inter_test <-  NULL
+#
+#       inter_gen_pos_mod <-  NULL
+#     }
+#
+#     if(!is.null(non_gen_inter_test)){
+#
+#       inter_non_gen_pos_mod <-  match(non_gen_inter_test, rand_terms)
+#
+#     }
+#
+#   } ## End
+#
+#   ### Each random term will have a specific model for parameter estimate.
+#   ## It is expected the user will provide model for each random term,
+#   ## In a scenario where the model provided is not equal to the number of random terms
+#   ## or no model was provided at all. This next line of code take care of it.
+#
+#   ### If user provide only the GS_model and random terms model is missing
+#   ### Especially when there is more than one random term
+#
+#   valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS")
+#   if(is.null(rand_terms_model_bayesian) & !is.null(GS_model)){
+#     #warning(paste(msg, "The model for ranom term(s) is missing. We fix it for you"))
+#
+#     ## Check to see which GS_model(s) the user provide
+#     #if(!is.null(GS_model)){
+#     ### Here the GS_model is of length rand_terms
+#     if(length(GS_model)==length(rand_terms)){
+#       ### Check GS_model to be consistent with models present in the engine
+#       mod_present_in_GS_model = GS_model[GS_model%in% valid_models]
+#       if(length(mod_present_in_GS_model)==length(rand_terms)){
+#         rand_terms_model_bayesian <-  GS_model
+#         #rand_mod_copy = GS_model
+#       }
+#       ### if GS_model is less than the length of rand_terms
+#     } else{
+#       mod_present_in_GS_model <-  GS_model[GS_model%in% valid_models]
+#       if(length(mod_present_in_GS_model)!=0){
+#         #rand_mod_copy = mod_present_in_GS_model
+#         if(message){
+#           warning(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed.")
+#         }
+#         mod_len = length(rand_terms) - length(mod_present_in_GS_model)
+#
+#         rand_terms_model_bayesian = c(mod_present_in_GS_model,  rep("BRR",  mod_len))
+#         rand_terms_model_bayesian[gen_pos_mod] <- GS_model[1]
+#
+#         ## For other terms in random effect aside gen_name
+#         if(!is.null(non_gen_pos_mod)){
+#
+#           rand_terms_model_bayesian[non_gen_pos_mod] <-  "BRR"
+#
+#         } ## end
+#
+#         #### Random interaction terms
+#         if(length(check_rand_inter)!=0){
+#           ### For gen_name part of interaction
+#           if(!is.na(inter_gen_pos_mod) | length(inter_gen_pos_mod)!=0){
+#
+#             ### This account for multi-kernel
+#             rand_terms_model_bayesian[inter_gen_pos_mod] <- "RKHS"
+#
+#
+#           }
+#
+#           ### For Non gen_name part of interaction
+#           if(length(non_gen_inter_test)!=0){
+#
+#             rand_terms_model_bayesian[non_gen_inter_test] <- "BRR"
+#
+#           }
+#
+#         } ## End of random interaction terms
+#
+#
+#       } else {
+#         stop(paste(msg,'Provided appropiate name for the Baysian model.'), call. = FALSE)
+#       }
+#     }
+#
+#     #}
+#
+#   } else if (!is.null(rand_terms_model_bayesian) & is.null(GS_model)){
+#     # if(length(rand_terms_model_bayesian)!= length(rand_terms)){
+#     #   warning(paste(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed"))
+#     # }
+#     ### This will be used only for the genetic effect assuming the user only provide that
+#     if(length(rand_terms_model_bayesian)!= length(rand_terms)){
+#       if(isTRUE(message)){
+#         warning(paste(msg, "The model for random term(s) should be equal to the total number of random term.\n\t Default model (BRR) was assigned, provide desired models if needed."))
+#       }
+#       ### Check GS_model to be consistent with models present in the engine
+#       mod_present_in_model_bayesian = rand_terms_model_bayesian[rand_terms_model_bayesian%in% valid_models]
+#       if(length(mod_present_in_model_bayesian)==0){
+#
+#         stop(paste(msg,'Provided appropiate name for the Baysian model.\n '), call. = FALSE)
+#
+#       } else {
+#
+#         mod_len <-  (length(rand_terms) - length(mod_present_in_model_bayesian))
+#         rand_terms_model_bayesian <-  c(mod_present_in_GS_model,  rep("BRR",  mod_len))
+#         #rand_mod_copy = rand_terms_model_bayesian
+#
+#       }
+#
+#       rand_terms_model_bayesian[gen_pos_mod] <- GS_model[1]
+#
+#       ## For other terms in random effect aside gen_name
+#       #if((!is.null(non_gen_pos_mod) & length(non_gen_pos_mod)==0) & !is.na(non_gen_pos_mod)){
+#       if(!is.null(non_gen_pos_mod)){
+#         rand_terms_model_bayesian[non_gen_pos_mod] <-  "BRR"
+#
+#       } ## end
+#
+#       #### Random interaction terms
+#       if(length(check_rand_inter)!=0){
+#         ### For gen_name part of interaction
+#         if(!is.na(inter_gen_pos_mod) | length(inter_gen_pos_mod)!=0){
+#
+#           ### This account for multi-kernel
+#           rand_terms_model_bayesian[inter_gen_pos_mod] <-  "RKHS"
+#
+#
+#         }
+#
+#         ### For Non gen_name part of interaction
+#         if(length(non_gen_inter_test)!=0){
+#
+#           rand_terms_model_bayesian[non_gen_inter_test] <-  "BRR"
+#
+#         }
+#
+#       } ## End of random interaction terms
+#
+#     }
+#
+#   }else {
+#
+#     ### When user provide provide both GS_model and rand_terms_model_bayesian
+#     if(!is.null(rand_terms_model_bayesian) & !is.null(GS_model)){
+#  ### Check which GS_model the user supply, it has it to match the available models
+#       mod_present_in_GS_model <- GS_model[GS_model%in% valid_models]
+#       if(length(mod_present_in_GS_model)==0){
+#         stop(paste(msg,'Provided appropiate name for the baysian model in GS_model.'), call. = FALSE)
+#       }
+#       ### Check which rand_terms_model_bayesian the user supply, it has it to match the available models
+#       mod_present_in_model_bayesian <- rand_terms_model_bayesian[rand_terms_model_bayesian%in% valid_models]
+#       if(length(mod_present_in_model_bayesian)==0){
+#         stop(paste(msg,'Provided appropiate name for the baysian model in rand_terms_model_bayesian.'), call. = FALSE)
+#       }
+#       ### Check if the models term define is greater than the random term
+#       if(length(rand_terms_model_bayesian)>length(rand_terms)){
+#         stop(paste(msg,'The number of model is greater than the random terms.'), call. = FALSE)
+#       }
+#       ##
+#       if(length(mod_present_in_GS_model)!=0 & length(mod_present_in_model_bayesian)!=0){
+#
+#         ## Combined all the models
+#         rand_terms_model_bayesian  <- c(GS_model, rand_terms_model_bayesian)
+#
+#         if(length(rand_terms_model_bayesian)!= length(rand_terms)){
+#
+#           if(length(rand_terms_model_bayesian)>length(rand_terms)){
+#             #stop(print(paste(msg,'The number of model is greater than the random terms')), call. = FALSE)
+#             rand_terms_model_bayesian <-  rand_terms_model_bayesian[length(rand_terms)]
+#             }
+#
+#           if(length(rand_terms_model_bayesian)<length(rand_terms)){
+#           mod_len <-  (length(rand_terms) - length(rand_terms_model_bayesian))
+#           rand_terms_model_bayesian <-  c(rand_terms_model_bayesian,  rep("BRR",  mod_len))
+#
+#           }
+#
+#         }
+#
+#         rand_terms_model_bayesian[gen_pos_mod] <-  GS_model[1]
+#       }
+#       ###
+#       ###  rand_terms_model_bayesian[gen_pos_mod] = GS_model[1]
+#       ## For other terms in random effect aside gen_name
+#       if(!is.null(non_gen_pos_mod)){
+#
+#         rand_terms_model_bayesian[non_gen_pos_mod] <-  "BRR"
+#
+#       } ## end
+#
+#       #### Random interaction terms
+#       if(length(check_rand_inter)!=0){
+#         ### For gen_name part of interaction
+#         if(!is.na(inter_gen_pos_mod) | length(inter_gen_pos_mod)!=0){
+#
+#           ### This account for multi-kernel
+#           rand_terms_model_bayesian[inter_gen_pos_mod] <-  "RKHS"
+#
+#
+#         }
+#
+#         ### For Non gen_name part of interaction
+#         if(length(non_gen_inter_test)!=0){
+#
+#           rand_terms_model_bayesian[non_gen_inter_test] <-  "BRR"
+#
+#         }
+#
+#       } ## End of random interaction terms
+#
+#
+#
+#     } ## Sik
+#
+#
+#   } #ENd
+#   ####
+#
+#
+#
+#
+#   #} ## End else
+#   return(rand_terms_model_bayesian)
+#
+# }
 
 
 # ## Check the random term provided by the users and provide one in scenario where

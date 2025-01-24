@@ -304,7 +304,7 @@ subtitle <- sprintf("Highly Accurate: %.2f%% | Moderate Error: %.2f%% | Signific
 p4 <- ggplot2::ggplot(df, ggplot2::aes(x = observed, y = predicted)) +
       ggplot2::geom_point(ggplot2::aes(color = difference, shape = category), size = 2) +  # Scatter plot points colored by the difference
       ggplot2::geom_smooth(ggplot2::aes(linetype = "Linear Fit"), formula = y ~ x, method = "lm", se = FALSE, color = "red") +  # Linear fit line (red)
-      ggplot2::geom_smooth(ggplot2::aes(linetype = "LOESS Fit"), formula = y ~ x, method = "loess", se = FALSE, color = "green", span = 0.5) + # LOESS fit line (green)
+      ggplot2::geom_smooth(ggplot2::aes(linetype = "LOESS Fit"), formula = y ~ x, method = "loess", se = FALSE, color = "green", span = 1) + # LOESS fit line (green) # span =0.5
       ggplot2::scale_color_gradient(low = "blue", high = "red", name = "Abs.diff") + # Gradient color scale
       ggplot2::scale_shape_manual(values = c("Highly Accurate" = 16, "Moderate Error" = 17, "Significant Error" = 18), name = "Category") + # Manual shape scale
       ggplot2::labs(

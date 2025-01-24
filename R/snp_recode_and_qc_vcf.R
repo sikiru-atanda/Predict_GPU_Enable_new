@@ -80,31 +80,65 @@ filter_heterozygous <- function(vcf_data,
 }
 
 # Function to recode genotypes
-recode_genotypes <- function(vcf_data, recode_format) {
-  if(!is.null(recode_format)){
-    if (recode_format %in% c("0,1,2", "-1,0,1")) {
-      for (j in 10:ncol(vcf_data)) {
-        vcf_data[[j]] <- lapply(vcf_data[[j]], function(x) {
-          if (recode_format == "0,1,2") {
-            x[x %in% c("0|0", "0/0")] <- 0
-            x[x %in% c("0|1", "1|0", "0/1", "1/0")] <- 1
-            x[x %in% c("1|1", "1/1")] <- 2
-            x[x %in% c("./.", "NA", "NA/NA")] <- NA
-          } else if (recode_format == "-1,0,1") {
-            x[x %in% c("0|0", "0/0")] <- -1
-            x[x %in% c("0|1", "1|0", "0/1", "1/0")] <- 0
-            x[x %in% c("1|1", "1/1")] <- 1
-            x[x %in% c("./.", "NA", "NA/NA")] <- NA
-          }
-          x = as.double(as.character(unlist(x)))
-          return(x)
-        })
-      }
+recode_genotypes <- function(vcf_data, recode_format = "0,1,2") {
+  if (!is.null(recode_format) && recode_format %in% c("0,1,2", "-1,0,1")) {
+    # Convert to data.table if not already
+    if (!data.table::is.data.table(vcf_data)) {
+      data.table::setDT(vcf_data)
+    }
 
+    # Get genotype columns (columns 10 onwards)
+    geno_cols <- names(vcf_data)[10:ncol(vcf_data)]
+
+    # Define the recoding values based on format
+    recode_values <- if (recode_format == "0,1,2") {
+      c(0, 1, 2)
+    } else {
+      c(-1, 0, 1)
+    }
+
+    # Apply recoding to each genotype column
+    for (col in geno_cols) {
+      data.table::set(vcf_data, j = col, value = {
+        data.table::fcase(
+          vcf_data[[col]] %in% c("0|0", "0/0"), recode_values[1],
+          vcf_data[[col]] %in% c("0|1", "1|0", "0/1", "1/0"), recode_values[2],
+          vcf_data[[col]] %in% c("1|1", "1/1"), recode_values[3],
+          vcf_data[[col]] %in% c("./.", "NA", "NA/NA"), NA_real_,
+          default = NA_real_
+        )
+      })
     }
   }
+
   return(vcf_data)
 }
+
+# recode_genotypes <- function(vcf_data, recode_format) {
+#   if(!is.null(recode_format)){
+#     if (recode_format %in% c("0,1,2", "-1,0,1")) {
+#       for (j in 10:ncol(vcf_data)) {
+#         vcf_data[[j]] <- lapply(vcf_data[[j]], function(x) {
+#           if (recode_format == "0,1,2") {
+#             x[x %in% c("0|0", "0/0")] <- 0
+#             x[x %in% c("0|1", "1|0", "0/1", "1/0")] <- 1
+#             x[x %in% c("1|1", "1/1")] <- 2
+#             x[x %in% c("./.", "NA", "NA/NA")] <- NA
+#           } else if (recode_format == "-1,0,1") {
+#             x[x %in% c("0|0", "0/0")] <- -1
+#             x[x %in% c("0|1", "1|0", "0/1", "1/0")] <- 0
+#             x[x %in% c("1|1", "1/1")] <- 1
+#             x[x %in% c("./.", "NA", "NA/NA")] <- NA
+#           }
+#           x = as.double(as.character(unlist(x)))
+#           return(x)
+#         })
+#       }
+#
+#     }
+#   }
+#   return(vcf_data)
+# }
 
 # Function to process a single batch
 #' Title
