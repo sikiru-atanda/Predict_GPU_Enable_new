@@ -281,6 +281,7 @@ model_execute <- function(
     het_threshold = 0.1,
     ind_call_rate_threshold = 0.9,
     snp_call_rate_threshold = 0.9,
+    test_train_genetic_space = FALSE,
     impute = TRUE,
     impute_omic = TRUE,
     imputation_method = "knn",
@@ -893,10 +894,15 @@ model_execute <- function(
     if(!is.null(engine)){
       # Create a list of omics data and kernel
       omics <- list(omic1_data, omic2_data, omic3_data, geno_data)
+      omics_names <- c("omic1_data", "omic2_data", "omic3_data", "geno_data")
+      names(omics) <- omics_names
+
       omics_kernel <- list(omic1_kernel, omic2_kernel, omic3_kernel, gmatrix, gkernel)
 
+      # Remove NULL elements the list
+      omics <- omics[!sapply(omics, is.null)]
       # Remove NULL elements from the list
-      omics <- Filter(Negate(is.null), omics)
+      #omics <- Filter(Negate(is.null), omics)
       omics_kernel <-  Filter(Negate(is.null), omics_kernel)
       # Define a function to check if a matrix is square
       is_square_matrix <- function(mat) {
@@ -912,13 +918,25 @@ model_execute <- function(
         if (any(square_matrices)) {
           stop(paste(msg, "Omic data or geno data is a square matrix. If this is a relationship matrix, provide it as: omic_kernel or gmatrix.\n"), call. = FALSE)
           #stop("Omic data or geno data is a square matrix. If this is a relationship matrix, provide it as: omic_kernel or gmatrix.\n", call. = FALSE)
-        } else {
-          # Check if kernel_method is NULL
-          if (is.null(kernel_method) & any(square_matrices)) {
-            stop(paste(msg,"Provide Kernel method to calculate relationship matrix for omic data to fit GBLUP model.\n"), call. = FALSE)
-            #stop("Provide Kernel method to calculate relationship matrix for omic data to fit GBLUP model.\n", call. = FALSE)
-          }
         }
+          # Check if kernel_method is NULL
+          if("geno_data"%in%names(omics)){
+            if (is.null(gmatrix_method)) {
+              stop(paste(msg,"Provide gmatrix method if you use genomic data to calculate relationship matrix to fit GBLUP model.\n"), call. = FALSE)
+              #stop("Provide Kernel method to calculate relationship matrix for omic data to fit GBLUP model.\n", call. = FALSE)
+            }
+
+          }
+
+          if (length(grep("omic", names(omics))) > 0) {
+            if (is.null(kernel_method)) {
+              stop(paste(msg,"Provide Kernel method if you use omics data to calculate relationship matrix to fit GBLUP model.\n"), call. = FALSE)
+              #stop("Provide Kernel method to calculate relationship matrix for omic data to fit GBLUP model.\n", call. = FALSE)
+            }
+
+          }
+
+        #}
 
       }
       ###
@@ -1446,7 +1464,7 @@ if (length(datasets_index_kernel) != 0) {
 
  ###################Genetic space test
 
- if ("test_set" %in% names(pheno_clean)) {
+ if ("test_set" %in% names(pheno_clean) && isTRUE(test_train_genetic_space)) {
    test_set <- pheno_clean[["test_set"]]
 
    test_set <- as.character(unique(test_set))
