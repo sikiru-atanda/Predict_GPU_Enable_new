@@ -587,6 +587,12 @@ model_execute <- function(
         stop(paste(msg, "GS_model_cv and cross_validation_meth cannot be null when cross_validation is TRUE"), call. = FALSE)
       }
 
+      if (!is.null(GS_model) & !is.null(GS_model_cv)) {
+        if (!all(GS_model %in% GS_model_cv)) {
+          GS_model <- NULL
+        }
+      }
+
         if(!all(GS_model_cv%in%all_models_avail)){
           stop(paste(msg,"Invalid model. Choose from: ",
                paste(all_models_avail, collapse = ", ")), call. = FALSE)
@@ -702,6 +708,7 @@ model_execute <- function(
     }
 
     }
+
 
     # Check for mandatory phenotypic data. The chain of loop is important to ease of checking
     ## and the pheno_data_train and pheno_data_test are converted to pheno_data to make life eaier for checking
@@ -889,6 +896,12 @@ model_execute <- function(
     # Check for ASReml requirement for GBLUP
     ## Define error message
     error_message <- "ASReml software is required to fit GBLUP for single or multi-environment.\n"
+
+    if (!is.null(engine)) {
+      if (!"GBLUP" %in% na.omit(c(GS_model, GS_model_cv))) {
+        engine <- NULL
+      }
+    }
 
     ### Check that when asreml is used required format for omic data is provided
     if(!is.null(engine)){
