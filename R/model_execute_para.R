@@ -1149,35 +1149,73 @@ model_execute <- function(
     # checkForASReml(engine, GS_model, GS_model_cv, cross_validation, msg)
     # validateMultiEnvironment(pheno_data, gen_name, heter_groups, heter_resid, var_cov_str, GS_model, var_cov_str_available,cross_validation, GS_model_cv, msg)
     # validateModelRequirements(GS_model, GS_model_cv, bayes_gblup_valid_models, condition1, condition1_1, condition2, cross_validation, msg)
+###############
+    # Ensure response_var exist in df
+    if (!all(response %in% colnames(pheno_data))) {
+      stop(paste(msg, "Some response variables do not exist in the dataframe."), call. = FALSE)
+    }
 
+    # Create a logical matrix indicating NA positions for response variables
+    na_matrix <- is.na(pheno_data[response])
 
-datasets_geno_omic <- list(geno_data, omic1_data, omic2_data, omic3_data)
-dataset_names_geno_omic <- c("geno_data", "omic1_data", "omic2_data", "omic3_data")
+    # Check if all rows have the same NA pattern
+    # Ensure response_var exist in df
+    if (!all(response %in% colnames(pheno_data))) {
+      stop(paste(msg, "Some response variables do not exist in the dataframe."), call. = FALSE)
+    }
 
-geno_omic_rownames_check <- check_names_consistency(datasets_geno_omic, dataset_names_geno_omic)
+    # Create a logical matrix indicating NA positions for response variables
+    na_matrix <- is.na(pheno_data[response])
 
-if(isFALSE(geno_omic_rownames_check)){
-  stop(paste(msg, paste("The omic/and or genotypic data do not have onsistent rownames.",
-                        "provide genomic or omics data with consistent rownames.")), call. = FALSE)
-}
+    # Check if all rows have the same NA pattern
+    # Ensure response_var exist in df
+    if (!all(response %in% colnames(pheno_data))) {
+      stop(paste(msg, "Some response variables do not exist in the dataframe."), call. = FALSE)
+    }
 
-###
-datasets_gmatrix_omic_kernel <- list(gmatrix, omic1_kernel, omic2_kernel, omic3_kernel)
-dataset_names_gmatrix_omic_kernel <- c("gmatrix", "omic1_kernel", "omic2_kernel", "omic3_kernel")
+    # Create a logical matrix indicating NA positions for response variables
+    na_matrix <- is.na(pheno_data[response])
 
-gmatrix_omic_kernel_rownames_check <- check_names_consistency(datasets_gmatrix_omic_kernel, dataset_names_gmatrix_omic_kernel)
+    # Check if all rows have the same NA pattern
+    if (any(na_matrix)) { # Only checks when NA exists
+      if (!all(rowSums(na_matrix) %in% c(0, length(response)))) {
+        stop(paste(msg, "Not all response variable columns have NAs in the same positions."), call. = FALSE)
+      }
+    }
 
-if(isFALSE(gmatrix_omic_kernel_rownames_check)){
-  stop(paste(msg, paste("The omic_kernel/and or gmatrix data do not have onsistent row and column names.",
-                        "provide  omic_kernel/and or gmatrix data with consistent row and column names.")), call. = FALSE)
-}
+##########
+    datasets_geno_omic <- list(geno_data, omic1_data, omic2_data, omic3_data)
+    dataset_names_geno_omic <- c("geno_data", "omic1_data", "omic2_data", "omic3_data")
 
-datasets_index <- which(!sapply(datasets_geno_omic, is.null))
-datasets_index_kernel <- which(!sapply(datasets_gmatrix_omic_kernel, is.null))
+    geno_omic_rownames_check <- check_names_consistency(datasets_geno_omic, dataset_names_geno_omic)
 
-if(length(datasets_index)!=0 && length(datasets_index_kernel)!=0){
-  datasets_index_kernel <- NULL
-}
+    if(isFALSE(geno_omic_rownames_check)){
+      stop(paste(msg, paste("The omic/and or genotypic data do not have onsistent rownames.",
+                            "provide genomic or omics data with consistent rownames.")), call. = FALSE)
+    }
+
+    ###
+    datasets_gmatrix_omic_kernel <- list(gmatrix, omic1_kernel, omic2_kernel, omic3_kernel)
+    dataset_names_gmatrix_omic_kernel <- c("gmatrix", "omic1_kernel", "omic2_kernel", "omic3_kernel")
+
+    gmatrix_omic_kernel_rownames_check <- check_names_consistency(datasets_gmatrix_omic_kernel, dataset_names_gmatrix_omic_kernel)
+
+    if(isFALSE(gmatrix_omic_kernel_rownames_check)){
+      stop(paste(msg, paste("The omic_kernel/and or gmatrix data do not have onsistent row and column names.",
+                            "provide  omic_kernel/and or gmatrix data with consistent row and column names.")), call. = FALSE)
+    }
+
+    datasets_index <- which(!sapply(datasets_geno_omic, is.null))
+    datasets_index_kernel <- which(!sapply(datasets_gmatrix_omic_kernel, is.null))
+
+    names(datasets_geno_omic)[datasets_index] <- dataset_names_geno_omic[datasets_index]
+    names(datasets_gmatrix_omic_kernel)[datasets_index] <- dataset_names_gmatrix_omic_kernel[datasets_index]
+
+    if(length(datasets_index)!=0 && length(datasets_index_kernel)!=0){
+      datasets_index_kernel <- NULL
+    }
+############
+if (all(na_matrix == FALSE)){
 
 if (length(datasets_index) != 0) {
 
@@ -1210,6 +1248,54 @@ if (length(datasets_index_kernel) != 0) {
 
   }
 }
+
+} else{
+
+  if (length(datasets_index) != 0) {
+
+    if(length(rownames(datasets_geno_omic[[1]])) > length(unique(pheno_data[[gen_name]]))){
+      if("geno_data"%in%names(datasets_geno_omic)){
+        geno_data <- geno_data[rownames(geno_data)%in%unique(pheno_data[[gen_name]]), ]
+      }
+      ##
+      if("omic1_data"%in%names(datasets_geno_omic)){
+        omic1_data <- omic1_data[rownames(omic1_data)%in%unique(pheno_data[[gen_name]]), ]
+      }
+      ##
+      if("omic2_data"%in%names(datasets_geno_omic)){
+        omic2_data <- omic2_data[rownames(omic2_data)%in%unique(pheno_data[[gen_name]]), ]
+      }
+      ###
+      if("omic3_data"%in%names(datasets_geno_omic)){
+        omic3_data <- omic3_data[rownames(omic3_data)%in%unique(pheno_data[[gen_name]]), ]
+      }
+    }
+  }
+ ########
+  if (length(datasets_index_kernel) != 0) {
+
+    if(length(rownames(datasets_gmatrix_omic_kernel[[1]])) > length(unique(pheno_data[[gen_name]]))){
+      if("gmatrix"%in%names(datasets_gmatrix_omic_kernel)){
+        gmatrix <- gmatrix[rownames(gmatrix)%in%unique(pheno_data[[gen_name]]), colnames(gmatrix)%in%unique(pheno_data[[gen_name]])]
+      }
+      ##
+      if("omic1_kernel"%in%names(datasets_gmatrix_omic_kernel)){
+        omic1_kernel <- omic1_kernel[rownames(omic1_kernel)%in%unique(pheno_data[[gen_name]]), ]
+      }
+      ##
+      if("omic2_kernel"%in%names(datasets_gmatrix_omic_kernel)){
+        omic2_kernel <- omic2_kernel[rownames(omic2_kernel)%in%unique(pheno_data[[gen_name]]), ]
+      }
+      ###
+      if("omic3_kernel"%in%names(datasets_gmatrix_omic_kernel)){
+        omic3_kernel <- omic3_kernel[rownames(omic3_kernel)%in%unique(pheno_data[[gen_name]]), ]
+      }
+    }
+  }
+
+}
+
+#########################
 ### Check phenotype_to_model for details
  #    This serve as gateway between phenotype-precheck function and readiness of
  #    the phenotypic data for model fitting.
