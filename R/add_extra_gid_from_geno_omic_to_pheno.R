@@ -3,6 +3,10 @@ add_extra_gid_from_geno_omic_to_pheno <- function(geno_data, pheno_data, gen_nam
   # Identify genotypes in the genotypic data but not in the phenotypic data
   msg <- "\n==================================================\n"
 
+  if (!all(response_var %in% colnames(pheno_data))) {
+         stop(paste(msg, "Some response variables do not exist in the dataframe."), call. = FALSE)
+     }
+
   diff_gid <- setdiff(rownames(geno_data), unique(pheno_data[[gen_name]]))
 #   # Ensure response_var exist in df
 #   if (!all(response_var %in% colnames(pheno_data))) {
@@ -61,8 +65,8 @@ add_extra_gid_from_geno_omic_to_pheno <- function(geno_data, pheno_data, gen_nam
     diff_data[[gen_name]] <- diff_gid
 
     # Populate the `response_var` column with NA for the missing genotypes
-    if (response_var %in% col_names) {
-      diff_data[[response_var]] <- NA
+    if (all(response_var %in% col_names)) {
+      diff_data[response_var] <- lapply(diff_data[response_var], function(x) NA)
     }
   }
 
