@@ -27,6 +27,7 @@ reliability_thresholds_MPIW_from_CI <- function(boot_results = NULL,
                                                 CI_width_thresholds = c(0.33, 0.66),
                                                 interval_width_high_threshold = NULL,
                                                 interval_width_low_threshold = NULL,
+                                                y_scaler = NULL,
                                                 predictions = NULL,
                                                 standard_errors = NULL,
                                                 confidence_level = 0.95,
@@ -35,8 +36,11 @@ reliability_thresholds_MPIW_from_CI <- function(boot_results = NULL,
   msg <- "\n==================================================\n"
 if(model_for_CI_cal=="ML"){
   if(is.null(boot_results)) stop("Boostrapping results is required for machine learning models result diagonistic")
+  #boot_results$t <- revert_scaling(boot_results$t, y_scaler)
   lower_bound <- apply(boot_results$t, 2, quantile, probs = 0.05)
   upper_bound <- apply(boot_results$t, 2, quantile, probs = 0.95)
+  # lower_bound <- revert_scaling(lower_bound, y_scaler)
+  # upper_bound <- revert_scaling(upper_bound, y_scaler)
   interval_width <- upper_bound - lower_bound
   predictions <- apply(boot_results$t, 2, mean)
   standard_errors <- apply(boot_results$t, 2, sd)

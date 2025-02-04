@@ -250,11 +250,21 @@ AI_randomForest <- function(pheno_object=NULL,
                               )
 
       # Extract bootstrap predictions
+      revert_scaling_ml <- function(scaled_values, scaler_mean, scaler_sd) {
+        scaled_values * scaler_sd + scaler_mean
+      }
+
+      boot_results$t <- apply(
+        boot_results$t,
+        2,
+        function(col_vec) revert_scaling_ml(col_vec, y_scaler$mean, y_scaler$std)
+      )
       pred_variances <- apply(boot_results$t, 2, var)
       pred_SE <- apply(boot_results$t, 2, sd)
       AI_pred <- apply(boot_results$t, 2, mean)
       genetic_var <- var(AI_pred)
-      AI_pred_reverted <- revert_scaling(AI_pred, y_scaler)
+      AI_pred_reverted <-  AI_pred
+      #AI_pred_reverted <- revert_scaling(AI_pred, y_scaler)
 
 
       result_rel_MPIW <- reliability_thresholds_MPIW_from_CI(boot_results = boot_results,
