@@ -589,21 +589,19 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                              va = mean(var_u_omics),
                                              ve = mean(var_residual))
 
-            across_env_predicted_value <-  as.data.frame(predicted_value[tst, ] |>
-                                                           dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>  # Use across() to refer to the column specified by gen_name
-                                                           dplyr::summarise(
-                                                             Predicted_value = mean(Predicted_value, na.rm = TRUE),
-                                                             Standard_error = mean(Standard_error, na.rm = TRUE),
-                                                             PEV = mean(PEV, na.rm = TRUE),
-                                                             Reliability = mean(Reliability, na.rm = TRUE)
-                                                           )
-                                                           # dplyr::summarise(Predicted_value = mean(Predicted_value)) |>
-                                                           # dplyr::mutate(
-                                                           #               Standard_error = sep_pev_rel[,"sep"],
-                                                           #               #Standard_error = Standard_error,
-                                                           #               Prediction_error_variance = sep_pev_rel[,"pev"],
-                                                           #               Reliability = sep_pev_rel[,"rel"])
-            )
+            across_env_predicted_value <- predicted_value[tst, ] |>
+              dplyr::ungroup() |>
+              dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>
+              dplyr::summarise(
+                Predicted_value = mean(Predicted_value, na.rm = TRUE),
+                Standard_error  = mean(Standard_error,  na.rm = TRUE),
+                PEV             = mean(PEV,             na.rm = TRUE),
+                Reliability     = mean(Reliability,     na.rm = TRUE),
+                .groups         = "drop"
+              )
+
+            across_env_predicted_value <- na.omit(across_env_predicted_value)
+
 
           }
           ### MET End
@@ -662,22 +660,18 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
             if(!is.null(Zg) & length(datasets)>1){
 
 
-                across_env_predicted_value <-  as.data.frame(predicted_value[tst, ] |>
-                                                               dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>  # Use across() to refer to the column specified by gen_name
-                                                               dplyr::summarise(
-                                                                 Predicted_value = mean(Predicted_value, na.rm = TRUE),
-                                                                 Standard_error = mean(Standard_error, na.rm = TRUE),
-                                                                 PEV = mean(PEV, na.rm = TRUE),
-                                                                 Reliability = mean(Reliability, na.rm = TRUE)
-                                                               )
-
-                                                               # dplyr::mutate(
-                                                               #
-                                                               #   Standard_error = sep_pev_rel[,"sep"],
-                                                               #   #Standard_error = Standard_error,
-                                                               #   Prediction_error_variance = sep_pev_rel[,"pev"],
-                                                               #   Reliability = sep_pev_rel[,"rel"])
+              across_env_predicted_value <- predicted_value[tst, ] |>
+                dplyr::ungroup() |>
+                dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>
+                dplyr::summarise(
+                  Predicted_value = mean(Predicted_value, na.rm = TRUE),
+                  Standard_error  = mean(Standard_error,  na.rm = TRUE),
+                  PEV             = mean(PEV,             na.rm = TRUE),
+                  Reliability     = mean(Reliability,     na.rm = TRUE),
+                  .groups         = "drop"
                 )
+
+              across_env_predicted_value <- na.omit(across_env_predicted_value)
 
 
             }        ## End MET

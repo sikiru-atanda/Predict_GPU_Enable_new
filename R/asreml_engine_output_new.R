@@ -675,10 +675,13 @@ asreml_mod_output_new <- function(
 
     # Aggregate total BLUP and standard error across all environments
     total_summarized_blup <- combined_df |>
-      dplyr::group_by(!!rlang::sym(gen_name)) |>
+      dplyr::ungroup() |>
+      #dplyr::group_by(!!rlang::sym(gen_name)) |>
+      dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>
       dplyr::summarise(
-        BLUP = sum(BLUP, na.rm = TRUE),
-        Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
+        BLUP = mean(BLUP, na.rm = TRUE),
+        Standard_error = mean(Standard_error, na.rm = TRUE),
+        #Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
         .groups = 'drop'
       )
 
@@ -917,8 +920,10 @@ asreml_mod_output_new <- function(
       env_summarized_blup <- combined_df |>
         dplyr::group_by(!!rlang::sym(gen_name), !!rlang::sym(heter_groups))|>
         dplyr::summarise(
-          BLUP = sum(BLUP, na.rm = TRUE),
-          Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
+          BLUP = mean(BLUP, na.rm = TRUE),
+          #BLUP = sum(BLUP, na.rm = TRUE),
+          Standard_error = mean(Standard_error, na.rm = TRUE),
+          #Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
           .groups = 'drop'  # Ensure the resulting data frame is not grouped
         )
 
@@ -1013,8 +1018,10 @@ if(length(dataset_names)==length(extracted_names_from_inv_list)) {
     summarized_blup_use <- combined_dff |>
       dplyr::group_by(!!rlang::sym(gen_name))|>
       dplyr::summarise(
-        BLUP = sum(BLUP, na.rm = TRUE),
-        Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
+        #BLUP = sum(BLUP, na.rm = TRUE),
+        BLUP = mean(BLUP, na.rm = TRUE),
+        Standard_error = mean(Standard_error, na.rm = TRUE),
+        #Standard_error = sqrt(sum(Standard_error^2, na.rm = TRUE)),
         #Reliability = NA,
         .groups = 'drop'  # Ensure the resulting data frame is not grouped
       )

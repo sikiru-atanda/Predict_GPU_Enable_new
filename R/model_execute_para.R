@@ -615,7 +615,7 @@ model_execute <- function(
       ###
       ## forget to choose sampling stratgy or replication is not defined.
       patterns <- c("stratified", "Repeated")
-
+      #
       # Use sapply to apply grep to each pattern and return a named logical vector indicating presence.
       if(is.null(sampling_method) | is.null(replication)){
         matche_strings <- sapply(patterns, function(pattern) {
@@ -630,9 +630,9 @@ model_execute <- function(
 
         if("stratified"%in%present_patterns) sampling_method <- "stratified"
 
-        if("Repeated"%in%present_patterns) {
-          stop(paste(msg,"You select repeated cross-validation provide number of replications.\n For example, replication = 2"), call. = FALSE)
-        }
+        # if("Repeated"%in%present_patterns && replication<2) {
+        #   stop(paste(msg,"You select repeated cross-validation provide number of replications.\n For example, replication = 2"), call. = FALSE)
+        # }
 
 
       }
