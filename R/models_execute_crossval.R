@@ -259,9 +259,9 @@ models_execute_crossval <- function(pheno_data = NULL,
 
     if("stratified"%in%present_patterns) sampling_method <- "stratified"
 
-    if("Repeated"%in%present_patterns && is.null(replication)) {
-      stop(paste(msg, "You select repeated cross-validation provide number of replications.\n For example, replication = 2."), call. = FALSE)
-    }
+    # if("Repeated"%in%present_patterns && is.null(replication)) {
+    #   stop(paste(msg, "You select repeated cross-validation provide number of replications.\n For example, replication = 2."), call. = FALSE)
+    # }
 
 
   }
@@ -554,6 +554,7 @@ models_execute_crossval <- function(pheno_data = NULL,
               additional_params$bayes_trait <- trait
               additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
               additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
+              #rm(model_GBLUP)
             } else {
               additional_params$bayes_model <- model
               additional_params$bayes_trait <- trait
@@ -608,6 +609,7 @@ models_execute_crossval <- function(pheno_data = NULL,
               additional_params$bayes_trait <- trait
               additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
               additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
+              #rm(model_GBLUP)
             } else {
               additional_params$bayes_model <- model
               additional_params$bayes_trait <- trait
@@ -629,7 +631,7 @@ models_execute_crossval <- function(pheno_data = NULL,
             if (!is.null(preds)) {
               ypred_cv[tst, "yhat"] <- preds
             } else {
-              stop("Prediction with GBLUP model failed.\n")
+              stop(paste(msg, "Prediction with GBLUP model failed.\n"), call. = FALSE)
             }
           }, error = function(e) {
             message(paste("Error in processing GBLUP model for ", trait, ": ", e$message))
@@ -698,9 +700,9 @@ models_execute_crossval <- function(pheno_data = NULL,
           )
 
         if (!is.null(sik)) {
-          for (i in 1:nrow(sik)) {
-            if (!is.null(sik$eval_metric[i])) {
-              results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups] == sik$Env[i], c("Rep", eval_metrics[eva])] <- c(repp, sik$eval_metric[i])
+          for (ii in 1:nrow(sik)) {
+            if (!is.null(sik$eval_metric[ii])) {
+              results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups] == sik$Env[ii], c("Rep", eval_metrics[eva])] <- c(repp, sik$eval_metric[ii])
             }
           }
         }
