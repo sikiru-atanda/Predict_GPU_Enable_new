@@ -22,8 +22,10 @@ calculate_intervals_bayes_GBLUP <- function(predictions,
 
 # Reliability categorization function
 reliability_thresholds_MPIW_from_CI <- function(boot_results = NULL,
+                                                Predicted_value_for_CI = NULL,
                                                 cv_results = NULL,
                                                 replication = NULL,
+                                                mod = NULL,
                                                 CI_width_thresholds = c(0.33, 0.66),
                                                 interval_width_high_threshold = NULL,
                                                 interval_width_low_threshold = NULL,
@@ -44,11 +46,22 @@ if(model_for_CI_cal=="ML"){
   interval_width <- upper_bound - lower_bound
   predictions <- apply(boot_results$t, 2, mean)
   standard_errors <- apply(boot_results$t, 2, sd)
-  #prediction_error_var <- apply(boot_results$t, 2, var)
+  prediction_error_var <- apply(boot_results$t, 2, var)
+
+
+} else if (model_for_CI_cal=="Bayes"){
+
+  Predicted_value_for_CI <- Predicted_value_for_CI + mod$model$mu
+  lower_bound <- apply(Predicted_value_for_CI, 1, quantile, probs = 0.05)
+  upper_bound <- apply(Predicted_value_for_CI, 1, quantile, probs = 0.95)
+  interval_width <- upper_bound - lower_bound
+  predictions <- apply(Predicted_value_for_CI, 1, mean)
+  standard_errors <- apply(Predicted_value_for_CI, 1, sd)
+  prediction_error_var <- apply(Predicted_value_for_CI, 1, var)
 
 } else {
 
-  if(model_for_CI_cal == "Bayes" | model_for_CI_cal == "GBLUP"){
+  if(model_for_CI_cal == "RKHS" | model_for_CI_cal == "GBLUP"){
     if(is.null(standard_errors)) stop("Provide the standard error of the prediction for results diagonistic of Bayes and GBLUP model.")
     if (is.null(predictions)) stop("Provide predicted value for results diagnoistic of Bayes and GBLUP model.")
 
@@ -60,6 +73,7 @@ if(model_for_CI_cal=="ML"){
   upper_bound <-  res$upper_bound
   interval_width <- upper_bound - lower_bound
 
+  prediction_error_var = (standard_errors)^2
 
   }
 ###################################
@@ -74,6 +88,8 @@ if(model_for_CI_cal=="ML"){
     lower_bound <-  res$lower_bound
     upper_bound <-  res$upper_bound
     interval_width <- upper_bound - lower_bound
+
+    prediction_error_var = (standard_errors)^2
 
   }
 
@@ -124,7 +140,7 @@ if((is.null(interval_width_high_threshold) & is.null(interval_width_low_threshol
               reliability_percentage = reliability_percentage,
               predictions = predictions,
               standard_errors = standard_errors,
-              prediction_error_var = (standard_errors)^2,
+              prediction_error_var = prediction_error_var,
               high_threshold = as.double(high_threshold)))
 
 }
@@ -132,22 +148,28 @@ if((is.null(interval_width_high_threshold) & is.null(interval_width_low_threshol
 
 reliability_thresholds <- function(prediction_error_var = NULL,
                                    genetic_var = NULL,
-                                   high_reliability_thres = 0.7,
-                                   low_reliability_thres = 0.4) {
+                                   high_reliability_thres = 0.6,
+                                   low_reliability_thres = 0.2) {
 
+  msg <- "\n==================================================\n"
+  high_reliability_thres = 0.6
+  low_reliability_thres = 0.2
+  if(is.null(genetic_var)){
+    stop(print(paste(msg,'Provide genetic or additive variance to calculate reliability.')), call. = FALSE)
+  }
+  reliability <- 1-(prediction_error_var/(genetic_var))
 
-  reliability <- 1-prediction_error_var/(genetic_var)
-
+  reliability <- pmax(0, pmin(1, reliability))
   # The default is to find the threshold for the top 10 percent and as such,
   # the 90th percentile was calculated.
   # which implies the value above which 10% of the reliability scores fall.
   # # This helps maintain a higher standard for the reliability of your predictions
   if(is.null(high_reliability_thres)){
-    high_reliability_thres <- stats::quantile(reliability, 0.9)
+    high_reliability_thres <- stats::quantile(reliability, 0.8)
   }
 
   if(is.null(low_reliability_thres)){
-    low_reliability_thres <- stats::quantile(reliability, 0.2)
+    low_reliability_thres <- stats::quantile(reliability, 0.1)
   }
 
   rel_remarks <- ifelse(reliability >= high_reliability_thres, "Reliable",

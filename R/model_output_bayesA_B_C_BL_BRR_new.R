@@ -27,7 +27,7 @@ process_var_u <- function(file, posindex, GS_model) {
     var_u <- scan(file, what = numeric(), sep = "\n", quiet = TRUE)
 
   }else {
-    if(GS_model%in%c("BayesA", "BayesC", "lambda")){ # lambda
+    if(GS_model%in%c("BayesA", "BayesC", "BL")){ # lambda
       var_u <- utils::read.table(file)
     } else {
       if(GS_model=="BayesB"){
@@ -112,9 +112,9 @@ if(inherits(omics_data_label, 'list')){
   }
 }
 
-if(GS_model == "BL") {
-  GS_model <- "lambda"
-}
+# if(GS_model == "BL") {
+#   GS_model <- "lambda"
+# }
 
 datasets <- list(geno_data, omic1_data, omic2_data, omic3_data)
 dataset_names <- c("geno_data", "omic1_data", "omic2_data", "omic3_data")
@@ -130,6 +130,7 @@ if(length(datasets)>1){
   datasets <- do.call(cbind, datasets)
 }
 
+train_test_label <-  ifelse(is.na(mod$model$y), "Test", "Train")
 tst <- which(is.na(mod$model$y))
 ### Check bayes_parameter_check function in bayesians_preprocess for details
 nIter <- bayes_para[["nIter"]]
@@ -142,141 +143,7 @@ posindex <- (burnIn + 1):nIter
 #1) For ease of plotting
 #2) When testing set is present in the real world it is expected to be
 
-if(length(tst)>1){
 
-  result_rel_MPIW <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
-                                                         predictions = mod$model$yHat[tst],
-                                                         standard_errors = mod$model$SD.yHat[tst],
-                                                         confidence_level = confidence_level,
-                                                         model_for_CI_cal = "Bayes",
-                                                         boot_results = NULL)
-
-result_rel <-  reliability_thresholds(prediction_error_var = (mod$model$SD.yHat[tst])^2,
-                                      genetic_var = var(mod$model$yHat[tst]),
-                                      high_reliability_thres = high_reliability_thres,
-                                      low_reliability_thres = low_reliability_thres)
-
-composite_reliability <- composite_reliability_tst(geno_trn = datasets[-tst, ],
-                                                   geno_tst = datasets[tst, ],
-                                                   geno_tst_trn = NULL,
-                                                   names_tst = NULL,
-                                                   names_trn = NULL,
-                                                   n_components = n_components,
-                                                   threshold = threshold,
-                                                   target = target,
-                                                   interval_width = result_rel_MPIW$Uncertainty,
-                                                   CI_width_thresholds = CI_width_thresholds,
-                                                   interval_width_high_threshold = interval_width_high_threshold,
-                                                   interval_width_low_threshold = interval_width_low_threshold,
-                                                   apply_pca = TRUE)
-
-diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
-                                                    GID_names = rownames(datasets)[tst],
-                                                    CI_width_thresholds = CI_width_thresholds,
-                                                    predictions = mod$model$yHat[tst],
-                                                    standard_errors = mod$model$SD.yHat[tst],
-                                                    prediction_error_var = (mod$model$SD.yHat[tst])^2,
-                                                    genetic_var = var(mod$model$yHat[tst]),
-                                                    confidence_level = confidence_level,
-                                                    model_for_CI_cal = "Bayes",
-                                                    #composite_reliability_score = composite_reliability$reliability_score,
-                                                    #composite_reliability = composite_reliability$trustworthiness,
-                                                    #composite_reliability_percentage = composite_reliability$reliability_percentage,
-                                                    #threshold = NULL,
-                                                    high_reliability_thres = high_reliability_thres,
-                                                    low_reliability_thres = low_reliability_thres,
-                                                    system_database = system_database)
-
-predicted_value <- data.frame(name = rownames(datasets)[tst],
-                              Predicted_value = mod$model$yHat[tst],
-                              Standard_error = mod$model$SD.yHat[tst],
-                              PEV = ((mod$model$SD.yHat)^2)[tst],
-                              lower_bound = result_rel_MPIW$lower_bound,
-                              upper_bound = result_rel_MPIW$upper_bound,
-                              Uncertainty = result_rel_MPIW$Uncertainty,
-                              Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
-                              Reliability = result_rel$reliability,
-                              Reliability_remarks = result_rel$remarks,
-                              Reliability_percentage = result_rel$reliability_percentage,
-                              #Composite_reliability = composite_reliability$trustworthiness,
-                              #Composite_reliability_percentage = composite_reliability$reliability_percentage,
-                              stringsAsFactors = FALSE)
-
-} else{
-
-result_rel_MPIW <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
-                                                      predictions = mod$model$yHat,
-                                                      standard_errors = mod$model$SD.yHat,
-                                                      confidence_level = confidence_level,
-                                                      model_for_CI_cal = "Bayes",
-                                                      boot_results = NULL)
-
-result_rel <-  reliability_thresholds(prediction_error_var = (mod$model$SD.yHat)^2,
-                                      genetic_var = var(mod$model$yHat),
-                                      high_reliability_thres = high_reliability_thres,
-                                      low_reliability_thres = low_reliability_thres)
-
-composite_reliability <- composite_reliability_tst(geno_trn = datasets,
-                                                   geno_tst = NULL,
-                                                   geno_tst_trn = NULL,
-                                                   names_tst = NULL,
-                                                   names_trn = NULL,
-                                                   n_components = n_components,
-                                                   threshold = threshold,
-                                                   target = target,
-                                                   interval_width = result_rel_MPIW$Uncertainty,
-                                                   CI_width_thresholds = CI_width_thresholds,
-                                                   interval_width_high_threshold = interval_width_high_threshold,
-                                                   interval_width_low_threshold = interval_width_low_threshold,
-                                                   apply_pca = TRUE)
-
-
-predicted_value <- data.frame(name = rownames(datasets),
-                              Predicted_value = mod$model$yHat,
-                              Standard_error = mod$model$SD.yHat,
-                              PEV = (mod$model$SD.yHat)^2,
-                              lower_bound = result_rel_MPIW$lower_bound,
-                              upper_bound = result_rel_MPIW$upper_bound,
-                              Uncertainty = result_rel_MPIW$Uncertainty,
-                              Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
-                              Reliability = result_rel$reliability,
-                              Reliability_remarks = result_rel$remarks,
-                              Reliability_percentage = result_rel$reliability_percentage,
-                              #Composite_reliability = composite_reliability$trustworthiness,
-                              #Composite_reliability_percentage = composite_reliability$reliability_percentage,
-                              stringsAsFactors = FALSE)
-
-}
-
-# AI_preds <- data.frame(name = GID,
-#                        Predicted_value = AI_preds,
-#                        Standard_error = pred_SE,
-#                        PEV = pred_variances,
-#                        lower_bound = result_rel_MPIW$lower_bound,
-#                        upper_bound = result_rel_MPIW$upper_bound,
-#                        Uncertainty = result_rel_MPIW$Uncertainty,
-#                        Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
-#                        Reliability = result_rel$reliability,
-#                        Reliability_remarks = result_rel$remarks,
-#                        stringsAsFactors = FALSE)
-
-
-# predicted_value <- data.frame(name = NA,
-#                               Predicted_value = mod$model$yHat,
-#                               Standard_error = mod$model$SD.yHat,
-#                               PEV = (mod$model$SD.yHat)^2,
-#                               lower_bound = result_rel_MPIW$lower_bound,
-#                               upper_bound = result_rel_MPIW$upper_bound,
-#                               Uncertainty = result_rel_MPIW$Uncertainty,
-#                               Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
-#                               Reliability = result_rel$reliability,
-#                               Reliability_remarks = result_rel$remarks,
-#                               Reliability_percentage = result_rel$reliability_percentage,
-#                               Composite_reliability = composite_reliability$trustworthiness,
-#                               Composite_reliability_percentage = composite_reliability$reliability_percentage,
-#                               stringsAsFactors = FALSE)
-
-colnames(predicted_value)[1] <- gen_name
 ### Residual value is only estimable for response value without NA
 
 if(length(tst)!=0){
@@ -316,6 +183,7 @@ se_var_u_omics_list <-  list()
 var_u_total <- 0
 genomic_h2 <- 0
 se_genomic_h2 <- 0
+Predicted_value_for_CI_total <- 0
 datasets <- list(geno_data, omic1_data, omic2_data, omic3_data)
 dataset_names <- c("geno_data", "omic1_data", "omic2_data", "omic3_data")
 datasets_index <- which(!sapply(datasets, is.null))
@@ -329,6 +197,8 @@ m_matrix_model_ready_list <-   list()
 sum_posterior <-  0
 sum_estimated_breeding_value <-  0
 
+datasets_cbind <- as.matrix(do.call(cbind, datasets))
+
 extracted_names_from_ETA_list <-  ETA[["ETA_element_name"]]
 if(length(dataset_names)==length(extracted_names_from_ETA_list)) {
   # Reorder dataset_names based on the order of name in extracted_names_from_ETA_list
@@ -340,14 +210,33 @@ if(length(dataset_names)==length(extracted_names_from_ETA_list)) {
 
 
 for (i in seq_along(datasets)) {
-  dataset <- datasets[[i]]
+  dataset <- as.matrix(datasets[[i]])
   if (!is.null(dataset)) {
     ## the first and second will cannot togther because I am looking through the datasets can might contain NULL
     #if (length(ETA[["ETA_element_name"]]) <= i){
     if(ETA[["ETA_element_name"]][i]==dataset_names[i]){
     #Var_U_omics_list[[dataset_names[i]]] <- process_varU(varB_files[i], posindex, GS_model)
     #gid_name <- rownames(geno_data)
-    var_u_omics <- process_var_u(varB_files[i], posindex, GS_model)
+    #var_u_omics <- process_var_u(varB_files[i], posindex, GS_model)
+      if(GS_model%in%c("BayesA", "BayesC", "BL", "BRR", "BayesB")){
+    var_u_and_others_omics <- process_var_u_new(GS_model = GS_model,
+                                     geno_data = dataset ,
+                                     y = mod$model$y,
+                                     B = BGLR::readBinMat(BIN[i]),
+                                     tst = tst)
+    var_u_omics <-  var_u_and_others_omics[["var_u_omics"]]
+    var_residual <- var_u_and_others_omics[["var_residual"]]
+    se_var_residual <- standard_deviation(var_residual)
+
+    Predicted_value_for_CI <- compute_predicted_value(geno_data = dataset,
+                                                      bMat=  BGLR::readBinMat(BIN[i]),
+                                                      mu_values = mod$model$mu)
+
+      } else{
+        if(GS_model%in%c("RKHS")){
+        var_u_omics <- process_var_u(varB_files[i], posindex, GS_model)
+        }
+      }
     #posterior_list[[dataset_names[i]]] <- BGLR::readBinMat(BIN[aa])
     res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]] <- cal_coeff_ebv_pev_rel_se_new(
                                                               beta = BGLR::readBinMat(BIN[i]),
@@ -365,6 +254,7 @@ for (i in seq_along(datasets)) {
     sum_estimated_breeding_value <- sum_estimated_breeding_value + res_coeff_ebv_pev_rel_se_list[[dataset_names[i]]][["Estimated_breeding_value"]][,"Estimated_breeding_value"]
     m_matrix_model_ready_list[[paste(gsub("_data", "", dataset_names[i]), "model_ready", sep = "_")]] <- dataset
     var_u_total <- var_u_total + var_u_omics
+    Predicted_value_for_CI_total <- Predicted_value_for_CI_total  + Predicted_value_for_CI
 
     if(length(datasets)==1){
       #predicted_value[, 1] <- rownames(dataset)
@@ -412,8 +302,8 @@ for (i in seq_along(datasets)) {
         #pev <- apply(sum_posterior, 1, var)
           Standard_error = mod$model$SD.yHat
           pev <- (mod$model$SD.yHat)^2
-          #rel <- 1 - (pev / mean(var_u_total))
-          rel <- 1 - (pev / var(mod$model$yHat))
+          rel <- 1 - (pev / mean(var_u_total))
+          #rel <- 1 - (pev / var(mod$model$yHat))
 
           #rel <- ifelse(rel<0, NA, rel)
 
@@ -494,7 +384,175 @@ if(length(grep("omic", names(m_matrix_model_ready_list)))>=1 & "geno_model_ready
 }
 
 }
+###############################
+### New improved
+if(length(tst)>1){
 
+  Predicted_value_for_CIs <- Predicted_value_for_CI_total +  mod$model$mu
+  prediction_error_var <-  apply(Predicted_value_for_CIs, 1, var)
+  Standard_error <- apply(Predicted_value_for_CIs, 1, sd)
+
+  result_rel_MPIW <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
+                                                         Predicted_value_for_CI = Predicted_value_for_CI_total,
+                                                         mod = mod,
+                                                         predictions = mod$model$yHat,
+                                                         standard_errors = Standard_error,
+                                                         confidence_level = confidence_level,
+                                                         model_for_CI_cal = "Bayes",
+                                                         boot_results = NULL)
+
+
+  result_rel <-  reliability_thresholds( prediction_error_var = prediction_error_var,
+                                        #prediction_error_var = (mod$model$SD.yHat)^2,
+                                        #genetic_var = var(mod$model$yHat[tst]),
+                                        genetic_var = mean(var_u_total),
+                                        high_reliability_thres = high_reliability_thres,
+                                        low_reliability_thres = low_reliability_thres)
+
+  composite_reliability <- composite_reliability_tst(geno_trn = datasets_cbind[-tst, ],
+                                                     geno_tst = datasets_cbind[tst, ],
+                                                     geno_tst_trn = NULL,
+                                                     names_tst = NULL,
+                                                     names_trn = NULL,
+                                                     n_components = n_components,
+                                                     threshold = threshold,
+                                                     target = target,
+                                                     interval_width = result_rel_MPIW$Uncertainty,
+                                                     CI_width_thresholds = CI_width_thresholds,
+                                                     interval_width_high_threshold = interval_width_high_threshold,
+                                                     interval_width_low_threshold = interval_width_low_threshold,
+                                                     apply_pca = TRUE)
+
+  diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
+                                                      GID_names = rownames(dataset),
+                                                      CI_width_thresholds = CI_width_thresholds,
+                                                      predictions = mod$model$yHat,
+                                                      Predicted_value_for_CI = Predicted_value_for_CI_total,
+                                                      mod = mod,
+                                                      standard_errors = Standard_error,
+                                                      #standard_errors = mod$model$SD.yHat,
+                                                      prediction_error_var= prediction_error_var,
+                                                      #prediction_error_var = (mod$model$SD.yHat)^2,
+                                                      genetic_var = mean(var_u_total),
+                                                      #genetic_var = var(mod$model$yHat[tst]),
+                                                      confidence_level = confidence_level,
+                                                      model_for_CI_cal = "Bayes",
+                                                      #composite_reliability_score = composite_reliability$reliability_score,
+                                                      #composite_reliability = composite_reliability$trustworthiness,
+                                                      #composite_reliability_percentage = composite_reliability$reliability_percentage,
+                                                      #threshold = NULL,
+                                                      high_reliability_thres = high_reliability_thres,
+                                                      low_reliability_thres = low_reliability_thres,
+                                                      system_database = system_database)
+
+  predicted_value <- data.frame(name = rownames(dataset),
+                                Predicted_value = mod$model$yHat,
+                                Train_Test_Label = train_test_label,
+                                #Standard_error = mod$model$SD.yHat,
+                                Standard_error = Standard_error,
+                                PEV = prediction_error_var,
+                                #PEV = ((mod$model$SD.yHat)^2),
+                                lower_bound = result_rel_MPIW$lower_bound,
+                                upper_bound = result_rel_MPIW$upper_bound,
+                                Uncertainty = result_rel_MPIW$Uncertainty,
+                                #Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
+                                #Reliability = result_rel$reliability,
+                                #Reliability_remarks = result_rel$remarks,
+                                #Reliability_percentage = result_rel$reliability_percentage,
+                                #Composite_reliability = composite_reliability$trustworthiness,
+                                #Composite_reliability_percentage = composite_reliability$reliability_percentage,
+                                stringsAsFactors = FALSE)
+
+} else{
+
+  Predicted_value_for_CIs <- Predicted_value_for_CI_total +  mod$model$mu
+  prediction_error_var <-  apply(Predicted_value_for_CIs, 1, var)
+  Standard_error <- apply(Predicted_value_for_CIs, 1, sd)
+
+  result_rel_MPIW <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
+                                                         predictions = mod$model$yHat,
+                                                         Predicted_value_for_CI = Predicted_value_for_CI_total,
+                                                         mod = mod,
+                                                         standard_errors = Standard_error,
+                                                         #standard_errors = mod$model$SD.yHat,
+                                                         confidence_level = confidence_level,
+                                                         model_for_CI_cal = "Bayes",
+                                                         boot_results = NULL)
+
+
+  result_rel <-  reliability_thresholds( prediction_error_var = prediction_error_var,
+                                        #prediction_error_var = (mod$model$SD.yHat)^2,
+                                        #genetic_var = var(mod$model$yHat),
+                                        genetic_var = mean(var_u_total),
+                                        high_reliability_thres = high_reliability_thres,
+                                        low_reliability_thres = low_reliability_thres)
+
+  composite_reliability <- composite_reliability_tst(geno_trn = datasets_cbind,
+                                                     geno_tst = NULL,
+                                                     geno_tst_trn = NULL,
+                                                     names_tst = NULL,
+                                                     names_trn = NULL,
+                                                     n_components = n_components,
+                                                     threshold = threshold,
+                                                     target = target,
+                                                     interval_width = result_rel_MPIW$Uncertainty,
+                                                     CI_width_thresholds = CI_width_thresholds,
+                                                     interval_width_high_threshold = interval_width_high_threshold,
+                                                     interval_width_low_threshold = interval_width_low_threshold,
+                                                     apply_pca = TRUE)
+
+
+  predicted_value <- data.frame(name = rownames(dataset),
+                                Predicted_value = mod$model$yHat,
+                                Train_Test_Label = train_test_label,
+                                Standard_error = Standard_error,
+                                #Standard_error = mod$model$SD.yHat,
+                                PEV = prediction_error_var,
+                                #PEV = (mod$model$SD.yHat)^2,
+                                lower_bound = result_rel_MPIW$lower_bound,
+                                upper_bound = result_rel_MPIW$upper_bound,
+                                Uncertainty = result_rel_MPIW$Uncertainty,
+                              #Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
+                                #Reliability = result_rel$reliability,
+                                #Reliability_remarks = result_rel$remarks,
+                                #Reliability_percentage = result_rel$reliability_percentage,
+                                #Composite_reliability = composite_reliability$trustworthiness,
+                                #Composite_reliability_percentage = composite_reliability$reliability_percentage,
+                                stringsAsFactors = FALSE)
+
+}
+
+# AI_preds <- data.frame(name = GID,
+#                        Predicted_value = AI_preds,
+#                        Standard_error = pred_SE,
+#                        PEV = pred_variances,
+#                        lower_bound = result_rel_MPIW$lower_bound,
+#                        upper_bound = result_rel_MPIW$upper_bound,
+#                        Uncertainty = result_rel_MPIW$Uncertainty,
+#                        Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
+#                        Reliability = result_rel$reliability,
+#                        Reliability_remarks = result_rel$remarks,
+#                        stringsAsFactors = FALSE)
+
+
+# predicted_value <- data.frame(name = NA,
+#                               Predicted_value = mod$model$yHat,
+#                               Standard_error = mod$model$SD.yHat,
+#                               PEV = (mod$model$SD.yHat)^2,
+#                               lower_bound = result_rel_MPIW$lower_bound,
+#                               upper_bound = result_rel_MPIW$upper_bound,
+#                               Uncertainty = result_rel_MPIW$Uncertainty,
+#                               Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
+#                               Reliability = result_rel$reliability,
+#                               Reliability_remarks = result_rel$remarks,
+#                               Reliability_percentage = result_rel$reliability_percentage,
+#                               Composite_reliability = composite_reliability$trustworthiness,
+#                               Composite_reliability_percentage = composite_reliability$reliability_percentage,
+#                               stringsAsFactors = FALSE)
+
+colnames(predicted_value)[1] <- gen_name
+
+##############################
 
 if(!is.null(print_lable)){
 
@@ -550,7 +608,7 @@ if(!is.null(print_lable)){
               Residual_value = residual_value,
               Variance_components = variance_components,
               M_matrix_model_ready =  m_matrix_model_ready_list,
-              diagnostic_plots  = diagnostic_plots)
+              diagnostic_tst_plot  = diagnostic_plots)
 #   } else {
 #     res <- list(Coefficients = coefficients_list,
 #                 Estimated_breeding_value = estimated_breeding_value_list,

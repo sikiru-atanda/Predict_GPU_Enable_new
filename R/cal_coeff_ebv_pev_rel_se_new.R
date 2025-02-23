@@ -103,17 +103,29 @@ cal_coeff_ebv_pev_rel_se_new <- function(beta,
   colnames(EBV)[1] = gen_name
   #GEBV = data.frame(rowMeans(ebv))
 
+  Predicted_value_for_CI <- compute_predicted_value(geno_data = x_variable,
+                                              bMat=  beta,
+                                              mu_values = mod$model$mu)
+
+
+  Predicted_value <- Predicted_value_for_CI + mod$model$mu
+
+  Standard_error <- apply(Predicted_value, 1, sd)
+  PEV <- apply(Predicted_value, 1, var)
+
+  rm(Predicted_value)
   #PEV <- apply(X_ebv, 1, var)
-  Standard_error = mod$model$SD.yHat
-  PEV <- (mod$model$SD.yHat)^2
+  #Standard_error = mod$model$SD.yHat
+  #PEV <- (mod$model$SD.yHat)^2
 
   # EBV$Std_error <- sqrt(PEV)
   # EBV$PEV <-  PEV
 
   ##Estimate of reliabilities
 
-  #Reliability <- 1 - (PEV/var_u)
-  Reliability <- 1 - (PEV/var(mod$model$yHat))
+  Reliability <- 1 - (PEV/var_u)
+  Reliability <- pmax(0, pmin(1, Reliability))
+  #Reliability <- 1 - (PEV/var(mod$model$yHat))
   #Reliability <- ifelse(Reliability<0, NA, Reliability)
 
   EBV <- EBV |>
@@ -126,7 +138,8 @@ cal_coeff_ebv_pev_rel_se_new <- function(beta,
 
   output <- list(Posterior = X_ebv, Coefficient = Coeff,
                  Estimated_breeding_value = EBV, PEV = PEV,
-                 Reliability = Reliability, Standard_error = Standard_error)
+                 Reliability = Reliability, Standard_error = Standard_error,
+                 Predicted_value_for_CI = Predicted_value_for_CI)
 
   # names(output) <- c('Posterior',
   #                    "Coefficient",

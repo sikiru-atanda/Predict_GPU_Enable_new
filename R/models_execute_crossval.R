@@ -448,10 +448,10 @@ models_execute_crossval <- function(pheno_data = NULL,
      model <- "deep_learning_model"
     }
 
-    if (is.null(heter_groups)) {
-      y_scaler <- caret::preProcess(as.data.frame(as.matrix(pheno_data[[trait]])), method = c("center", "scale"))
-      pheno_data[[trait]] <- stats::predict(y_scaler, as.data.frame(as.matrix(pheno_data[[trait]])))[, 1]
-    }
+    # if (is.null(heter_groups)) {
+    #   y_scaler <- caret::preProcess(as.data.frame(as.matrix(pheno_data[[trait]])), method = c("center", "scale"))
+    #   pheno_data[[trait]] <- stats::predict(y_scaler, as.data.frame(as.matrix(pheno_data[[trait]])))[, 1]
+    # }
 
     repp <- 1
 

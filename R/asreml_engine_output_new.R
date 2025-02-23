@@ -180,7 +180,43 @@ asreml_mod_output_new <- function(
   names_in_inv_list <-  mod_asreml[["names_in_inv_list"]]
   rand_term <-  mod_asreml[["rand_term"]]
 
+  tst <- NULL
   yy <- as.double(unique(data.frame(mod$mf)[, response]))
+
+
+  sik_yna <- as.data.frame(mod$mf)
+
+  tst_NA <- which(is.na(sik_yna[, response]))
+
+  yNA <- sik_yna[, response]
+
+  # Check if response column contains NAs and if all unique genotypes match the number of rows
+  if (any(is.na(sik_yna[, response])) && length(unique(as.character(sik_yna[, gen_name]))) == nrow(sik_yna)) {
+
+    tstt <- which(is.na(sik_yna[, response]))
+
+    if (length(tstt) != 0) {
+      train_gid <- unique(as.character(sik_yna[-tstt, gen_name]))
+      unique_gid <- unique(as.character(sik_yna[, gen_name]))
+      train_test_label_unique <- ifelse(unique_gid%in%train_gid, "Train", "Test")
+      #train_test_label <- ifelse(is.na(sik_yna[, response]), "Test", "Train")
+    }
+
+  } else {
+    if (nrow(sik_yna) > length(unique(sik_yna[, gen_name]))) {
+
+      tstt <- which(is.na(sik_yna[, response]))
+
+      if (length(tstt) != 0) {
+        train_gid_across_env <- unique(as.character(sik_yna[-tstt, gen_name]))
+        unique_gid_across_env <- unique(as.character(sik_yna[, gen_name]))
+        train_test_label_unique <- ifelse(unique_gid_across_env%in%train_gid_across_env, "Train", "Test")
+        train_test_label <- ifelse(is.na(sik_yna[, gen_name]), "Test", "Train")
+      }
+    }
+  }
+
+
   #############################
   ### !is.null(var_cov_str) & is.null(inter_gen_pos) incase user provide var_cov_str
   ## while the data is not MT in nature
@@ -333,7 +369,7 @@ asreml_mod_output_new <- function(
           #BV$Reliability = NA
           for (i in 1:length(VA)) {
             estimated_breeding_value_list[[bb]][, "Reliability"] <- ifelse(estimated_breeding_value_list[[bb]][, heter_groups]%in% heter_grp[i],
-                                                    round(1 - estimated_breeding_value_list[[bb]][, "Prediction_error_variance"]/VA[i],6), estimated_breeding_value_list[[bb]][, "Reliability"])
+                                                    round(1 - (estimated_breeding_value_list[[bb]][, "Prediction_error_variance"]/VA[i]),6), estimated_breeding_value_list[[bb]][, "Reliability"])
 
           }
         }
@@ -415,7 +451,7 @@ asreml_mod_output_new <- function(
       #####
       for (bb in seq_along(names_in_inv_list)){
         estimated_breeding_value_list[[bb]][, "Prediction_error_variance"] <- estimated_breeding_value_list[[bb]][, "Standard_error"]^2
-        estimated_breeding_value_list[[bb]][, "Reliability"] <- round(1 - estimated_breeding_value_list[[bb]][, "Prediction_error_variance"]/as.double((VarG_All[bb])),6)
+        estimated_breeding_value_list[[bb]][, "Reliability"] <- round(1 - (estimated_breeding_value_list[[bb]][, "Prediction_error_variance"]/as.double((VarG_All[bb]))),6)
 
         if(length(VE)>1){
           for (i in 1:length(VE)) {
@@ -492,7 +528,7 @@ asreml_mod_output_new <- function(
           ###
           for (i in 1:length(VA)) {
             estimated_breeding_value_list[[bb]][, "Reliability"] <- ifelse(estimated_breeding_value_list[[bb]][, heter_groups]%in% heter_grp[i],
-                                                    round(1 - estimated_breeding_value_list[[bb]][, "Prediction_error_variance"]/VA[i],6), estimated_breeding_value_list[[bb]][, "Reliability"])
+                                                    round(1 - (estimated_breeding_value_list[[bb]][, "Prediction_error_variance"]/VA[i]),6), estimated_breeding_value_list[[bb]][, "Reliability"])
           }
         } else {
           stop(print(paste(msg, 'Genetic variance is missing')), call. = FALSE)
@@ -527,8 +563,8 @@ asreml_mod_output_new <- function(
   predicted_value <-  predicted_value[, -ncol(predicted_value)] ### Remove status
   colnames(predicted_value)[colnames(predicted_value)%in%c("predicted.value", "std.error")] <- c("Predicted_value", "Standard_error")
   predicted_value[, "Prediction_error_variance"] <-  predicted_value[, "Standard_error"]^2
-  predicted_value[, "Reliability"] <-  NA
-
+  #predicted_value[, "Reliability"] <-  NA
+  predicted_value[, "Train_Test_Label"] <-  train_test_label_unique
   predicted_value
 
     },
@@ -690,6 +726,7 @@ asreml_mod_output_new <- function(
       dplyr::mutate(Prediction_error_variance = Standard_error^2)
     summarized_blup <- as.data.frame(summarized_blup)
     predicted_value <- summarized_blup
+    predicted_value[, "Train_Test_Label"] <- train_test_label_unique
   }
   ## sik
 
@@ -703,12 +740,12 @@ asreml_mod_output_new <- function(
     yy <- genotype_means[, "mean_value"]
   }
 
-  if(length(tst)!=0){
+  if(length(tst_NA)!=0){
     if(!is.null(result_single_loc)){
-      residual_value <- data.frame(name =  predicted_value[tst, gen_name],
+      residual_value <- data.frame(name =  predicted_value[-tst_NA, gen_name],
                                    #Env = all_envs_for_met[tst],
-                                   Predicted_value = predicted_value[tst, "Predicted_value"],
-                                   Residual_value = (yy[tst] - predicted_value[tst, "Predicted_value"]),
+                                   Predicted_value = predicted_value[-tst_NA, "Predicted_value"],
+                                   Residual_value = (yNA[-tst_NA] - predicted_value[-tst_NA, "Predicted_value"]),
                                    stringsAsFactors = FALSE)
 
       colnames(residual_value)[1] <- gen_name
@@ -724,7 +761,7 @@ asreml_mod_output_new <- function(
     residual_value <- data.frame(name = unique(as.character(predicted_value[, gen_name])),
                                  #Env = all_envs_for_met,
                                  Predicted_value = predicted_value[, "Predicted_value"],
-                                 Residual_value = (yy - predicted_value[, "Predicted_value"]),
+                                 Residual_value = (yNA - predicted_value[, "Predicted_value"]),
                                  stringsAsFactors = FALSE)
     colnames(residual_value)[1] <- gen_name
 
@@ -756,21 +793,24 @@ asreml_mod_output_new <- function(
     across_env_predicted_value =  across_env_predicted_value[, -ncol(across_env_predicted_value)] ### Remove status
     colnames(across_env_predicted_value)[colnames(across_env_predicted_value)%in%c("predicted.value", "std.error")] <- c("Predicted_value", "Standard_error")
     across_env_predicted_value[, "Prediction_error_variance"] <-  across_env_predicted_value[, "Standard_error"]^2
-    across_env_predicted_value[, "Reliability"] <- NA
+    #across_env_predicted_value[, "Reliability"] <- NA
+
+    across_env_predicted_value[, "Train_Test_Label"] <- train_test_label
 
     #name_across_env <-  paste("Across", paste(heter_groups, "Predicted_value", sep = "_"), sep = "_")
     if(length(tst)!=0){
-      residual_value_met <- data.frame(name =  across_env_predicted_value[, gen_name][tst],
-                                       Env = all_envs_for_met[tst],
-                                       Predicted_value = across_env_predicted_value[, "Predicted_value"][tst],
-                                       Residual_value = (yy[tst] - across_env_predicted_value[, "Predicted_value"][tst]),
+      residual_value_met <- data.frame(name =  across_env_predicted_value[, gen_name][-tst_NA],
+                                       Env = all_envs_for_met[-tst_NA],
+                                       Predicted_value = across_env_predicted_value[, "Predicted_value"][-tst_NA],
+                                       Residual_value = (yNA[-tst_NA] - across_env_predicted_value[, "Predicted_value"][-tst_NA]),
                                        stringsAsFactors = FALSE)
       colnames(residual_value_met)[1:2] <- c(gen_name, heter_groups)
     } else {
       residual_value_met <- data.frame(name = across_env_predicted_value[, gen_name],
                                        Env = all_envs_for_met,
                                        Predicted_value = across_env_predicted_value[, "Predicted_value"],
-                                       Residual_value = (yy - across_env_predicted_value[, "Predicted_value"]),
+                                       Residual_value = (yNA - across_env_predicted_value[, "Predicted_value"]),
+                                       #Residual_value = (yy - across_env_predicted_value[, "Predicted_value"]),
                                        stringsAsFactors = FALSE)
       colnames(residual_value_met)[1:2] <- c(gen_name, heter_groups)
     }
@@ -935,6 +975,7 @@ asreml_mod_output_new <- function(
       residual_value_met <- NULL
     } else{
       across_env_predicted_value <- result_met[["across_env_predicted_value"]]
+      across_env_predicted_value[, "Train_Test_Label"] <- train_test_label
       residual_value_met <- result_met[["residual_value_met"]]
     }
 

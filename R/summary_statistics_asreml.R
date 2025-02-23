@@ -97,11 +97,11 @@ summary_statistics_asreml <- function(mod=NULL,
 
     if(is.null(heter_groups)){
     if(isFALSE(anyNA(standard_errors))){
-    diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = GID_names[tst],
+    diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = GID_names,
                                                            CI_width_thresholds = CI_width_thresholds,
-                                                           predictions = predicted_value[tst],
-                                                           standard_errors = standard_errors[tst],
-                                                           prediction_error_var = prediction_error_var[tst],
+                                                           predictions = predicted_value,
+                                                           standard_errors = standard_errors,
+                                                           prediction_error_var = prediction_error_var,
                                                            genetic_var = genetic_var,
                                                            confidence_level = confidence_level,
                                                            model_for_CI_cal = "GBLUP",

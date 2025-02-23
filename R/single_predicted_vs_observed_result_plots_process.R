@@ -49,11 +49,21 @@ single_predicted_vs_observed_result_plots_process <- function(results,
   traits <- unique(combined_results$trait)
   reps <- unique(combined_results$rep)
 
+  # Identify models that contain all expected traits
+  valid_models <- sapply(models, function(mod) {
+    mod_traits <- unique(combined_results[combined_results$model == mod, "trait"])
+    all(traits %in% mod_traits)
+  })
+
+  # Keep only valid models
+  filtered_models <- models[valid_models]
+
   # Initialize lists to store results
   mod_res_per_trait_per_model <- list()
 
   # Iterate through each model
-  for (mod in models) {
+  #for (mod in models) {
+  for (mod in filtered_models) {
     # Filter data for the current model
     dat <- combined_results[combined_results[["model"]] == mod, ]
 
@@ -86,7 +96,8 @@ single_predicted_vs_observed_result_plots_process <- function(results,
   plot_reps_list <- lapply(traits, function(trait) {
 
     plot_all_models <- list()
-    for (mod in models) {
+    #for (mod in models) {
+    for (mod in filtered_models) {
 
       sik <-  predicted_vs_observed_ranking_plot(
         observed_value = as.numeric(pheno_data[[trait]]),

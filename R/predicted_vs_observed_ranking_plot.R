@@ -74,6 +74,7 @@ predicted_vs_observed_ranking_plot <- function(
                                                replication = NULL,
                                                path_plot = NULL,
                                                system_database = FALSE){
+#browser()
 
 df <- data.frame(
   #genotype = GID_names,
@@ -81,6 +82,7 @@ df <- data.frame(
   predicted = predicted_value,
   stringsAsFactors = FALSE
 )
+
 
 # Ranking data
 df <- df |>
@@ -326,7 +328,8 @@ p4 <- ggplot2::ggplot(df, ggplot2::aes(x = observed, y = predicted)) +
         plot.margin = ggplot2::margin(10, 10, 10, 10)
       ) +
       ggplot2::annotate("text", x = min(df$observed), y = max(df$predicted),
-               label = paste("R-squared:", round(r_squared, 3), "\nPredictive ability:", round(correlation, 3)),
+                        label = paste("Predictive ability:", round(correlation, 3)),
+               #label = paste("R-squared:", round(r_squared, 3), "\nPredictive ability:", round(correlation, 3)),
                hjust = 0, vjust = 1, size = 4, fontface = "bold", color = "darkblue")
 
 # Display the plot

@@ -2180,7 +2180,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
            res_summary_stat <- bayes_GBLUP_summary_stat_process
            if("diagnostic_tst_plot"%in%names(res_summary_stat)){
 
-             res_model_output[["diagnostic_plots"]] <- res_summary_stat[["diagnostic_tst_plot"]]
+             #res_model_output[["diagnostic_plots"]] <- res_summary_stat[["diagnostic_tst_plot"]]
 
              res_summary_stat <- res_summary_stat[!names(res_summary_stat) %in% "diagnostic_tst_plot"]
            }
@@ -2310,7 +2310,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                                                        predicted_value =  if("Predicted_value"%in%colnames(res_model_output[["Predicted_value"]])) res_model_output[["Predicted_value"]]["Predicted_value"] else res_model_output[["Predicted_value"]]["BLUP"],
                                                        standard_errors = res_model_output[["Predicted_value"]]["Standard_error"],
                                                        prediction_error_var = res_model_output[["Predicted_value"]]["Prediction_error_variance"],
-                                                       genetic_var = var(res_model_output[["Predicted_value"]]["Predicted_value"]),
+                                                       #genetic_var = var(res_model_output[["Predicted_value"]]["Predicted_value"]),
+                                                       genetic_var = sum(res_model_output[["Variance_components"]]["genetic_variance", "Components"]),
                                                        pred_heter_groups = NULL,
                                                        variance_components = res_model_output[["Variance_components"]],
                                                        eval_metrics = eval_metrics,

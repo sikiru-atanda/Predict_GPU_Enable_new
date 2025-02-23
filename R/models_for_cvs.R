@@ -578,7 +578,9 @@ AI_xgboost_cv <- function(y,
 
 
   preds <- as.data.frame(preds)
-  return(preds[, 1])
+
+  preds <- revert_scaling(preds[, 1], y_scaler)
+  return(preds)
 
 
 }
@@ -645,7 +647,8 @@ if(is.null(ncomp)){
                           ncomp = optimal_components)
 
   preds <- as.data.frame(preds)
-  return(preds[, 1])
+  preds <- revert_scaling(preds[, 1], y_scaler)
+  return(preds)
 
 
 }
@@ -698,8 +701,9 @@ AI_randomforest_cv <- function(y,
                           omics[tst, ],
                           reshape = TRUE)
   preds <- as.data.frame(preds)
+  preds <- revert_scaling(preds[, 1], y_scaler)
 
-  return(preds[, 1])
+  return(preds)
 
 
 }
@@ -756,7 +760,8 @@ AI_ridge_regression_cv <- function(y,
 
   preds <- as.data.frame(preds)
 
-  return(preds[, 1])
+  preds <- revert_scaling(preds[, 1], y_scaler)
+  return(preds)
 
 
 }
@@ -811,7 +816,9 @@ AI_lasso_cv <- function(y,
 
   preds <- as.data.frame(preds)
 
-  return(preds[, 1])
+  preds <- revert_scaling(preds[, 1], y_scaler)
+
+  return(preds)
 
 
 }
@@ -866,7 +873,9 @@ AI_knn_cv <- function(y,
 
   preds <- as.data.frame(preds)
 
-  return(preds[, 1])
+  preds <- revert_scaling(preds[, 1], y_scaler)
+
+  return(preds)
 
 
 }
@@ -968,7 +977,9 @@ AI_svm_cv <- function(y,
     }
   }
 
-  return(stats::predict(svm_model, omics[tst, ]))
+  preds <- stats::predict(svm_model, omics[tst, ])
+  preds <- revert_scaling(preds, y_scaler)
+  return(preds)
   # if(!is.null(omics)) {
   #   if(isTRUE(scaling) || isFALSE(scaling)){
   #     omics <- scale(omics, center = TRUE, scale = TRUE)
