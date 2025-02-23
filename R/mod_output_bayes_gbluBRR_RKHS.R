@@ -232,7 +232,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
           var_residual <- var_u_and_others_omics[["var_residual"]]
           se_var_residual <- standard_deviation(var_residual)
 
-          Predicted_value_for_CI <- compute_predicted_value(geno_data = dataset,
+          Predicted_value_for_CI <- compute_predicted_value(geno_data = if(!is.null(Zg)) ZgZg else dataset,
                                                             bMat=  BGLR::readBinMat(BIN[i]),
                                                             mu_values = mod$model$mu)
         } else{
@@ -1192,11 +1192,25 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
     # }
 
   } else {
+
+    # across_env_predicted_value <- predicted_value |>
+    #   dplyr::ungroup() |>
+    #   dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>
+    #   dplyr::summarise(
+    #     Predicted_value = mean(Predicted_value, na.rm = TRUE),
+    #     Standard_error  = mean(Standard_error,  na.rm = TRUE),
+    #     PEV             = mean(PEV,             na.rm = TRUE),
+    #     Reliability     = mean(Reliability,     na.rm = TRUE),
+    #     .groups         = "drop"
+    #   )
+    #
+    # across_env_predicted_value <- na.omit(across_env_predicted_value)
+
     res <- list(Coefficients = coefficients_list,
                 Estimated_breeding_value = estimated_breeding_value_list,
                 Total_estimated_breeding_value = sum_ebv,
                 Predicted_value =  predicted_value,
-                Total_Predicted_value = across_env_predicted_value,
+                #Total_Predicted_value = across_env_predicted_value,
                 Residual_value = residual_value,
                 Variance_components = variance_components,
                 M_matrix_model_ready =  m_matrix_model_ready_list,

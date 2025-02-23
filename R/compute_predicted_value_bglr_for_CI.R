@@ -13,6 +13,7 @@ compute_predicted_value <- function(geno_data, bMat_file = NULL,
   # Initialize matrix for predictions
   Predicted_value <- matrix(0, nrow = N, ncol = M)
 
+  if(ncol(geno_data)>=chunk_size & ncol(geno_data)!= nrow(geno_data)){
   # Process in chunks to avoid memory overload
   for (i in seq(1, p, by = chunk_size)) {
     #cat(sprintf("Processing markers %d to %d...\n", i, min(i + chunk_size - 1, p)))
@@ -29,7 +30,10 @@ compute_predicted_value <- function(geno_data, bMat_file = NULL,
     # Compute partial predictions for this chunk
     Predicted_value <- Predicted_value + (geno_chunk %*% t(bMat_chunk))  # (N x M)
   }
+  } else {
 
+    Predicted_value <- geno_data %*% t(bMat)
+}
   # Add intercept (mu) for this omic source
   #Predicted_value <- Predicted_value + matrix(mu_values, nrow = N, ncol = M, byrow = TRUE)
 
