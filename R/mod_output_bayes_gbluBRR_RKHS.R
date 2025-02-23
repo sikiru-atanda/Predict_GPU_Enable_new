@@ -1027,6 +1027,27 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                      stringsAsFactors = FALSE)
 
         colnames(residual_value)[1] <- c(gen_name)
+
+        diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
+                                                            GID_names = pheno_data[,gen_name],
+                                                            CI_width_thresholds = CI_width_thresholds,
+                                                            Predicted_value_for_CI = Predicted_value_for_CI_total,
+                                                            mod = mod,
+                                                            predictions = mod$model$yHat,
+                                                            standard_errors = Standard_error,
+                                                            prediction_error_var = prediction_error_var,
+                                                            genetic_var = mean(var_u_total),
+                                                            #genetic_var = var(mod$model$yHat),
+                                                            confidence_level = 0.95,
+                                                            model_for_CI_cal = "Bayes",
+                                                            #composite_reliability_score = composite_reliability$reliability_score,
+                                                            #composite_reliability = composite_reliability$trustworthiness,
+                                                            #composite_reliability_percentage = composite_reliability$reliability_percentage,
+                                                            #threshold = NULL,
+                                                            high_reliability_thres = high_reliability_thres,
+                                                            low_reliability_thres = low_reliability_thres,
+                                                            system_database = system_database)
+
       } else{
         result_rel_MPIW <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
                                                                predictions = mod$model$yHat,
@@ -1080,6 +1101,26 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                      stringsAsFactors = FALSE)
 
         colnames(residual_value)[1] <- c(gen_name)
+
+
+        diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
+                                                            GID_names = pheno_data[,gen_name],
+                                                            CI_width_thresholds = CI_width_thresholds,
+                                                            predictions = mod$model$yHat,
+                                                            standard_errors = mod$model$SD.yHat,
+                                                            prediction_error_var = (mod$model$SD.yHat)^2,
+                                                            genetic_var = mean(var_u_total),
+                                                            #genetic_var = var(mod$model$yHat),
+                                                            confidence_level = 0.95,
+                                                            model_for_CI_cal = "RKHS",
+                                                            #composite_reliability_score = composite_reliability$reliability_score,
+                                                            #composite_reliability = composite_reliability$trustworthiness,
+                                                            #composite_reliability_percentage = composite_reliability$reliability_percentage,
+                                                            #threshold = NULL,
+                                                            high_reliability_thres = high_reliability_thres,
+                                                            low_reliability_thres = low_reliability_thres,
+                                                            system_database = system_database)
+
       }
 
 
