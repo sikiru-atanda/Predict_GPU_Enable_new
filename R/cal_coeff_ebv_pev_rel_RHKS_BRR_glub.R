@@ -101,7 +101,11 @@ cal_coeff_ebv_pev_rel_RHKS_glub <- function(mod = NULL,
   Standard_error = mod$model$SD.yHat
   PEV <- (mod$model$SD.yHat)^2
 
-  Reliability <- 1 - (PEV/var(mod$model$yHat))
+  #Reliability <- 1 - (PEV/var(mod$model$yHat))
+  Reliability <- 1 - (PEV/ var_u)
+
+
+  Reliability <- pmax(0, pmin(1, Reliability))
   EBV <- EBV |>
     dplyr::mutate(Standard_error = Standard_error,
                   Prediction_error_variance = PEV,

@@ -60,20 +60,20 @@ summary_statistics_bayes <- function(mod=NULL,
     # }
     #
     # }
-    if(isFALSE(anyNA(model_result[["Predicted_value"]]["Standard_error"]))){
- diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = model_result[["Predicted_value"]][gen_name][, 1],
-                                                        CI_width_thresholds = CI_width_thresholds,
-                                                        predictions = as.double(model_result[["Predicted_value"]]["Predicted_value"][, 1]),
-                                                        standard_errors = as.double(model_result[["Predicted_value"]]["Standard_error"][, 1]),
-                                                        prediction_error_var = as.double(model_result[["Predicted_value"]]["PEV"][tst, 1]),
-                                                        genetic_var = as.double(var(model_result[["Predicted_value"]]["Predicted_value"][, 1])),
-                                                        confidence_level = confidence_level,
-                                                        model_for_CI_cal = "Bayes",
-                                                        #threshold = NULL,
-                                                        high_reliability_thres = high_reliability_thres,
-                                                        low_reliability_thres = low_reliability_thres)
-
-    }
+ #    if(isFALSE(anyNA(model_result[["Predicted_value"]]["Standard_error"]))){
+ # diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = model_result[["Predicted_value"]][gen_name][, 1],
+ #                                                        CI_width_thresholds = CI_width_thresholds,
+ #                                                        predictions = as.double(model_result[["Predicted_value"]]["Predicted_value"][, 1]),
+ #                                                        standard_errors = as.double(model_result[["Predicted_value"]]["Standard_error"][, 1]),
+ #                                                        prediction_error_var = as.double(model_result[["Predicted_value"]]["PEV"][tst, 1]),
+ #                                                        genetic_var = as.double(var(model_result[["Predicted_value"]]["Predicted_value"][, 1])),
+ #                                                        confidence_level = confidence_level,
+ #                                                        model_for_CI_cal = "Bayes",
+ #                                                        #threshold = NULL,
+ #                                                        high_reliability_thres = high_reliability_thres,
+ #                                                        low_reliability_thres = low_reliability_thres)
+ #
+ #    }
 
   }else{
 
@@ -91,21 +91,21 @@ summary_statistics_bayes <- function(mod=NULL,
      }
 
     }
-    if(isFALSE(anyNA(model_result[["Predicted_value"]]["Standard_error"]))){
-    diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = model_result[["Predicted_value"]][gen_name][,1],
-                                                           CI_width_thresholds = CI_width_thresholds,
-                                                           predictions = as.double(model_result[["Predicted_value"]]["Predicted_value"][, 1]),
-                                                           standard_errors = as.double(model_result[["Predicted_value"]]["Standard_error"][, 1]),
-                                                           prediction_error_var = as.double(model_result[["Predicted_value"]]["PEV"][, 1]),
-                                                           genetic_var = as.double(var(model_result[["Predicted_value"]]["Predicted_value"])),
-                                                           confidence_level = confidence_level,
-                                                           model_for_CI_cal = "Bayes",
-                                                           #threshold = NULL,
-                                                           high_reliability_thres = high_reliability_thres,
-                                                           low_reliability_thres = low_reliability_thres)
-
-
-    }
+    # if(isFALSE(anyNA(model_result[["Predicted_value"]]["Standard_error"]))){
+    # diagnostic_tst_plot <- diagnostic_plot_true_prediction(GID_names = model_result[["Predicted_value"]][gen_name][,1],
+    #                                                        CI_width_thresholds = CI_width_thresholds,
+    #                                                        predictions = as.double(model_result[["Predicted_value"]]["Predicted_value"][, 1]),
+    #                                                        standard_errors = as.double(model_result[["Predicted_value"]]["Standard_error"][, 1]),
+    #                                                        prediction_error_var = as.double(model_result[["Predicted_value"]]["PEV"][, 1]),
+    #                                                        genetic_var = as.double(var(model_result[["Predicted_value"]]["Predicted_value"])),
+    #                                                        confidence_level = confidence_level,
+    #                                                        model_for_CI_cal = "Bayes",
+    #                                                        #threshold = NULL,
+    #                                                        high_reliability_thres = high_reliability_thres,
+    #                                                        low_reliability_thres = low_reliability_thres)
+    #
+    #
+    # }
 
   }
 
@@ -166,8 +166,8 @@ if((is.null(tst) || length(tst)<=1) && !is.null(heter_groups)){
 } else if((!is.null(tst) || length(tst)<1) && !is.null(heter_groups)){
   output <-  list(summary_statistics = Stat_Res)
 } else {
-  output <-  list(summary_statistics = Stat_Res,
-                  diagnostic_tst_plot = diagnostic_tst_plot
+  output <-  list(summary_statistics = Stat_Res
+                  #diagnostic_tst_plot = diagnostic_tst_plot
   )
 }
 

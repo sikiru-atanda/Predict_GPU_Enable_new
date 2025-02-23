@@ -190,6 +190,11 @@ AI_Xgb <- function(pheno_object=NULL,
   }
 
   if(!is.null(geno_omic_test_object)){
+
+    test_label <- rownames(geno_omic_test_object)
+    geno_omic_test_object <- rbind(geno_omic_object, geno_omic_test_object)
+    GID <- rownames(geno_omic_test_object)
+
     geno_omic_test_object <- stats::predict(scaler, geno_omic_test_object)
     # if(isTRUE(scaling)){
     #   geno_omic_test_object <- scale(geno_omic_test_object, center = TRUE, scale = TRUE)
@@ -378,7 +383,7 @@ if(xgb_booster=="gblinear"){
       }
 
    if(!is.null(geno_omic_test_object)) {
-     GID <- rownames(geno_omic_test_object)
+
      data_label_geno = cbind(y_train_scaled,geno_omic_object)
 
      boot_results <- boot::boot(
@@ -578,17 +583,26 @@ composite_reliability <- composite_reliability_tst(geno_trn = geno_omic_object,
                                                    interval_width_low_threshold = interval_width_low_threshold,
                                                    apply_pca = TRUE)
 
+
+if(!is.null(geno_omic_test_object)){
+
+  train_test_label <- ifelse(rownames(geno_omic_test_object)%in%test_label, "Test", "Train")
+} else {
+  train_test_label <- rep("Train", nrow(geno_omic_object))
+}
+
 AI_preds <- data.frame(name = GID,
                        Predicted_value = AI_pred_reverted,
+                       Train_Test_Label = train_test_label,
                        Standard_error = pred_SE,
                        PEV = pred_variances,
                        lower_bound = result_rel_MPIW$lower_bound,
                        upper_bound = result_rel_MPIW$upper_bound,
                        Uncertainty = result_rel_MPIW$Uncertainty,
-                       Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
-                       Reliability = result_rel$reliability,
-                       Reliability_remarks = result_rel$remarks,
-                       Reliability_percentage = result_rel$reliability_percentage,
+                       #Uncertainty_remarks = result_rel_MPIW$reliability_remarks,
+                       #Reliability = result_rel$reliability,
+                      # Reliability_remarks = result_rel$remarks,
+                       #Reliability_percentage = result_rel$reliability_percentage,
                        #Composite_reliability = composite_reliability$trustworthiness,
                        #Composite_reliability_percentage = composite_reliability$reliability_percentage,
                        stringsAsFactors = FALSE)

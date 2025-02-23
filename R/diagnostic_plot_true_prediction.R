@@ -22,6 +22,8 @@
 #' @examples
 diagnostic_plot_true_prediction <- function(boot_results = NULL,
                                            GID_names = NULL,
+                                           Predicted_value_for_CI = NULL,
+                                           mod = NULL,
                                            CI_width_thresholds = c(0.33, 0.66),
                                            predictions = NULL,
                                            standard_errors = NULL,
@@ -47,7 +49,7 @@ diagnostic_plot_true_prediction <- function(boot_results = NULL,
     p111 <- NULL
   }
 
-  if(model_for_CI_cal == "Bayes" | model_for_CI_cal == "GBLUP") {
+  if(model_for_CI_cal == "RKHS" | model_for_CI_cal == "GBLUP") {
   if(is.null(prediction_error_var) & !is.null(standard_errors)){
   prediction_error_var <- (standard_errors)^2
 
@@ -62,10 +64,15 @@ diagnostic_plot_true_prediction <- function(boot_results = NULL,
     if(is.null(genetic_var))  stop(print(paste(msg,'Provide genetic variance.')), call. = FALSE)
 }
 
+  if(model_for_CI_cal == "Bayes") {
+
+    prediction_error_var <-  apply(Predicted_value_for_CI, 1, var)
+    standard_errors <- apply(Predicted_value_for_CI, 1, sd)
+
+  }
 
 
-
-  if(!is.null(predictions) & model_for_CI_cal == "Bayes" | model_for_CI_cal == "GBLUP"){
+  if(!is.null(predictions) & model_for_CI_cal == "RKHS" | model_for_CI_cal == "GBLUP"){
     res_CI <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
                                                   predictions = predictions,
                                                   standard_errors = standard_errors,
@@ -74,8 +81,20 @@ diagnostic_plot_true_prediction <- function(boot_results = NULL,
                                                   boot_results = boot_results)
 
     predictions <- res_CI$predictions
-    genetic_var <- var(predictions)
+    #genetic_var <- var(predictions)
     prediction_error_var <- res_CI$prediction_error_var
+
+  } else if(model_for_CI_cal == "Bayes"){
+
+    res_CI <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
+                                                  predictions = predictions,
+                                                  Predicted_value_for_CI = Predicted_value_for_CI,
+                                                  mod = mod,
+                                                  standard_errors = standard_errors,
+                                                  confidence_level = confidence_level,
+                                                  model_for_CI_cal = model_for_CI_cal,
+                                                  boot_results = boot_results)
+
   } else {
 
     res_CI <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
@@ -86,7 +105,7 @@ diagnostic_plot_true_prediction <- function(boot_results = NULL,
                                                   boot_results = boot_results)
 
     predictions <- res_CI$predictions
-    genetic_var <- var(predictions)
+    #genetic_var <- var(predictions)
     prediction_error_var <- res_CI$prediction_error_var
     #stop(print(paste(msg,'Provide vector of the predicted values.')), call. = FALSE)
 
@@ -111,7 +130,7 @@ diagnostic_plot_true_prediction <- function(boot_results = NULL,
   #    }
   # }
 
-
+  res$reliability <- pmax(0, pmin(1, res$reliability))
   predicted_values = data.frame(Predicted_value = predictions,
                                 Reliability = res$reliability,
                                 Remarks = res$remarks)
