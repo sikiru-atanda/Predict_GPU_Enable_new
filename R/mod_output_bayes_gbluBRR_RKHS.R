@@ -433,7 +433,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
   }
 
   ##### For MET analysis
-  if(length(pheno_data[,gen_name])>length(unique(pheno_data[,gen_name]))){
+  if(length(as.character(pheno_data[,gen_name]))>length(unique(as.character(pheno_data[,gen_name])))){
 
     ### Residual value is only estimable for response value without NA
     #tst <- which(is.na(mod$model$y))
