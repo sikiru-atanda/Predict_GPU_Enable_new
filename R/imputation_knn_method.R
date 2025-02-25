@@ -56,6 +56,7 @@ handle_large_scale_knn <- function(data, k = 5, chunk_size = 50, num_cores = NUL
   msg <- "\n==================================================\n"
 
   num_cols <- ncol(data)
+  row_names <- rownames(data)
   num_chunks <- ceiling(num_cols / chunk_size)
 
   # Create list of chunk indices
@@ -103,6 +104,7 @@ handle_large_scale_knn <- function(data, k = 5, chunk_size = 50, num_cores = NUL
   # Combine all imputed chunks into the final data frame
   imputed_data <- do.call(cbind, imputed_chunks)
 
+  rownames(imputed_data) <- row_names
   return(as.data.frame(imputed_data))
 }
 
