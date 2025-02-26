@@ -309,6 +309,8 @@ geno_precheck <- function(object_geno = NULL,
           message(insight::print_color(paste(msg, paste("Removing Individuals with low call rate:", length(low_call_rate_inds))), "blue"))
         }
         object_geno <- object_geno[-low_call_rate_inds, ]
+
+        ind_callrate_removed <- length(low_call_rate_inds)
       } else {
         if(isTRUE(message)) {
           message(insight::print_color(paste(msg, "No individuals removed based on call rate threshold."), "blue"))
@@ -317,7 +319,7 @@ geno_precheck <- function(object_geno = NULL,
         ind_callrate_removed <-  0
       }
 
-      rm(ind_call_rate, low_call_rate_inds); gc()
+      rm(ind_call_rate); gc()
     }
     ##
     # Calculate heterozygosity
