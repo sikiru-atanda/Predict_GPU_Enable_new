@@ -56,9 +56,9 @@ if(model_for_CI_cal=="ML"){
   upper_bound <- apply(Predicted_value_for_CI, 1, quantile, probs = 0.95)
   interval_width <- upper_bound - lower_bound
   predictions <- apply(Predicted_value_for_CI, 1, mean)
-  standard_errors <- apply(Predicted_value_for_CI, 1, sd)
-  prediction_error_var <- apply(Predicted_value_for_CI, 1, var)
-
+  #standard_errors <- apply(Predicted_value_for_CI, 1, sd)
+  #prediction_error_var <- apply(Predicted_value_for_CI, 1, var)
+  prediction_error_var = (standard_errors)^2
 } else {
 
   if(model_for_CI_cal == "RKHS" | model_for_CI_cal == "GBLUP"){

@@ -66,8 +66,9 @@ diagnostic_plot_true_prediction <- function(boot_results = NULL,
 
   if(model_for_CI_cal == "Bayes") {
 
-    prediction_error_var <-  apply(Predicted_value_for_CI, 1, var)
-    standard_errors <- apply(Predicted_value_for_CI, 1, sd)
+    prediction_error_var <- (standard_errors)^2
+    #prediction_error_var <-  apply(Predicted_value_for_CI, 1, var)
+    #standard_errors <- apply(Predicted_value_for_CI, 1, sd)
 
   }
 
