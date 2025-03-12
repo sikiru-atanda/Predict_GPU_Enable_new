@@ -1672,6 +1672,7 @@ if (length(datasets_index_kernel) != 0) {
  best_models_ggplot_rep <- NULL
  best_models_ggplot_mean <- NULL
  cv_results_processed <-  NULL
+ cv_results_raw <- NULL
  model_prep_all_bayes_cv <-  NULL
  asreml_models_prep_cv <- NULL
  res_plot_result_diagnostic <-  NULL
@@ -1894,6 +1895,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
  if(isTRUE(cv_evaluation_only) && isTRUE(cross_validation)){
 
    return(results_handling(GS_model =  NULL,
+                           cv_results_raw = cv_results,
                            res_model_output =  NULL,
                            res_summary_stat =  NULL,
                            res_plot = best_models_ggplot_rep,
@@ -2779,6 +2781,7 @@ if(GS_model == "deep_learning_model") GS_model <- as.character(task_row$model)
        geno_qc_stat = geno_qc_stat,
        res_plot_result_diagnostic_cv_only = NULL,
        cv_results_processed = cv_results_processed,
+       cv_results_raw = cv_results,
        system_database = system_database,
        plot_filename = if(!is.null(names(results)[res])) names(results)[res] else paste("trait", res, sep = "_"),
        plot_extension = plot_extension,
