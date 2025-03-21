@@ -1673,6 +1673,7 @@ if (length(datasets_index_kernel) != 0) {
  best_models_ggplot_mean <- NULL
  cv_results_processed <-  NULL
  cv_results_raw <- NULL
+ cv_results <- NULL
  model_prep_all_bayes_cv <-  NULL
  asreml_models_prep_cv <- NULL
  res_plot_result_diagnostic <-  NULL

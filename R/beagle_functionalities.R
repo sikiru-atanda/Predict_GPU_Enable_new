@@ -1,3 +1,6 @@
+#' @import data.table
+#' @importFrom data.table ., .SD, :=
+
 # Function to dynamically install Java
 check_and_install_java <- function() {
   java_check <- system("java -version", intern = TRUE, ignore.stderr = TRUE)
@@ -66,8 +69,11 @@ create_res_output <- function(output_vcf) {
 filter_vcf <- function(input_vcf, output_vcf) {
 
   # Read the VCF metadata (lines starting with '##')
-  vcf_metadata <- data.table::fread(input_vcf, header = FALSE, sep = "\n", quote = "",
-                                    nrows = grep("#CHROM", readLines(input_vcf)) - 1)
+  # vcf_metadata <- data.table::fread(input_vcf, header = FALSE, sep = "\n", quote = "",
+  #                                   nrows = grep("#CHROM", readLines(input_vcf)) - 1)
+
+  vcf_metadata <- data.table::fread(input_vcf, skip = "#CHROM", header = TRUE)[, 1:9]
+
 
   # Read the VCF data (starting from the #CHROM line onwards)
   vcf_data <- data.table::fread(input_vcf, skip = "#CHROM", header = TRUE)
@@ -76,8 +82,12 @@ filter_vcf <- function(input_vcf, output_vcf) {
   missing_values <- c(NA, ".", "")
 
   # Identify SNPs where either REF == ALT or where REF or ALT is missing
-  problematic_snps <- vcf_data[REF == ALT | REF %in% missing_values | ALT %in% missing_values]
-
+  #problematic_snps <- vcf_data[REF == ALT | REF %in% missing_values | ALT %in% missing_values]
+  problematic_snps <- vcf_data[
+    vcf_data[["REF"]] == vcf_data[["ALT"]] |
+      vcf_data[["REF"]] %in% missing_values |
+      vcf_data[["ALT"]] %in% missing_values
+  ]
   # If there are problematic SNPs, filter and write the new VCF
   if (nrow(problematic_snps) > 0) {
     # Filter out SNPs where REF == ALT or where REF or ALT is missing
@@ -158,7 +168,7 @@ clean_vcf_chrom_pos <- function(input_vcf, output_vcf) {
       #cat("No issues found in the first 100 lines. No file will be written.\n")
 
     } else {
-      stop("Provide numeric CHROM and POS.")
+      stop("Provide numeric CHROM and POS.", call. = FALSE)
     }
   } else {
     return(FALSE)
@@ -166,8 +176,10 @@ clean_vcf_chrom_pos <- function(input_vcf, output_vcf) {
 
 
   # Read the full VCF metadata (lines starting with '##')
-  vcf_metadata <- data.table::fread(input_vcf, header = FALSE, sep = "\n", quote = "",
-                                    nrows = grep("#CHROM", readLines(input_vcf)) - 1)
+  # vcf_metadata <- data.table::fread(input_vcf, header = FALSE, sep = "\n", quote = "",
+  #                                   nrows = grep("#CHROM", readLines(input_vcf)) - 1)
+
+  vcf_metadata <- data.table::fread(input_vcf, skip = "#CHROM", header = TRUE)[, 1:9]
 
   # Read the full VCF data (starting from the #CHROM line onwards)
   vcf_data <- data.table::fread(input_vcf, skip = "#CHROM", header = TRUE)
