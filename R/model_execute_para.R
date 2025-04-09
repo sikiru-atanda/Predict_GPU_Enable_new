@@ -320,8 +320,8 @@ model_execute <- function(
     param_grid = NULL,
     validation_split = 0.2,
     early_stop = TRUE,
-    xgb_paras_tunning= list(Iter_tune = seq(500, 5000, 500), # number of boosting iterations
-                            learning_rate_tune = c(0.01, 0.05, 0.1), # learning rate, low value means model is more robust to overfitting
+    xgb_paras_tunning= list(Iter_tune = seq(100, 500, 100), # number of boosting iterations
+                            learning_rate_tune = c(0.01, 0.1, 0.1), # learning rate, low value means model is more robust to overfitting
                             max_depth = c(3, 6, 9),
                             rate_drop = c(0.1, 0.15, 0.2),
                             skip_drop = c(0.4, 0.5, 0.55),
@@ -354,16 +354,16 @@ model_execute <- function(
     dpl_paras_tunning = NULL,
     learning_rate = 0.01, #xgboost
     max_depth = 6, #xgboost
-    subsample = 0.5, #xgboost
+    subsample = 0.7, #xgboost
     xgb_booster =  "dart", #"gbtree", # #xgboost "gblinear",
-    iteration = 1000, #xgboost
+    iteration = 100, #xgboost
     N_feature_impo = 10, #xgboost
     resample_method_tune = "cv", # c("cv","boot") #xgboost
     number_of_fold_tune = 5, #xgboost
     min_child_weight = 0.8, # xgboost,
     #eta = 0.001, ## xgboost
     #nrounds = 5000, ## xgboost
-    colsample_bytree = 1, ## xgboost
+    colsample_bytree = 0.7, ## xgboost
     xgb_alpha = 0.001, ## xgboost linear
     xgb_gamma = 0.01, ## xgboost it acts as a regularization parameter for controlling tree complexity
     lambda_rr = NULL,
@@ -602,7 +602,7 @@ model_execute <- function(
         stop(paste(msg,'use only one cross_validation method at a time'), call. = FALSE)
       }
 
-      if(!cross_validation_meth%in%all_cv_methods_avail){
+      if(!is.null(cross_validation_meth) && !cross_validation_meth%in%all_cv_methods_avail){
         stop(paste(msg,"Invalid cross validation method. Choose from: ",
              paste(all_cv_methods_avail, collapse = ", ")), call. = FALSE)
       }
@@ -612,6 +612,15 @@ model_execute <- function(
              paste(eval_metrics_available, collapse = ", ")), call. = FALSE)
       }
 
+      if (!is.null(cross_validation_meth) && any(cross_validation_meth %in% all_cv_methods_avail)) {
+        if (is.null(nfolds)) {
+          stop(paste(
+            msg, "Provide number of nfolds for:",
+            paste(cross_validation_meth, collapse = ", "),
+            "required for multi-environment genomic prediction."
+          ), call. = FALSE)
+        }
+      }
       ###
       ## forget to choose sampling stratgy or replication is not defined.
       patterns <- c("stratified", "Repeated")
@@ -1067,11 +1076,13 @@ model_execute <- function(
         )), call. = FALSE)
       }
 
-      if (!any(cross_validation_meth %in% CVs_multi_envs_methods_avail)) {
-        stop(paste(msg, paste(
-          "Provide any of the following as cross-validation strategy for multi-environment GS:",
-          paste(CVs_multi_envs_methods_avail, collapse = ", ")
-        )), call. = FALSE)
+      if(isTRUE(cross_validation)){
+        if (!any(cross_validation_meth %in% CVs_multi_envs_methods_avail)) {
+          stop(paste(msg, paste(
+            "Provide any of the following as cross-validation strategy for multi-environment GS:",
+            paste(CVs_multi_envs_methods_avail, collapse = ", ")
+          )), call. = FALSE)
+        }
       }
 
       ### This is important for asreml for multi-environment analysis
@@ -1851,6 +1862,7 @@ if(cross_validation_meth%in%c("CV1",
                               "Repeated_CV2")){
 cv_results_processed <- cv1_cv2_and_across_env_result_plot_process(cv_results_data=cv_results,
                                                                    eval_metrics = eval_metrics,
+                                                                   heter_groups = heter_groups,
                                                                    metric_for_ranking = metric_for_ranking)
 
 best_models <- cv_results_processed[["best_models_list"]][[metric_for_ranking]]
@@ -2190,6 +2202,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
          } else {
            res_summary_stat <- NULL
            cat(sprintf("Bayesian %s summary statistics failed.\n", GS_model))
+
          }
 
        } else {
@@ -2248,7 +2261,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
          })
 
          if (is.null(result_asreml_mod)) {
-           cat("Model fitting failed due to convergence problem.\n")
+           cat(paste(msg, "Model fitting failed due to convergence problem.\n"))
            res_model_output <- NULL
            res_summary_stat <- NULL
            res_comp_checkk <- NULL

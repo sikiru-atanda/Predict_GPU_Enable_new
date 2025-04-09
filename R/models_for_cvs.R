@@ -455,7 +455,7 @@ AI_xgboost_cv <- function(y,
                           xgb_objective = "reg:squarederror",
                           xgb_sample_type = "uniform",
                           xgb_normalize_type = "tree",
-                          eta = 0.1,
+                          eta = 0.01,
                           nrounds = 100,
                           max_depth = 6,
                           scaling = FALSE,
@@ -463,8 +463,8 @@ AI_xgboost_cv <- function(y,
                           omic_count,
                           xgb_gamma = 0.01, ## 4
                           min_child_weight = 1,
-                          subsample = 0.5,
-                          colsample_bytree = 0.8,
+                          subsample = 0.7,
+                          colsample_bytree = 0.7,
                           xgb_alpha = 0.001, ## gblinear
                           xgb_lambda = 1.0, # gblinear,
                           early_stop_for_iteration_xgb = FALSE ## use when training set is large
@@ -498,9 +498,9 @@ AI_xgboost_cv <- function(y,
         objective = "reg:squarederror",
         eta = eta,
         max_depth = max_depth,
-        min_child_weight = min_child_weight,
-        subsample = subsample,
-        colsample_bytree = colsample_bytree
+        #min_child_weight = min_child_weight,
+        subsample = subsample
+        #colsample_bytree = colsample_bytree
       )
     }
 
@@ -508,9 +508,9 @@ AI_xgboost_cv <- function(y,
       xgb_params <- list(
         booster = xgb_booster,
         sample_type = xgb_sample_type,
-        normalize_type = xgb_normalize_type,
-        rate_drop = xgb_rate_drop,
-        skip_drop = xgb_skip_drop,
+        #normalize_type = xgb_normalize_type,
+        #rate_drop = xgb_rate_drop,
+        #skip_drop = xgb_skip_drop,
         alpha = xgb_alpha,
         lambda = xgb_lambda,
         eta = eta,

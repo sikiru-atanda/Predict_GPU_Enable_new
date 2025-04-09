@@ -336,19 +336,25 @@ random_term_model <- function(rand_terms = NULL,
   }
 
   # Assign models for each term
-  rand_terms_model_bayesian <- assign_models(rand_terms, rand_terms_model_bayesian, "BRR")
+  #rand_terms_model_bayesian <- assign_models(rand_terms, rand_terms_model_bayesian, "BRR")
+  rand_terms_model_bayesian <- assign_models(rand_terms, rand_terms_model_bayesian, GS_model)
   if (!is.null(GS_model)) {
-    GS_model <- assign_models(rand_terms, GS_model, "BRR")
+    #GS_model <- assign_models(rand_terms, GS_model, "BRR")
+    GS_model <- assign_models(rand_terms = rand_terms,
+                              provided_models = GS_model,
+                              default_model = GS_model)
     rand_terms_model_bayesian[gen_pos] <- GS_model[1]
   }
 
   # Handle interaction terms
   if (length(rand_terms_inter) > 0) {
     if (length(inter_gen_terms) > 0) {
-      rand_terms_model_bayesian[match(inter_gen_terms, rand_terms)] <- "RKHS"
+      #rand_terms_model_bayesian[match(inter_gen_terms, rand_terms)] <- "RKHS"
+      rand_terms_model_bayesian[match(inter_gen_terms, rand_terms)] <- GS_model
     }
     if (length(non_gen_inter_terms) > 0) {
-      rand_terms_model_bayesian[match(non_gen_inter_terms, rand_terms)] <- "BRR"
+      #rand_terms_model_bayesian[match(non_gen_inter_terms, rand_terms)] <- "BRR"
+      rand_terms_model_bayesian[match(non_gen_inter_terms, rand_terms)] <- GS_model
     }
   }
 

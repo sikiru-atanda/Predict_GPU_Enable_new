@@ -129,8 +129,8 @@ AI_Xgb <- function(pheno_object=NULL,
                    centering = FALSE,
                    omic_count = NULL,
                    para_tunning = FALSE,
-                   xgb_paras_tunning= list(Iter_tune = seq(500, 10000, 500), # number of boosting iterations
-                                        learning_rate_tune = seq(0.001, 0.3, 0.005), # learning rate, low value means model is more robust to overfitting
+                   xgb_paras_tunning= list(Iter_tune = seq(100, 500, 100), # number of boosting iterations
+                                        learning_rate_tune = seq(0.01, 0.1, 0.01), # learning rate, low value means model is more robust to overfitting
                                         max_depth = seq(3, 15, 2),
                                         rate_drop = seq(0.05, 0.5, 0.05),
                                         skip_drop = seq(0.05, 1, 0.1),
@@ -144,12 +144,12 @@ AI_Xgb <- function(pheno_object=NULL,
                    number_of_fold_tune = 5,
                    learning_rate = 0.01,
                    max_depth = 6,
-                   subsample = 0.5,
+                   subsample = 0.7,
                    xgb_booster =  "dart", #"gbtree", # "gblinear",
                    xgb_alpha = 0.001, ## xgboost linear
                    xgb_lambda = 1.0,  # xgboost linear #  dart L2 regularization term on weights (default: 1)
                    xgb_gamma = 0.01, #it acts as a regularization parameter for controlling tree complexity.  dart L1 regularization term on weights (default: 0)
-                   iteration = 1000,
+                   iteration = 100,
                    xgb_rate_drop = 0.1,
                    xgb_skip_drop = 0.5,
                    xgb_objective = "reg:squarederror",
@@ -157,7 +157,7 @@ AI_Xgb <- function(pheno_object=NULL,
                    xgb_normalize_type = "tree",
                    #early_stopping_rounds_xgb = TRUE,
                    N_feature_impo = 10,
-                   colsample_bytree = 0.8,
+                   colsample_bytree = 0.7,
                    CI_width_thresholds = c(0.33, 0.66),
                    high_reliability_thres = 0.9,
                    low_reliability_thres = 0.5,
@@ -174,7 +174,14 @@ AI_Xgb <- function(pheno_object=NULL,
                    ...){
 #browser()
   msg <- "\n==================================================\n"
+
+  if(is.null(geno_omic_object) & is.null(pheno_object)) {
+
+    stop(print(paste(msg,"provide matrix of the predictors and the data.frame of the Y variable.")), call. = FALSE)
+  }
+
   if(!is.null(geno_omic_object)){
+    GID <- rownames(geno_omic_object)
     scaler <- caret::preProcess(geno_omic_object, method = c("center", "scale"))
     geno_omic_object <- stats::predict(scaler, geno_omic_object)
 
@@ -239,10 +246,10 @@ if(isTRUE(para_tunning)){
       max_depth = xgb_paras_tunning$max_depth,  # Varying tree depths
       eta = xgb_paras_tunning$learning_rate_tune,  # Learning rate
       rate_drop = xgb_paras_tunning$rate_drop,
-      skip_drop = xgb_paras_tunning$rate_drop
-      #colsample_bytree = xgb_paras_tunning$colsample_bytree,  # Subsample ratio of columns when constructing each tree
-      #min_child_weight = xgb_paras_tunning$min_child_weight,  # Minimum sum of instance weight needed in a child
-      #subsample = xgb_paras_tunning$subsample
+      skip_drop = xgb_paras_tunning$rate_drop,
+      colsample_bytree = xgb_paras_tunning$colsample_bytree,  # Subsample ratio of columns when constructing each tree
+      min_child_weight = xgb_paras_tunning$min_child_weight,  # Minimum sum of instance weight needed in a child
+      subsample = xgb_paras_tunning$subsample
     )
 
   }
@@ -403,7 +410,7 @@ if(xgb_booster=="gblinear"){
 
    } else {
 
-     GID <- rownames(geno_omic_object)
+     #GID <- rownames(geno_omic_object)
      if(!is.null(geno_omic_object) & is.null(geno_omic_test_object)) {
 
        data_label_geno = cbind(y_train_scaled, geno_omic_object)
@@ -449,7 +456,7 @@ if(xgb_booster=="gblinear"){
           booster = xgb_booster,
           eta = learning_rate,
           max_depth = max_depth,
-          gamma = xgb_gamma,
+          #gamma = xgb_gamma,
           subsample = subsample,
           colsample_bytree = colsample_bytree,
           objective = "reg:squarederror",
@@ -458,8 +465,11 @@ if(xgb_booster=="gblinear"){
       } else if (xgb_booster == "gblinear") {
         xgb_params <- list(
           booster = xgb_booster,
-          alpha = xgb_alpha,
-          lambda = xgb_lambda,
+          max_depth = max_depth,
+          subsample = subsample,
+          colsample_bytree = colsample_bytree,
+          #alpha = xgb_alpha,
+          #lambda = xgb_lambda,
           eta = learning_rate,
           objective = "reg:squarederror",
           eval_metric = c("rmse", "rmsle", "mape")
@@ -468,12 +478,15 @@ if(xgb_booster=="gblinear"){
         if (xgb_booster == "dart") {
           xgb_params <- list(
             booster = xgb_booster,
-            sample_type = "uniform",
-            normalize_type = "tree",
-            rate_drop = xgb_rate_drop,
-            skip_drop = xgb_skip_drop,
-            alpha = xgb_alpha,
-            lambda = xgb_lambda,
+            max_depth = max_depth,
+            subsample = subsample,
+            colsample_bytree = colsample_bytree,
+            #sample_type = "uniform",
+            #normalize_type = "tree",
+            #rate_drop = xgb_rate_drop,
+            #skip_drop = xgb_skip_drop,
+            #alpha = xgb_alpha,
+            #lambda = xgb_lambda,
             eta = learning_rate,
             objective = "reg:squarederror",
             eval_metric = c("rmse", "rmsle", "mape")
@@ -496,7 +509,7 @@ if(xgb_booster=="gblinear"){
       }
 
       if(!is.null(geno_omic_test_object)) {
-        GID <- rownames(geno_omic_test_object)
+        #GID <- rownames(geno_omic_test_object)
         data_label_geno = cbind(y_train_scaled,geno_omic_object)
 
         boot_results <- boot::boot(
@@ -513,7 +526,7 @@ if(xgb_booster=="gblinear"){
       } else {
 
         if(!is.null(geno_omic_object) & is.null(geno_omic_test_object)) {
-          GID <- rownames(geno_omic_object)
+          #GID <- rownames(geno_omic_object)
           data_label_geno = cbind(y_train_scaled,geno_omic_object)
 
           boot_results <- boot::boot(

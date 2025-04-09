@@ -1,5 +1,22 @@
 
 
+#Transpose in batches, if needed
+#numeric_matrix_t <- transpose_in_batches(numeric_matrix, batch_size = 10000)
+transpose_in_batches <- function(numeric_matrix, batch_size = 10000) {
+  n_rows <- nrow(numeric_matrix)
+  batch_indices <- split(1:n_rows, ceiling(seq_along(1:n_rows) / batch_size))
+
+  transposed_batches <- lapply(batch_indices, function(idx) {
+    t(numeric_matrix[idx, , drop = FALSE])
+  })
+
+  # Combine all batches column-wise (since each batch is t(SNPs) = individuals × batch_SNPs)
+  final_transposed <- do.call(cbind, transposed_batches)
+  return(final_transposed)
+}
+
+
+
 #' Convert Double Nucleotide Code to IUPAC Single-Letter Code
 #'
 #' Converts a double nucleotide code to its corresponding IUPAC single-letter code.
@@ -576,16 +593,16 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
         allele1 <- substr(x[2], 1, 1)
         allele2 <- substr(x[2], 3, 3)
         if(length(which(x==allele1)) >= length(which(x==allele2))){
-          x[which(x==allele1)] <- 2 # major allele is 2
-          x[which(x==allele2)] <- 0
-        }
-        else{
-          x[which(x==allele1)] <- 0
+          x[which(x==allele1)] <- 0 # previously major allele is 2
           x[which(x==allele2)] <- 2
         }
-        return(x)
+        else{
+          x[which(x==allele1)] <- 2
+          x[which(x==allele2)] <- 0
+        }
+        return(as.numeric(x[-c(1, 2)]))  # remove SNP ID and allele string
       })
-      return(t(hapmap_numeric[-(1:2), ]))
+      return(t(hapmap_numeric))
       #return(hapmap_numeric)
     }
 
@@ -599,18 +616,18 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
         allele1 <- substr(x[2], 1, 1)
         allele2 <- substr(x[2], 3, 3)
         if(length(which(x==allele1)) >= length(which(x==allele2))){
-          x[which(x==allele1)] <- 1 # major allele is 1
-          x[which(x==allele2)] <- -1
-        }
-        else{
-          x[which(x==allele1)] <- -1
+          x[which(x==allele1)] <- -1 # major allele is 1
           x[which(x==allele2)] <- 1
         }
-        return(x)
+        else{
+          x[which(x==allele1)] <- 1
+          x[which(x==allele2)] <- -1
+        }
+        return(as.numeric(x[-c(1, 2)]))  # remove SNP ID and allele string
       })
 
 
-      return(t(hapmap_numeric[-(1:2), ]))
+      return(t(hapmap_numeric))
       #return(t(hapmap_numeric))
     }
 
