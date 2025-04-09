@@ -72,9 +72,11 @@ msg <- "\n==================================================\n"
     na_rows <- lapply(response, function(col) which(is.na(pheno_data[[col]])))
 
     # Check if all vectors of NA rows are identical across the response, sparse is not allowed
-    if (!all(sapply(na_rows, function(x) identical(x, na_rows[[1]])))) {
-      stop(paste(msg, sprintf("Rows containing NA did not match across the response columns: %s.", paste(response, collapse = ", "))), call. = FALSE)
-    }
+    if(length(na_rows)!=0){
+      if (!all(sapply(na_rows, function(x) identical(x, na_rows[[1]])))) {
+        stop(paste(msg, sprintf("Rows containing NA did not match across the response columns: %s.", paste(response, collapse = ", "))), call. = FALSE)
+      }
+
 
     if (length(na_rows[[1]]) > 0) {
     # Get the unique rows with NA (since all are identical, we can take from the first column)
@@ -96,6 +98,10 @@ msg <- "\n==================================================\n"
 
 
     }
+
+    } else {
+      test_set <- NULL
+  }
 
     if(!is.null(test_set)){
 

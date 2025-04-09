@@ -181,41 +181,44 @@ asreml_mod_output_new <- function(
   rand_term <-  mod_asreml[["rand_term"]]
 
   tst <- NULL
+  tst_NA <- NULL
   yy <- as.double(unique(data.frame(mod$mf)[, response]))
 
 
-  sik_yna <- as.data.frame(mod$mf)
+  #sik_yna <- pheno_data
 
-  tst_NA <- which(is.na(sik_yna[, response]))
+  tst_NA <- which(is.na(pheno_data[, response]))
 
-  yNA <- sik_yna[, response]
+  yNA <- pheno_data[, response]
 
   # Check if response column contains NAs and if all unique genotypes match the number of rows
-  if (any(is.na(sik_yna[, response])) && length(unique(as.character(sik_yna[, gen_name]))) == nrow(sik_yna)) {
+  if (any(is.na(pheno_data[, response]))){
+  if (length(unique(as.character(pheno_data[, gen_name]))) == nrow(pheno_data)) {
 
-    tstt <- which(is.na(sik_yna[, response]))
+    tstt <- which(is.na(pheno_data[, response]))
 
     if (length(tstt) != 0) {
-      train_gid <- unique(as.character(sik_yna[-tstt, gen_name]))
-      unique_gid <- unique(as.character(sik_yna[, gen_name]))
+      train_gid <- unique(as.character(pheno_data[-tstt, gen_name]))
+      unique_gid <- unique(as.character(pheno_data[, gen_name]))
       train_test_label_unique <- ifelse(unique_gid%in%train_gid, "Train", "Test")
       #train_test_label <- ifelse(is.na(sik_yna[, response]), "Test", "Train")
     }
 
   } else {
-    if (nrow(sik_yna) > length(unique(sik_yna[, gen_name]))) {
+    if (nrow(pheno_data) > length(unique(pheno_data[, gen_name]))) {
 
-      tstt <- which(is.na(sik_yna[, response]))
+      tstt <- which(is.na(pheno_data[, response]))
 
       if (length(tstt) != 0) {
-        train_gid_across_env <- unique(as.character(sik_yna[-tstt, gen_name]))
-        unique_gid_across_env <- unique(as.character(sik_yna[, gen_name]))
-        train_test_label_unique <- ifelse(unique_gid_across_env%in%train_gid_across_env, "Train", "Test")
-        train_test_label <- ifelse(is.na(sik_yna[, gen_name]), "Test", "Train")
+        train_gid_across_env <- unique(as.character(pheno_data[-tstt, gen_name]))
+        unique_gid_across_env <- unique(as.character(pheno_data[, gen_name]))
+        train_test_label <- ifelse(as.character(pheno_data[, gen_name])%in%train_gid_across_env, "Train", "Test")
+        #train_test_label <- ifelse(is.na(pheno_data[, gen_name]), "Test", "Train")
       }
     }
   }
 
+  }
 
   #############################
   ### !is.null(var_cov_str) & is.null(inter_gen_pos) incase user provide var_cov_str
@@ -564,7 +567,7 @@ asreml_mod_output_new <- function(
   colnames(predicted_value)[colnames(predicted_value)%in%c("predicted.value", "std.error")] <- c("Predicted_value", "Standard_error")
   predicted_value[, "Prediction_error_variance"] <-  predicted_value[, "Standard_error"]^2
   #predicted_value[, "Reliability"] <-  NA
-  predicted_value[, "Train_Test_Label"] <-  train_test_label_unique
+  predicted_value[, "Train_Test_Label"] <-  ifelse(as.character(predicted_value[, gen_name])%in%train_gid_across_env, "Train", "Test")
   predicted_value
 
     },
@@ -726,7 +729,7 @@ asreml_mod_output_new <- function(
       dplyr::mutate(Prediction_error_variance = Standard_error^2)
     summarized_blup <- as.data.frame(summarized_blup)
     predicted_value <- summarized_blup
-    predicted_value[, "Train_Test_Label"] <- train_test_label_unique
+    predicted_value[, "Train_Test_Label"] <- ifelse(as.character(predicted_value[, gen_name])%in%train_gid_across_env, "Train", "Test")
   }
   ## sik
 

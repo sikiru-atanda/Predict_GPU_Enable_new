@@ -12,22 +12,31 @@
 #' @examples
 cv1_cv2_and_across_env_result_plot_process <- function(cv_results_data = NULL,
                                         eval_metrics = NULL,
+                                        heter_groups = NULL,
                                         metric_for_ranking = "accuracy") {
 
+  if (is.null(heter_groups)) stop(paste(heter_groups,  "is not defined. This is required for multi-environment GS."))
   # Combine all data frames into one
   combined_df <- do.call(rbind, lapply(cv_results_data, function(x) {
     cbind(trait = x$trait, rep = x$rep, model = x$model, x$eval_metrics_reps)
   }))
 
+  # combined_df <- combined_df |>
+  #   dplyr::mutate(dplyr::across(-c(trait, model, !!sym(heter_groups)), as.numeric))
+
+  columns_to_exclude <- c("trait", "model", heter_groups)
+  columns_to_convert <- setdiff(names(combined_df), columns_to_exclude)
+
   combined_df <- combined_df |>
-    dplyr::mutate(dplyr::across(-c(trait, model, Env), as.numeric))
+    dplyr::mutate(dplyr::across(dplyr::all_of(columns_to_convert), as.numeric))
 
   # Ensure 'Rep' is treated as a factor for proper aggregation later
   combined_df$Rep <- as.factor(combined_df$rep)
 
   aggregated_data_list <- lapply(eval_metrics, function(metric) {
     # Aggregate across reps and environments for each metric
-    agg_formula <- as.formula(paste(metric, "~ trait + model + Env"))
+    #agg_formula <- as.formula(paste(metric, "~ trait + model + Env"))
+    agg_formula <- as.formula(paste(metric, "~ trait + model +", heter_groups))
     aggregated_data <- stats::aggregate(agg_formula, data = combined_df, FUN = mean, na.rm = TRUE)
 
     # Further aggregate to get mean across environments for each metric
@@ -45,7 +54,8 @@ cv1_cv2_and_across_env_result_plot_process <- function(cv_results_data = NULL,
 
     ggplot_boxplot_reps <- ggplot2::ggplot(combined_df, ggplot2::aes_string(x = "model", y = metric, fill = "model")) +
       ggplot2::geom_boxplot() +
-      ggplot2::facet_wrap(~paste(trait, Env), scales = "free") +
+      #ggplot2::facet_wrap(~paste(trait, Env), scales = "free") +
+      ggplot2::facet_wrap(as.formula(paste("~ trait +", heter_groups)), scales = "free") +
       ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)) +
       ggplot2::labs(title = paste("Model Performance by", toupper(metric), ", Trait, and Environment"),
            x = "Model",

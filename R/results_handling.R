@@ -136,9 +136,9 @@ results_handling <-  function(GS_model = NULL,
                          res_plot_result_diagnostic_cv_only) {
     #browser()
     if(!is.null(res_model_output)){
-      if ("bayes_model" %in% names(res_model_output)) {
-        res_model_output <- res_model_output[names(res_model_output) != "bayes_model"]
-      }
+      # if ("bayes_model" %in% names(res_model_output)) {
+      #   res_model_output <- res_model_output[names(res_model_output) != "bayes_model"]
+      # }
 
       if ("bayes_result" %in% names(res_model_output)) {
         res_model_output <- res_model_output[["bayes_result"]]
@@ -397,10 +397,13 @@ if(inherits(combined_plot, "gtable")){
 
     pathout <- getwd()
 
-    saveOutput(res_model_output = res_model_output, res_summary_stat = res_summary_stat,
+    saveOutput(res_model_output = res_model_output,
+               res_summary_stat = res_summary_stat,
                pathout = pathout,
-               GS_model = GS_model, res_plot = res_plot,
-               res_plot_mean = res_plot_mean, test_diagonistic_plots = test_diagonistic_plots,
+               GS_model = GS_model,
+               res_plot = res_plot,
+               res_plot_mean = res_plot_mean,
+               test_diagonistic_plots = test_diagonistic_plots,
                res_plot_result_diagnostic = res_plot_result_diagnostic,
                res_plot_result_diagnostic_cv_only = res_plot_result_diagnostic_cv_only)
     processMMatrixModelReady(pathout)

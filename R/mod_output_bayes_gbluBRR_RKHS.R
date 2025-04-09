@@ -51,8 +51,11 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
   diagnostic_plots <- NULL
   tst <- which(is.na(mod$model$y))
 
-  if(length(tst==0)) tst <- NULL
+  if(length(tst)==0) tst <- NULL
   train_test_label <-  ifelse(is.na(mod$model$y), "Test", "Train")
+  GID_unique_all <- unique(as.character(pheno_data[, gen_name, drop = TRUE]))
+  GID_tst <- unique(as.character(pheno_data[tst, gen_name, drop = TRUE]))
+  train_test_label_across_env <- ifelse(GID_unique_all %in% GID_tst, "Test", "Train")
 
   # if(length(tst)>1){
   # Standard_error <- mod$model$SD.yHat
@@ -67,6 +70,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
   # }
 
   msg <- "\n==================================================\n"
+  Zg <- NULL
   ### Check if the user provide lable/name for the omics data
 
   if(inherits(omics_kernel_label,'list')){
@@ -457,7 +461,8 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                                              #standard_errors = Standard_error,
                                                              standard_errors = mod$model$SD.yHat,
                                                              confidence_level = confidence_level,
-                                                             model_for_CI_cal = "Bayes",
+                                                             model_for_CI_cal = "RKHS",
+                                                             #model_for_CI_cal = "Bayes",
                                                              boot_results = NULL)
 
       result_rel <-  reliability_thresholds( #prediction_error_var = prediction_error_var,
@@ -506,7 +511,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                     #Composite_reliability_percentage = NA,
                                     stringsAsFactors = FALSE)
 
-      colnames(predicted_value)[c(1, 3)] <- c(gen_name, heter_groups)
+      colnames(predicted_value)[colnames(predicted_value)%in%c("name", "Env")] <- c(gen_name, heter_groups)
 
 
       diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
@@ -521,7 +526,8 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                                           prediction_error_var = (mod$model$SD.yHat)^2,
                                                           genetic_var = mean(var_u_total),
                                                           confidence_level = 0.95,
-                                                          model_for_CI_cal = "Bayes",
+                                                          model_for_CI_cal = "RKHS",
+                                                          #model_for_CI_cal = "Bayes",
                                                           composite_reliability_score = composite_reliability$reliability_score,
                                                           composite_reliability = composite_reliability$trustworthiness,
                                                           composite_reliability_percentage = composite_reliability$reliability_percentage,
@@ -537,7 +543,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                    Residual_value = (mod$model$y[-tst] - mod$model$yHat[-tst]),
                                    stringsAsFactors = FALSE)
 
-      colnames(residual_value)[c(1, 2)] <- c(gen_name, heter_groups)
+      colnames(residual_value)[colnames(residual_value)%in%c("name", "Env")] <- c(gen_name, heter_groups)
 
        } else {
          Standard_error <-  mod$model$SD.yHat
@@ -548,6 +554,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                                                 standard_errors = mod$model$SD.yHat,
                                                                 confidence_level = confidence_level,
                                                                 model_for_CI_cal = "RKHS",
+                                                                #model_for_CI_cal = "RKHS",
                                                                 boot_results = NULL)
 
          result_rel <-  reliability_thresholds(prediction_error_var = (mod$model$SD.yHat)^2,
@@ -593,7 +600,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                        #Composite_reliability_percentage = NA,
                                        stringsAsFactors = FALSE)
 
-         colnames(predicted_value)[c(1, 3)] <- c(gen_name, heter_groups)
+         colnames(predicted_value)[colnames(predicted_value)%in%c("name", "Env")] <- c(gen_name, heter_groups)
 
 
          diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
@@ -654,7 +661,8 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                                                #standard_errors =  Standard_error,
                                                                standard_errors = mod$model$SD.yHat,
                                                                confidence_level = confidence_level,
-                                                               model_for_CI_cal = "Bayes",
+                                                               model_for_CI_cal = "RKHS",
+                                                               #model_for_CI_cal = "Bayes",
                                                                boot_results = NULL)
 
         result_rel <-  reliability_thresholds(#prediction_error_var = prediction_error_var,
@@ -697,22 +705,9 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                       #Composite_reliability_percentage = NA,
                                       stringsAsFactors = FALSE)
 
-        colnames(predicted_value)[c(1, 3)] <- c(gen_name, heter_groups)
+        colnames(predicted_value)[colnames(predicted_value)%in%c("name", "Env")] <- c(gen_name, heter_groups)
 
-        if(!is.null(Zg)){
-          across_env_predicted_value <- predicted_value |>
-            dplyr::ungroup() |>
-            dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>
-            dplyr::summarise(
-              Predicted_value = mean(Predicted_value, na.rm = TRUE),
-              Standard_error  = mean(Standard_error,  na.rm = TRUE),
-              PEV             = mean(PEV,             na.rm = TRUE),
-              Reliability     = mean(Reliability,     na.rm = TRUE),
-              .groups         = "drop"
-            )
 
-          across_env_predicted_value <- na.omit(across_env_predicted_value)
-        }
 
         residual_value <- data.frame(name = pheno_data[,gen_name],
                                      Env = all_envs_for_met,
@@ -720,7 +715,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                      Residual_value = (mod$model$y - mod$model$yHat),
                                      stringsAsFactors = FALSE)
 
-        colnames(residual_value)[c(1, 2)] <- c(gen_name, heter_groups)
+        colnames(residual_value)[colnames(residual_value)%in%c("name", "Env")] <- c(gen_name, heter_groups)
       } else{
 
         Standard_error <-  mod$model$SD.yHat
@@ -768,22 +763,22 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                       #Composite_reliability_percentage = NA,
                                       stringsAsFactors = FALSE)
 
-        colnames(predicted_value)[c(1, 3)] <- c(gen_name, heter_groups)
+        colnames(predicted_value)[colnames(predicted_value)%in%c("name", "Env")] <- c(gen_name, heter_groups)
 
-        if(!is.null(Zg)){
-          across_env_predicted_value <- predicted_value |>
-            dplyr::ungroup() |>
-            dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>
-            dplyr::summarise(
-              Predicted_value = mean(Predicted_value, na.rm = TRUE),
-              Standard_error  = mean(Standard_error,  na.rm = TRUE),
-              PEV             = mean(PEV,             na.rm = TRUE),
-              Reliability     = mean(Reliability,     na.rm = TRUE),
-              .groups         = "drop"
-            )
-
-          across_env_predicted_value <- na.omit(across_env_predicted_value)
-        }
+        # if(!is.null(Zg)){
+        #   across_env_predicted_value <- predicted_value |>
+        #     dplyr::ungroup() |>
+        #     dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>
+        #     dplyr::summarise(
+        #       Predicted_value = mean(Predicted_value, na.rm = TRUE),
+        #       Standard_error  = mean(Standard_error,  na.rm = TRUE),
+        #       PEV             = mean(PEV,             na.rm = TRUE),
+        #       Reliability     = mean(Reliability,     na.rm = TRUE),
+        #       .groups         = "drop"
+        #     )
+        #
+        #   across_env_predicted_value <- na.omit(across_env_predicted_value)
+        # }
 
         residual_value <- data.frame(name = pheno_data[,gen_name],
                                      Env = all_envs_for_met,
@@ -791,7 +786,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                      Residual_value = (mod$model$y - mod$model$yHat),
                                      stringsAsFactors = FALSE)
 
-        colnames(residual_value)[c(1, 2)] <- c(gen_name, heter_groups)
+        colnames(residual_value)[colnames(residual_value)%in%c("name", "Env")] <- c(gen_name, heter_groups)
       }
 
       }
@@ -814,6 +809,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
         Predicted_value_for_CIs <- Predicted_value_for_CI_total +  mod$model$mu
         prediction_error_var <- apply(Predicted_value_for_CIs, 1, var)
         Standard_error <- apply(Predicted_value_for_CIs, 1, sd)
+        predictions <- apply(Predicted_value_for_CI, 1, mean)
 
         #################
         result_rel_MPIW <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
@@ -823,7 +819,8 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                                                standard_errors = mod$model$SD.yHat,
                                                                #standard_errors =Standard_error,
                                                                confidence_level = confidence_level,
-                                                               model_for_CI_cal = "Bayes",
+                                                               #model_for_CI_cal = "Bayes",
+                                                               model_for_CI_cal = "RKHS",
                                                                boot_results = NULL)
 
         result_rel <-  reliability_thresholds(#prediction_error_var = prediction_error_var,
@@ -866,7 +863,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                       #Composite_reliability_percentage = composite_reliability$reliability_percentage,
                                       stringsAsFactors = FALSE)
 
-        colnames(predicted_value)[1] <- c(gen_name)
+        colnames(predicted_value)[colnames(predicted_value)%in%c("name")] <- c(gen_name)
 
         diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
                                                             GID_names = pheno_data[,gen_name],
@@ -881,7 +878,8 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                                             genetic_var = mean(var_u_total),
                                                             #genetic_var = var(mod$model$yHat),
                                                             confidence_level = 0.95,
-                                                            model_for_CI_cal = "Bayes",
+                                                            model_for_CI_cal = "RKHS",
+                                                            #model_for_CI_cal = "Bayes",
                                                             #composite_reliability_score = composite_reliability$reliability_score,
                                                             #composite_reliability = composite_reliability$trustworthiness,
                                                             #composite_reliability_percentage = composite_reliability$reliability_percentage,
@@ -896,7 +894,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                      Residual_value = (mod$model$y - mod$model$yHat),
                                      stringsAsFactors = FALSE)
 
-        colnames(residual_value)[1] <- c(gen_name)
+        colnames(residual_value)[colnames(residual_value)%in%c("name")] <- c(gen_name)
 
       }else {
         result_rel_MPIW <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
@@ -943,7 +941,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                       #Composite_reliability_percentage = composite_reliability$reliability_percentage,
                                       stringsAsFactors = FALSE)
 
-        colnames(predicted_value)[1] <- c(gen_name)
+        colnames(predicted_value)[colnames(predicted_value)%in%c("name")] <- c(gen_name)
 
         diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
                                                             GID_names = pheno_data[,gen_name],
@@ -969,7 +967,7 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                      Residual_value = (mod$model$y - mod$model$yHat),
                                      stringsAsFactors = FALSE)
 
-        colnames(residual_value)[1] <- c(gen_name)
+        colnames(residual_value)[colnames(residual_value)%in%c("name")] <- c(gen_name)
       }
 
     } else {
@@ -985,7 +983,8 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                                                standard_errors = mod$model$SD.yHat,
                                                                #standard_errors = Standard_error,
                                                                confidence_level = confidence_level,
-                                                               model_for_CI_cal = "Bayes",
+                                                               model_for_CI_cal = "RKHS",
+                                                               #model_for_CI_cal = "Bayes",
                                                                boot_results = NULL)
 
         result_rel <-  reliability_thresholds(prediction_error_var = prediction_error_var,
@@ -1027,14 +1026,14 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                       #Composite_reliability_percentage = composite_reliability$reliability_percentage,
                                       stringsAsFactors = FALSE)
 
-        colnames(predicted_value)[1] <- c(gen_name)
+        colnames(predicted_value)[colnames(predicted_value)%in%c("name")] <- c(gen_name)
 
         residual_value <- data.frame(name = pheno_data[,gen_name],
                                      Predicted_value = mod$model$yHat,
                                      Residual_value = (mod$model$y - mod$model$yHat),
                                      stringsAsFactors = FALSE)
 
-        colnames(residual_value)[1] <- c(gen_name)
+        colnames(residual_value)[colnames(residual_value)%in%c("name")] <- c(gen_name)
 
         diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
                                                             GID_names = pheno_data[,gen_name],
@@ -1049,7 +1048,8 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                                             genetic_var = mean(var_u_total),
                                                             #genetic_var = var(mod$model$yHat),
                                                             confidence_level = 0.95,
-                                                            model_for_CI_cal = "Bayes",
+                                                            model_for_CI_cal = "RKHS",
+                                                            #model_for_CI_cal = "Bayes",
                                                             #composite_reliability_score = composite_reliability$reliability_score,
                                                             #composite_reliability = composite_reliability$trustworthiness,
                                                             #composite_reliability_percentage = composite_reliability$reliability_percentage,
@@ -1103,14 +1103,14 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                       #Composite_reliability_percentage = composite_reliability$reliability_percentage,
                                       stringsAsFactors = FALSE)
 
-        colnames(predicted_value)[1] <- c(gen_name)
+        colnames(predicted_value)[colnames(predicted_value)%in%c("name")] <- c(gen_name)
 
         residual_value <- data.frame(name = pheno_data[,gen_name],
                                      Predicted_value = mod$model$yHat,
                                      Residual_value = (mod$model$y - mod$model$yHat),
                                      stringsAsFactors = FALSE)
 
-        colnames(residual_value)[1] <- c(gen_name)
+        colnames(residual_value)[colnames(residual_value)%in%c("name")] <- c(gen_name)
 
 
         diagnostic_plots <- diagnostic_plot_true_prediction(boot_results = NULL,
@@ -1145,6 +1145,45 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
                                                       var_u_total,
                                                       var_residual,
                                                       se_var_residual)
+
+  if(!is.null(Zg)){
+    across_env_predicted_value <- predicted_value |>
+      dplyr::ungroup() |>
+      dplyr::group_by(dplyr::across(dplyr::all_of(gen_name))) |>
+      dplyr::summarise(
+        Predicted_value = mean(Predicted_value, na.rm = TRUE),
+        Standard_error  =NA,
+        PEV             = NA,
+        lower_bound     = NA,
+        upper_bound     = NA,
+        Reliability     = NA,
+        .groups         = "drop"
+      )
+
+    #across_env_predicted_value <- na.omit(across_env_predicted_value)
+    across_env_predicted_value$Train_Test_Label <-  train_test_label_across_env
+
+    cols <- names(across_env_predicted_value)
+
+    predicted_idx <- which(cols == "Predicted_value")
+
+    cols <- setdiff(cols, "Train_Test_Label")
+
+    new_order <- append(cols, "Train_Test_Label", after = predicted_idx)
+
+    # Reorder the data frame
+    across_env_predicted_value <- across_env_predicted_value[, new_order]
+
+    varG <- variance_components[rownames(variance_components)%in%"genetic_variance", "Components"]
+
+    # result_rel_MPIW_across_env <- reliability_thresholds_MPIW_from_CI(CI_width_thresholds = CI_width_thresholds,
+    #                                                        predictions = across_env_predicted_value$Predicted_value,
+    #                                                        standard_errors = across_env_predicted_value$Standard_error,
+    #                                                        confidence_level = confidence_level,
+    #                                                        model_for_CI_cal = "RKHS",
+    #                                                        boot_results = NULL)
+    #across_env_predicted_value$
+  }
 
   if(!"geno_model_ready" %in%names(m_matrix_model_ready_list)){
     if(length(m_matrix_model_ready_list)>1){
@@ -1256,12 +1295,13 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
     #   )
     #
     # across_env_predicted_value <- na.omit(across_env_predicted_value)
+    across_env_predicted_value <- as.data.frame(across_env_predicted_value)
 
     res <- list(Coefficients = coefficients_list,
                 Estimated_breeding_value = estimated_breeding_value_list,
                 Total_estimated_breeding_value = sum_ebv,
                 Predicted_value =  predicted_value,
-                #Total_Predicted_value = across_env_predicted_value,
+                Total_Predicted_value = across_env_predicted_value,
                 Residual_value = residual_value,
                 Variance_components = variance_components,
                 M_matrix_model_ready =  m_matrix_model_ready_list,

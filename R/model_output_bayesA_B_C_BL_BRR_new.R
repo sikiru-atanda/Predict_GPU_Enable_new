@@ -551,7 +551,8 @@ if(length(tst)>1){
 #                               Composite_reliability_percentage = composite_reliability$reliability_percentage,
 #                               stringsAsFactors = FALSE)
 
-colnames(predicted_value)[1] <- gen_name
+colnames(predicted_value)[colnames(predicted_value)%in%c("name")] <- c(gen_name)
+
 
 ##############################
 

@@ -182,7 +182,7 @@ models_execute_crossval <- function(pheno_data = NULL,
                                     heter_groups = NULL,
                                     verbose = FALSE,
                                     num_cores = NULL,
-                                    nfolds = NULL,
+                                    nfolds = 5,
                                     cross_validation_meth = NULL, ## this handle th ETA for bayes model
                                     sampling_method = NULL,
                                     eval_metrics = NULL,
@@ -529,7 +529,7 @@ models_execute_crossval <- function(pheno_data = NULL,
       results_eval_metrics_reps <- matrix(NA, nrow = length(ENV), ncol = length(eval_metrics)+2)
       results_eval_metrics_reps[, 1] <- rep(1, length(ENV))
       results_eval_metrics_reps[, 2] <- ENV
-      colnames(results_eval_metrics_reps) <- c("Rep", "Env", eval_metrics)
+      colnames(results_eval_metrics_reps) <- c("Rep", heter_groups, eval_metrics)
       results_eval_metrics_reps_use <- results_eval_metrics_reps
       results_eval_metrics_reps <- data.frame()
     }
@@ -691,7 +691,7 @@ models_execute_crossval <- function(pheno_data = NULL,
 
       for (eva in 1:length(eval_metrics)) {
         sik <- ypred_cv |>
-          dplyr::group_by(Env) |>
+          dplyr::group_by(!!dplyr::sym(heter_groups)) |>
           dplyr::summarise(
             eval_metric = tryCatch(
               evaluation_metrics(yhat, y, eval_metrics = eval_metrics[eva]),
@@ -702,7 +702,7 @@ models_execute_crossval <- function(pheno_data = NULL,
         if (!is.null(sik)) {
           for (ii in 1:nrow(sik)) {
             if (!is.null(sik$eval_metric[ii])) {
-              results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups] == sik$Env[ii], c("Rep", eval_metrics[eva])] <- c(repp, sik$eval_metric[ii])
+              results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups] == as.character(sik[[heter_groups]])[ii], c("Rep", eval_metrics[eva])] <- c(repp, sik$eval_metric[ii])
             }
           }
         }

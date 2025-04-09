@@ -75,9 +75,13 @@ AI_pls <- function(pheno_object=NULL,
   #
   # }
   # Define cross-validation control
+  if(is.null(geno_omic_object)){
+    stop(paste(msg, "X_variables data (genomic/omics) data is missing."), call. = FALSE)
+  }
   cv <- caret::trainControl(method = resample_method_tune, number = 10)
 ################
   scaler <- caret::preProcess(geno_omic_object, method = c("center", "scale"))
+  GID <- rownames(geno_omic_object)
   geno_omic_object <- stats::predict(scaler, geno_omic_object)
 
   if(!is.null(geno_omic_test_object)){
@@ -127,7 +131,7 @@ AI_pls <- function(pheno_object=NULL,
                                geno_test = geno_omic_test_object)
 
   } else {
-    GID <- rownames(geno_omic_object)
+    #GID <- rownames(geno_omic_object)
     boot_results <- boot::boot(data = data,
                                statistic=pls_predict_boost,
                                R=n_bootstrap,
@@ -197,7 +201,7 @@ AI_pls <- function(pheno_object=NULL,
                                  geno_test = geno_omic_test_object)
 
     } else {
-      GID <- rownames(geno_omic_object)
+      #GID <- rownames(geno_omic_object)
       boot_results <- boot::boot(data = data,
                                  statistic=pls_predict_boost,
                                  R=n_bootstrap,

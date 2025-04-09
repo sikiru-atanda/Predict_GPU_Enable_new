@@ -63,6 +63,7 @@ AI_knn <- function(pheno_object=NULL,
   ## so scaling the features is critical to ensure that
   ## all dimensions contribute equally to the distance calculations.
   if(!is.null(geno_omic_object) & !is.null(pheno_object)) {
+    GID <- rownames(geno_omic_object)
     scaler <- caret::preProcess(geno_omic_object, method = c("center", "scale"))
     geno_omic_object <- stats::predict(scaler, geno_omic_object)
 
@@ -114,7 +115,7 @@ if(is.null(knn_paras_tunning) | length(knn_paras_tunning)!=0){
 
        if(!is.null(geno_omic_object) & !is.null(pheno_object)) {
 
-         GID <- rownames(geno_omic_object)
+         #GID <- rownames(geno_omic_object)
          AI_fit = caret::train(x = geno_omic_object,
                                y = pheno_object[, response],
                                trControl = AI_trcontrol,
@@ -174,7 +175,7 @@ if(!is.null(geno_omic_test_object)){
 
          if(!is.null(geno_omic_object) & is.null(geno_omic_test_object)){
 
-           GID <- rownames(geno_omic_object)
+           #GID <- rownames(geno_omic_object)
            boot_results <- boot::boot(data,
                                       statistic=knn_predict_boost,
                                       best_k = k,

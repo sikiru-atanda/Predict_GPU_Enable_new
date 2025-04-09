@@ -186,17 +186,29 @@ deep_learning_model <- function(pheno_object=NULL,
 #browser()
   msg <- "\n==================================================\n"
   if(is.null(dense_layers_cnn)) dense_layers_cnn <-  64
+  if(is.null(geno_omic_object) & is.null(pheno_object)) {
+
+    stop(print(paste(msg,"provide matrix of the predictors and the data.frame of the Y variable.")), call. = FALSE)
+  }
+
   if(!is.null(geno_omic_object)){
+    GID <- rownames(geno_omic_object)
     scaler <- caret::preProcess(geno_omic_object, method = c("center", "scale"))
     geno_omic_object <- stats::predict(scaler, geno_omic_object)
 
   }
 
   if(!is.null(geno_omic_test_object)){
+
+    test_label <- rownames(geno_omic_test_object)
+    geno_omic_test_object <- rbind(geno_omic_object, geno_omic_test_object)
+    GID <- rownames(geno_omic_test_object)
+
     geno_omic_test_object <- stats::predict(scaler, geno_omic_test_object)
 
   }
 
+#### This is for cross-validation. Not typical omic data
   if(!is.null(omics_data)){
     scaler <- caret::preProcess(omics_data, method = c("center", "scale"))
     omics_data <- stats::predict(scaler, omics_data)
@@ -274,13 +286,13 @@ deep_learning_model <- function(pheno_object=NULL,
   if(!is.null(learning_rate_dp)) learning_rate <- as.numeric(learning_rate_dp) else learning_rate <- as.numeric(0.01)
   if(!is.null(l2_regularizer_dp)) l2_regularizer_dp <- as.integer(l2_regularizer_dp)
 
-  if(!is.null(geno_omic_test_object)){
-    GID <- rownames(geno_omic_test_object)
-  } else {
-    if(!is.null(geno_omic_object)){
-      GID <- rownames(geno_omic_object)
-    }
-  }
+  # if(!is.null(geno_omic_test_object)){
+  #   GID <- rownames(geno_omic_test_object)
+  # } else {
+  #   if(!is.null(geno_omic_object)){
+  #     GID <- rownames(geno_omic_object)
+  #   }
+  # }
 
    np <- reticulate::import("numpy")
 
@@ -487,8 +499,16 @@ deep_learning_model <- function(pheno_object=NULL,
                                                          interval_width_low_threshold = interval_width_low_threshold,
                                                          apply_pca = TRUE)
 
+      if(!is.null(geno_omic_test_object)){
+
+        train_test_label <- ifelse(rownames(geno_omic_test_object)%in%test_label, "Test", "Train")
+      } else {
+        train_test_label <- rep("Train", nrow(geno_omic_object))
+      }
+
       AI_preds <- data.frame(name = GID,
                              Predicted_value = AI_pred_reverted,
+                             Train_Test_Label = train_test_label,
                              Standard_error = pred_SE,
                              PEV = pred_variances,
                              lower_bound = result_rel_MPIW$lower_bound,
@@ -574,6 +594,7 @@ deep_learning_model <- function(pheno_object=NULL,
       AI_preds <- data.frame(name = GID,
                              Predicted_value = AI_pred_reverted,
                              Standard_error = pred_SE,
+                             Train_Test_Label = train_test_label,
                              PEV = pred_variances,
                              lower_bound = result_rel_MPIW$lower_bound,
                              upper_bound = result_rel_MPIW$upper_bound,

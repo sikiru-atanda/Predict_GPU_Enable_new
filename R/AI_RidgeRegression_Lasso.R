@@ -59,6 +59,7 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
   }
 
   if(!is.null(geno_omic_object)){
+    GID <- rownames(geno_omic_object)
     scaler <- caret::preProcess(geno_omic_object, method = c("center", "scale"))
     geno_omic_object <- stats::predict(scaler, geno_omic_object)
 
@@ -187,7 +188,7 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
   best_lambda <- cv_lasso$lambda.min
 
   if(!is.null(geno_omic_test_object)){
-    GID <- rownames(geno_omic_test_object)
+    #GID <- rownames(geno_omic_test_object)
   boot_results <- boot::boot(data = data,
                              statistic=lasso_predict_boost,
                              R=n_bootstrap,
@@ -196,7 +197,7 @@ AI_RidgeRegression_Lasso <- function(pheno_object=NULL,
                              geno_test = geno_omic_test_object)
 
   } else {
-    GID <- rownames(geno_omic_object)
+    #GID <- rownames(geno_omic_object)
     boot_results <- boot::boot(data = data,
                                statistic=lasso_predict_boost,
                                R=n_bootstrap,
