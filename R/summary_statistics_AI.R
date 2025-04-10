@@ -52,7 +52,7 @@ summary_statistics_AI <- function(predicted_object= NULL,
   Res_trn <- NA
 
   }else {
-  Res_trn <- round(var(pheno_object[[response]] - yhat[,"Predicted_value"]),3)
+  Res_trn <- round(var(pheno_object[[response]] - yhat[,"Predicted_value"], na.rm = TRUE),3)
   }
   #n<-length(mod$model$y)
 

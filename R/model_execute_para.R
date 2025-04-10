@@ -1256,7 +1256,7 @@ model_execute <- function(
     geno_omic_rownames_check <- check_names_consistency(datasets_geno_omic, dataset_names_geno_omic)
 
     if(isFALSE(geno_omic_rownames_check)){
-      stop(paste(msg, paste("The omic/and or genotypic data do not have onsistent rownames.",
+      stop(paste(msg, paste("The omic/and or genotypic data do not have consistent rownames.",
                             "provide genomic or omics data with consistent rownames.")), call. = FALSE)
     }
 
