@@ -612,15 +612,21 @@ AI_pls_cv <- function(y,
     scaler <- caret::preProcess(omics, method = c("center", "scale"))
     omics <- stats::predict(scaler, omics)
   }
-
+if(!is.null(ncomp)){
+  if(length(ncomp)> ncol(omics)){
+    stop("ncomp cannot be greater than the number of column in the X_variables.")
+  }
+}
   y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
 
   # Predict on the training data and get the scaled values
   y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
 
-if(is.null(ncomp) | !is.numeric(ncomp)) ncomp <- 3
-if(is.null(ncomp)){
-  pls_model <- pls::plsr(y ~ as.matrix(omics), validation = "CV", segments = 5)
+
+if(is.null(ncomp) || !is.numeric(ncomp)){
+  pls_model <- pls::plsr(y[-tst] ~ as.matrix(omics[-tst, ]),
+                         validation = "CV", segments = 5,
+                         scale = FALSE, center = FALSE)
 
   # Get the cross-validated RMSEP values
   rmsep_values <- pls::RMSEP(pls_model)
@@ -630,6 +636,9 @@ if(is.null(ncomp)){
 
   # Find the optimal number of components
   optimal_components <- which.min(rmsep_cv)
+  if(is.na(optimal_components) || optimal_components==0){
+    optimal_components <- 3
+  }
 
 } else {
   optimal_components <- ncomp

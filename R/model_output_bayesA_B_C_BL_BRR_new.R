@@ -132,6 +132,9 @@ if(length(datasets)>1){
 
 train_test_label <-  ifelse(is.na(mod$model$y), "Test", "Train")
 tst <- which(is.na(mod$model$y))
+if(length(tst)==0){
+  tst <- NULL
+}
 ### Check bayes_parameter_check function in bayesians_preprocess for details
 nIter <- bayes_para[["nIter"]]
 burnIn <- bayes_para[["burnIn"]]
@@ -205,7 +208,7 @@ if(length(dataset_names)==length(extracted_names_from_ETA_list)) {
   dataset_names <- dataset_names[match(extracted_names_from_ETA_list, dataset_names)]
 
 } else {
-  stop("names must be the same length")
+  stop(paste(msg, "names must be the same length"), call. = FALSE)
 }
 
 
