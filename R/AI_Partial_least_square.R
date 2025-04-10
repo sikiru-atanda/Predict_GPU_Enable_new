@@ -84,6 +84,17 @@ AI_pls <- function(pheno_object=NULL,
   GID <- rownames(geno_omic_object)
   geno_omic_object <- stats::predict(scaler, geno_omic_object)
 
+  ### Check for near zero variance
+
+  zero_var_check <- caret::nearZeroVar(geno_omic_object)
+  if (length(zero_var_check) > 0) {
+    message(paste(msg, "Some X_variables data (genomic/omics) has zero variance and being removed."))
+    geno_omic_object <- geno_omic_object[, -zero_var_check]
+    if(!is.null(geno_omic_test_object)){
+      geno_omic_test_object <- geno_omic_test_object[, -zero_var_check]
+    }
+  }
+
   if(!is.null(geno_omic_test_object)){
     test_label <- rownames(geno_omic_test_object)
     geno_omic_test_object <- rbind(geno_omic_object, geno_omic_test_object)
@@ -106,13 +117,13 @@ AI_pls <- function(pheno_object=NULL,
   # Perform cross-validated PLS regression
   if(isTRUE(para_tunning)){
 
-    ncomp <- pls_paras_tunning$ncomp
+    max_ncomp <- min(pls_paras_tunning$ncomp, ncol(geno_omic_object))
 
   cv_results <- caret::train(x = geno_omic_object,
                              y = y_train_scaled,
                              method = "pls",
                              trControl = cv,
-                             tuneGrid = data.frame(ncomp = 1:ncomp),
+                             tuneGrid = data.frame(ncomp = 1:max_ncomp),
                              metric = "RMSE")
 
   # Extract the cross-validated RMSE values
@@ -121,6 +132,9 @@ AI_pls <- function(pheno_object=NULL,
   # Find the optimal number of components with minimum RMSE
   optimal_components <- which.min(cv_rmse)
 
+  if (is.na(optimal_components) || optimal_components == 0) {
+    optimal_components <- 3
+  }
 
   if(!is.null(geno_omic_test_object)){
 
@@ -176,8 +190,10 @@ AI_pls <- function(pheno_object=NULL,
 
 
     if(is.null(ncomp)){
-    pls_model <- pls::plsr(y_train_scaled ~ as.matrix(geno_omic_object), validation = "CV", segments = 5,
-                           center = FALSE)
+    pls_model <- pls::plsr(y_train_scaled ~ as.matrix(geno_omic_object),
+                           validation = "CV", segments = 5,
+                           center = FALSE,
+                           scale = FALSE)
 
     # Get the cross-validated RMSEP values
     rmsep_values <- pls::RMSEP(pls_model)
@@ -187,6 +203,9 @@ AI_pls <- function(pheno_object=NULL,
 
     # Find the optimal number of components
     optimal_components <- which.min(rmsep_cv)
+    if (is.na(optimal_components) || optimal_components == 0) {
+      optimal_components <- 3
+    }
 
     } else {
       optimal_components <- ncomp
