@@ -57,10 +57,10 @@ omic_precheck <- function(object = NULL,
       stop(paste(msg,"Omic data contain duplicate genotypes."), call. = FALSE)
     }
 
-    zero_var_check <- caret::nearZeroVar(as.matrix(object))
-    if (length(zero_var_check) > 0) {
-      object <- object[, -zero_var_check]
-    }
+    # zero_var_check <- caret::nearZeroVar(as.matrix(object))
+    # if (length(zero_var_check) > 0) {
+    #   object <- object[, -zero_var_check]
+    # }
     # ## Check for Na and remove
     # Na_col.omit <- which((colSums(is.na(object))==0)==FALSE)
     #
