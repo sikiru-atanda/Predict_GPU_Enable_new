@@ -491,6 +491,7 @@ model_execute <- function(
 
     asreml_model <- "GBLUP"
 
+
     if (any(c(GS_model, GS_model_cv) %in% c(bayes_valid_models,
                                             bayes_gblup_valid_models,
                                             asreml_model))){
@@ -1396,6 +1397,14 @@ if (length(datasets_index_kernel) != 0) {
 
 
 
+user_defined_model <- unlist(list(GS_model, GS_model_cv), use.names = FALSE)
+
+valid_models <- c(bayes_gblup_valid_models, asreml_model)
+
+if (!any(user_defined_model %in% valid_models)) {
+      kernel_method <- NULL
+      gmatrix_method <- NULL
+    }
  #### Get the clean geno_data ready for model fit
  ## The geno_to_model function depend on geno_precheck function. The expected
  ## output is clean genomic data with no missing and all QC control is checked.
