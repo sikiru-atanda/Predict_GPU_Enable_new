@@ -470,6 +470,9 @@ AI_xgboost_cv <- function(y,
                           early_stop_for_iteration_xgb = FALSE ## use when training set is large
                           ){
 
+  # Auto-adjust nthread based on environment
+  nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
+
   if(!is.null(omics)){
     scaler <- caret::preProcess(omics, method = c("center", "scale"))
     omics <- stats::predict(scaler, omics)
@@ -488,7 +491,8 @@ AI_xgboost_cv <- function(y,
     alpha = xgb_alpha,
     lambda = xgb_lambda,
     objective = "reg:squarederror",
-    eval_metric = c("rmse", "rmsle", "mape")
+    eval_metric = c("rmse", "rmsle", "mape"),
+    nthread = nthread
   )
   } else {
 
@@ -499,7 +503,8 @@ AI_xgboost_cv <- function(y,
         eta = eta,
         max_depth = max_depth,
         #min_child_weight = min_child_weight,
-        subsample = subsample
+        subsample = subsample,
+        nthread = nthread
         #colsample_bytree = colsample_bytree
       )
     }
@@ -515,7 +520,8 @@ AI_xgboost_cv <- function(y,
         lambda = xgb_lambda,
         eta = eta,
         objective = "reg:squarederror",
-        eval_metric = c("rmse", "rmsle", "mape")
+        eval_metric = c("rmse", "rmsle", "mape"),
+        nthread = nthread
       )
     }
 }
