@@ -173,6 +173,9 @@ AI_Xgb <- function(pheno_object=NULL,
                    system_database = FALSE,
                    ...){
 #browser()
+  # Auto-adjust nthread based on environment
+  nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
+
   msg <- "\n==================================================\n"
 
   if(is.null(geno_omic_object) & is.null(pheno_object)) {
@@ -221,6 +224,9 @@ AI_Xgb <- function(pheno_object=NULL,
   # Predict on the training data and get the scaled values
   y_train_scaled <- stats::predict(y_scaler, as.data.frame(as.matrix(y_train)))[, 1]
 
+
+  #cat("Rows in geno_omic_object:", nrow(geno_omic_object), "\n")
+  #cat("Length of y_train_scaled:", length(y_train_scaled), "\n")
 
 #data <- cbind(y=y_train_scaled, geno_omic_object)
 
@@ -282,7 +288,7 @@ if(xgb_booster=="gblinear"){
 
     if(!is.null(geno_omic_object)){
 
-      GID <- rownames(geno_omic_object)
+      #GID <- rownames(geno_omic_object)
       if(!is.null(xgb_grid_linear)){
    xgb_fit <-  caret::train(x = geno_omic_object,
                    y = y_train_scaled,
@@ -296,8 +302,8 @@ if(xgb_booster=="gblinear"){
      eta = xgb_fit$bestTune$eta,
      lambda = xgb_fit$bestTune$lambda,  # L2 Regularization
      #max_depth = xgb_fit$bestTune$max_depth,
-     alpha = xgb_fit$bestTune$alpha  # L1 Regularization
-
+     alpha = xgb_fit$bestTune$alpha,  # L1 Regularization
+     nthread = nthread
    )
    nrounds <- xgb_fit$bestTune$nrounds
       } else {
@@ -316,7 +322,8 @@ if(xgb_booster=="gblinear"){
             max_depth = xgb_fit$bestTune$max_depth,
             colsample_bytree = xgb_fit$bestTune$colsample_bytree,  # Subsample ratio of columns when constructing each tree
             min_child_weight = xgb_fit$bestTune$min_child_weight,  # Minimum sum of instance weight needed in a child
-            subsample = xgb_fit$bestTune$subsample
+            subsample = xgb_fit$bestTune$subsample,
+            nthread = nthread
 
           )
           nrounds <- xgb_fit$bestTune$nrounds
@@ -380,7 +387,8 @@ if(xgb_booster=="gblinear"){
             rate_drop = xgb_fit$bestTune$rate_drop,
             skip_drop = xgb_fit$bestTune$skip_drop,
             sample_type = "uniform",
-            normalize_type = "tree"
+            normalize_type = "tree",
+            nthread = nthread
 
           )
           nrounds <- xgb_fit$bestTune$nrounds
@@ -460,7 +468,8 @@ if(xgb_booster=="gblinear"){
           subsample = subsample,
           colsample_bytree = colsample_bytree,
           objective = "reg:squarederror",
-          eval_metric = c("rmse", "rmsle", "mape")
+          eval_metric = c("rmse", "rmsle", "mape"),
+          nthread = nthread
         )
       } else if (xgb_booster == "gblinear") {
         xgb_params <- list(
@@ -472,7 +481,8 @@ if(xgb_booster=="gblinear"){
           #lambda = xgb_lambda,
           eta = learning_rate,
           objective = "reg:squarederror",
-          eval_metric = c("rmse", "rmsle", "mape")
+          eval_metric = c("rmse", "rmsle", "mape"),
+          nthread = nthread
         )
       } else {
         if (xgb_booster == "dart") {
@@ -489,7 +499,8 @@ if(xgb_booster=="gblinear"){
             #lambda = xgb_lambda,
             eta = learning_rate,
             objective = "reg:squarederror",
-            eval_metric = c("rmse", "rmsle", "mape")
+            eval_metric = c("rmse", "rmsle", "mape"),
+            nthread = nthread
           )
         }
       }

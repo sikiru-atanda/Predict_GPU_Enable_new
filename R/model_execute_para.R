@@ -1636,6 +1636,7 @@ if (!any(user_defined_model %in% valid_models)) {
 
  ### Ends
 
+
  ###################Genetic space test
 
  if ("test_set" %in% names(pheno_clean) && isTRUE(test_train_genetic_space)) {
@@ -1977,29 +1978,97 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
    n_model <- length(GS_model)
  }
  # Main logic
- sys_name <- Sys.info()["sysname"]
- if (!is.null(num_cores) && num_cores > 1) {
-   #sys_name <- Sys.info()["sysname"]
-   set_parallel_plan(n_trait = n_trait, n_model = n_model,
-                     sys_name = sys_name)
- } else {
-   # Automatically determine the number of cores and use half of them
-   detected_cores <- parallel::detectCores(logical = TRUE)
-   # For non-Windows systems, consider physical cores only
-   num_cores <- round(detected_cores * 0.7)
+ # sys_name <- Sys.info()["sysname"]
+ # if (!is.null(num_cores) && num_cores > 1) {
+ #   #sys_name <- Sys.info()["sysname"]
+ #   set_parallel_plan(n_trait = n_trait, n_model = n_model,
+ #                     sys_name = sys_name)
+ # } else {
+ #   # Automatically determine the number of cores and use half of them
+ #   detected_cores <- parallel::detectCores(logical = TRUE)
+ #   # For non-Windows systems, consider physical cores only
+ #   num_cores <- round(detected_cores * 0.7)
+ #
+ #   set_parallel_plan(n_trait= n_trait, n_model = n_model,num_cores = num_cores,
+ #                     sys_name = sys_name)
+ # }
 
-   set_parallel_plan(n_trait= n_trait, n_model = n_model,num_cores = num_cores,
-                     sys_name = sys_name)
+ ##########################################################
+ #### new for chunk parallel
+
+ # Filter datasets
+ filter_datasets <- function(datasets) {
+   non_null_idx <- !sapply(datasets, is.null)
+   filtered_datasets <- datasets[non_null_idx]
+   #filtered_names <- dataset_names[non_null_idx]
+   if (length(filtered_datasets) > 0) {
+     #names(filtered_datasets) <- filtered_names
+   } else {
+     filtered_datasets <- NULL
+   }
+   list(datasets = filtered_datasets)
  }
 
+ gmatrix_omic_kernel_filtered <- filter_datasets(gmatrix_kernel_model_ready_list)
+ gmatrix_omic_kernel_filtered <- gmatrix_omic_kernel_filtered$datasets
+ ##
+ geno_omic_filtered <- filter_datasets(geno_omic_model_ready_list)
+ geno_omic_filtered <- geno_omic_filtered$datasets
+
+ # Validate required datasets
+ if (length(geno_omic_filtered) == 0 && length(gmatrix_omic_kernel_filtered) == 0 && is.null(ml_dat_res)) {
+   stop("No valid datasets available for model fitting.")
+ }
+ ###
+ # Calculate total size of non-NULL datasets for omics_data
+ if (length(geno_omic_filtered) != 0 && length(gmatrix_omic_kernel_filtered) != 0) {
+   all_omics_datasets <- c(geno_omic_filtered, gmatrix_omic_kernel_filtered)
+ } else if (length(geno_omic_filtered) == 0 && length(gmatrix_omic_kernel_filtered) != 0){
+   all_omics_datasets <- c(gmatrix_omic_kernel_filtered)
+ } else if(length(geno_omic_filtered) != 0 && length(gmatrix_omic_kernel_filtered) == 0){
+   all_omics_datasets <- c(geno_omic_filtered)
+ }
+
+ omics_data_size_mb <- if (length(all_omics_datasets) == 0) {
+   0
+ } else {
+   sum(sapply(all_omics_datasets, function(x) object.size(x) / 1024 / 1024))
+ }
+
+ if(!is.null(num_cores)){
+
+   num_cores <- NULL
+ }
+ # Parallel setup with dynamic core adjustment
+ sys_name <- Sys.info()["sysname"]
+ num_cores <- set_parallel_plan(
+   n_trait = n_trait,
+   n_model = n_model,
+   replication = 1,
+   GS_model_cv = unique(best_models[["model"]]),
+   pheno_data = pheno_clean[["pheno_clean_data"]],
+   omics_data = omics_data_size_mb,
+   num_cores = num_cores,
+   sys_name = sys_name
+ )
 
  #results_use = results
+ task_indices <- seq_len(nrow(best_models))
+ chunks <- split(task_indices, rep(1:num_cores, length.out = length(task_indices)))
 
- results <- future.apply::future_lapply(seq_len(nrow(best_models)), function(i) {
-   task_row <- best_models[i, ]
+
+ #results <- future.apply::future_lapply(seq_len(nrow(best_models)), function(i) {
+   #task_row <- best_models[i, ]
+ results <- future.apply::future_lapply(chunks, function(chunk) {
+   lapply(chunk, function(i) {
+     task_row <- best_models[i, ]
 
    response <- as.character(task_row$trait)
    GS_model <- as.character(task_row$model)
+
+   new_seed <- (123L + i * 10000L) %% .Machine$integer.max
+   set.seed(new_seed)
+   options(random_state = new_seed)
 
    if(any(GS_model%in%dp_models)){
      deep_learning_modell <- as.character(task_row$model)
@@ -2773,10 +2842,14 @@ if(GS_model == "deep_learning_model") GS_model <- as.character(task_row$model)
    ### End machine learning
    list(GS_model = GS_model,res_model_output = res_model_output,
         res_summary_stat = res_summary_stat, geno_qc_stat = geno_qc_stat)
+   }) ## new with chunk parallel
    #list(output =  output)
  }, future.seed = TRUE)
 
-
+   ### new for chunk parallel processing
+   # Flatten results
+   results <- unlist(results, recursive = FALSE)
+   ## ends
 
  if(!is.null(best_models)){
    names(results) <- best_models[["trait"]]
@@ -2784,6 +2857,7 @@ if(GS_model == "deep_learning_model") GS_model <- as.character(task_row$model)
  } else {
    names(results) <- response
  }
+
 
 
  # Initialize a list to hold the results if returning as a list when system_database is TRUE
