@@ -238,6 +238,8 @@ model_execute <- function(
     kernel_method = NULL,
     response=NULL,
     gen_name=NULL,
+    ld_prunning_qc = TRUE,
+    docker_nd_usage = FALSE,
     cova=NULL,
     fixed=NULL,
     random=NULL,
@@ -252,6 +254,8 @@ model_execute <- function(
     eval_metrics = NULL,
     fixed_term_model_bayesian = 'FIXED',
     rand_term_model_bayesian = NULL,
+    selected = NULL, # nd_mods
+    max_features = 50,
     #core = NULL,
     engine = NULL,
     scaling = TRUE,
@@ -488,6 +492,14 @@ model_execute <- function(
 
     bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
     bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
+
+    # gam_method_use = c("ND_mod1", "ND_mod2",
+    #                    "ND_mod3", "ND_mod4",
+    #                    "ND_mod5", "ND_mod6", "ND_mod7", "ND_mod8")
+
+    gam_method_use = c("ND_mod1", "ND_mod2")
+
+    AI_valid_models <- c(AI_valid_models, gam_method_use)
 
     asreml_model <- "GBLUP"
 
@@ -1433,6 +1445,7 @@ if (!any(user_defined_model %in% valid_models)) {
                                    impute = impute,
                                    imputation_method = imputation_method,
                                    impute_knn_k = impute_knn_k,
+                                   ld_prunning_qc = ld_prunning_qc,
                                    qc_filtering = if(!is.null(geno_data_process)) FALSE else qc_filtering,
                                    message = message,
                                    heter_groups = heter_groups)
@@ -1702,6 +1715,7 @@ if (!any(user_defined_model %in% valid_models)) {
  cv_results_predicted_vs_observed <- NULL
  res_plot_result_diagnostic_cv_only <- NULL
  diagnostic_plots <- NULL
+
  ####
  if("test_set"%in%names(pheno_clean)) {
 
@@ -1718,6 +1732,47 @@ if (!any(user_defined_model %in% valid_models)) {
        stop(paste(msg,'Test_set cannot be a list. Provide it as a vector, single column dataframe or matrix.'), call. = FALSE)
      }
    }
+
+ }
+
+ models <- c()
+ feature_selected <- NULL
+ if (!is.null(GS_model)) models <- c(models, GS_model)
+ if (!is.null(GS_model_cv)) models <- c(models, GS_model_cv)
+ if (any(models %in% gam_method_use)) {
+   n_traits <- length(response)
+   seed_base <- 123
+   sys_name <- Sys.info()["sysname"]
+
+   if(docker_nd_usage) sys_name <- "Windows"
+
+   if (!is.null(num_cores) && num_cores > 1) {
+     set_parallel_plan(n_trait = n_traits, n_model = 1, sys_name = sys_name)
+   } else {
+     detected_cores <- parallel::detectCores(logical = TRUE)
+     num_cores <- round(detected_cores * 0.7)
+
+     set_parallel_plan(n_trait = n_traits, n_model = 1, num_cores = num_cores,
+                       sys_name = sys_name)
+   }
+
+   feature_selected <- future.apply::future_lapply(1:n_traits, function(i) {
+     current_seed <- seed_base + i
+
+     result <- boot_rf_feature_selection(
+       X = ml_dat_res[["merged_data"]][["merge_data"]],
+       y = ml_dat_res[["pheno_clean_data"]][, response[i]],
+       R = 100,
+       seed = current_seed,
+       mtry = 500
+     )
+
+     return(result)
+   }, future.seed = TRUE)
+
+   future::plan("sequential")
+
+   names(feature_selected) <- response
 
  }
 
@@ -1805,6 +1860,9 @@ if (!any(user_defined_model %in% valid_models)) {
                                         test_size = test_size,
                                         random_state = random_state,
                                         replication = replication,
+                                        selected_raw = feature_selected, # nd_mods
+                                        #gam_method = gam_method, # nd_mods
+                                        max_features = max_features,
                                         heter_groups = heter_groups,
                                         cross_validation_meth = cross_validation_meth,
                                         nfolds = nfolds,
@@ -1853,7 +1911,8 @@ if (!any(user_defined_model %in% valid_models)) {
                                         epochs = epochs,
                                         batch_size = batch_size,
                                         l2_regularizer_dp = l2_regularizer_dp,
-                                        dropout_rate = dropout_rate)
+                                        dropout_rate = dropout_rate,
+                                        docker_nd_usage = docker_nd_usage)
 
    }, error = function(e) {
      message(paste("Error in cross-validation", e$message))
@@ -1978,90 +2037,91 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
    n_model <- length(GS_model)
  }
  # Main logic
- # sys_name <- Sys.info()["sysname"]
- # if (!is.null(num_cores) && num_cores > 1) {
- #   #sys_name <- Sys.info()["sysname"]
- #   set_parallel_plan(n_trait = n_trait, n_model = n_model,
- #                     sys_name = sys_name)
- # } else {
- #   # Automatically determine the number of cores and use half of them
- #   detected_cores <- parallel::detectCores(logical = TRUE)
- #   # For non-Windows systems, consider physical cores only
- #   num_cores <- round(detected_cores * 0.7)
- #
- #   set_parallel_plan(n_trait= n_trait, n_model = n_model,num_cores = num_cores,
- #                     sys_name = sys_name)
- # }
+ sys_name <- Sys.info()["sysname"]
+ if(docker_nd_usage) sys_name <- "Windows"
+ if (!is.null(num_cores) && num_cores > 1) {
+   #sys_name <- Sys.info()["sysname"]
+   set_parallel_plan(n_trait = n_trait, n_model = n_model,
+                     sys_name = sys_name)
+ } else {
+   # Automatically determine the number of cores and use half of them
+   detected_cores <- parallel::detectCores(logical = TRUE)
+   # For non-Windows systems, consider physical cores only
+   num_cores <- round(detected_cores * 0.7)
+
+   set_parallel_plan(n_trait= n_trait, n_model = n_model,num_cores = num_cores,
+                     sys_name = sys_name)
+ }
 
  ##########################################################
  #### new for chunk parallel
 
  # Filter datasets
- filter_datasets <- function(datasets) {
-   non_null_idx <- !sapply(datasets, is.null)
-   filtered_datasets <- datasets[non_null_idx]
-   #filtered_names <- dataset_names[non_null_idx]
-   if (length(filtered_datasets) > 0) {
-     #names(filtered_datasets) <- filtered_names
-   } else {
-     filtered_datasets <- NULL
-   }
-   list(datasets = filtered_datasets)
- }
+ # filter_datasets <- function(datasets) {
+ #   non_null_idx <- !sapply(datasets, is.null)
+ #   filtered_datasets <- datasets[non_null_idx]
+ #   #filtered_names <- dataset_names[non_null_idx]
+ #   if (length(filtered_datasets) > 0) {
+ #     #names(filtered_datasets) <- filtered_names
+ #   } else {
+ #     filtered_datasets <- NULL
+ #   }
+ #   list(datasets = filtered_datasets)
+ # }
+ #
+ # gmatrix_omic_kernel_filtered <- filter_datasets(gmatrix_kernel_model_ready_list)
+ # gmatrix_omic_kernel_filtered <- gmatrix_omic_kernel_filtered$datasets
+ # ##
+ # geno_omic_filtered <- filter_datasets(geno_omic_model_ready_list)
+ # geno_omic_filtered <- geno_omic_filtered$datasets
+ #
+ # # Validate required datasets
+ # if (length(geno_omic_filtered) == 0 && length(gmatrix_omic_kernel_filtered) == 0 && is.null(ml_dat_res)) {
+ #   stop("No valid datasets available for model fitting.")
+ # }
+ # ###
+ # # Calculate total size of non-NULL datasets for omics_data
+ # if (length(geno_omic_filtered) != 0 && length(gmatrix_omic_kernel_filtered) != 0) {
+ #   all_omics_datasets <- c(geno_omic_filtered, gmatrix_omic_kernel_filtered)
+ # } else if (length(geno_omic_filtered) == 0 && length(gmatrix_omic_kernel_filtered) != 0){
+ #   all_omics_datasets <- c(gmatrix_omic_kernel_filtered)
+ # } else if(length(geno_omic_filtered) != 0 && length(gmatrix_omic_kernel_filtered) == 0){
+ #   all_omics_datasets <- c(geno_omic_filtered)
+ # }
+ #
+ # omics_data_size_mb <- if (length(all_omics_datasets) == 0) {
+ #   0
+ # } else {
+ #   sum(sapply(all_omics_datasets, function(x) object.size(x) / 1024 / 1024))
+ # }
+ #
+ # if(!is.null(num_cores)){
+ #
+ #   num_cores <- NULL
+ # }
+ # # Parallel setup with dynamic core adjustment
+ # sys_name <- Sys.info()["sysname"]
+ # num_cores <- set_parallel_plan(
+ #   n_trait = n_trait,
+ #   n_model = n_model,
+ #   replication = 1,
+ #   GS_model_cv = unique(best_models[["model"]]),
+ #   pheno_data = pheno_clean[["pheno_clean_data"]],
+ #   omics_data = omics_data_size_mb,
+ #   num_cores = num_cores,
+ #   sys_name = sys_name
+ # )
+ #
+ # #results_use = results
+ # task_indices <- seq_len(nrow(best_models))
+ # chunks <- split(task_indices, rep(1:num_cores, length.out = length(task_indices)))
+ #
 
- gmatrix_omic_kernel_filtered <- filter_datasets(gmatrix_kernel_model_ready_list)
- gmatrix_omic_kernel_filtered <- gmatrix_omic_kernel_filtered$datasets
- ##
- geno_omic_filtered <- filter_datasets(geno_omic_model_ready_list)
- geno_omic_filtered <- geno_omic_filtered$datasets
-
- # Validate required datasets
- if (length(geno_omic_filtered) == 0 && length(gmatrix_omic_kernel_filtered) == 0 && is.null(ml_dat_res)) {
-   stop("No valid datasets available for model fitting.")
- }
- ###
- # Calculate total size of non-NULL datasets for omics_data
- if (length(geno_omic_filtered) != 0 && length(gmatrix_omic_kernel_filtered) != 0) {
-   all_omics_datasets <- c(geno_omic_filtered, gmatrix_omic_kernel_filtered)
- } else if (length(geno_omic_filtered) == 0 && length(gmatrix_omic_kernel_filtered) != 0){
-   all_omics_datasets <- c(gmatrix_omic_kernel_filtered)
- } else if(length(geno_omic_filtered) != 0 && length(gmatrix_omic_kernel_filtered) == 0){
-   all_omics_datasets <- c(geno_omic_filtered)
- }
-
- omics_data_size_mb <- if (length(all_omics_datasets) == 0) {
-   0
- } else {
-   sum(sapply(all_omics_datasets, function(x) object.size(x) / 1024 / 1024))
- }
-
- if(!is.null(num_cores)){
-
-   num_cores <- NULL
- }
- # Parallel setup with dynamic core adjustment
- sys_name <- Sys.info()["sysname"]
- num_cores <- set_parallel_plan(
-   n_trait = n_trait,
-   n_model = n_model,
-   replication = 1,
-   GS_model_cv = unique(best_models[["model"]]),
-   pheno_data = pheno_clean[["pheno_clean_data"]],
-   omics_data = omics_data_size_mb,
-   num_cores = num_cores,
-   sys_name = sys_name
- )
-
- #results_use = results
- task_indices <- seq_len(nrow(best_models))
- chunks <- split(task_indices, rep(1:num_cores, length.out = length(task_indices)))
-
-
- #results <- future.apply::future_lapply(seq_len(nrow(best_models)), function(i) {
-   #task_row <- best_models[i, ]
- results <- future.apply::future_lapply(chunks, function(chunk) {
-   lapply(chunk, function(i) {
-     task_row <- best_models[i, ]
+ results <- future.apply::future_lapply(seq_len(nrow(best_models)), function(i) {
+ task_row <- best_models[i, ]
+ # results <- future.apply::future_lapply(chunks, function(chunk) {
+ #   lapply(chunk, function(i) {
+ #     task_row <- best_models[i, ]
 
    response <- as.character(task_row$trait)
    GS_model <- as.character(task_row$model)
@@ -2842,13 +2902,13 @@ if(GS_model == "deep_learning_model") GS_model <- as.character(task_row$model)
    ### End machine learning
    list(GS_model = GS_model,res_model_output = res_model_output,
         res_summary_stat = res_summary_stat, geno_qc_stat = geno_qc_stat)
-   }) ## new with chunk parallel
+   #}) ## new with chunk parallel
    #list(output =  output)
  }, future.seed = TRUE)
 
    ### new for chunk parallel processing
    # Flatten results
-   results <- unlist(results, recursive = FALSE)
+   #results <- unlist(results, recursive = FALSE)
    ## ends
 
  if(!is.null(best_models)){
