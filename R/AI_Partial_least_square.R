@@ -86,23 +86,14 @@ AI_pls <- function(pheno_object=NULL,
 
   ### Check for near zero variance
 
-  # zero_var_check <- caret::nearZeroVar(geno_omic_object)
-  # if (length(zero_var_check) > 0) {
-  #   message(paste(msg, "Some X_variables data (genomic/omics) has zero variance and being removed."))
-  #
-  #   # Get column names to keep instead of indices to remove
-  #   cols_to_keep <- colnames(geno_omic_object)[-zero_var_check]
-  #
-  #   # Apply to training data
-  #   geno_omic_object <- geno_omic_object[, cols_to_keep]
-  #
-  #   # Apply to test data if it exists
-  #   if(!is.null(geno_omic_test_object)){
-  #     # Only keep columns that exist in the test data
-  #     test_cols_to_keep <- intersect(cols_to_keep, colnames(geno_omic_test_object))
-  #     geno_omic_test_object <- geno_omic_test_object[, test_cols_to_keep]
-  #   }
-  # }
+  nzv <- caret::nearZeroVar(geno_omic_object, saveMetrics = TRUE)
+
+  if(any((nzv$nzv==TRUE))==TRUE){
+    message(paste(msg, "Some X_variables data (genomic/omics) has zero variance and being removed."))
+    geno_omic_object <- geno_omic_object[, !nzv$nzv]
+
+    geno_omic_test_object <- geno_omic_test_object[, !nzv$nzv]
+  }
 
   if(!is.null(geno_omic_test_object)){
     test_label <- rownames(geno_omic_test_object)

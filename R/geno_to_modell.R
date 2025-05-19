@@ -41,6 +41,7 @@ geno_to_model <- function(geno_data = NULL,
                           impute = TRUE,
                           imputation_method = "knn",
                           impute_knn_k = 5,
+                          ld_prunning_qc = TRUE,
                           map_data = NULL,
                           message = TRUE,
                           ...) {
@@ -56,6 +57,7 @@ geno_to_model <- function(geno_data = NULL,
                                  impute = impute,
                                  imputation_method = imputation_method,
                                  impute_knn_k = impute_knn_k,
+                                 ld_prunning_qc = ld_prunning_qc,
                                  #map_data  = map_data,
                                  message = message)
 

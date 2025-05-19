@@ -135,6 +135,7 @@ geno_precheck <- function(object_geno = NULL,
                           impute=TRUE,
                           imputation_method = "knn", #median, mean
                           impute_knn_k = 5,
+                          ld_prunning_qc = TRUE,
                           message = TRUE,
                           ...) {
   # ... (input validation, if necessary)
@@ -370,6 +371,13 @@ geno_precheck <- function(object_geno = NULL,
   if(length(duplicated_rownames)>0){
     stop(paste(msg,"Marker/snp data contain duplicate genotypes."), call. = FALSE)
   }
+  if(ld_prunning_qc){
+  keep_prunned_snp <- ld_prune_graph(object_geno)
+
+  object_geno <- object_geno[, keep_prunned_snp, drop=FALSE]
+
+  }
+
   #### Aggregate all the maker data
   #########################
   summary_stat_snp= data.frame(

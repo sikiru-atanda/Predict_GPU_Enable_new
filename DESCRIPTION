@@ -22,6 +22,7 @@ Imports:
     future.apply,
     glmnet,
     gridExtra,
+    igraph,
     insight,
     keras,
     MASS,
