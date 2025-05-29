@@ -371,7 +371,7 @@ geno_precheck <- function(object_geno = NULL,
   if(length(duplicated_rownames)>0){
     stop(paste(msg,"Marker/snp data contain duplicate genotypes."), call. = FALSE)
   }
-  if(ld_prunning_qc){
+  if(isTRUE(ld_prunning_qc)){
   keep_prunned_snp <- ld_prune_graph(object_geno)
 
   object_geno <- object_geno[, keep_prunned_snp, drop=FALSE]

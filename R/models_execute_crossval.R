@@ -120,14 +120,14 @@ predict_with_model <- function(model = NULL,
                                  gen_name = additional_params$gen_name, tst = tst),
          "Bayes" = bayes_mod_cv(y = y, ETA = additional_params$ETA, weights = additional_params$weights,
                                 bayes_para = additional_params$bayes_para, tst = tst,
-                                bayes_model = additional_params$bayes_model, bayes_trait = additional_params$bayes_trait),
-         "ND_modes" = ND_modes_cv(y = y, omics = omics_data,
-                                  gam_method = additional_params$gam_method,
-                                  selected = additional_params$selected,
-                                  max_features = additional_params$max_features,
-                                  #k_value = additional_params$k_value,
-                                  var_explained =  additional_params$var_explained,
-                                  tst = tst)
+                                bayes_model = additional_params$bayes_model, bayes_trait = additional_params$bayes_trait)
+         # "ND_modes" = ND_modes_cv(y = y, omics = omics_data,
+         #                          gam_method = additional_params$gam_method,
+         #                          selected = additional_params$selected,
+         #                          max_features = additional_params$max_features,
+         #                          #k_value = additional_params$k_value,
+         #                          var_explained =  additional_params$var_explained,
+         #                          tst = tst)
 
   )
 }
@@ -360,7 +360,7 @@ models_execute_crossval <- function(pheno_data = NULL,
   #                    "ND_mod5", "ND_mod6",
   #                    "ND_mod7", "ND_mod8")
 
-  ND_method_use = c("ND_mod1", "ND_mod2")
+  #ND_method_use = c("ND_mod1", "ND_mod2")
 
   bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
   bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
@@ -464,14 +464,20 @@ models_execute_crossval <- function(pheno_data = NULL,
     trait <- as.character(task_row$response)
     rep <- as.integer(task_row$replication)
     model <- as.character(task_row$modell)
-    if (!is.null(selected_raw) && trait %in% names(selected_raw)) {
-      n_features_rf <- floor(ncol(omics_data)*0.2)
+    # if (!is.null(selected_raw) && trait %in% names(selected_raw)) {
+    #   #n_features_rf <- floor(ncol(omics_data)*0.2)
+    #   #select_feat <- selected_raw[[trait]]$importance_summary[1:n_features_rf, "feature"]
+    #   select_feat <- selected_raw[[trait]]$selected_features_hybrid_cv
+    # } else {
+    #   select_feat <- NULL
+    # }
 
-      select_feat <- selected_raw[[trait]]$importance_summary[1:n_features_rf, "feature"]
-    } else {
-      select_feat <- NULL
-    }
-
+    # selected_features_sd
+    # selected_features_cum
+    # selected_features_percentile
+    # selected_features_cor_cv
+    # selected_features_r2_cv
+    # selected_features_hybrid_cv
 
     if(any(model%in%dp_models)){
      additional_params$deep_learning_model <- model
@@ -626,19 +632,19 @@ models_execute_crossval <- function(pheno_data = NULL,
           })
         }
         ##
-        if (model %in% c(ND_method_use)) {
-
-          additional_params$selected <- select_feat
-          additional_params$gam_method <- model
-          tryCatch({
-            ypred_cv[tst, "yhat"] <- predict_with_model(model = "ND_modes", y = yNA, omics_data = omics_data,
-                                                        tst = tst, additional_params = additional_params)
-
-          }, error = function(e) {
-            message(paste("Error in processing ND model", model, "for", trait, ": ", e$message))
-            handle_error <<- TRUE
-          })
-        }
+        # if (model %in% c(ND_method_use)) {
+        #
+        #   additional_params$selected <- select_feat
+        #   additional_params$gam_method <- model
+        #   tryCatch({
+        #     ypred_cv[tst, "yhat"] <- predict_with_model(model = "ND_modes", y = yNA, omics_data = omics_data,
+        #                                                 tst = tst, additional_params = additional_params)
+        #
+        #   }, error = function(e) {
+        #     message(paste("Error in processing ND model", model, "for", trait, ": ", e$message))
+        #     handle_error <<- TRUE
+        #   })
+        # }
       }
     } else {
       if (cross_validation_meth %in% holds_out_methods_avail) {
@@ -695,19 +701,19 @@ models_execute_crossval <- function(pheno_data = NULL,
           })
         }
         ##
-        if (model %in% c(ND_method_use)) {
-
-          additional_params$selected <- select_feat
-          additional_params$gam_method <- model
-          tryCatch({
-            ypred_cv[tst, "yhat"] <- predict_with_model(model = "ND_modes", y = yNA, omics_data = omics_data,
-                                                        tst = tst, additional_params = additional_params)
-
-          }, error = function(e) {
-            message(paste("Error in processing ND model", model, "for", trait, ": ", e$message))
-            handle_error <<- TRUE
-          })
-        }
+        # if (model %in% c(ND_method_use)) {
+        #
+        #   additional_params$selected <- select_feat
+        #   additional_params$gam_method <- model
+        #   tryCatch({
+        #     ypred_cv[tst, "yhat"] <- predict_with_model(model = "ND_modes", y = yNA, omics_data = omics_data,
+        #                                                 tst = tst, additional_params = additional_params)
+        #
+        #   }, error = function(e) {
+        #     message(paste("Error in processing ND model", model, "for", trait, ": ", e$message))
+        #     handle_error <<- TRUE
+        #   })
+        # }
       }
     }
 
