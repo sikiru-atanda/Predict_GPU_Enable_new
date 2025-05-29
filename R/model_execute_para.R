@@ -423,6 +423,7 @@ model_execute <- function(
     plot_dpi = 300,
     plot_filename = "trait",
     Plot_name_result_diagnostic = NULL,
+    feature_selected = NULL,
     ...
 ) {
 
@@ -493,11 +494,11 @@ model_execute <- function(
     bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
     bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
 
-    # gam_method_use = c("ND_mod1", "ND_mod2",
-    #                    "ND_mod3", "ND_mod4",
-    #                    "ND_mod5", "ND_mod6", "ND_mod7", "ND_mod8")
+    gam_method_use = c("ND_mod1", "ND_mod2",
+                       "ND_mod3", "ND_mod4",
+                       "ND_mod5", "ND_mod6", "ND_mod7", "ND_mod8")
 
-    gam_method_use = c("ND_mod1", "ND_mod2")
+    #gam_method_use = c("ND_mod1", "ND_mod2")
 
     AI_valid_models <- c(AI_valid_models, gam_method_use)
 
@@ -1735,47 +1736,54 @@ if (!any(user_defined_model %in% valid_models)) {
 
  }
 
- models <- c()
- feature_selected <- NULL
- if (!is.null(GS_model)) models <- c(models, GS_model)
- if (!is.null(GS_model_cv)) models <- c(models, GS_model_cv)
- if (any(models %in% gam_method_use)) {
-   n_traits <- length(response)
-   seed_base <- 123
-   sys_name <- Sys.info()["sysname"]
+ if(docker_nd_usage) sys_name <- "Windows"
 
-   if(docker_nd_usage) sys_name <- "Windows"
-
-   if (!is.null(num_cores) && num_cores > 1) {
-     set_parallel_plan(n_trait = n_traits, n_model = 1, sys_name = sys_name)
-   } else {
-     detected_cores <- parallel::detectCores(logical = TRUE)
-     num_cores <- round(detected_cores * 0.7)
-
-     set_parallel_plan(n_trait = n_traits, n_model = 1, num_cores = num_cores,
-                       sys_name = sys_name)
-   }
-
-   feature_selected <- future.apply::future_lapply(1:n_traits, function(i) {
-     current_seed <- seed_base + i
-
-     result <- boot_rf_feature_selection(
-       X = ml_dat_res[["merged_data"]][["merge_data"]],
-       y = ml_dat_res[["pheno_clean_data"]][, response[i]],
-       R = 100,
-       seed = current_seed,
-       mtry = 500
-     )
-
-     return(result)
-   }, future.seed = TRUE)
-
-   future::plan("sequential")
-
-   names(feature_selected) <- response
-
+ # if(is.null(feature_selected)){
+ # models <- c()
+ # feature_selected <- NULL
+ # if (!is.null(GS_model)) models <- c(models, GS_model)
+ # if (!is.null(GS_model_cv)) models <- c(models, GS_model_cv)
+ # if (any(models %in% gam_method_use)) {
+ #   n_traits <- length(response)
+ #   seed_base <- 123
+ #   sys_name <- Sys.info()["sysname"]
+ #
+ #   if(docker_nd_usage) sys_name <- "Windows"
+ #
+ #   if (!is.null(num_cores) && num_cores > 1) {
+ #     set_parallel_plan(n_trait = n_traits, n_model = 1, sys_name = sys_name)
+ #   } else {
+ #     detected_cores <- parallel::detectCores(logical = TRUE)
+ #     num_cores <- round(detected_cores * 0.7)
+ #
+ #     set_parallel_plan(n_trait = n_traits, n_model = 1, num_cores = num_cores,
+ #                       sys_name = sys_name)
+ #   }
+ #
+ #   feature_selected <- future.apply::future_lapply(1:n_traits, function(i) {
+ #     current_seed <- seed_base + i
+ #
+ #     result <- boot_rf_feature_selection(
+ #       X = ml_dat_res[["merged_data"]][["merge_data"]],
+ #       y = ml_dat_res[["pheno_clean_data"]][, response[i]],
+ #       R = 100,
+ #       seed = current_seed,
+ #       mtry = 500
+ #     )
+ #
+ #     return(result)
+ #   }, future.seed = TRUE)
+ #
+ #   future::plan("sequential")
+ #
+ #   names(feature_selected) <- response
+ #
+ # }
+ #
+ # }
+ if(!is.null(feature_selected)){
+   load("feature_selected.RData")
  }
-
  if(isTRUE(cross_validation)){
    #model_prep_all_bayes_cv <-  NULL
    #   if("test_set"%in%names(pheno_clean)) {
@@ -1995,7 +2003,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                            plot_width = plot_width,
                            plot_height = plot_height,
                            plot_units = plot_units,
-                           plot_dpi = plot_dpi))
+                           plot_dpi = plot_dpi,
+                           feature_selected = feature_selected))
 
  }
 

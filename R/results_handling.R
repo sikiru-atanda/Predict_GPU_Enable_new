@@ -123,7 +123,8 @@ results_handling <-  function(GS_model = NULL,
                               plot_width = 17,
                               plot_height = 12,
                               plot_units = "in",
-                              plot_dpi = 300
+                              plot_dpi = 300,
+                              feature_selected = NULL
                               ){
 
   saveOutput <- function(res_model_output,
@@ -133,7 +134,8 @@ results_handling <-  function(GS_model = NULL,
                          res_plot, res_plot_mean,
                          res_plot_result_diagnostic,
                          test_diagonistic_plots,
-                         res_plot_result_diagnostic_cv_only) {
+                         res_plot_result_diagnostic_cv_only,
+                         feature_selected) {
     #browser()
     if(!is.null(res_model_output)){
       # if ("bayes_model" %in% names(res_model_output)) {
@@ -347,7 +349,11 @@ if(inherits(combined_plot, "gtable")){
 
     }
 
-  }
+    }
+
+    if(!is.null(feature_selected)){
+      save(feature_selected, file = "feature_selected.RData")
+    }
 
 }
 
@@ -365,7 +371,8 @@ if(inherits(combined_plot, "gtable")){
                                #pathout,
                                GS_model, res_plot, res_plot_mean,
                                test_diagonistic_plots, res_plot_result_diagnostic,
-                               res_plot_result_diagnostic_cv_only) {
+                               res_plot_result_diagnostic_cv_only,
+                               feature_selected) {
     msg <- "\n==================================================\n"
     # Check if any required object is NULL
     # if ((is.null(res_model_output) && is.null(res_summary_stat)) && (is.null(test_diagonistic_plots) && is.null(res_plot_result_diagnostic))) {
@@ -405,7 +412,8 @@ if(inherits(combined_plot, "gtable")){
                res_plot_mean = res_plot_mean,
                test_diagonistic_plots = test_diagonistic_plots,
                res_plot_result_diagnostic = res_plot_result_diagnostic,
-               res_plot_result_diagnostic_cv_only = res_plot_result_diagnostic_cv_only)
+               res_plot_result_diagnostic_cv_only = res_plot_result_diagnostic_cv_only,
+               feature_selected = feature_selected)
     processMMatrixModelReady(pathout)
 
     setwd(mainDir)
@@ -431,7 +439,8 @@ if(inherits(combined_plot, "gtable")){
                           plot_width,
                           plot_height,
                           plot_units,
-                          plot_dpi) {
+                          plot_dpi,
+                          feature_selected) {
 
       if (isFALSE(system_database)) {
         output <- saveOutputAndZip(res_model_output = res_model_output,
@@ -442,7 +451,8 @@ if(inherits(combined_plot, "gtable")){
                                    res_plot_result_diagnostic_cv_only = res_plot_result_diagnostic_cv_only,
                                    res_plot = res_plot, res_plot_mean = res_plot_mean,
                                    test_diagonistic_plots = test_diagonistic_plots,
-                                   res_plot_result_diagnostic = res_plot_result_diagnostic)
+                                   res_plot_result_diagnostic = res_plot_result_diagnostic,
+                                   feature_selected = feature_selected)
       } else {
         output <- list(model_results = res_model_output,
                        summary_statistic = res_summary_stat,
@@ -451,7 +461,8 @@ if(inherits(combined_plot, "gtable")){
                        cv_results_raw = cv_results_raw,
                        res_plot_result_diagnostic = res_plot_result_diagnostic,
                        test_diagonistic_plots = test_diagonistic_plots,
-                       res_mod_results_cv_per_trait_model = res_mod_results_cv_per_trait_model
+                       res_mod_results_cv_per_trait_model = res_mod_results_cv_per_trait_model,
+                       feature_selected = feature_selected
                        )
       }
       return(output)
@@ -479,7 +490,8 @@ if(inherits(combined_plot, "gtable")){
                      plot_width = plot_width,
                      plot_height = plot_height,
                      plot_units = plot_units,
-                     plot_dpi = plot_dpi))
+                     plot_dpi = plot_dpi,
+                     feature_selected = feature_selected))
 
 } ## end of function
 

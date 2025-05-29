@@ -47,6 +47,7 @@ process_geno_data <- function(geno_data = NULL,
                               qc_filtering = NULL,
                               message = TRUE,
                               heter_groups = heter_groups,
+                              ld_prunning_qc = TRUE,
                               ...) {
 
   msg <- "\n==================================================\n"
@@ -65,7 +66,8 @@ process_geno_data <- function(geno_data = NULL,
                                 impute_knn_k = impute_knn_k,
                                 map_data = map_data,
                                 qc_filtering = if (inherits(geno_data, "list")) NULL else qc_filtering,
-                                message = message)
+                                message = message,
+                                ld_prunning_qc = ld_prunning_qc)
 
   ### This import the geno_qc from QC and recoding and add it for the final
   ## qc_metrics_and_summary_stat when raw snp data is provided
