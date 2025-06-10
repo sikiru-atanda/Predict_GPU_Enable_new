@@ -174,7 +174,8 @@ AI_Xgb <- function(pheno_object=NULL,
                    ...){
 #browser()
   # Auto-adjust nthread based on environment
-  nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
+  # nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
+  nthread <- 1
 
   msg <- "\n==================================================\n"
 
