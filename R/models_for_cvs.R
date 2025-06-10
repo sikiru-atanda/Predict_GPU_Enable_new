@@ -471,7 +471,9 @@ AI_xgboost_cv <- function(y,
                           ){
 
   # Auto-adjust nthread based on environment
-  nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
+  # nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
+
+  nthread <- 1
 
   if(!is.null(omics)){
     scaler <- caret::preProcess(omics, method = c("center", "scale"))
