@@ -186,9 +186,8 @@ deep_learning_model <- function(pheno_object=NULL,
 #browser()
   msg <- "\n==================================================\n"
   if(is.null(dense_layers_cnn)) dense_layers_cnn <-  64
-  if(is.null(geno_omic_object) & is.null(pheno_object)) {
-
-    stop(print(paste(msg,"provide matrix of the predictors and the data.frame of the Y variable.")), call. = FALSE)
+  if (is.null(geno_omic_object) && is.null(pheno_object) && isFALSE(crossval)) {
+    stop(paste(msg, "provide matrix of the predictors and the data.frame of the Y variable."), call. = FALSE)
   }
 
   if(!is.null(geno_omic_object)){
@@ -209,11 +208,16 @@ deep_learning_model <- function(pheno_object=NULL,
   }
 
 #### This is for cross-validation. Not typical omic data
-  if(!is.null(omics_data)){
+  if(!is.null(omics_data) && isTRUE(crossval)){
     scaler <- caret::preProcess(omics_data, method = c("center", "scale"))
     omics_data <- stats::predict(scaler, omics_data)
     omics_data <- stats::predict(scaler, omics_data)
 
+  }
+
+  if(isTRUE(crossval)){
+    para_tunning <-  FALSE
+    param_grid <-  NULL
   }
 
   #"ResNet",
@@ -354,9 +358,10 @@ deep_learning_model <- function(pheno_object=NULL,
 
   data_label_geno <- cbind(y_train_scaled,geno_omic_object)
 
-  if (isTRUE(para_tunning) && is.null(param_grid)) {
+  if (isTRUE(para_tunning) && is.null(param_grid) && isFALSE(crossval)) {
     stop(paste(msg, "param_grid must be provided when tuning is enabled."), call. = FALSE)
   }
+
 
   if(is.null(neurons_per_layer)) neurons_per_layer <- list(ncol(geno_omic_object)/2)
 
@@ -591,6 +596,12 @@ deep_learning_model <- function(pheno_object=NULL,
                                                          interval_width_low_threshold = interval_width_low_threshold,
                                                          apply_pca = TRUE)
 
+      if(!is.null(geno_omic_test_object)){
+
+        train_test_label <- ifelse(rownames(geno_omic_test_object)%in%test_label, "Test", "Train")
+      } else {
+        train_test_label <- rep("Train", nrow(geno_omic_object))
+      }
       AI_preds <- data.frame(name = GID,
                              Predicted_value = AI_pred_reverted,
                              Standard_error = pred_SE,
