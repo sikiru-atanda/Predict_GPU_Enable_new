@@ -494,11 +494,11 @@ model_execute <- function(
     bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
     bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
 
-    gam_method_use = c("ND_mod1", "ND_mod2",
-                       "ND_mod3", "ND_mod4",
-                       "ND_mod5", "ND_mod6", "ND_mod7", "ND_mod8")
+    # gam_method_use = c("ND_mod1", "ND_mod2",
+    #                    "ND_mod3", "ND_mod4",
+    #                    "ND_mod5", "ND_mod6", "ND_mod7", "ND_mod8")
 
-    #gam_method_use = c("ND_mod1", "ND_mod2")
+    gam_method_use = c("ND_mod1", "ND_mod2")
 
     AI_valid_models <- c(AI_valid_models, gam_method_use)
 
@@ -2841,8 +2841,8 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
            scaling = scaling,
            centering = centering,
            omic_count = ml_dat_res[["omic_count"]],
-           para_tunning = para_tunning,
-           param_grid = dpl_paras_tunning,
+           para_tunning = if(cross_validation) para_tunning = FALSE else para_tunning,
+           param_grid = if(cross_validation) dpl_paras_tunning = NULL else dpl_paras_tunning,
            CI_width_thresholds = CI_width_thresholds,
            high_reliability_thres = high_reliability_thres,
            low_reliability_thres = low_reliability_thres,
