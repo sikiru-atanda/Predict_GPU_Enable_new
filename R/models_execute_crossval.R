@@ -14,21 +14,31 @@ set_parallel_plan <- function(n_trait,
                               replication = 1,
                               num_cores = NULL,
                               sys_name) {
-  # Define the plan based on the system
-  plan_type <- ifelse(sys_name == "Windows", "multisession", "multicore")
-
-  # Check if parallel execution is beneficial
+  # Decide plan type
+  plan_type <- if (sys_name == "Windows") "multisession" else "multicore"
+  message(sprintf("→ Detected OS: %s → using '%s' plan", sys_name, plan_type))
+  
+  # Should we parallelize?
   if (n_trait > 1 || n_model > 1 || replication > 1) {
-    if(is.null(num_cores)){
-
-      num_cores <-  parallel::detectCores()
-      num_cores <- num_cores*0.5
+    # Auto-choose cores?
+    if (is.null(num_cores)) {
+      total_cores <- parallel::detectCores(logical = FALSE)
+      num_cores   <- floor(total_cores * 0.5)
+      message(sprintf("→ No num_cores provided; detected %d physical cores, using %d workers",
+                      total_cores, num_cores))
+    } else {
+      message(sprintf("→ num_cores provided: using %d workers", num_cores))
     }
+    
     future::plan(plan_type, workers = num_cores)
+    message(sprintf("→ future plan set to '%s' with %d workers", plan_type, num_cores))
+    
   } else {
     future::plan("sequential")
+    message("→ Small job (traits × models × reps = 1); using sequential plan")
   }
 }
+
 
 
 #' Title
