@@ -424,12 +424,13 @@ model_execute <- function(
     plot_filename = "trait",
     Plot_name_result_diagnostic = NULL,
     feature_selected = NULL,
+    globals_max_GB = 4,
     ...
 ) {
 
 #browser()
     msg <- "\n==================================================\n"
-
+    on.exit(future::plan("sequential"), add = TRUE)
     ######
     geno_data_process <- NULL
     if(!is.null(vcf_file_name) & !is.null(vcf_file_path)){
@@ -1920,7 +1921,8 @@ if (!any(user_defined_model %in% valid_models)) {
                                         batch_size = batch_size,
                                         l2_regularizer_dp = l2_regularizer_dp,
                                         dropout_rate = dropout_rate,
-                                        docker_nd_usage = docker_nd_usage)
+                                        docker_nd_usage = docker_nd_usage,
+                                        globals_max_GB = globals_max_GB)
 
    }, error = function(e) {
      message(paste("Error in cross-validation", e$message))
@@ -2013,6 +2015,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
    return(NULL)
  }
 
+ future::plan("sequential")
 ###############################################################
 
  ##########################################################################
@@ -2046,22 +2049,31 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
    n_model <- length(GS_model)
  }
  # Main logic
+ # sys_name <- Sys.info()["sysname"]
+ # if(docker_nd_usage) sys_name <- "Windows"
+ # if (!is.null(num_cores) && num_cores > 1) {
+ #   #sys_name <- Sys.info()["sysname"]
+ #   set_parallel_plan(n_trait = n_trait, n_model = n_model,
+ #                     sys_name = sys_name)
+ # } else {
+ #   # Automatically determine the number of cores and use half of them
+ #   detected_cores <- parallel::detectCores(logical = TRUE)
+ #   # For non-Windows systems, consider physical cores only
+ #   num_cores <- round(detected_cores * 0.5)
+ #
+ #   set_parallel_plan(n_trait= n_trait, n_model = n_model,num_cores = num_cores,
+ #                     sys_name = sys_name)
+ # }
+
  sys_name <- Sys.info()["sysname"]
  if(docker_nd_usage) sys_name <- "Windows"
- if (!is.null(num_cores) && num_cores > 1) {
-   #sys_name <- Sys.info()["sysname"]
-   set_parallel_plan(n_trait = n_trait, n_model = n_model,
-                     sys_name = sys_name)
- } else {
-   # Automatically determine the number of cores and use half of them
-   detected_cores <- parallel::detectCores(logical = TRUE)
-   # For non-Windows systems, consider physical cores only
-   num_cores <- round(detected_cores * 0.7)
-
-   set_parallel_plan(n_trait= n_trait, n_model = n_model,num_cores = num_cores,
-                     sys_name = sys_name)
- }
-
+ workers <- set_parallel_plan(n_trait = n_trait,
+                              n_model = n_model,
+                              replication = 1,
+                              num_cores = num_cores,
+                              sys_name = sys_name,
+                              globals_max_GB = globals_max_GB,
+                              docker_override = docker_nd_usage)
  ##########################################################
  #### new for chunk parallel
 
@@ -2126,7 +2138,15 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
  # chunks <- split(task_indices, rep(1:num_cores, length.out = length(task_indices)))
  #
 
- results <- future.apply::future_lapply(seq_len(nrow(best_models)), function(i) {
+ chunk_size <- if (workers > 1) ceiling(nrow(best_models) / workers) else NULL
+
+
+
+ results <- future.apply::future_lapply(seq_len(nrow(best_models)),
+                                        future.packages   = c("dplyr"),
+                                        future.seed       = TRUE,
+                                        future.chunk.size = chunk_size,
+                                        function(i) {
  task_row <- best_models[i, ]
  # results <- future.apply::future_lapply(chunks, function(chunk) {
  #   lapply(chunk, function(i) {
@@ -2814,6 +2834,22 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
 
      # Helper function for deep learning model
      run_deep_learning <- function() {
+
+       workers <- future::nbrOfWorkers()
+       cores   <- parallel::detectCores(logical =TRUE)
+       intra   <-  as.integer(max(1L, floor(cores / workers)))
+       inter   <- 1L
+
+       Sys.setenv(OMP_NUM_THREADS = intra)
+       Sys.setenv(MKL_NUM_THREADS = intra)
+
+       ##### Tell what  TF will obey for resource usage
+       if (reticulate::py_module_available("tensorflow")) {
+         tf <- reticulate::import("tensorflow", delay_load = TRUE)
+         tf$config$threading$set_intra_op_parallelism_threads(intra)
+         tf$config$threading$set_inter_op_parallelism_threads(inter)
+       }
+
        tryCatch({
          deep_learning_model(
            pheno_object = ml_dat_res[["pheno_clean_data"]],
@@ -2913,13 +2949,16 @@ if(GS_model == "deep_learning_model") GS_model <- as.character(task_row$model)
         res_summary_stat = res_summary_stat, geno_qc_stat = geno_qc_stat)
    #}) ## new with chunk parallel
    #list(output =  output)
- }, future.seed = TRUE)
+ })
+
+ # , future.seed = TRUE)
 
    ### new for chunk parallel processing
    # Flatten results
    #results <- unlist(results, recursive = FALSE)
    ## ends
 
+ future::plan("sequential")
  if(!is.null(best_models)){
    names(results) <- best_models[["trait"]]
 

@@ -9,7 +9,7 @@ set_parallel_plan_impute <- function(num_chunks = 1,
     if(is.null(num_cores)){
 
       num_cores <-  parallel::detectCores()
-      num_cores <- num_cores*0.7
+      num_cores <- num_cores*0.5
     }
     future::plan(plan_type, workers = num_cores)
   } else {
@@ -75,7 +75,7 @@ handle_large_scale_knn <- function(data, k = 5, chunk_size = 50, num_cores = NUL
     # Automatically determine the number of cores and use half of them
     detected_cores <- parallel::detectCores(logical = TRUE)
     # For non-Windows systems, consider physical cores only
-    num_cores <- round(detected_cores * 0.7)
+    num_cores <- round(detected_cores * 0.5)
 
     set_parallel_plan_impute(num_chunks = num_chunks,
                              num_cores = num_cores,

@@ -471,8 +471,8 @@ AI_xgboost_cv <- function(y,
                           ){
 
   # Auto-adjust nthread based on environment
-  nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
-
+  #nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
+  nthread <- set_per_worker_threads()
   if(!is.null(omics)){
     scaler <- caret::preProcess(omics, method = c("center", "scale"))
     omics <- stats::predict(scaler, omics)
@@ -482,6 +482,7 @@ AI_xgboost_cv <- function(y,
 
   # Predict on the training data and get the scaled values
   y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+
 
   ### Set the paramters and hyper parameters for extreme graident boosting
   if(xgb_booster == "gblinear"){

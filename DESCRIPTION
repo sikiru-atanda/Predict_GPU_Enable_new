@@ -13,10 +13,11 @@ Depends: R (>= 4.1.0)
 Enhances: 
     asreml
 Imports: 
-    BGLR (== 1.1.0),
+    BGLR,
     boot,
     caret,
     corpcor,
+    crew,
     data.table,
     dplyr,
     future.apply,

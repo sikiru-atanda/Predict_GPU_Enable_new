@@ -93,14 +93,15 @@ cv_single_loc_result_plot_process <- function(cv_results_data = NULL,
                      axis.ticks = ggplot2::element_line(color = "black"), # Change axis tick color if needed
                      axis.ticks.length = ggplot2::unit(-0.1, "cm")) # Set axis ticks to point inward
 
-    plotly_lineplot_mean <- plotly::ggplotly(ggplot_lineplot_mean)
+    #plotly_lineplot_mean <- plotly::ggplotly(ggplot_lineplot_mean)
 
 
-    plotly_lineplot_mean <- plotly::ggplotly(ggplot_lineplot_mean)
+    #plotly_lineplot_mean <- plotly::ggplotly(ggplot_lineplot_mean)
 
     list(metric = metric,
-         ggplot_lineplot_mean = ggplot_lineplot_mean,
-         plotly_lineplot_mean = plotly_lineplot_mean)
+         ggplot_lineplot_mean = ggplot_lineplot_mean
+         #plotly_lineplot_mean = plotly_lineplot_mean
+         )
   })
   names(plot_mean_list) <- eval_metrics
   ##### Initiate process for ranking of models per traits
