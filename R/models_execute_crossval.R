@@ -52,7 +52,7 @@
 #   invisible(workers)
 # }
 
-set_parallel_plan <- function(n_trait, n_model = 1, replication = 1,
+set_parallel_plan <- function(n_trait, n_model=1, replication = 1,
                               num_cores = NULL, globals_max_GB = 4,
                               docker_override = FALSE,
                               sys_name) {
