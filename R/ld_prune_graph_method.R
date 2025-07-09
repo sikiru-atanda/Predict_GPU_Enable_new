@@ -1,6 +1,13 @@
-# library(data.table)
-# library(igraph)
 
+#' Title
+#'
+#' @param i_vec
+#' @param j_vec
+#'
+#' @return
+#' @export
+#'
+#' @examples
 ld_pair_vec <- function(i_vec, j_vec) {
   keep <- !(is.na(i_vec) | is.na(j_vec))
   g1 <- i_vec[keep]; g2 <- j_vec[keep]
@@ -24,6 +31,18 @@ ld_pair_vec <- function(i_vec, j_vec) {
   c(R2, Dprime)
 }
 
+#' Title
+#'
+#' @param G
+#' @param snp_ids
+#' @param window
+#' @param progress
+#' @param as.data.frame
+#'
+#' @return
+#' @export
+#'
+#' @examples
 ld_window <- function(G, snp_ids = colnames(G), window = 100L,
                       progress = TRUE, as.data.frame = TRUE) {
   M <- length(snp_ids)
@@ -48,34 +67,47 @@ ld_window <- function(G, snp_ids = colnames(G), window = 100L,
   res
 }
 
+#' Title
+#'
+#' @param geno_data
+#' @param window
+#' @param R2_threshold
+#' @param maf_thresh
+#'
+#' @return
+#' @export
+#'
+#' @examples
 ld_prune_graph <- function(geno_data, window = 100L, R2_threshold = 0.9, maf_thresh = 0.01) {
   if (!is.matrix(geno_data)) geno_data <- as.matrix(geno_data)
-  
+
   M <- ncol(geno_data)
   snp_ids <- colnames(geno_data)
-  
-  message("Calculating LD...")
+
+  #message("Calculating LD...")
+  message("Initialize geno optimization...")
   ld_df <- ld_window(as.matrix(geno_data), snp_ids = snp_ids, window = window, progress = TRUE, as.data.frame = TRUE)
   ld_df <- ld_df[ld_df$R2 > R2_threshold & !is.na(ld_df$R2), ]
-  
-  message("Building LD graph...")
+
+
+  #message("Building LD graph...")
   g <- igraph::graph_from_data_frame(ld_df[, c("SNP1", "SNP2")], directed = FALSE)
-  
-  # Optional: compute MAF
+
+  # compute MAF
   maf_vec <- colMeans(geno_data, na.rm = TRUE) / 2
   maf_vec <- pmin(maf_vec, 1 - maf_vec)
-  
+
   # Remove SNPs with too low MAF
   keep_maf <- which(maf_vec >= maf_thresh)
   geno_data <- geno_data[, keep_maf, drop = FALSE]
   snp_ids <- colnames(geno_data)
-  
+
   # Subset graph to SNPs that passed MAF threshold
   g <- igraph::induced_subgraph(g, vids = intersect(snp_ids, igraph::V(g)$name))
-  
-  message("Pruning LD graph...")
+
+  #message("Pruning LD graph...")
   comps <- igraph::components(g)
-  
+
   # One SNP per component
   keep <- c()
   for (i in seq_len(comps$no)) {
@@ -88,13 +120,14 @@ ld_prune_graph <- function(geno_data, window = 100L, R2_threshold = 0.9, maf_thr
       keep <- c(keep, chosen)
     }
   }
-  
+
   # Add singleton SNPs that weren't in any LD pair
   all_ld_snps <- unique(c(ld_df$SNP1, ld_df$SNP2))
   singleton_snps <- setdiff(snp_ids, all_ld_snps)
   keep <- unique(c(keep, singleton_snps))
-  
-  message(sprintf("Pruned to %d SNPs from %d", length(keep), ncol(geno_data)))
+
+  #message(sprintf("Pruned to %d SNPs from %d", length(keep), ncol(geno_data)))
+  message(sprintf("Trimmed to %d SNPs from %d", length(keep), ncol(geno_data)))
   return(keep)
 }
 
@@ -102,12 +135,12 @@ ld_prune_graph <- function(geno_data, window = 100L, R2_threshold = 0.9, maf_thr
 # gc()
 # cat('\014')
 # graphics.off()
-# 
+#
 # setwd("D:/PredictProR_no_use_file")
 # load("barley_data.Rdata")
 # keep_prunned_snp <- ld_prune_graph(geno_data)
-# 
+#
 # geno_data <- as.matrix(geno_data)
 # geno_data <- geno_data[, keep_prunned_snp, drop=FALSE]
-# 
+#
 # dim(geno_data)

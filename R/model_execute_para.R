@@ -498,9 +498,10 @@ model_execute <- function(
     #                    "ND_mod3", "ND_mod4",
     #                    "ND_mod5", "ND_mod6", "ND_mod7", "ND_mod8")
 
-    gam_method_use = c("ND_mod1", "ND_mod2")
+    #gam_method_use = c("ND_mod1", "ND_mod2")
 
-    AI_valid_models <- c(AI_valid_models, gam_method_use)
+    #AI_valid_models <- c(AI_valid_models, gam_method_use)
+
 
     asreml_model <- "GBLUP"
 
@@ -1099,6 +1100,15 @@ model_execute <- function(
         }
       }
 
+      if(isFALSE(cross_validation)){
+        if (any(c(GS_model, GS_model_cv) %in% AI_valid_models)) {
+          stop(paste(msg, paste(
+            "Your data suggest multi-environment use any of the GS model for MET:",
+            paste(c(bayes_gblup_valid_models, asreml_model), collapse = ", ")
+          )), call. = FALSE)
+        }
+      }
+
       ### This is important for asreml for multi-environment analysis
       # Define the error messages
       missing_var_cov_str_msg <- paste(msg, "Your data suggest multi-environment but variance-covariance structure is missing. Choose from:", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
@@ -1637,19 +1647,30 @@ if (!any(user_defined_model %in% valid_models)) {
 
 
  }
+
 ### Concatenation of omics for ML
  # When calling the function, pass the external variables as arguments
- if (!is.null(GS_model) & is.null(GS_model_cv)) {
-   ml_dat_res <- AI_process_ml_data_if_valid(model_check = any(GS_model %in% AI_valid_models), geno_omic_model_ready_list, pheno_clean, response, gen_name)
-
- } else if (!is.null(GS_model_cv) && (is.null(GS_model) || !is.null(GS_model))) {
-   ml_dat_res <- AI_process_ml_data_if_valid(model_check = any(GS_model_cv %in% AI_valid_models), geno_omic_model_ready_list, pheno_clean, response, gen_name)
+ if (!is.null(GS_model) && is.null(GS_model_cv)) {
+   ml_dat_res <- AI_process_ml_data_if_valid(
+     model_check = any(GS_model %in% AI_valid_models),
+     geno_omic_model_ready_list, pheno_clean, response, gen_name
+   )
+ } else if (!is.null(GS_model_cv) && is.null(GS_model)) {
+   ml_dat_res <- AI_process_ml_data_if_valid(
+     model_check = any(GS_model_cv %in% AI_valid_models),
+     geno_omic_model_ready_list, pheno_clean, response, gen_name
+   )
+ } else if (!is.null(GS_model_cv) && !is.null(GS_model)) {
+   ml_dat_res <- AI_process_ml_data_if_valid(
+     model_check = any(c(GS_model, GS_model_cv) %in% AI_valid_models),
+     geno_omic_model_ready_list, pheno_clean, response, gen_name
+   )
  } else {
    ml_dat_res <- list()
  }
 
- ### Ends
 
+ ### Ends
 
  ###################Genetic space test
 
@@ -2056,7 +2077,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
    # Automatically determine the number of cores and use half of them
    detected_cores <- parallel::detectCores(logical = TRUE)
    # For non-Windows systems, consider physical cores only
-   num_cores <- round(detected_cores * 0.7)
+   num_cores <- round(detected_cores * 0.5)
 
    set_parallel_plan(n_trait= n_trait, n_model = n_model,num_cores = num_cores,
                      sys_name = sys_name)

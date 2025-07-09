@@ -42,7 +42,7 @@ evaluation_metrics <- function(y_observed = NULL,
   metric_functions <- list(
     accuracy = function(y, y_hat) cor(y, y_hat),
     mean_squared_error = function(y, y_hat) mean((y - y_hat)^2),
-    bias = function(y, y_hat) mean(y - y_hat),
+    bias = function(y, y_hat) abs(mean(y - y_hat)),
     root_mean_squared_error = function(y, y_hat) sqrt(mean((y - y_hat)^2)),
     relative_squared_error = function(y, y_hat) sum((y - y_hat)^2) / sum((y - mean(y))^2),
     mean_absolute_error = function(y, y_hat) mean(abs(y - y_hat)),
