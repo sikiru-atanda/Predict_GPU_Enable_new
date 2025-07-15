@@ -84,6 +84,14 @@ AI_pls <- function(pheno_object=NULL,
   GID <- rownames(geno_omic_object)
   geno_omic_object <- stats::predict(scaler, geno_omic_object)
 
+  cols_with_na <- which(colSums(is.na(geno_omic_object)) > 0)
+  if(length(cols_with_na)!=0){
+    geno_omic_object <- geno_omic_object[, -cols_with_na]
+    if(!is.null(geno_omic_test_object)){
+      geno_omic_test_object <- geno_omic_test_object[, -cols_with_na]
+    }
+  }
+
   ### Check for near zero variance
 
   nzv <- caret::nearZeroVar(geno_omic_object, saveMetrics = TRUE)
@@ -103,6 +111,13 @@ AI_pls <- function(pheno_object=NULL,
     geno_omic_test_object <- stats::predict(scaler, geno_omic_test_object)
   }
 
+  cols_with_na <- which(colSums(is.na(geno_omic_object)) > 0)
+  if(length(cols_with_na)!=0){
+    geno_omic_object <- geno_omic_object[, -cols_with_na]
+    if(!is.null(geno_omic_test_object)){
+      geno_omic_test_object <- geno_omic_test_object[, -cols_with_na]
+    }
+  }
 ################
   y_train <-  pheno_object[, response]
   # Scale the training labels

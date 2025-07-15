@@ -51,7 +51,7 @@ process_geno_data <- function(geno_data = NULL,
                               ...) {
 
   msg <- "\n==================================================\n"
-
+  low_call_rate_inds_removed <- NULL
 # genomic data check ------------------------------------------------------
 ### geno_data will be a list when user supplied vcf/hampmap and it is recorded in the engine
   cleaned_data <- geno_to_model(geno_data = if (inherits(geno_data, "list")) geno_data[["snps_matrix"]] else geno_data,
@@ -69,6 +69,7 @@ process_geno_data <- function(geno_data = NULL,
                                 message = message,
                                 ld_prunning_qc = ld_prunning_qc)
 
+  low_call_rate_inds_removed <- cleaned_data[["low_call_rate_inds_removed"]]
   ### This import the geno_qc from QC and recoding and add it for the final
   ## qc_metrics_and_summary_stat when raw snp data is provided
   if (inherits(geno_data, "list")) {
@@ -77,6 +78,7 @@ process_geno_data <- function(geno_data = NULL,
                         "het_markers_removed",
                         "maf_markers_removed")
     index_metric_removed <- which(!(rownames(cleaned_data[["qc_metrics_and_summary_stat"]]) %in% metric_removed))
+
     cleaned_data[["qc_metrics_and_summary_stat"]] <- rbind(cleaned_data[["qc_metrics_and_summary_stat"]][index_metric_removed, ],
                                                            geno_data[["qc_metrics_and_summary_stat"]])
   }

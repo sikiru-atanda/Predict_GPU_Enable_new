@@ -499,9 +499,9 @@ model_execute <- function(
     #                    "ND_mod3", "ND_mod4",
     #                    "ND_mod5", "ND_mod6", "ND_mod7", "ND_mod8")
 
-    gam_method_use = c("ND_mod1", "ND_mod2")
+    #gam_method_use = c("ND_mod1", "ND_mod2")
 
-    AI_valid_models <- c(AI_valid_models, gam_method_use)
+    #AI_valid_models <- c(AI_valid_models, gam_method_use)
 
     asreml_model <- "GBLUP"
 
@@ -1100,6 +1100,17 @@ model_execute <- function(
         }
       }
 
+      ###
+
+      if(isFALSE(cross_validation)){
+        if (any(c(GS_model, GS_model_cv) %in% AI_valid_models)) {
+          stop(paste(msg, paste(
+            "Your data suggest multi-environment use any of the GS model for MET:",
+            paste(c(bayes_gblup_valid_models, asreml_model), collapse = ", ")
+          )), call. = FALSE)
+        }
+      }
+      ###
       ### This is important for asreml for multi-environment analysis
       # Define the error messages
       missing_var_cov_str_msg <- paste(msg, "Your data suggest multi-environment but variance-covariance structure is missing. Choose from:", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
@@ -1426,7 +1437,7 @@ if (!any(user_defined_model %in% valid_models)) {
  ##
  #if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
 
-
+low_call_rate_inds_removed <- NULL
  # Process genomic data
  if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
      geno_res <- process_geno_data(geno_data = geno_data,
@@ -1452,12 +1463,54 @@ if (!any(user_defined_model %in% valid_models)) {
                                    message = message,
                                    heter_groups = heter_groups)
 
+     low_call_rate_inds_removed <- geno_res[["low_call_rate_inds_removed"]]
+     if(!is.null(low_call_rate_inds_removed)){
+       pheno_clean[["pheno_clean_data"]] <- pheno_clean[["pheno_clean_data"]][!pheno_clean[["pheno_clean_data"]][[gen_name]] %in% low_call_rate_inds_removed, ]
+     }
  } else {
      geno_res <-  list()
  }
 
+
  #if(length(geno_res)==0) { stop("geno_res is empty")}
  # Process omic1 data
+if(!is.null(omic1_data) && !is.null(low_call_rate_inds_removed)){
+  omic1_data <- omic1_data[!rownames(omic1_data)%in%low_call_rate_inds_removed, ]
+}
+
+if(!is.null(train_omic1_data) && !is.null(low_call_rate_inds_removed)){
+  train_omic1_data <- train_omic1_data[!rownames(train_omic1_data)%in%low_call_rate_inds_removed, ]
+}
+
+if(!is.null(test_omic1_data) && !is.null(low_call_rate_inds_removed)){
+  test_omic1_data <- test_omic1_data[!rownames(test_omic1_data)%in%low_call_rate_inds_removed, ]
+}
+##################
+if(!is.null(omic2_data) && !is.null(low_call_rate_inds_removed)){
+  omic2_data <- omic2_data[!rownames(omic2_data)%in%low_call_rate_inds_removed, ]
+}
+
+if(!is.null(train_omic2_data) && !is.null(low_call_rate_inds_removed)){
+  train_omic2_data <- train_omic2_data[!rownames(train_omic2_data)%in%low_call_rate_inds_removed, ]
+}
+
+if(!is.null(test_omic2_data) && !is.null(low_call_rate_inds_removed)){
+  test_omic2_data <- test_omic2_data[!rownames(test_omic2_data)%in%low_call_rate_inds_removed, ]
+}
+#########################
+if(!is.null(omic3_data) && !is.null(low_call_rate_inds_removed)){
+  omic3_data <- omic3_data[!rownames(omic3_data)%in%low_call_rate_inds_removed, ]
+}
+
+if(!is.null(train_omic3_data) && !is.null(low_call_rate_inds_removed)){
+  train_omic3_data <- train_omic3_data[!rownames(train_omic3_data)%in%low_call_rate_inds_removed, ]
+}
+
+if(!is.null(test_omic3_data) && !is.null(low_call_rate_inds_removed)){
+  test_omic3_data <- test_omic3_data[!rownames(test_omic3_data)%in%low_call_rate_inds_removed, ]
+}
+######################
+###
  omic1_res <- process_omic_data(omic_data = omic1_data,
                                 train_omic_data = train_omic1_data,
                                 test_omic_data = test_omic1_data,
@@ -1518,9 +1571,17 @@ if (!any(user_defined_model %in% valid_models)) {
  }
  ##
  if(!is.null(gmatrix)){
+   if(!is.null(low_call_rate_inds_removed)){
+     gmatrix <- gmatrix[!rownames(gmatrix)%in%low_call_rate_inds_removed,
+                        !colnames(gmatrix)%in%low_call_rate_inds_removed]
+   }
    gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- gmatrix
  } else {
    if (!is.null(gkernel)) {
+     if(!is.null(low_call_rate_inds_removed)){
+       gkernel <- gkernel[!rownames(gkernel)%in%low_call_rate_inds_removed,
+                          !colnames(gkernel)%in%low_call_rate_inds_removed]
+     }
      gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- gkernel
    }
  }
@@ -1536,6 +1597,10 @@ if (!any(user_defined_model %in% valid_models)) {
 
  } else {
    if (!is.null(omic1_kernel)) {
+     if(!is.null(low_call_rate_inds_removed)){
+       omic1_kernel <- omic1_kernel[!rownames(omic1_kernel)%in%low_call_rate_inds_removed,
+                          !colnames(omic1_kernel)%in%low_call_rate_inds_removed]
+     }
      gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] <- omic1_kernel
    }
  }
@@ -1549,6 +1614,10 @@ if (!any(user_defined_model %in% valid_models)) {
        gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] <- omic2_res[["kernel"]]
  } else {
    if (!is.null(omic2_kernel)) {
+     if(!is.null(low_call_rate_inds_removed)){
+       omic2_kernel <- omic2_kernel[!rownames(omic2_kernel)%in%low_call_rate_inds_removed,
+                                    !colnames(omic2_kernel)%in%low_call_rate_inds_removed]
+     }
      gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] <- omic2_kernel
    }
  }
@@ -1563,6 +1632,10 @@ if (!any(user_defined_model %in% valid_models)) {
      gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] <- omic3_res[["kernel"]]
  } else {
    if (!is.null(omic3_kernel)) {
+     if(!is.null(low_call_rate_inds_removed)){
+       omic3_kernel <- omic3_kernel[!rownames(omic3_kernel)%in%low_call_rate_inds_removed,
+                                    !colnames(omic3_kernel)%in%low_call_rate_inds_removed]
+     }
      gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] <- omic3_kernel
    }
  }
@@ -1640,11 +1713,21 @@ if (!any(user_defined_model %in% valid_models)) {
  }
 ### Concatenation of omics for ML
  # When calling the function, pass the external variables as arguments
- if (!is.null(GS_model) & is.null(GS_model_cv)) {
-   ml_dat_res <- AI_process_ml_data_if_valid(model_check = any(GS_model %in% AI_valid_models), geno_omic_model_ready_list, pheno_clean, response, gen_name)
-
- } else if (!is.null(GS_model_cv) && (is.null(GS_model) || !is.null(GS_model))) {
-   ml_dat_res <- AI_process_ml_data_if_valid(model_check = any(GS_model_cv %in% AI_valid_models), geno_omic_model_ready_list, pheno_clean, response, gen_name)
+ if (!is.null(GS_model) && is.null(GS_model_cv)) {
+   ml_dat_res <- AI_process_ml_data_if_valid(
+     model_check = any(GS_model %in% AI_valid_models),
+     geno_omic_model_ready_list, pheno_clean, response, gen_name
+   )
+ } else if (!is.null(GS_model_cv) && is.null(GS_model)) {
+   ml_dat_res <- AI_process_ml_data_if_valid(
+     model_check = any(GS_model_cv %in% AI_valid_models),
+     geno_omic_model_ready_list, pheno_clean, response, gen_name
+   )
+ } else if (!is.null(GS_model_cv) && !is.null(GS_model)) {
+   ml_dat_res <- AI_process_ml_data_if_valid(
+     model_check = any(c(GS_model, GS_model_cv) %in% AI_valid_models),
+     geno_omic_model_ready_list, pheno_clean, response, gen_name
+   )
  } else {
    ml_dat_res <- list()
  }

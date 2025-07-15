@@ -225,6 +225,7 @@ geno_precheck <- function(object_geno = NULL,
     ind_callrate_removed  <-  0
     het_markers_removed  <-  0
     maf_markers_removed <-  0
+    low_call_rate_inds_removed <- NULL
     ####
     ###
     # Remove monomorphic markers
@@ -309,9 +310,12 @@ geno_precheck <- function(object_geno = NULL,
         if(isTRUE(message)) {
           message(insight::print_color(paste(msg, paste("Removing Individuals with low call rate:", length(low_call_rate_inds))), "blue"))
         }
+
+        low_call_rate_inds_removed <- rownames(object_geno)[low_call_rate_inds]
         object_geno <- object_geno[-low_call_rate_inds, ]
 
         ind_callrate_removed <- length(low_call_rate_inds)
+
       } else {
         if(isTRUE(message)) {
           message(insight::print_color(paste(msg, "No individuals removed based on call rate threshold."), "blue"))
@@ -414,7 +418,8 @@ rownames(summary_stat_snp) <- NULL
 
   return(list(
     snps_matrix = object_geno,
-    qc_metrics_and_summary_stat = summary_stat_snp
+    qc_metrics_and_summary_stat = summary_stat_snp,
+    low_call_rate_inds_removed = low_call_rate_inds_removed
   )
 )
 
