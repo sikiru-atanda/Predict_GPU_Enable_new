@@ -94,14 +94,14 @@ AI_pls <- function(pheno_object=NULL,
 
   ### Check for near zero variance
 
-  nzv <- caret::nearZeroVar(geno_omic_object, saveMetrics = TRUE)
-
-  if(any((nzv$nzv==TRUE))==TRUE){
-    message(paste(msg, "Some X_variables data (genomic/omics) has zero variance and being removed."))
-    geno_omic_object <- geno_omic_object[, !nzv$nzv]
-
-    geno_omic_test_object <- geno_omic_test_object[, !nzv$nzv]
-  }
+  # nzv <- caret::nearZeroVar(geno_omic_object, saveMetrics = TRUE)
+  #
+  # if(any((nzv$nzv==TRUE))==TRUE){
+  #   message(paste(msg, "Some X_variables data (genomic/omics) has zero variance and being removed."))
+  #   geno_omic_object <- geno_omic_object[, !nzv$nzv]
+  #
+  #   geno_omic_test_object <- geno_omic_test_object[, !nzv$nzv]
+  # }
 
   if(!is.null(geno_omic_test_object)){
     test_label <- rownames(geno_omic_test_object)

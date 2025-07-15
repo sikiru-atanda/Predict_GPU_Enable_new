@@ -501,8 +501,6 @@ model_execute <- function(
 
     #gam_method_use = c("ND_mod1", "ND_mod2")
 
-    #AI_valid_models <- c(AI_valid_models, gam_method_use)
-
     asreml_model <- "GBLUP"
 
 
@@ -1100,8 +1098,8 @@ model_execute <- function(
         }
       }
 
-      ###
 
+      ###
       if(isFALSE(cross_validation)){
         if (any(c(GS_model, GS_model_cv) %in% AI_valid_models)) {
           stop(paste(msg, paste(
@@ -1110,7 +1108,7 @@ model_execute <- function(
           )), call. = FALSE)
         }
       }
-      ###
+
       ### This is important for asreml for multi-environment analysis
       # Define the error messages
       missing_var_cov_str_msg <- paste(msg, "Your data suggest multi-environment but variance-covariance structure is missing. Choose from:", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
@@ -1711,6 +1709,7 @@ if(!is.null(test_omic3_data) && !is.null(low_call_rate_inds_removed)){
 
 
  }
+
 ### Concatenation of omics for ML
  # When calling the function, pass the external variables as arguments
  if (!is.null(GS_model) && is.null(GS_model_cv)) {
@@ -1732,9 +1731,7 @@ if(!is.null(test_omic3_data) && !is.null(low_call_rate_inds_removed)){
    ml_dat_res <- list()
  }
 
-
  ### Ends
-
 
  ###################Genetic space test
 
@@ -2151,6 +2148,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
 
  sys_name <- Sys.info()["sysname"]
  if(docker_nd_usage) sys_name <- "Windows"
+
  workers <- set_parallel_plan(n_trait = n_trait,
                               n_model = n_model,
                               replication = 1,
@@ -2158,6 +2156,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                               sys_name = sys_name,
                               globals_max_GB = globals_max_GB,
                               docker_override = docker_nd_usage)
+
  ##########################################################
  #### new for chunk parallel
 

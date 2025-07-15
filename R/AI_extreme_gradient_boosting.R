@@ -174,8 +174,10 @@ AI_Xgb <- function(pheno_object=NULL,
                    ...){
 #browser()
   # Auto-adjust nthread based on environment
+
   #nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
   nthread <- set_per_worker_threads()
+
   msg <- "\n==================================================\n"
 
   if(is.null(geno_omic_object) & is.null(pheno_object)) {

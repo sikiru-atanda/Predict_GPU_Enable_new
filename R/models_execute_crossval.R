@@ -57,6 +57,7 @@ set_parallel_plan <- function(n_trait, n_model=1, replication = 1,
                               docker_override = FALSE,
                               sys_name) {
 
+
   sys_name  <- if (docker_override) "Windows" else Sys.info()[["sysname"]]
   plan_type <- if (sys_name == "Windows") "multisession" else "multicore"
 
@@ -97,6 +98,7 @@ set_per_worker_threads <- function() {
 
 
   invisible(intra)
+
 }
 
 # memo_readRDS <- local({
@@ -107,6 +109,7 @@ set_per_worker_threads <- function() {
 #     get(path, envir = cache, inherits = FALSE)
 #   }
 # })
+
 
 #' Title
 #'
