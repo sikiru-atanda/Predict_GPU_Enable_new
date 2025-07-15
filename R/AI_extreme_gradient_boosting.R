@@ -176,7 +176,7 @@ AI_Xgb <- function(pheno_object=NULL,
   # Auto-adjust nthread based on environment
 
   #nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
-  nthread <- set_per_worker_threads()
+  nthread <- 1 #set_per_worker_threads()
 
   msg <- "\n==================================================\n"
 
