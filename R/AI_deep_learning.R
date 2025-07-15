@@ -227,15 +227,16 @@ deep_learning_model <- function(pheno_object=NULL,
     scaler <- caret::preProcess(geno_omic_object, method = c("center", "scale"))
     geno_omic_object <- stats::predict(scaler, geno_omic_object)
 
-  }
-
-  cols_with_na <- which(colSums(is.na(geno_omic_object)) > 0)
-  if(length(cols_with_na)!=0){
-    geno_omic_object <- geno_omic_object[, -cols_with_na]
-    if(!is.null(geno_omic_test_object)){
-      geno_omic_test_object <- geno_omic_test_object[, -cols_with_na]
+    cols_with_na <- which(colSums(is.na(geno_omic_object)) > 0)
+    if(length(cols_with_na)!=0){
+      geno_omic_object <- geno_omic_object[, -cols_with_na]
+      if(!is.null(geno_omic_test_object)){
+        geno_omic_test_object <- geno_omic_test_object[, -cols_with_na]
+      }
     }
   }
+
+
 
   if(!is.null(geno_omic_test_object)){
 
@@ -252,6 +253,12 @@ deep_learning_model <- function(pheno_object=NULL,
     scaler <- caret::preProcess(omics_data, method = c("center", "scale"))
     omics_data <- stats::predict(scaler, omics_data)
     omics_data <- stats::predict(scaler, omics_data)
+    #####
+    cols_with_na <- which(colSums(is.na(omics_data)) > 0)
+    if(length(cols_with_na)!=0){
+      omics_data <- omics_data[, -cols_with_na]
+
+    }
 
   }
 

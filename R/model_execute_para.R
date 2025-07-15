@@ -1732,6 +1732,7 @@ if(!is.null(test_omic3_data) && !is.null(low_call_rate_inds_removed)){
    ml_dat_res <- list()
  }
 
+
  ### Ends
 
 
@@ -1865,9 +1866,9 @@ if(!is.null(test_omic3_data) && !is.null(low_call_rate_inds_removed)){
  # }
  #
  # }
- if(!is.null(feature_selected)){
-   load("feature_selected.RData")
- }
+ # if(!is.null(feature_selected)){
+ #   load("feature_selected.RData")
+ # }
  if(isTRUE(cross_validation)){
    #model_prep_all_bayes_cv <-  NULL
    #   if("test_set"%in%names(pheno_clean)) {

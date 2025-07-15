@@ -406,6 +406,7 @@ models_execute_crossval <- function(pheno_data = NULL,
     omic_count <- NULL
   }
 
+  #print(omics_data)
   }
 
   additional_params <- list(ETA = ETA, weights = weights, bayes_para = bayes_para,

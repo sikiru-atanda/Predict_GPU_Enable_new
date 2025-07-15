@@ -67,19 +67,20 @@ AI_knn <- function(pheno_object=NULL,
     scaler <- caret::preProcess(geno_omic_object, method = c("center", "scale"))
     geno_omic_object <- stats::predict(scaler, geno_omic_object)
 
+    cols_with_na <- which(colSums(is.na(geno_omic_object)) > 0)
+    if(length(cols_with_na)!=0){
+      geno_omic_object <- geno_omic_object[, -cols_with_na]
+      if(!is.null(geno_omic_test_object)){
+        geno_omic_test_object <- geno_omic_test_object[, -cols_with_na]
+      }
+    }
     # if(isTRUE(scaling) || isFALSE(scaling)){
     #   geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = TRUE)
     # }
 
   }
 
-  cols_with_na <- which(colSums(is.na(geno_omic_object)) > 0)
-  if(length(cols_with_na)!=0){
-    geno_omic_object <- geno_omic_object[, -cols_with_na]
-    if(!is.null(geno_omic_test_object)){
-      geno_omic_test_object <- geno_omic_test_object[, -cols_with_na]
-    }
-  }
+
 
   if(!is.null(geno_omic_test_object)){
     test_label <- rownames(geno_omic_test_object)
