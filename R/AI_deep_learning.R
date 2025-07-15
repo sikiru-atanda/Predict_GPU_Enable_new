@@ -45,6 +45,19 @@ train_predict_deeplearning <- function(data_label_geno, indices, test_geno,
                                        attention_across_multiple_layers = FALSE,
                                        batch_normalization = TRUE
                                        ) {
+
+  # Check and configure TensorFlow GPU memory growth before training
+  if (reticulate::py_module_available("tensorflow")) {
+    tf <- reticulate::import("tensorflow", delay_load = TRUE)
+    physical_devices <- tf$config$list_physical_devices("GPU")
+
+    if (length(physical_devices) > 0) {
+      for (dev in physical_devices) {
+        tf$config$experimental$set_memory_growth(dev, TRUE)
+      }
+    }
+  }
+
   train_data <- data_label_geno[, -1]
   y_train <- data_label_geno[, 1]
   # Subset the data
@@ -73,6 +86,12 @@ train_predict_deeplearning <- function(data_label_geno, indices, test_geno,
   } else{
     pred <-  model$predict(train_data)
   }
+
+  if (reticulate::py_module_available("tensorflow")) {
+    keras::k_clear_session()
+  }
+
+  rm(model)
   return(pred)
 }
 
@@ -184,6 +203,19 @@ deep_learning_model <- function(pheno_object=NULL,
                                 system_database = FALSE,
                                 ...) {
 #browser()
+
+  # Check and configure TensorFlow GPU memory growth before training
+  if (reticulate::py_module_available("tensorflow")) {
+    tf <- reticulate::import("tensorflow", delay_load = TRUE)
+    physical_devices <- tf$config$list_physical_devices("GPU")
+
+    if (length(physical_devices) > 0) {
+      for (dev in physical_devices) {
+        tf$config$experimental$set_memory_growth(dev, TRUE)
+      }
+    }
+  }
+
   msg <- "\n==================================================\n"
   if(is.null(dense_layers_cnn)) dense_layers_cnn <-  64
   if (is.null(geno_omic_object) && is.null(pheno_object) && isFALSE(crossval)) {
@@ -195,7 +227,16 @@ deep_learning_model <- function(pheno_object=NULL,
     scaler <- caret::preProcess(geno_omic_object, method = c("center", "scale"))
     geno_omic_object <- stats::predict(scaler, geno_omic_object)
 
+    cols_with_na <- which(colSums(is.na(geno_omic_object)) > 0)
+    if(length(cols_with_na)!=0){
+      geno_omic_object <- geno_omic_object[, -cols_with_na]
+      if(!is.null(geno_omic_test_object)){
+        geno_omic_test_object <- geno_omic_test_object[, -cols_with_na]
+      }
+    }
   }
+
+
 
   if(!is.null(geno_omic_test_object)){
 
@@ -212,6 +253,12 @@ deep_learning_model <- function(pheno_object=NULL,
     scaler <- caret::preProcess(omics_data, method = c("center", "scale"))
     omics_data <- stats::predict(scaler, omics_data)
     omics_data <- stats::predict(scaler, omics_data)
+    #####
+    cols_with_na <- which(colSums(is.na(omics_data)) > 0)
+    if(length(cols_with_na)!=0){
+      omics_data <- omics_data[, -cols_with_na]
+
+    }
 
   }
 
@@ -340,6 +387,11 @@ deep_learning_model <- function(pheno_object=NULL,
 
          preds <- model_dp$predict(omics_data[tst, ])
          preds <- as.data.frame(preds)
+         ###
+         if (reticulate::py_module_available("tensorflow")) {
+           keras::k_clear_session()
+         }
+
          rm(model_dp)
          return(preds[, 1])
        }

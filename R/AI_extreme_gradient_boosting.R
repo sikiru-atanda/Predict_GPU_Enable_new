@@ -174,8 +174,9 @@ AI_Xgb <- function(pheno_object=NULL,
                    ...){
 #browser()
   # Auto-adjust nthread based on environment
-  # nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
-  nthread <- 1
+
+  #nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
+  nthread <- set_per_worker_threads()
 
   msg <- "\n==================================================\n"
 
@@ -190,6 +191,13 @@ AI_Xgb <- function(pheno_object=NULL,
     geno_omic_object <- stats::predict(scaler, geno_omic_object)
 
 
+    cols_with_na <- which(colSums(is.na(geno_omic_object)) > 0)
+    if(length(cols_with_na)!=0){
+      geno_omic_object <- geno_omic_object[, -cols_with_na]
+      if(!is.null(geno_omic_test_object)){
+        geno_omic_test_object <- geno_omic_test_object[, -cols_with_na]
+      }
+    }
     #geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = TRUE)
     # if(isTRUE(scaling)){
     #   geno_omic_object <- scale(geno_omic_object, center = TRUE, scale = TRUE)
@@ -199,6 +207,8 @@ AI_Xgb <- function(pheno_object=NULL,
     #   }
     # }
   }
+
+
 
   if(!is.null(geno_omic_test_object)){
 

@@ -471,19 +471,26 @@ AI_xgboost_cv <- function(y,
                           ){
 
   # Auto-adjust nthread based on environment
-  # nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
 
-  nthread <- 1
+  #nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
+  nthread <- set_per_worker_threads()
 
   if(!is.null(omics)){
     scaler <- caret::preProcess(omics, method = c("center", "scale"))
     omics <- stats::predict(scaler, omics)
+
+    cols_with_na <- which(colSums(is.na(omics)) > 0)
+    if(length(cols_with_na)!=0){
+      omics <- omics[, -cols_with_na]
+
+    }
   }
 
   y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
 
   # Predict on the training data and get the scaled values
   y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+
 
   ### Set the paramters and hyper parameters for extreme graident boosting
   if(xgb_booster == "gblinear"){
@@ -619,6 +626,12 @@ AI_pls_cv <- function(y,
   if(!is.null(omics)){
     scaler <- caret::preProcess(omics, method = c("center", "scale"))
     omics <- stats::predict(scaler, omics)
+
+    cols_with_na <- which(colSums(is.na(omics)) > 0)
+    if(length(cols_with_na)!=0){
+      omics <- omics[, -cols_with_na]
+
+    }
   }
 if(!is.null(ncomp)){
   if(length(ncomp)> ncol(omics)){
@@ -695,6 +708,12 @@ AI_randomforest_cv <- function(y,
   if(!is.null(omics)){
     scaler <- caret::preProcess(omics, method = c("center", "scale"))
     omics <- stats::predict(scaler, omics)
+
+    cols_with_na <- which(colSums(is.na(omics)) > 0)
+    if(length(cols_with_na)!=0){
+      omics <- omics[, -cols_with_na]
+
+    }
   }
 
   y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
@@ -748,6 +767,12 @@ AI_ridge_regression_cv <- function(y,
   if(!is.null(omics)){
     scaler <- caret::preProcess(omics, method = c("center", "scale"))
     omics <- stats::predict(scaler, omics)
+
+    cols_with_na <- which(colSums(is.na(omics)) > 0)
+    if(length(cols_with_na)!=0){
+      omics <- omics[, -cols_with_na]
+
+    }
   }
 
   y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
@@ -806,6 +831,12 @@ AI_lasso_cv <- function(y,
   if(!is.null(omics)){
     scaler <- caret::preProcess(omics, method = c("center", "scale"))
     omics <- stats::predict(scaler, omics)
+
+    cols_with_na <- which(colSums(is.na(omics)) > 0)
+    if(length(cols_with_na)!=0){
+      omics <- omics[, -cols_with_na]
+
+    }
   }
 
   y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
@@ -866,6 +897,12 @@ AI_knn_cv <- function(y,
   if(!is.null(omics)){
     scaler <- caret::preProcess(omics, method = c("center", "scale"))
     omics <- stats::predict(scaler, omics)
+
+    cols_with_na <- which(colSums(is.na(omics)) > 0)
+    if(length(cols_with_na)!=0){
+      omics <- omics[, -cols_with_na]
+
+    }
   }
 
   y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
@@ -931,6 +968,12 @@ AI_svm_cv <- function(y,
   if(!is.null(omics)){
     scaler <- caret::preProcess(omics, method = c("center", "scale"))
     omics <- stats::predict(scaler, omics)
+
+    cols_with_na <- which(colSums(is.na(omics)) > 0)
+    if(length(cols_with_na)!=0){
+      omics <- omics[, -cols_with_na]
+
+    }
   }
 
   y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
