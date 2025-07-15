@@ -136,7 +136,14 @@ ETA_compiler_bayes <- function(
     if("BRR" %in% rand_model){
       if(!is.null(dataset)) {
         if(isTRUE(scaling)){
-        dataset <- scale(dataset, center = TRUE, scale = TRUE)
+        #dataset <- scale(dataset, center = TRUE, scale = TRUE)
+          dataset <- scale(dataset, center = TRUE, scale = apply(dataset, 2, function(x) max(sd(x), 1e-6)))
+          cols_with_na <- which(colSums(is.na(dataset)) > 0)
+          if(length(cols_with_na)!=0){
+          dataset <- dataset[, -cols_with_na]
+
+          }
+          #colnames(dataset)[cols_with_na]
         }
       }
     }

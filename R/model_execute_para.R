@@ -424,12 +424,13 @@ model_execute <- function(
     plot_filename = "trait",
     Plot_name_result_diagnostic = NULL,
     feature_selected = NULL,
+    globals_max_GB = 4,
     ...
 ) {
 
 #browser()
     msg <- "\n==================================================\n"
-
+    on.exit(future::plan("sequential"), add = TRUE)
     ######
     geno_data_process <- NULL
     if(!is.null(vcf_file_name) & !is.null(vcf_file_path)){
@@ -499,9 +500,6 @@ model_execute <- function(
     #                    "ND_mod5", "ND_mod6", "ND_mod7", "ND_mod8")
 
     #gam_method_use = c("ND_mod1", "ND_mod2")
-
-    #AI_valid_models <- c(AI_valid_models, gam_method_use)
-
 
     asreml_model <- "GBLUP"
 
@@ -1100,6 +1098,8 @@ model_execute <- function(
         }
       }
 
+
+      ###
       if(isFALSE(cross_validation)){
         if (any(c(GS_model, GS_model_cv) %in% AI_valid_models)) {
           stop(paste(msg, paste(
@@ -1435,7 +1435,7 @@ if (!any(user_defined_model %in% valid_models)) {
  ##
  #if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
 
-
+low_call_rate_inds_removed <- NULL
  # Process genomic data
  if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
      geno_res <- process_geno_data(geno_data = geno_data,
@@ -1461,12 +1461,54 @@ if (!any(user_defined_model %in% valid_models)) {
                                    message = message,
                                    heter_groups = heter_groups)
 
+     low_call_rate_inds_removed <- geno_res[["low_call_rate_inds_removed"]]
+     if(!is.null(low_call_rate_inds_removed)){
+       pheno_clean[["pheno_clean_data"]] <- pheno_clean[["pheno_clean_data"]][!pheno_clean[["pheno_clean_data"]][[gen_name]] %in% low_call_rate_inds_removed, ]
+     }
  } else {
      geno_res <-  list()
  }
 
+
  #if(length(geno_res)==0) { stop("geno_res is empty")}
  # Process omic1 data
+if(!is.null(omic1_data) && !is.null(low_call_rate_inds_removed)){
+  omic1_data <- omic1_data[!rownames(omic1_data)%in%low_call_rate_inds_removed, ]
+}
+
+if(!is.null(train_omic1_data) && !is.null(low_call_rate_inds_removed)){
+  train_omic1_data <- train_omic1_data[!rownames(train_omic1_data)%in%low_call_rate_inds_removed, ]
+}
+
+if(!is.null(test_omic1_data) && !is.null(low_call_rate_inds_removed)){
+  test_omic1_data <- test_omic1_data[!rownames(test_omic1_data)%in%low_call_rate_inds_removed, ]
+}
+##################
+if(!is.null(omic2_data) && !is.null(low_call_rate_inds_removed)){
+  omic2_data <- omic2_data[!rownames(omic2_data)%in%low_call_rate_inds_removed, ]
+}
+
+if(!is.null(train_omic2_data) && !is.null(low_call_rate_inds_removed)){
+  train_omic2_data <- train_omic2_data[!rownames(train_omic2_data)%in%low_call_rate_inds_removed, ]
+}
+
+if(!is.null(test_omic2_data) && !is.null(low_call_rate_inds_removed)){
+  test_omic2_data <- test_omic2_data[!rownames(test_omic2_data)%in%low_call_rate_inds_removed, ]
+}
+#########################
+if(!is.null(omic3_data) && !is.null(low_call_rate_inds_removed)){
+  omic3_data <- omic3_data[!rownames(omic3_data)%in%low_call_rate_inds_removed, ]
+}
+
+if(!is.null(train_omic3_data) && !is.null(low_call_rate_inds_removed)){
+  train_omic3_data <- train_omic3_data[!rownames(train_omic3_data)%in%low_call_rate_inds_removed, ]
+}
+
+if(!is.null(test_omic3_data) && !is.null(low_call_rate_inds_removed)){
+  test_omic3_data <- test_omic3_data[!rownames(test_omic3_data)%in%low_call_rate_inds_removed, ]
+}
+######################
+###
  omic1_res <- process_omic_data(omic_data = omic1_data,
                                 train_omic_data = train_omic1_data,
                                 test_omic_data = test_omic1_data,
@@ -1527,9 +1569,17 @@ if (!any(user_defined_model %in% valid_models)) {
  }
  ##
  if(!is.null(gmatrix)){
+   if(!is.null(low_call_rate_inds_removed)){
+     gmatrix <- gmatrix[!rownames(gmatrix)%in%low_call_rate_inds_removed,
+                        !colnames(gmatrix)%in%low_call_rate_inds_removed]
+   }
    gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- gmatrix
  } else {
    if (!is.null(gkernel)) {
+     if(!is.null(low_call_rate_inds_removed)){
+       gkernel <- gkernel[!rownames(gkernel)%in%low_call_rate_inds_removed,
+                          !colnames(gkernel)%in%low_call_rate_inds_removed]
+     }
      gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- gkernel
    }
  }
@@ -1545,6 +1595,10 @@ if (!any(user_defined_model %in% valid_models)) {
 
  } else {
    if (!is.null(omic1_kernel)) {
+     if(!is.null(low_call_rate_inds_removed)){
+       omic1_kernel <- omic1_kernel[!rownames(omic1_kernel)%in%low_call_rate_inds_removed,
+                          !colnames(omic1_kernel)%in%low_call_rate_inds_removed]
+     }
      gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] <- omic1_kernel
    }
  }
@@ -1558,6 +1612,10 @@ if (!any(user_defined_model %in% valid_models)) {
        gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] <- omic2_res[["kernel"]]
  } else {
    if (!is.null(omic2_kernel)) {
+     if(!is.null(low_call_rate_inds_removed)){
+       omic2_kernel <- omic2_kernel[!rownames(omic2_kernel)%in%low_call_rate_inds_removed,
+                                    !colnames(omic2_kernel)%in%low_call_rate_inds_removed]
+     }
      gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] <- omic2_kernel
    }
  }
@@ -1572,6 +1630,10 @@ if (!any(user_defined_model %in% valid_models)) {
      gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] <- omic3_res[["kernel"]]
  } else {
    if (!is.null(omic3_kernel)) {
+     if(!is.null(low_call_rate_inds_removed)){
+       omic3_kernel <- omic3_kernel[!rownames(omic3_kernel)%in%low_call_rate_inds_removed,
+                                    !colnames(omic3_kernel)%in%low_call_rate_inds_removed]
+     }
      gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] <- omic3_kernel
    }
  }
@@ -1668,7 +1730,6 @@ if (!any(user_defined_model %in% valid_models)) {
  } else {
    ml_dat_res <- list()
  }
-
 
  ### Ends
 
@@ -1802,9 +1863,9 @@ if (!any(user_defined_model %in% valid_models)) {
  # }
  #
  # }
- if(!is.null(feature_selected)){
-   load("feature_selected.RData")
- }
+ # if(!is.null(feature_selected)){
+ #   load("feature_selected.RData")
+ # }
  if(isTRUE(cross_validation)){
    #model_prep_all_bayes_cv <-  NULL
    #   if("test_set"%in%names(pheno_clean)) {
@@ -1941,7 +2002,8 @@ if (!any(user_defined_model %in% valid_models)) {
                                         batch_size = batch_size,
                                         l2_regularizer_dp = l2_regularizer_dp,
                                         dropout_rate = dropout_rate,
-                                        docker_nd_usage = docker_nd_usage)
+                                        docker_nd_usage = docker_nd_usage,
+                                        globals_max_GB = globals_max_GB)
 
    }, error = function(e) {
      message(paste("Error in cross-validation", e$message))
@@ -2034,6 +2096,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
    return(NULL)
  }
 
+ future::plan("sequential")
 ###############################################################
 
  ##########################################################################
@@ -2067,21 +2130,32 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
    n_model <- length(GS_model)
  }
  # Main logic
+ # sys_name <- Sys.info()["sysname"]
+ # if(docker_nd_usage) sys_name <- "Windows"
+ # if (!is.null(num_cores) && num_cores > 1) {
+ #   #sys_name <- Sys.info()["sysname"]
+ #   set_parallel_plan(n_trait = n_trait, n_model = n_model,
+ #                     sys_name = sys_name)
+ # } else {
+ #   # Automatically determine the number of cores and use half of them
+ #   detected_cores <- parallel::detectCores(logical = TRUE)
+ #   # For non-Windows systems, consider physical cores only
+ #   num_cores <- round(detected_cores * 0.5)
+ #
+ #   set_parallel_plan(n_trait= n_trait, n_model = n_model,num_cores = num_cores,
+ #                     sys_name = sys_name)
+ # }
+
  sys_name <- Sys.info()["sysname"]
  if(docker_nd_usage) sys_name <- "Windows"
- if (!is.null(num_cores) && num_cores > 1) {
-   #sys_name <- Sys.info()["sysname"]
-   set_parallel_plan(n_trait = n_trait, n_model = n_model,
-                     sys_name = sys_name)
- } else {
-   # Automatically determine the number of cores and use half of them
-   detected_cores <- parallel::detectCores(logical = TRUE)
-   # For non-Windows systems, consider physical cores only
-   num_cores <- round(detected_cores * 0.5)
 
-   set_parallel_plan(n_trait= n_trait, n_model = n_model,num_cores = num_cores,
-                     sys_name = sys_name)
- }
+ workers <- set_parallel_plan(n_trait = n_trait,
+                              n_model = n_model,
+                              replication = 1,
+                              num_cores = num_cores,
+                              sys_name = sys_name,
+                              globals_max_GB = globals_max_GB,
+                              docker_override = docker_nd_usage)
 
  ##########################################################
  #### new for chunk parallel
@@ -2147,7 +2221,15 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
  # chunks <- split(task_indices, rep(1:num_cores, length.out = length(task_indices)))
  #
 
- results <- future.apply::future_lapply(seq_len(nrow(best_models)), function(i) {
+ chunk_size <- if (workers > 1) ceiling(nrow(best_models) / workers) else NULL
+
+
+
+ results <- future.apply::future_lapply(seq_len(nrow(best_models)),
+                                        future.packages   = c("dplyr"),
+                                        future.seed       = TRUE,
+                                        future.chunk.size = chunk_size,
+                                        function(i) {
  task_row <- best_models[i, ]
  # results <- future.apply::future_lapply(chunks, function(chunk) {
  #   lapply(chunk, function(i) {
@@ -2835,6 +2917,22 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
 
      # Helper function for deep learning model
      run_deep_learning <- function() {
+
+       workers <- future::nbrOfWorkers()
+       cores   <- parallel::detectCores(logical =TRUE)
+       intra   <-  as.integer(max(1L, floor(cores / workers)))
+       inter   <- 1L
+
+       Sys.setenv(OMP_NUM_THREADS = intra)
+       Sys.setenv(MKL_NUM_THREADS = intra)
+
+       ##### Tell what  TF will obey for resource usage
+       if (reticulate::py_module_available("tensorflow")) {
+         tf <- reticulate::import("tensorflow", delay_load = TRUE)
+         tf$config$threading$set_intra_op_parallelism_threads(intra)
+         tf$config$threading$set_inter_op_parallelism_threads(inter)
+       }
+
        tryCatch({
          deep_learning_model(
            pheno_object = ml_dat_res[["pheno_clean_data"]],
@@ -2934,13 +3032,16 @@ if(GS_model == "deep_learning_model") GS_model <- as.character(task_row$model)
         res_summary_stat = res_summary_stat, geno_qc_stat = geno_qc_stat)
    #}) ## new with chunk parallel
    #list(output =  output)
- }, future.seed = TRUE)
+ })
+
+ # , future.seed = TRUE)
 
    ### new for chunk parallel processing
    # Flatten results
    #results <- unlist(results, recursive = FALSE)
    ## ends
 
+ future::plan("sequential")
  if(!is.null(best_models)){
    names(results) <- best_models[["trait"]]
 
