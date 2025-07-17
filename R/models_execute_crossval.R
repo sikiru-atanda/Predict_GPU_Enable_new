@@ -76,7 +76,7 @@ set_parallel_plan <- function(n_trait, n_model=1, replication = 1,
                               docker_override = FALSE,
                               sys_name) {
 
-  message("Setting up parallel plan for Cross Validation ...")
+  message("Setting up parallel plan ...")
   sys_name  <- if (docker_override) "Windows" else Sys.info()[["sysname"]]
   plan_type <- if (sys_name == "Windows") "multisession" else "multicore"
   message(sprintf("→ OS: %s (docker_override=%s) → using future plan '%s'",
