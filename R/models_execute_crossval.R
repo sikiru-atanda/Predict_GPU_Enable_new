@@ -71,24 +71,31 @@ log_thread_env_vars <- function() {
 }
 
 
-set_parallel_plan <- function(n_trait, n_model=1, replication = 1,
-                              num_cores = NULL, globals_max_GB = 4,
+set_parallel_plan <- function(n_trait,
+                              n_model = 1,
+                              replication = 1,
+                              num_cores = NULL,
+                              globals_max_GB = 4,
                               docker_override = FALSE,
+                              mode = "cross_validation",
                               sys_name) {
-
-  message("Setting up parallel plan ...")
+  task_type <- if (mode == "cross_validation") "Cross Validation" else "True Prediction"
+  message(sprintf(
+    "\nSetting up parallel plan for %s\n",
+    task_type
+  ))
   sys_name  <- if (docker_override) "Windows" else Sys.info()[["sysname"]]
   plan_type <- if (sys_name == "Windows") "multisession" else "multicore"
   message(sprintf("→ OS: %s (docker_override=%s) → using future plan '%s'",
                   sys_name, docker_override, plan_type))
 
-  phys      <- parallel::detectCores(logical = FALSE)
-  avail     <- if (is.null(num_cores)) floor(phys * 0.5) else floor(num_cores)
+  phys <- parallel::detectCores(logical = FALSE)
+  avail <- if (is.null(num_cores)) floor(phys * 0.5) else floor(num_cores)
   message(sprintf("→ Core budget: avail = %d (num_cores=%s)", avail,
                   if (is.null(num_cores)) "auto" else num_cores))
 
   max_needed <- n_trait * n_model * replication
-  workers   <- max(1L, min(avail, phys, n_trait * n_model * replication))
+  workers <- max(1L, min(avail, phys, n_trait * n_model * replication))
   message(sprintf("→ Workload: traits × models × reps = %d; spawning %d worker(s)",
                   max_needed, workers))
 
