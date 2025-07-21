@@ -2155,6 +2155,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
                               num_cores = num_cores,
                               sys_name = sys_name,
                               globals_max_GB = globals_max_GB,
+                              mode = "true_prediction",
                               docker_override = docker_nd_usage)
 
  ##########################################################
