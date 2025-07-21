@@ -52,26 +52,67 @@
 #   invisible(workers)
 # }
 
-set_parallel_plan <- function(n_trait, n_model=1, replication = 1,
-                              num_cores = NULL, globals_max_GB = 4,
+log_thread_env_vars <- function() {
+  # now log what’s actually set
+  vars <- c(
+    "OPENBLAS_NUM_THREADS",
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "TF_INTRA_OP_PARALLELISM_THREADS",
+    "TF_INTER_OP_PARALLELISM_THREADS",
+    "TF_ENABLE_ONEDNN_OPTS"
+  )
+  for (v in vars) {
+    message(sprintf("→ %s = %s", v, Sys.getenv(v, unset = "<unset>")))
+  }
+
+  invisible(NULL)
+}
+
+
+set_parallel_plan <- function(n_trait,
+                              n_model = 1,
+                              replication = 1,
+                              num_cores = NULL,
+                              globals_max_GB = 4,
                               docker_override = FALSE,
+                              mode = "cross_validation",
                               sys_name) {
-
-
+  task_type <- if (mode == "cross_validation") "Cross Validation" else "True Prediction"
+  message(sprintf(
+    "\nSetting up parallel plan for %s\n",
+    task_type
+  ))
   sys_name  <- if (docker_override) "Windows" else Sys.info()[["sysname"]]
   plan_type <- if (sys_name == "Windows") "multisession" else "multicore"
+  message(sprintf("→ OS: %s (docker_override=%s) → using future plan '%s'",
+                  sys_name, docker_override, plan_type))
 
-  phys      <- parallel::detectCores(logical = FALSE)
-  avail     <- if (is.null(num_cores)) floor(phys * 0.5) else floor(num_cores)
-  workers   <- max(1L, min(avail, phys, n_trait * n_model * replication))
+  phys <- parallel::detectCores(logical = FALSE)
+  avail <- if (is.null(num_cores)) floor(phys * 0.5) else floor(num_cores)
+  message(sprintf("→ Core budget: avail = %d (num_cores=%s)", avail,
+                  if (is.null(num_cores)) "auto" else num_cores))
+
+  max_needed <- n_trait * n_model * replication
+  workers <- max(1L, min(avail, phys, n_trait * n_model * replication))
+  message(sprintf("→ Workload: traits × models × reps = %d; spawning %d worker(s)",
+                  max_needed, workers))
 
   options(future.globals.maxSize = globals_max_GB * 1024^3L,
           future.rng.onMisuse    = "ignore")
+  message(sprintf("→ future.globals.maxSize = %.1f GB", globals_max_GB))
 
-  if (workers > 1)
+  if (workers > 1L) {
     future::plan(plan_type, workers = workers, gc = TRUE)
-  else
+    message(sprintf("→ future plan set to '%s' with %d workers", plan_type, workers))
+  } else {
     future::plan("sequential")
+    message("→ Using sequential plan (workers = 1)")
+  }
+
+  # now log all your thread‑control env vars in one shot
+  log_thread_env_vars()
 
   invisible(workers)
 }
