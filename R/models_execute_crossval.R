@@ -1,57 +1,5 @@
-#'
-#' @param n_trait
-#' @param n_model
-#' @param replication
-#' @param num_cores
-#' @param sys_name
-#'
-#' @return
-#' @export
-#'
-#' @examples
-# set_parallel_plan <- function(n_trait,
-#                               n_model = 1,
-#                               replication = 1,
-#                               num_cores = NULL,
-#                               globals_max_GB   = 4,
-#                               docker_override  = FALSE,
-#                               sys_name) {
-#
-#   #on.exit(future::plan("sequential"), add = TRUE)
-#   sys_name <- if (docker_override) "Windows" else Sys.info()[["sysname"]]
-#   plan_type <- ifelse(sys_name == "Windows", "multisession", "multicore")
-#
-#   # Check if parallel execution is beneficial
-#    if (n_trait > 1 || n_model > 1 || replication > 1) {
-#   #   if(is.null(num_cores)){
-#   #
-#   #     num_cores <-  parallel::detectCores(logical = TRUE)
-#   #     num_cores <- num_cores*0.5
-#   #   }
-#   #   # Ensure the number of workers does not exceed a reasonable limit
-#   #   max_cores <- parallel::detectCores(logical = FALSE)  # Physical cores only
-#   #   num_cores <- min(num_cores, max_cores)
-#
-#   phys  <- parallel::detectCores(logical = FALSE)
-#   avail <- if (is.null(num_cores)) floor(phys * 0.5) else floor(num_cores)
-#
-#   ## keep it sane
-#   workers <- max(1L, min(avail, phys, n_trait * n_model * replication))
-#
-#     options(future.globals.maxSize = globals_max_GB * 1024^3L,
-#             future.rng.onMisuse    = "ignore")
-#
-#     future::plan(plan_type, workers = workers, gc = TRUE)
-#
-#     #message(paste0("Using ", num_cores, " workers for parallel execution"))
-#   } else {
-#     future::plan("sequential")
-#     workers <- 1L
-#   }
-#
-#   invisible(workers)
-# }
 
+#' @export
 log_thread_env_vars <- function() {
   # now log what’s actually set
   vars <- c(
@@ -142,16 +90,6 @@ set_per_worker_threads <- function() {
 
 }
 
-# memo_readRDS <- local({
-#   cache <- new.env(parent = emptyenv())
-#   function(path) {
-#     if (!exists(path, envir = cache, inherits = FALSE))
-#       assign(path, readRDS(path), envir = cache)
-#     get(path, envir = cache, inherits = FALSE)
-#   }
-# })
-
-
 #' Title
 #'
 #' @param model
@@ -173,11 +111,6 @@ predict_with_model <- function(model = NULL,
   # 'additional_params' is a list of additional parameters required for each model
 
   if (model == "deep_learning_model") {
-    ####compute safe thread budget for DPL
-    # workers <- future::plan()$workers
-    # if (is.null(workers) || workers < 1L) workers <- 1L
-    #
-    # cores   <- parallel::detectCores(logical = TRUE)
     workers <- future::nbrOfWorkers()
     cores   <- parallel::detectCores(logical =TRUE)
     intra   <-  as.integer(max(1L, floor(cores / workers)))
@@ -417,10 +350,6 @@ models_execute_crossval <- function(pheno_data = NULL,
 
     if("stratified"%in%present_patterns) sampling_method <- "stratified"
 
-    # if("Repeated"%in%present_patterns && is.null(replication)) {
-    #   stop(paste(msg, "You select repeated cross-validation provide number of replications.\n For example, replication = 2."), call. = FALSE)
-    # }
-
 
   }
 
@@ -429,6 +358,8 @@ models_execute_crossval <- function(pheno_data = NULL,
   bayes_model <- NULL
   bayes_trait <- NULL
   bayes_para <- NULL
+
+  results_seq_dl <- NULL
 
   if(!is.null(ml_dat_res)){
   omics_data <-  ml_dat_res[["merged_data"]][["merge_data"]]
@@ -517,16 +448,6 @@ models_execute_crossval <- function(pheno_data = NULL,
   dp_models <- c("mlp_with_attention", "mlp", "ResNet", "cnn")
 
   asreml_model <- "GBLUP"
-  #
-  # GS_model_cv = c(AI_valid_models,
-  #                 bayes_valid_models,
-  #                 bayes_gblup_valid_models,
-  #                 asreml_model)
-
-  # Check if "GBLUP_BRR" is in the list and replace it with "BRR"
-  # if("GBLUP_BRR" %in% GS_model_cv) {
-  #   GS_model_cv[GS_model_cv == "GBLUP_BRR"] <- "BRR"
-  # }
 
   n_trait <- length(response)
   n_model <- length(GS_model_cv)
@@ -583,60 +504,15 @@ models_execute_crossval <- function(pheno_data = NULL,
                     sys_name = sys_name,
                     globals_max_GB = globals_max_GB,
                     docker_override = docker_nd_usage)
-  # if (!is.null(num_cores) && num_cores > 1) {
-  #   #sys_name <- Sys.info()["sysname"]
-  #   set_parallel_plan(n_trait = n_trait, n_model = n_model,
-  #                     replication = replication,num_cores = num_cores,
-  #                     sys_name = sys_name,
-  #                     globals_max_GB = globals_max_GB,
-  #                     docker_override = docker_nd_usage)
-  # } else {
-  #   # Automatically determine the number of cores and use half of them
-  #   # detected_cores <- parallel::detectCores(logical = TRUE)
-  #   # # For non-Windows systems, consider physical cores only
-  #   # num_cores <- round(detected_cores * 0.5)
-  #
-  #   set_parallel_plan(n_trait = n_trait,
-  #                     n_model= n_model,
-  #                     replication = replication,
-  #                     num_cores = num_cores,
-  #                     sys_name = sys_name)
-  # }
-
-  # big_paths <- list(bayes = "model_prep_all_bayes_cv.rds",
-  #                   addp  = "additional_params.rds",
-  #                   phe = "pheno_data.rds",
-  #                   omic_dat = "omics_data.rds")
-
-  # 2. Register your cleanup BEFORE any return()
-  # on.exit({
-  #   existing <- vapply(big_paths, file.exists, logical(1))
-  #   if (any(existing)) {
-  #     file.remove(big_paths[existing])
-  #   }
-  # }, add = TRUE)
-
-  # saveRDS(model_prep_all_bayes_cv, big_paths$bayes)
-  # saveRDS(additional_params,       big_paths$addp)
-  # saveRDS(pheno_data,       big_paths$phe)
-  # saveRDS(omics_data,       big_paths$omic_dat)
-
-  # 3. Also reset the plan on exit
-  #on.exit(future::plan("sequential"), add = TRUE)
-
-
-  # if (inherits(future::plan(), "multisession")) {
-  #   cl <- future::plan()$workers   # the actual cluster
-  #   parallel::clusterExport(cl, varlist = "memo_readRDS", envir = environment())
-  # }
 
 
   # Create a list of all combinations of response variables and replications
-  tasks <- expand.grid(response = response,
+  tasks_full <- expand.grid(response = response,
                        replication = seq_len(replication),
                        modell = GS_model_cv,
                        stringsAsFactors = FALSE)
 
+  tasks <- subset(tasks_full, ! modell %in% dp_models)
 
   chunk_size <- if (workers > 1) ceiling(nrow(tasks) / workers) else NULL
 
@@ -650,14 +526,6 @@ models_execute_crossval <- function(pheno_data = NULL,
     trait <- as.character(task_row$response)
     rep <- as.integer(task_row$replication)
     model <- as.character(task_row$modell)
-
-    # if(model%in%c(bayes_valid_models, bayes_gblup_valid_models)){
-    # model_prep_all_bayes_cv <- memo_readRDS(big_paths$bayes)
-    # }
-    # additional_params <- memo_readRDS(big_paths$addp)
-    #
-    # pheno_data <- memo_readRDS(big_paths$phe)
-    # omics_data <- memo_readRDS(big_paths$phe)
 
 
     if(any(model%in%dp_models)){
@@ -923,26 +791,356 @@ models_execute_crossval <- function(pheno_data = NULL,
          ypred_cv_Reps_all = ypred_cv)
   })
 
-  # , future.seed = TRUE)
+  future::plan("sequential")
 
-  # Process the results
-  filtered_results <- lapply(results, function(res) {
-    if (!is.null(res$eval_metrics_reps) && !is.null(res$ypred_cv_Reps_all)) {
-      # Check if any element in eval_metrics_reps or ypred_cv_Reps_all is NA
-      if (all(!is.na(unlist(res$eval_metrics_reps))) && all(!is.na(unlist(res$ypred_cv_Reps_all)))) {
-        return(res)
+  dp_present <- intersect(GS_model_cv, dp_models)
+
+  if (length(dp_present) > 0) {
+
+    # build *just* the DP grid
+    tasks_dl <- expand.grid(
+      response    = response,
+      replication = seq_len(replication),
+      modell      = dp_present,
+      stringsAsFactors = FALSE
+    )
+    tasks_by_trait <- split(tasks_dl, tasks_dl$response)
+
+  # 3) sequential loop by trait
+  results_seq_dl <- lapply(tasks_by_trait, function(task_df) {
+    lapply(seq_len(nrow(task_df)), function(i) {
+
+      # ─── extract and rename ─────────────────────────────────
+      row    <- task_df[i, ]
+      trait  <- row$response
+      rep_i  <- as.integer(row$replication)     # avoid shadowing rep()
+      model  <- as.character(row$modell)        # original DL name
+
+      # ─── log current state ───────────────────────────────────
+      message(sprintf(
+        "Processing trait='%s', replication=%d, model='%s'",
+        trait, rep_i, model
+      ))
+
+      # ─── force DL branch ───────────────────────────────────
+      additional_params$deep_learning_model <- model
+      model_flag <- "deep_learning_model"       # branch flag
+      repp       <- 1
+
+      # ─── reproducible seed ─────────────────────────────────
+      base_seed <- if (
+        !is.null(random_state) &&
+        is.numeric(random_state) &&
+        length(random_state) == 1
+      ) as.integer(random_state) else 123L
+      new_seed <- (base_seed + rep_i * 10000L) %% .Machine$integer.max
+
+      # ─── train/test split ──────────────────────────────────
+      if (cross_validation_meth %in% holds_out_methods_avail) {
+        test_set_val <- hold_out_stratified_and_un(
+          pheno_data      = pheno_data,
+          gen_name        = gen_name,
+          response        = trait,
+          test_size       = test_size,
+          random_state    = new_seed,
+          replication     = repp,
+          sampling_method = sampling_method
+        )
+
+      } else if (cross_validation_meth %in% Kfolds_methods_avail) {
+        test_set_val <- kfolds_stratified_un(
+          pheno_data      = pheno_data,
+          gen_name        = gen_name,
+          response        = trait,
+          test_size       = test_size,
+          nfolds          = nfolds,
+          random_state    = new_seed,
+          replication     = repp,
+          sampling_method = sampling_method
+        )
+
+      } else if (cross_validation_meth %in% CVs_multi_envs_methods_avail) {
+        CV <- as.integer(strsplit(cross_validation_meth, "CV")[[1]][2])
+        test_set_val <- CV1_CV2_for_multi_environment(
+          pheno_data      = pheno_data,
+          gen_name        = gen_name,
+          response        = trait,
+          test_size       = test_size,
+          CV              = CV,
+          nfolds          = nfolds,
+          heter_groups    = heter_groups,
+          random_state    = new_seed,
+          replication     = repp,
+          sampling_method = sampling_method
+        )
+
+      } else {
+        stop(
+          paste(
+            msg,
+            "Unsupported cross-validation method. Choose from:",
+            paste(c(holds_out_methods_avail,
+                    Kfolds_methods_avail,
+                    CVs_multi_envs_methods_avail),
+                  collapse = ", ")
+          ),
+          call. = FALSE
+        )
       }
-    }
-    return(NULL)
+
+      # ─── init y + containers ───────────────────────────────
+      len_y <- nrow(pheno_data)
+      y     <- as.double(pheno_data[[trait]])
+
+      if (cross_validation_meth %in% c(Kfolds_methods_avail, holds_out_methods_avail)) {
+        ypred_cv <- data.frame(
+          y    = y,
+          yhat = rep(NA_real_, len_y)
+        )
+        results_eval_metrics_reps <- data.frame(
+          Rep = 1,
+          matrix(
+            NA_real_,
+            nrow = 1,
+            ncol = length(eval_metrics),
+            dimnames = list(NULL, eval_metrics)
+          )
+        )
+      }
+
+      if (cross_validation_meth %in% CVs_multi_envs_methods_avail) {
+        if (is.null(heter_groups)) {
+          stop(paste(msg, "For CV1/CV2 you must supply `heter_groups`."), call. = FALSE)
+        }
+        ENV <- unique(as.character(pheno_data[[heter_groups]]))
+        ypred_cv <- data.frame(
+          y    = y,
+          yhat = rep(NA_real_, len_y),
+          env  = as.character(pheno_data[[heter_groups]])
+        )
+        results_eval_metrics_reps_use <- data.frame(
+          Rep = rep(1, length(ENV)),
+          env = ENV,
+          matrix(NA_real_,
+                 nrow = length(ENV),
+                 ncol = length(eval_metrics),
+                 dimnames = list(NULL, eval_metrics))
+        )
+        results_eval_metrics_reps <- data.frame()  # to be filled later
+      }
+
+      # ─── grab the single fold/hold‑out group ────────────────
+      group <- test_set_val[[1]]    # always [[1]] because repp == 1
+
+      handle_error <- FALSE
+
+      if (!cross_validation_meth %in% holds_out_methods_avail) {
+        for (j in 1:nfolds) {
+          yNA <- y
+          for (g in 1:len_y) {
+            if (group[g] == j) { yNA[g] <- NA }
+          }
+          tst <- which(is.na(yNA))
+
+          if (model %in% c(bayes_valid_models, bayes_gblup_valid_models)) {
+            tryCatch({
+              if (model == "GBLUP_BRR") {
+                model_GBLUP <- "BRR"
+                additional_params$bayes_model <-  model_GBLUP #model
+                additional_params$bayes_trait <- trait
+                additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
+                additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
+                #rm(model_GBLUP)
+              } else {
+                additional_params$bayes_model <- model
+                additional_params$bayes_trait <- trait
+                additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
+                additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
+              }
+              ypred_cv[tst, "yhat"] <- predict_with_model(model = "Bayes", y = yNA,
+                                                          tst = tst, additional_params = additional_params)
+            }, error = function(e) {
+              message(paste("Error in processing Bayes model", model, "for", trait, ": ", e$message))
+              handle_error <<- TRUE
+            })
+          }
+
+          if (!is.null(engine) && model == "GBLUP" && engine == "asreml") {
+            tryCatch({
+              additional_params$response <- trait
+              preds <- predict_with_model(model = model, tst = tst, additional_params = additional_params)
+              if (!is.null(preds)) {
+                ypred_cv[tst, "yhat"] <- preds
+              } else {
+                stop(paste(msg, "Prediction with GBLUP model failed.\n"), call. = FALSE)
+              }
+            }, error = function(e) {
+              message(paste("Error in processing GBLUP model for ", trait, ": ", e$message))
+              handle_error <<- TRUE
+            })
+          }
+
+          # if (model %in% c(AI_valid_models)) {
+          if (model %in% dp_models) {
+            tryCatch({
+              ypred_cv[tst, "yhat"] <- predict_with_model(
+                model = model_flag,
+                y = yNA,
+                omics_data = omics_data,
+                tst = tst,
+                additional_params = additional_params
+              )
+            }, error = function(e) {
+              message(paste("Error in processing AI model", model, "for", trait, ": ", e$message))
+              handle_error <<- TRUE
+            })
+          }
+          ##
+        }
+      } else {
+        if (cross_validation_meth %in% holds_out_methods_avail) {
+          tst <- test_set_val[[1]]
+          yNA <- y
+          yNA[tst] <- NA
+
+          if (model %in% c(bayes_valid_models, bayes_gblup_valid_models)) {
+            tryCatch({
+              if (model == "GBLUP_BRR") {
+                model_GBLUP <- "BRR"
+                additional_params$bayes_model <- model_GBLUP#model
+                additional_params$bayes_trait <- trait
+                additional_params$ETA <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_ETA"]][["ETA"]]
+                additional_params$bayes_para <- model_prep_all_bayes_cv[[model_GBLUP]][["bayes_para"]]
+                #rm(model_GBLUP)
+              } else {
+                additional_params$bayes_model <- model
+                additional_params$bayes_trait <- trait
+                additional_params$ETA <- model_prep_all_bayes_cv[[model]][["bayes_ETA"]][["ETA"]]
+                additional_params$bayes_para <- model_prep_all_bayes_cv[[model]][["bayes_para"]]
+              }
+              ypred_cv[tst, "yhat"] <- predict_with_model(model = "Bayes", y = yNA,
+                                                          tst = tst, additional_params = additional_params)
+            }, error = function(e) {
+              message(paste("Error in processing Bayes model", model, "for", trait, ": ", e$message))
+              handle_error <<- TRUE
+            })
+          }
+
+          if (!is.null(engine) && model == "GBLUP" && engine == "asreml") {
+            tryCatch({
+              additional_params$response <- trait
+              preds <- predict_with_model(model = model, tst = tst, additional_params = additional_params)
+              if (!is.null(preds)) {
+                ypred_cv[tst, "yhat"] <- preds
+              } else {
+                stop(paste(msg, "Prediction with GBLUP model failed.\n"), call. = FALSE)
+              }
+            }, error = function(e) {
+              message(paste("Error in processing GBLUP model for ", trait, ": ", e$message))
+              handle_error <<- TRUE
+            })
+          }
+
+          # if (model %in% c(AI_valid_models)) {
+          if (model %in% dp_models) {
+            tryCatch({
+              ypred_cv[tst, "yhat"] <- predict_with_model(
+                model = model_flag,
+                y = yNA,
+                omics_data = omics_data,
+                tst = tst,
+                additional_params = additional_params)
+
+            }, error = function(e) {
+              message(paste("Error in processing AI model", model, "for", trait, ": ", e$message))
+              handle_error <<- TRUE
+            })
+          }
+          ##
+        }
+      }
+
+      if (isTRUE(handle_error)) {
+        #return(NULL)
+        ypred_cv <- NULL
+        results_eval_metrics_reps <- NULL
+      }
+
+      if (cross_validation_meth %in% CVs_multi_envs_methods_avail & isFALSE(handle_error)) {
+        ypred_cv <- as.data.frame(ypred_cv)
+        ypred_cv[, 'y'] <- as.double(ypred_cv[, 'y'])
+        ypred_cv[, 'yhat'] <- as.double(ypred_cv[, 'yhat'])
+
+        results_eval_metrics_reps_use <- as.data.frame(results_eval_metrics_reps_use)
+
+        for (eva in 1:length(eval_metrics)) {
+          sik <- ypred_cv |>
+            dplyr::group_by(!!dplyr::sym(heter_groups)) |>
+            dplyr::summarise(
+              eval_metric = tryCatch(
+                evaluation_metrics(yhat, y, eval_metrics = eval_metrics[eva]),
+                error = function(e) NULL
+              )
+            )
+
+          if (!is.null(sik)) {
+            for (ii in 1:nrow(sik)) {
+              if (!is.null(sik$eval_metric[ii])) {
+                results_eval_metrics_reps_use[results_eval_metrics_reps_use[, heter_groups] == as.character(sik[[heter_groups]])[ii], c("Rep", eval_metrics[eva])] <- c(repp, sik$eval_metric[ii])
+              }
+            }
+          }
+        }
+
+        results_eval_metrics_reps <- rbind(results_eval_metrics_reps_use, results_eval_metrics_reps)
+      } else {
+        if (!cross_validation_meth %in% CVs_multi_envs_methods_avail) {
+          for (eva in 1:length(eval_metrics)) {
+            tryCatch({
+              results_eval_metrics_reps[repp, eval_metrics[eva]] <- evaluation_metrics(y_observed = ypred_cv[tst, "y"],
+                                                                                       y_predicted = ypred_cv[tst, "yhat"],
+                                                                                       eval_metrics = eval_metrics[eva])
+            }, error = function(e) {
+              results_eval_metrics_reps[repp, eval_metrics[eva]] <- NA
+            })
+          }
+        }
+      }
+
+      # if(model == "deep_learning_model") model <- as.character(task_row$modell)
+
+      list(
+        trait = trait,
+        rep = rep_i,
+        model = model,
+        eval_metrics_reps = results_eval_metrics_reps,
+        ypred_cv_Reps_all = ypred_cv
+      )
+    })
   })
-  # Remove NULL elements
-  filtered_results <- Filter(Negate(is.null), filtered_results)
 
-  future::plan("sequential")  # Reset to default plan
-  return(filtered_results) # Adjust depending on how you want to return or further process the results
+  # flatten nested list
+  results_seq_dl_flat <- unlist(results_seq_dl, recursive = FALSE)
 
+  } else {
+    # no DP models requested → skip that pass
+    results_seq_dl_flat <- list()
+  }
 
+  # combine into one flat list
+  final_results <- c(results, results_seq_dl_flat)
+
+  # now filter those that have no NAs
+  filtered_results <- Filter(
+    function(res) {
+      !is.null(res$eval_metrics_reps) &&
+        !is.null(res$ypred_cv_Reps_all) &&
+        all(!is.na(unlist(res$eval_metrics_reps))) &&
+        all(!is.na(unlist(res$ypred_cv_Reps_all)))
+    },
+    final_results
+  )
+
+  future::plan("sequential")
+  return(filtered_results)
 }
-####
-
-
