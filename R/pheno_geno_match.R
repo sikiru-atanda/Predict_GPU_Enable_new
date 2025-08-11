@@ -9,7 +9,7 @@
 #'
 #' @examples
 check_test_set <- function(test_set = NULL
-                           ) {
+) {
   msg <- "\n==================================================\n"
   if (is.null(test_set)) return(NULL)
 
@@ -41,28 +41,33 @@ pheno_geno_match <- function(object_geno = NULL,
                              train_set = NULL,
                              test_set = NULL,
                              heter_groups = NULL,
+                             low_call_rate_inds_removed = NULL,
                              message = TRUE) {
   msg <- "\n==================================================\n"
 
   # Check if genotypes are consistent across all environments
   if(!is.null(heter_groups)){
-  env_counts <- object_pheno |>
-    dplyr::group_by(!!rlang::sym(heter_groups)) |>
-    dplyr::summarise(Count = dplyr::n_distinct(!!rlang::sym(gen_name)))
+    env_counts <- object_pheno |>
+      dplyr::group_by(!!rlang::sym(heter_groups)) |>
+      dplyr::summarise(Count = dplyr::n_distinct(!!rlang::sym(gen_name)))
 
-  if(dplyr::n_distinct(env_counts$Count) > 1) {
-    stop(paste(msg,sprintf("%s are not consistent across all %s. Stopping.", gen_name, heter_groups)), call. = FALSE)
+    if(dplyr::n_distinct(env_counts$Count) > 1) {
+      stop(paste(msg,sprintf("%s are not consistent across all %s. Stopping.", gen_name, heter_groups)), call. = FALSE)
 
-  } else {
-    # Order genotypes consistently across environments then by environment
-    object_pheno <- object_pheno |>
-      dplyr::arrange(!!rlang::sym(gen_name)) |>
-      dplyr::arrange(!!rlang::sym(heter_groups))
+    } else {
+      # Order genotypes consistently across environments then by environment
+      object_pheno <- object_pheno |>
+        dplyr::arrange(!!rlang::sym(gen_name)) |>
+        dplyr::arrange(!!rlang::sym(heter_groups))
+
+    }
 
   }
 
-  }
+  if(!is.null(low_call_rate_inds_removed)){
+    object_pheno <- object_pheno[!as.character(object_pheno[[gen_name]]) %in% low_call_rate_inds_removed, ]
 
+  }
   ID_pheno <- as.character(unique(object_pheno[[gen_name]]))
 
   if (!isTRUE(all(ID_pheno %in% rownames(object_geno)))) {
@@ -79,12 +84,12 @@ pheno_geno_match <- function(object_geno = NULL,
 
     if (!is.null(test_set)) {
 
-# check whether geno_omic data or grm/kernel ------------------------------
+      # check whether geno_omic data or grm/kernel ------------------------------
 
       if(nrow(object_geno)==ncol(object_geno)){
-      #object_geno <- object_geno[c(ID_pheno, test_set), c(ID_pheno, test_set)]
-      object_geno <- object_geno[rownames(object_geno)%in%c(ID_pheno, test_set), colnames(object_geno)%in%c(ID_pheno, test_set)]
-      object_geno <-  object_geno[match(c(ID_pheno, test_set), rownames(object_geno)), match(c(ID_pheno, test_set), colnames(object_geno))]
+        #object_geno <- object_geno[c(ID_pheno, test_set), c(ID_pheno, test_set)]
+        object_geno <- object_geno[rownames(object_geno)%in%c(ID_pheno, test_set), colnames(object_geno)%in%c(ID_pheno, test_set)]
+        object_geno <-  object_geno[match(c(ID_pheno, test_set), rownames(object_geno)), match(c(ID_pheno, test_set), colnames(object_geno))]
       } else {
         #object_geno <- object_geno[c(ID_pheno, test_set), ]
         object_geno <- object_geno[rownames(object_geno)%in%c(ID_pheno, test_set), ]
@@ -127,7 +132,7 @@ pheno_geno_match <- function(object_geno = NULL,
     }
     attr(object_geno, "cleared") <- "model_ready_use"
     return(list(geno_pheno_match_data = object_geno
-                ))
+    ))
   }
 
 
