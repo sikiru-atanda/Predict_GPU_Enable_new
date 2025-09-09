@@ -19,7 +19,10 @@ Imports:
     corpcor,
     crew,
     data.table,
+    doParallel,
     dplyr,
+    foreach,
+    future,
     future.apply,
     glmnet,
     gridExtra,
@@ -32,9 +35,11 @@ Imports:
     pls,
     randomForest,
     reticulate,
+    RhpcBLASctl,
     stringr,
     VIM,
     xgboost
+SystemRequirements: Python (>= 3.10)
 RoxygenNote: 7.3.0
 Suggests: 
     testthat (>= 3.0.0)

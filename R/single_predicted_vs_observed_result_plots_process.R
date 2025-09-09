@@ -1,7 +1,9 @@
 
 # Function to calculate statistics
-calculate_statistics <- function(pred_matrix) {
-  mean_pred <- rowMeans(pred_matrix)
+calculate_statistics <- function(pred_matrix, y_matrix) {
+  mean_pred <- rowMeans(pred_matrix, na.rm = TRUE)
+
+  mean_y <- rowMeans(y_matrix, na.rm = TRUE)
   # lower_bound <- apply(pred_matrix, 1, quantile, probs = 0.05)
   # upper_bound <- apply(pred_matrix, 1, quantile, probs = 0.95)
   # interval_width <- upper_bound - lower_bound
@@ -9,7 +11,8 @@ calculate_statistics <- function(pred_matrix) {
   # pred_error_var <- apply(pred_matrix, 1, var)
 
   return(list(
-    pred_mean = mean_pred
+    pred_mean = mean_pred,
+    y_mean = mean_y
     # lower = lower_bound,
     # upper = upper_bound,
     # interval_width = interval_width,
@@ -61,6 +64,7 @@ single_predicted_vs_observed_result_plots_process <- function(results,
   # Initialize lists to store results
   mod_res_per_trait_per_model <- list()
 
+  combined_results <- na.omit(combined_results)
   # Iterate through each model
   #for (mod in models) {
   for (mod in filtered_models) {
@@ -78,11 +82,16 @@ single_predicted_vs_observed_result_plots_process <- function(results,
       reps <- unique(dattt$rep)
       datt <- as.numeric(dat[dat[["trait"]] == tt, "yhat"])
 
+      datt_y <- as.numeric(dat[dat[["trait"]] == tt, "y"])
       # Convert 'yhat' to matrix format
       mat_res <- matrix(datt, ncol = length(reps))
 
+      mat_res_y <- matrix(datt_y, ncol = length(reps))
+
       # Calculate statistics
-      stats <- calculate_statistics(mat_res)
+      stats <- calculate_statistics(pred_matrix = mat_res,
+                                    y_matrix = mat_res_y)
+
 
       # Store the statistics in the list for the current trait
       mod_res_per_trait[[tt]] <- stats
@@ -100,7 +109,8 @@ single_predicted_vs_observed_result_plots_process <- function(results,
     for (mod in filtered_models) {
 
       sik <-  predicted_vs_observed_ranking_plot(
-        observed_value = as.numeric(pheno_data[[trait]]),
+        #observed_value = as.numeric(pheno_data[[trait]]),
+        observed_value = as.numeric(mod_res_per_trait_per_model[[mod]][[trait]]$y_mean),
         predicted_value = as.numeric(mod_res_per_trait_per_model[[mod]][[trait]]$pred_mean),
         abs_very_close_threshold = abs_very_close_threshold,
         abs_close_threshold =abs_close_threshold

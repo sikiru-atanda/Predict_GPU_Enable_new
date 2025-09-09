@@ -44,6 +44,19 @@ PredictProR Product of NDSU!
 }
 
 
+.onLoad <- function(libname, pkgname) {
+  # Harmless default; don't perform installs here
+  options(timeout = max(getOption("timeout", 60), 300))
+}
+
+.onAttach <- function(libname, pkgname) {
+  packageStartupMessage(
+    "To set up a Python env with PyTorch, run:\n",
+    "  setup_predictdl_env(prefer_gpu = TRUE, cuda = 'auto')"
+  )
+}
+
+
 # .onLoad <- function(libname, pkgname) {
 #   if (!reticulate::py_module_available("tensorflow") || !reticulate::py_module_available("keras")) {
 #     packageStartupMessage("TensorFlow and/or Keras not found. Please run 'setup_environment.R' to install the necessary dependencies.")

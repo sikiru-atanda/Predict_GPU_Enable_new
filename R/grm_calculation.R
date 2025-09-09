@@ -111,7 +111,7 @@ grm_calculation <- function(
   #if(class(geno_clean)[1]!= "matrix") stop(print(paste(msg, 'object geno_clean must be matrix.')), call. = FALSE)
 
   freq <- colMeans(geno_clean)/2
-  if (any(is.na(geno_clean) | freq == 0 | freq == 1)) geno_clean <- Remove_NA_Mono_SNP(geno_clean= geno_clean)
+  if (any(is.na(geno_clean) | freq == 0 | freq == 1)) geno_clean <- Remove_NA_Mono_SNP(geno= geno_clean)
 
   ## Check if SNP data is coded 0, 1, 2
 
