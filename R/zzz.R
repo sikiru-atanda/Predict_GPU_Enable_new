@@ -1,259 +1,167 @@
-# .onAttach <- function(libname, pkgname) {
-#   # Path to the logo file
-#   logo_path <- system.file("NDSUlogo.png", package = pkgname)
-#
-#   # Display the logo and custom message
-#   packageStartupMessage("This is a product of sik
-# ----------------------------------------
-# ")
-#   if (file.exists(logo_path)) {
-#     logo <- png::readPNG(logo_path)
-#     grid::grid.raster(logo)
-#   }
-#
-#   packageStartupMessage("
-# Welcome to North Dakota State University R Package!
-# ----------------------------------------
-# ")
-# }
-
-
-.onAttach <- function(libname, pkgname) {
-  # ANSI escape codes for colors
-  green <- "\033[32m"
-  yellow <- "\033[33m"
-  reset <- "\033[0m"
-
-  # ASCII art of the NDSU logo with colors
-  logo_ascii <- paste0(
-    green, " _   _  ____  ____  _    _  ", reset, "\n",
-    green, "| \\ | ||  _ \\|  _ \\| |  | | ", reset, "\n",
-    green, "|  \\| || | | | | | | |  | | ", reset, "\n",
-    green, "| . ` || |_| | |_| | |__| | ", reset, "\n",
-    green, "|_|\\_||____/|____/ \\____/  ", reset, "\n",
-    yellow, "  North Dakota State University", reset, "\n"
-  )
-
-  # Display the ASCII logo and custom message
-  packageStartupMessage("
-PredictProR Product of NDSU!
-----------------------------------------
-")
-  packageStartupMessage(logo_ascii)
-
+if (getRversion() >= "2.15.1") {
+  utils::globalVariables(c(
+    "#CHROM",
+    ".data",
+    "ALT",
+    "BLUP",
+    "Class",
+    "Confidence",
+    "Correct",
+    "Env",
+    "Freq",
+    "Metric",
+    "Observed",
+    "Observed_class",
+    "Observed_value",
+    "PC1",
+    "PC2",
+    "POS",
+    "Predicted",
+    "Predicted_class",
+    "Predicted_value",
+    "Prediction_error_variance",
+    "Prediction_confidence",
+    "Probability",
+    "REF",
+    "Remarks",
+    "Reliability",
+    "Reliability_remarks",
+    "SelectionFrequency",
+    "Set",
+    "Standard_error",
+    "Summed_BLUP",
+    "Train_Test_Label",
+    "Type",
+    "bin",
+    "bottom_20_obs",
+    "bottom_20_pred",
+    "bottom_quantile",
+    "category",
+    "composite_score",
+    "confidence_remarks",
+    "cum_composite_importance",
+    "cv_role",
+    "cv_scenario",
+    "difference",
+    "feature",
+    "fit_type",
+    "fold",
+    "gamma_value",
+    "geno_data",
+    "is_classification",
+    "mae",
+    "mean_prob",
+    "mean_rank_instability_risk",
+    "metric",
+    "mod",
+    "mod_cv",
+    "model",
+    "msg",
+    "obs_rank",
+    "observed",
+    "observed_rate",
+    "pheno",
+    "pred_rank",
+    "predicted",
+    "predicted.value",
+    "prob",
+    "reliability_remarks",
+    "rmse",
+    "row_id",
+    "status",
+    "std.error",
+    "top_20_obs",
+    "top_20_pred",
+    "top_quantile",
+    "total",
+    "lower_bound",
+    "trait",
+    "upper_bound",
+    "variant_id",
+    "y",
+    "yhat"
+  ))
 }
-
 
 .onLoad <- function(libname, pkgname) {
-  # Harmless default; don't perform installs here
   options(timeout = max(getOption("timeout", 60), 300))
+  if (!nzchar(Sys.getenv("_R_CHECK_PACKAGE_NAME_"))) {
+    try(gp_configure_torch_runtime_env(), silent = TRUE)
+  }
 }
 
 .onAttach <- function(libname, pkgname) {
+  backend_message <- paste(
+    "Python backends use configured subprocess interpreters.",
+    "`setup_predictdl_env()` and `setup_predictgp_env()` are optional one-time provisioning helpers.",
+    "On servers, set `PREDICTPRO_DL_PYTHON` and/or `PREDICTPRO_GP_PYTHON` before running models."
+  )
+
+  if (nzchar(Sys.getenv("_R_CHECK_PACKAGE_NAME_"))) {
+    packageStartupMessage(
+      "PredictProR loaded.\n",
+      backend_message
+    )
+    return(invisible())
+  }
+
+  # Probing every candidate interpreter starts several Python processes (and
+  # imports torch); in non-interactive sessions - parallel workers, Rscript
+  # batch jobs - report only what is configured and resolve lazily later.
+  if (!interactive()) {
+    configured <- Sys.getenv(c("PREDICTPRO_PYTHON", "PREDICTPRO_GP_PYTHON", "PREDICTPRO_DL_PYTHON"), unset = "")
+    configured <- configured[nzchar(configured)]
+    packageStartupMessage(
+      "PredictProR loaded.\n",
+      backend_message,
+      if (length(configured)) paste0("\n", names(configured), ": ", configured, collapse = "") else ""
+    )
+    return(invisible())
+  }
+
+  normalize_python <- function(x) {
+    if (inherits(x, "try-error") || is.null(x) || !nzchar(x)) {
+      return(NULL)
+    }
+    normalizePath(x, winslash = "/", mustWork = FALSE)
+  }
+  configured_python <- function(env_names, fallback) {
+    for (env_name in env_names) {
+      val <- Sys.getenv(env_name, unset = "")
+      if (nzchar(val)) {
+        return(normalize_python(val))
+      }
+    }
+    normalize_python(try(fallback(), silent = TRUE))
+  }
+
+  py_general <- configured_python("PREDICTPRO_PYTHON", function() gp_preferred_python(purpose = "ml"))
+  py_gp <- configured_python("PREDICTPRO_GP_PYTHON", function() gp_preferred_python(purpose = "gp"))
+  py_dl <- configured_python(c("PREDICTPRO_DL_PYTHON", "PREDICTPRO_PYTHON_DL"), function() gp_detect_dl_python())
+  py_dl_probe <- if (!inherits(py_dl, "try-error") && !is.null(py_dl) && nzchar(py_dl) && file.exists(py_dl)) {
+    try(gp_python_probe(py_dl), silent = TRUE)
+  } else {
+    NULL
+  }
+  gp_msg <- if (!is.null(py_gp) && nzchar(py_gp)) {
+    paste0("\nConfigured GP Python: ", py_gp)
+  } else ""
+  general_msg <- if (!is.null(py_general) && nzchar(py_general)) {
+    paste0("\nConfigured ML Python: ", py_general)
+  } else ""
+  dl_msg <- if (!is.null(py_dl) && nzchar(py_dl)) {
+    cuda_suffix <- if (!inherits(py_dl_probe, "try-error") && is.list(py_dl_probe) && isTRUE(py_dl_probe$cuda_available)) {
+      paste0(" [CUDA ", as.integer(py_dl_probe$cuda_device_count %||% 0L), " GPU]")
+    } else {
+      " [CPU]"
+    }
+    paste0("\nConfigured DL Python: ", py_dl, cuda_suffix)
+  } else ""
   packageStartupMessage(
-    "To set up a Python env with PyTorch, run:\n",
-    "  setup_predictdl_env(prefer_gpu = TRUE, cuda = 'auto')"
+    "PredictProR loaded.\n",
+    backend_message,
+    general_msg,
+    gp_msg,
+    dl_msg
   )
 }
-
-
-# .onLoad <- function(libname, pkgname) {
-#   if (!reticulate::py_module_available("tensorflow") || !reticulate::py_module_available("keras")) {
-#     packageStartupMessage("TensorFlow and/or Keras not found. Please run 'setup_environment.R' to install the necessary dependencies.")
-#   }
-# }
-
-
-# .onLoad <- function(libname, pkgname) {
-#   # install_if_missing <- function(pkg) {
-#   #   if (!requireNamespace(pkg, quietly = TRUE)) {
-#   #     install.packages(pkg)
-#   #   }
-#   # }
-#   #
-#   # required_packages <- c("reticulate", "tensorflow", "keras")
-#   # lapply(required_packages, install_if_missing)
-#   #
-#   # library(reticulate)
-#
-#   # Check if Miniconda is already installed
-#   conda_installed <- tryCatch({
-#     reticulate::conda_binary()
-#     TRUE
-#   }, error = function(e) {
-#     FALSE
-#   })
-#
-#   if (!conda_installed) {
-#     message("Python is not installed. Installing Miniconda Python...")
-#     reticulate::install_miniconda()
-#   } else {
-#     message("Miniconda is already installed.")
-#   }
-#
-#   # Create or use an existing virtual environment
-#   env_name <- "myenv"
-#   if (!reticulate::virtualenv_exists(env_name)) {
-#     message("Creating a virtual environment...")
-#     reticulate::virtualenv_create(env_name, python_version = "3.8")  # Specify a compatible Python version
-#   } else {
-#     message("Using existing virtual environment: ", env_name)
-#   }
-#
-#   # Use the virtual environment
-#   reticulate::use_virtualenv(env_name, required = TRUE)
-#
-#   install_python_package <- function(package_name, version = NULL) {
-#     tryCatch({
-#       message(paste("Installing", package_name, "in the Python environment..."))
-#       reticulate::py_install(package_name, envname = env_name, pip = TRUE, version = version)
-#       message(paste(package_name, "installed successfully."))
-#     }, error = function(e) {
-#       message(paste("Failed to install", package_name, ":", e$message))
-#     })
-#   }
-#
-#   ensure_numpy <- function(required_version = "1.26.4") {
-#     tryCatch({
-#       result <- reticulate::py_run_string("import numpy; version = numpy.__version__")
-#       current_version <- as.character(result$version)
-#       message(paste("Current NumPy version:", current_version))
-#       if (utils::compareVersion(current_version, required_version) != 0) {
-#         message(paste("Installing/upgrading NumPy to version:", required_version))
-#         install_python_package("numpy", version = required_version)
-#       } else {
-#         message("Required NumPy version is already installed.")
-#       }
-#     }, error = function(e) {
-#       message("Failed to ensure NumPy version:", e$message)
-#       install_python_package("numpy", version = required_version)
-#     })
-#   }
-#
-#   ensure_tf_keras <- function() {
-#     tryCatch({
-#       reticulate::py_run_string("import tensorflow")
-#       reticulate::py_run_string("import keras")
-#     }, error = function(e) {
-#       message("TensorFlow and/or Keras not found in the Python environment. Installing...")
-#       install_python_package("tensorflow", version = "2.10.0")  # Specify compatible versions
-#       install_python_package("keras", version = "2.10.0")
-#     })
-#   }
-#
-#   # Run the pip update and ensure necessary packages
-#   update_pip <- function() {
-#     tryCatch({
-#       reticulate::py_run_string("import pip")
-#       reticulate::py_install("pip", envname = env_name, pip = TRUE)
-#     }, error = function(e) {
-#       message("pip is not available. Installing pip...")
-#       install_python_package("pip")
-#     })
-#   }
-#
-#   update_pip()
-#   ensure_numpy()
-#   ensure_tf_keras()
-# }
-
-
-
-
-# .onLoad <- function(libname, pkgname) {
-#   # Helper function to install R packages if they are not already installed
-#   install_if_missing <- function(pkg) {
-#     if (!requireNamespace(pkg, quietly = TRUE)) {
-#       install.packages(pkg)
-#     }
-#   }
-#
-#   # List of required R packages
-#   required_packages <- c("reticulate", "tensorflow", "keras")
-#
-#   # Install required R packages
-#   lapply(required_packages, install_if_missing)
-#
-#   # Load reticulate
-#   library(reticulate)
-#
-#   # Function to run a shell command and capture output
-#   run_shell_command <- function(command) {
-#     tryCatch({
-#       result <- system(command, intern = TRUE)
-#       message(paste("Command output:", paste(result, collapse = "\n")))
-#       return(result)
-#     }, error = function(e) {
-#       message(paste("Failed to run command:", command, "Error:", e$message))
-#     })
-#   }
-#
-#   # Function to install a package using pip in the Python environment
-#   install_python_package <- function(package_name) {
-#     tryCatch({
-#       message(paste("Installing", package_name, "in the Python environment..."))
-#       run_shell_command(paste("python -m pip install --upgrade", package_name))
-#       message(paste(package_name, "installed successfully."))
-#     }, error = function(e) {
-#       message(paste("Failed to install", package_name, ":", e$message))
-#     })
-#   }
-#
-#   # Ensure pip is installed and up-to-date
-#   ensure_pip <- function() {
-#     tryCatch({
-#       reticulate::py_run_string("import pip")
-#     }, error = function(e) {
-#       message("pip not found. Installing pip...")
-#       install_python_package("pip")
-#     })
-#   }
-#
-#   update_pip <- function() {
-#     tryCatch({
-#       run_shell_command("python -m pip install --upgrade pip")
-#       message("pip has been updated.")
-#     }, error = function(e) {
-#       message("Failed to update pip: ", e$message)
-#     })
-#   }
-#
-#   # Ensure NumPy is installed with the correct version
-#   ensure_numpy <- function(required_version = "1.26.4") {
-#     tryCatch({
-#       # Check current numpy version
-#       current_version <- reticulate::py_run_string("import numpy; print(numpy.__version__)")
-#       current_version <- as.character(current_version)
-#       message(paste("Current NumPy version:", current_version))
-#       if (current_version != required_version) {
-#         message(paste("Installing/upgrading NumPy to version:", required_version))
-#         install_python_package(paste("numpy==", required_version, sep = ""))
-#       } else {
-#         message("Required NumPy version is already installed.")
-#       }
-#     }, error = function(e) {
-#       message("Failed to ensure NumPy version:", e$message)
-#     })
-#   }
-#
-#   # Ensure TensorFlow and Keras are installed
-#   ensure_tf_keras <- function() {
-#     tryCatch({
-#       reticulate::py_run_string("import tensorflow")
-#       reticulate::py_run_string("import keras")
-#     }, error = function(e) {
-#       message("TensorFlow and/or Keras not found in the Python environment.")
-#       install_python_package("tensorflow")
-#       install_python_package("keras")
-#     })
-#   }
-#
-#   # Run the pip update and ensure necessary packages
-#   ensure_pip()
-#   update_pip()
-#   ensure_numpy()
-#   ensure_tf_keras()
-# }
-#
-#
-#

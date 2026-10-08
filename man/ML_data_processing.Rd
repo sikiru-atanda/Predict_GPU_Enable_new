@@ -2,7 +2,7 @@
 % Please edit documentation in R/AI_data_processing.R
 \name{ML_data_processing}
 \alias{ML_data_processing}
-\title{Title}
+\title{Assemble a classical-ML training data frame}
 \usage{
 ML_data_processing(
   pheno_clean = NULL,
@@ -13,8 +13,25 @@ ML_data_processing(
 )
 }
 \arguments{
-\item{omic_clean}{}
+\item{pheno_clean}{Cleaned phenotype data frame (output of
+[phenotype_precheck] / [phenotype_to_model]).}
+
+\item{response}{Name of the response (trait) column in `pheno_clean`.}
+
+\item{geno_clean}{Cleaned genomic-marker matrix (rows = individuals,
+columns = SNPs); row names should match the genotype IDs.}
+
+\item{gen_name}{Name of the genotype-ID column in `pheno_clean`.}
+
+\item{omic_clean}{Optional cleaned omics matrix to be column-bound onto the
+genomic features.}
+}
+\value{
+A list with the merged feature data frame and metadata used by
+  the classical-ML wrappers.
 }
 \description{
-Title
+Combines the cleaned phenotype frame with the cleaned genomic and (optional)
+omics matrices into a single feature data frame keyed by the genotype-ID
+column for downstream classical-ML wrappers.
 }

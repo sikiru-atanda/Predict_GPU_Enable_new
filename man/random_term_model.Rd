@@ -2,7 +2,7 @@
 % Please edit documentation in R/bayesians_preprocess.R
 \name{random_term_model}
 \alias{random_term_model}
-\title{Title}
+\title{Validate and Adjust Model Specification for Random Terms}
 \usage{
 random_term_model(
   rand_terms = NULL,
@@ -13,17 +13,43 @@ random_term_model(
 )
 }
 \arguments{
-\item{rand_terms}{all the random terms in the formula. This is an output from random_terms function}
+\item{rand_terms}{A character vector specifying the random effect terms to be included in the model.}
 
-\item{GS_model}{model defined by the user. It is expected this will be for the genotype effect estimate}
+\item{GS_model}{A character string or vector specifying the general statistical model(s) to be applied,
+such as "BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS".}
 
-\item{gen_name}{Column name containing the individuals/genotype in the phenotypic data file}
+\item{gen_name}{A character string specifying the name of the genetic effect in the model.}
 
-\item{rand_terms_model_bayesian}{model for all the random terms including the genotype effect.
-the total number of the model must be equal the number of random term.}
+\item{rand_terms_model_bayesian}{A character vector specifying the model(s) for each random term.
+If not specified or inconsistent, default adjustments are made based on `GS_model` and available terms.}
 
-\item{message}{If the user want to print out the message/warning info or not}
+\item{message}{A logical indicating whether to display warning messages for missing or incorrect model specifications.}
+}
+\value{
+A character vector with the adjusted or validated model specifications for each random term.
 }
 \description{
-Title
+This function evaluates and adjusts the model specifications for random terms in a Bayesian analysis setting,
+ensuring they align with the specified general and random term models. It handles various scenarios including
+interactions, the presence of genetic names, and checks for consistency with available Bayesian models.
+}
+\details{
+The function ensures that the model specifications for random terms are correctly set for Bayesian analysis.
+It verifies the presence and appropriateness of the genetic effect name, handles interaction terms,
+and adjusts model specifications based on the general model (`GS_model`) provided. If `GS_model` is specified
+but `rand_terms_model_bayesian` is missing or incomplete, the function attempts to intelligently assign models
+to each term, defaulting to "BRR" where necessary and using "RKHS" for multi-kernel interactions.
+}
+\examples{
+rand_terms <- c("Genotype", "Genotype:Environment")
+GS_model <- "BRR"
+gen_name <- "Genotype"
+rand_terms_model_bayesian <- c("BRR", "RKHS")
+adjusted_models <- random_term_model(rand_terms = rand_terms,
+                                     GS_model = GS_model,
+                                     gen_name = gen_name,
+                                     rand_terms_model_bayesian = rand_terms_model_bayesian,
+                                     message = TRUE)
+print(adjusted_models)
+
 }

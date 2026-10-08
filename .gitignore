@@ -1,4 +1,68 @@
-.Rproj.user
+.Rproj.user/
 .Rhistory
 .RData
 .Ruserdata
+.Rcheck/
+*.Rcheck/
+.-00build.log
+
+# Local package build/check artifacts
+.build_stage*/
+PredictProR_*.tar.gz
+
+# Local R/Python runtimes and caches
+.pydeps/
+.r-gp-test-lib/
+.r-hybrid-lib/
+.r-lib/
+.r-polyploid-benchmark-lib/
+.r-pkglib/
+.tmp_test_lib/
+.venv-gp/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Generated model/test outputs
+tmp/
+tools/tmp_*/
+src/*.o
+src/*.so
+src/*.dll
+src/*.dylib
+BRR_*.bin
+BRR_*.dat
+RKHS_*.dat
+ETA_*_*.dat
+mu.dat
+varE.dat
+Rplots.pdf
+CV_results_*/
+Yield_*/
+Yield_New_*/
+# Timestamped model-run output directories: TRAIT_MODEL_MM-DD-YYYY_HH-MMam/pm
+# (e.g. HDDT_Kernel.GBLUP_05-24-2026_07-45PM/, PROTEIN_*, HT_*, T_M_*,
+#  multi_trait_ml_*, gp_export_probe_*).
+*_[0-9][0-9]-[0-9][0-9]-[0-9][0-9][0-9][0-9]_*M/
+gp_export_probe_*/
+# BGLR working files written to the run directory
+Omega_*.dat
+R.dat
+external_data/
+# Generated output from the bundled example scripts
+examples/**/output/
+
+# tools/ holds reference verification/benchmark scripts (tracked); their generated
+# outputs, data tables and logs are not tracked.
+tools/outputs/
+tools/*.csv
+tools/*.log
+tools/*.out
+tools/*.err
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+
+# Local build/validation outputs
+tarball_user_validation/

@@ -17,13 +17,40 @@ extract_var_cov_structures <- function(formula, var_cov_structures) {
 }
 
 
-#' Title
+#' Bayesian cross-validation fold predictor
 #'
-#' @param y
-#' @param ETA
-#' @param weights
-#' @param bayes_para
-#' @param tst
+#' Fits the configured BGLR model (univariate `BGLR::BGLR`, or the multitrait
+#' kernel-prior path when `met_kernel_cv_meta` is supplied) on the training
+#' rows and returns predicted values for the held-out test indices.
+#'
+#' @param y Numeric response vector for the fold, with the test rows already
+#'   masked to `NA` by the CV scheduler.
+#' @param ETA BGLR `ETA` list prepared upstream by `model_prep_bayes_cv` /
+#'   `bayes_finalize_*` (fixed and random effect specifications, kernels or
+#'   marker designs, and the model labels per term).
+#' @param weights Optional positive Stage 2 observation precisions, supplied as
+#'   a numeric vector, one-column table, or column name in `pheno_data`. For
+#'   Gaussian fits these are converted to `sqrt(weights)` before calling BGLR,
+#'   because BGLR defines residual variance as inverse squared native weight.
+#' @param bayes_para Named list of BGLR sampler controls: `nIter`, `burnIn`,
+#'   and `thin`.
+#' @param tst Integer vector of row indices to predict (the held-out rows).
+#' @param bayes_model Bayesian model identifier (e.g. "RKHS", "BRR").
+#' @param bayes_trait Trait name used for BGLR output isolation (saveAt prefix).
+#' @param pheno_data Optional phenotype data used to resolve a named Stage 2
+#'   weight column and preserve row alignment during cross-validation.
+#' @param response Optional response-column name in `pheno_data`.
+#' @param response_family Response family for the Bayesian fit (gaussian,
+#'   ordinal, binary).
+#' @param groups Optional residual-variance grouping factor for Gaussian BGLR
+#'   fits (per-row environment label for heterogeneous residuals).
+#' @param met_kernel_cv_meta Optional list carrying the per-fold MET kernel-prior
+#'   multitrait context. When non-NULL, `bayes_mod_cv` routes the fold through
+#'   `bayes_mod_cv_met_kernel_predict()` (using `BGLR::Multitrait` with kernel
+#'   prior) instead of the univariate `BGLR::BGLR(groups=...)` path. This
+#'   keeps CV consistent with the true-prediction fix for GBLUP_BRR/RKHS MET
+#'   heter_resid. Required keys: `pheno_data`, `response`, `gen_name`,
+#'   `heter_groups`, `kernels`, `GS_model`, `bayes_para`.
 #'
 #' @return
 #' @export
@@ -35,29 +62,146 @@ bayes_mod_cv <- function(y,
                         bayes_para,
                         tst,
                         bayes_model,
-                        bayes_trait){
+                        bayes_trait,
+                        pheno_data = NULL,
+                        response = NULL,
+                        response_family = "gaussian",
+                        groups = NULL,
+                        met_kernel_cv_meta = NULL){
 
-  systime <- format(Sys.time(), "%Y%m%d_%H%M%S")
-  systime <- gsub("[-: ]", "_", systime)
-  systime <- paste(bayes_model, bayes_trait, systime, sep= "_")
-
-  fit <- BGLR::BGLR(
-    y=y,
-    ETA=ETA,
+  fam <- gp_resolve_response_family(response_family, y = y)
+  class_levels <- if (identical(fam, "gaussian")) NULL else gp_response_class_levels(y, fam)
+  precision_weights <- gp_resolve_stage2_precision_weights(
     weights = weights,
+    pheno_data = pheno_data %||% data.frame(.stage2_response = y),
+    response = if (is.null(pheno_data)) ".stage2_response" else response,
+    test_mask = is.na(y),
+    context = "BGLR cross-validation Stage 2 observation weights"
+  )
+  if (!identical(fam, "gaussian") && isTRUE(precision_weights$supplied) &&
+      any(precision_weights$precision != 1)) {
+    stop(
+      "BGLR ordinal/binary cross-validation fits do not support observation weights other than 1.",
+      call. = FALSE
+    )
+  }
+  if (!identical(fam, "gaussian") && !is.null(groups)) {
+    stop("BGLR residual groups are supported for gaussian Bayesian cross-validation fits only.", call. = FALSE)
+  }
+
+  # MET heter_resid kernel-Bayesian CV: route through the same multitrait
+  # kernel-prior sampler the true-prediction path uses (see commit 35a3bcb).
+  # The univariate BGLR::BGLR(groups=...) path below collapses the genetic
+  # signal for GBLUP_BRR on MET because BGLR's default sigma^2_beta prior
+  # does not calibrate to the eigen-sqrt BRR design the same way the kernel
+  # prior calibrates to K; this branch makes CV match true-prediction.
+  if (!is.null(met_kernel_cv_meta)) {
+    if (isTRUE(precision_weights$supplied)) {
+      stop(
+        "Weighted MET BGLR with heterogeneous residuals is unavailable because BGLR::Multitrait has no observation-weight argument. Set `bayes_kernel_heter_resid = FALSE` to use the weighted univariate BGLR route, or use weighted GP/ASReml.",
+        call. = FALSE
+      )
+    }
+    # Phase 3.18: the prep stores met_kernel_cv_meta$response as the FULL
+    # user response vector. For multi-trait CV calls this is length > 1,
+    # which trips "recursive indexing failed at level 2" inside
+    # bayes_mod_cv_met_kernel_predict at
+    # `ph[[met_kernel_cv_meta$response]] <- as.numeric(y)`. Each fold
+    # predicts one trait at a time so we override to the current
+    # bayes_trait. (Phase 3.19/3.20 note: this prevents the crash but
+    # bayes_multitrait_env_heter_fit may still return all-NA predictions
+    # for the single-trait reduction -- tracked as a deeper architectural
+    # fix.)
+    if (length(met_kernel_cv_meta[["response"]]) > 1L) {
+      if (!is.null(bayes_trait) && nzchar(as.character(bayes_trait)[1L])) {
+        met_kernel_cv_meta[["response"]] <- as.character(bayes_trait)[1L]
+      } else {
+        warning(sprintf(
+          "bayes_mod_cv: met_kernel_cv_meta$response has %d traits but bayes_trait is unset; using first '%s'.",
+          length(met_kernel_cv_meta[["response"]]),
+          as.character(met_kernel_cv_meta[["response"]])[1L]
+        ), call. = FALSE)
+        met_kernel_cv_meta[["response"]] <- as.character(met_kernel_cv_meta[["response"]])[1L]
+      }
+    }
+    return(bayes_mod_cv_met_kernel_predict(
+      y = y, tst = tst, met_kernel_cv_meta = met_kernel_cv_meta))
+  }
+
+  save_prefix <- gp_bglr_save_prefix(
+    model_name = bayes_model %||% "BGLR",
+    response = bayes_trait %||% "trait"
+  )
+
+  # Gaussian CV uses only yHat, and the saved effect draws were written to disk
+  # (~26 MB per BayesB fold) and deleted unread. Classification needs the draws
+  # and re-enables saveEffects in gp_bayes_bglr_fit_observed_rows().
+  if (identical(fam, "gaussian")) {
+    ETA <- lapply(ETA, function(term) {
+      if (is.list(term) && !is.null(term[["saveEffects"]])) term[["saveEffects"]] <- FALSE
+      term
+    })
+  }
+
+  fit <- gp_bayes_bglr_fit(
+    fam = fam,
+    y = gp_bayes_prepare_response(y, fam, class_levels = class_levels),
+    response_type = gp_bayes_response_type(fam),
+    ETA=ETA,
+    weights = if (isTRUE(precision_weights$supplied)) sqrt(precision_weights$precision) else NULL,
+    groups = groups,
     nIter = bayes_para[["nIter"]],
     burnIn =  bayes_para[["burnIn"]],
     thin =  bayes_para[["thin"]],
     verbose = FALSE,
-    saveAt =systime
+    saveAt = save_prefix
   )
 
   ## Get the name of all files stored by BGLR using the current name and time the analysis was performed
-  output_files_names = list.files(pattern=systime)
+  output_files_names <- list.files(
+    path = dirname(save_prefix),
+    pattern = paste0("^", basename(save_prefix)),
+    full.names = TRUE
+  )
 
   unlink(output_files_names)
 
- return(fit$yHat[tst])
+  if (identical(fam, "gaussian")) {
+    return(fit$yHat[tst])
+  }
+
+  prob <- as.matrix(fit$probs[tst, , drop = FALSE])
+  fit_levels <- as.character(fit$levels %||% colnames(prob) %||% character())
+  target_levels <- class_levels %||% fit_levels
+  if (length(fit_levels) == ncol(prob) && length(intersect(fit_levels, target_levels))) {
+    colnames(prob) <- fit_levels
+  } else if (length(target_levels) == ncol(prob)) {
+    colnames(prob) <- target_levels
+  } else {
+    observed_levels <- target_levels[target_levels %in% as.character(stats::na.omit(y))]
+    if (length(observed_levels) == ncol(prob)) {
+      colnames(prob) <- observed_levels
+    }
+  }
+  if (!is.null(target_levels) && length(target_levels) && length(colnames(prob))) {
+    missing_levels <- setdiff(target_levels, colnames(prob))
+    if (length(missing_levels)) {
+      add <- matrix(0, nrow = nrow(prob), ncol = length(missing_levels))
+      colnames(add) <- missing_levels
+      prob <- cbind(prob, add)
+    }
+    prob <- prob[, target_levels, drop = FALSE]
+  }
+
+  if (identical(fam, "binary")) {
+    pred <- as.numeric(prob[, ncol(prob), drop = TRUE])
+    attr(pred, "probabilities") <- prob
+    return(pred)
+  }
+
+  pred <- gp_pred_to_class_labels(prob, class_levels = colnames(prob))
+  attr(pred, "probabilities") <- prob
+  pred
 
 }
 
@@ -69,6 +213,11 @@ bayes_mod_cv <- function(y,
 #' @param asreml_models_prep_cv
 #' @param response
 #' @param tst
+#' @param weights Optional positive Stage 2 observation precisions. ASReml uses
+#'   them as a data-column weight with Gaussian dispersion fixed at one.
+#' @param workspace Optional ASReml workspace setting.
+#' @param pworkspace Optional ASReml prediction workspace setting.
+#' @param maxit Maximum number of ASReml iterations.
 #'
 #' @return
 #' @export
@@ -80,7 +229,11 @@ asreml_mod_cv <- function(pheno_data,
                           #var_cov_str,
                           asreml_models_prep_cv,
                           response,
-                          tst){
+                          tst,
+                          weights = NULL,
+                          workspace = NULL,
+                          pworkspace = NULL,
+                          maxit = 50){
 
   #browser()
 asreml_tst_model_cv <- asreml_cv_model(pheno_dataa = pheno_data,
@@ -88,7 +241,11 @@ asreml_tst_model_cv <- asreml_cv_model(pheno_dataa = pheno_data,
                                        gen_name = gen_name,
                                        heter_groups = heter_groups,
                                        asreml_models_prep_cv = asreml_models_prep_cv,
-                                       tst = tst)
+                                       tst = tst,
+                                       weights = weights,
+                                       workspace = workspace,
+                                       pworkspace = pworkspace,
+                                       maxit = maxit)
 
 modm <-  asreml_tst_model_cv[["model_cv"]]
 
@@ -102,7 +259,7 @@ GIDs <- as.character(pheno_data[[gen_name]])
 
 GID_tst <- GIDs[tst]
 
-var_cov_str_available <- c("us","corgh","corgv",
+var_cov_str_available <- c("us","corgh",
                            "corh","corv","fa","rr")
 code_asr_fit <- asreml_models_prep_cv$code_asr_fit
 
@@ -148,17 +305,79 @@ reference_order <- pheno_dataa |>
 
 }
 
+cv_heter_groups <- if (!is.null(heter_groups) && !is.null(inter_gen_pos)) heter_groups else NULL
+cv_classify <- if (!is.null(cv_heter_groups)) rand_term[[inter_gen_pos]] else gen_name
+cv_prediction_bundle <- asreml_predict_or_extract(
+  mod = modm,
+  classify = cv_classify,
+  pheno_data = pheno_dataa,
+  response = response,
+  gen_name = gen_name,
+  heter_groups = cv_heter_groups,
+  names_in_inv_list = names_in_inv_list,
+  workspace = workspace,
+  pworkspace = pworkspace
+)
+cv_prediction_table <- if (!is.null(cv_heter_groups)) {
+  cv_prediction_bundle[["across_env_prediction"]]
+} else {
+  cv_prediction_bundle[["prediction"]]
+}
+
+if (!is.null(cv_prediction_table)) {
+  if (!is.null(cv_heter_groups)) {
+    predicted_value <- reference_order |>
+      dplyr::left_join(cv_prediction_table, by = stats::setNames(c(gen_name, cv_heter_groups), c(gen_name, cv_heter_groups))) |>
+      dplyr::select(!!dplyr::sym(gen_name), !!dplyr::sym(cv_heter_groups), Predicted_value)
+    return(as.double(predicted_value[tst, "Predicted_value"]))
+  }
+
+  predicted_value <- reference_order |>
+    dplyr::left_join(cv_prediction_table, by = stats::setNames(c(gen_name), c(gen_name))) |>
+    dplyr::select(!!dplyr::sym(gen_name), Predicted_value)
+  return(as.double(predicted_value[tst, "Predicted_value"]))
+}
+
+if (!isTRUE(modm$converge)) {
+  stop(
+    "ASReml CV fit did not converge; prediction and coefficient fallbacks were not used. ",
+    "Increase maxit or simplify the fitted covariance model before interpreting CV predictions.",
+    call. = FALSE
+  )
+}
+
+if (!is.null(cv_prediction_bundle$error) && nzchar(cv_prediction_bundle$error)) {
+  cat(paste("Error in ASReml CV prediction fallback:", cv_prediction_bundle$error, "\n"))
+}
 
 result_met <- tryCatch(
   {
     if (is.null(heter_groups)) {
-      predicted_value <- asreml::predict.asreml(modm, classify = gen_name, sed = FALSE)$pvals
+      predicted_value <- asreml_run_with_model_data_context(
+        mod = modm,
+        pheno_data = pheno_dataa,
+        expr = asreml_predict_pvals(
+          mod = modm,
+          classify = gen_name,
+          workspace = workspace,
+          pworkspace = pworkspace
+        )
+      )
       predicted_value <- reference_order |>
         dplyr::left_join(predicted_value, by = stats::setNames(c(gen_name), c(gen_name))) |>
         dplyr::select(!!dplyr::sym(gen_name), predicted.value, std.error, status)
 
     } else {
-      predicted_value <- asreml::predict.asreml(modm, classify = rand_term[[inter_gen_pos]], sed = FALSE)$pvals
+      predicted_value <- asreml_run_with_model_data_context(
+        mod = modm,
+        pheno_data = pheno_dataa,
+        expr = asreml_predict_pvals(
+          mod = modm,
+          classify = rand_term[[inter_gen_pos]],
+          workspace = workspace,
+          pworkspace = pworkspace
+        )
+      )
       predicted_value <- reference_order |>
         dplyr::left_join(predicted_value, by = stats::setNames(c(gen_name, heter_groups), c(gen_name, heter_groups))) |>
         dplyr::select(!!dplyr::sym(gen_name), !!dplyr::sym(heter_groups), predicted.value, std.error, status)
@@ -225,7 +444,7 @@ if(!is.null(var_cov_str) & !is.null(inter_gen_pos)){
 
   } else {
 
-    if (var_cov_str %in% c("us", "corgh", "corgv", "corh", "corv")) {
+    if (var_cov_str %in% c("us", "corgh", "corh", "corv")) {
 
       for (bb in seq_along(names_in_inv_list)) {
 
@@ -247,7 +466,10 @@ if(!is.null(var_cov_str) & !is.null(inter_gen_pos)){
 
       estimated_breeding_value_list[[names_in_inv_list[bb]]] <- estimated_breeding_value_list[[names_in_inv_list[bb]]][, c(4, 1:2)]
 
-      estimated_breeding_value_list[[names_in_inv_list[bb]]][, heter_groups] <- rep(heter_grp, each=length(unique(estimated_breeding_value_list[[names_in_inv_list[bb]]][, gen_name])))
+      # Environment parsed from the coefficient name (ASReml orders levels by
+      # factor level, not by data order); genotype main-effect rows get NA.
+      env_parsed <- asreml_coef_row_env(rownames(estimated_breeding_value_list[[names_in_inv_list[bb]]]), heter_groups)
+      estimated_breeding_value_list[[names_in_inv_list[bb]]][, heter_groups] <- ifelse(env_parsed %in% heter_grp, env_parsed, NA_character_)
 
       estimated_breeding_value_list[[names_in_inv_list[bb]]] <- estimated_breeding_value_list[[names_in_inv_list[bb]]][, c(1, 4, 2:3)]
 
@@ -264,17 +486,24 @@ if(!is.null(var_cov_str) & !is.null(inter_gen_pos)){
   # Bind all data frames into a single data frame
   combined_df <- dplyr::bind_rows(estimated_breeding_value_list)
 
-  # Group by the user-specified environment/location and sum the BLUP values
-  summarized_blup <- combined_df |>
-    dplyr::group_by(!!rlang::sym(gen_name), !!rlang::sym(heter_groups)) |>
-    dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
-  summarized_blup <- as.data.frame(summarized_blup)
+  # Sum kernels and add each genotype's main effect to every environment.
+  summarized_blup <- asreml_legacy_met_genetic_values(combined_df, gen_name, heter_groups, heter_grp)
+  names(summarized_blup)[names(summarized_blup) == "BLUP"] <- "Summed_BLUP"
 
   summarized_blup <- reference_order |>
     dplyr::left_join(summarized_blup, by = stats::setNames(c(gen_name, heter_groups), c(gen_name, heter_groups))) |>
     dplyr::select(!!dplyr::sym(gen_name), !!dplyr::sym(heter_groups), Summed_BLUP)
 
-  #colnames(summarized_blup)[colnames(summarized_blup)%in%heter_groups] <- "Env"
+  # Lift BLUPs back to the phenotype scale by adding intercept + per-env
+  # fixed offsets. Without this, the legacy fallback returns values centered
+  # around zero (deviation scale), not the original phenotype scale.
+  fixed_offsets <- asreml_extract_fixed_offsets(
+    model = modm, heter_groups = heter_groups,
+    env_levels = unique(as.character(summarized_blup[[heter_groups]])),
+    pheno_data = pheno_data, response = response
+  )
+  summarized_blup$Summed_BLUP <- summarized_blup$Summed_BLUP +
+    as.numeric(fixed_offsets[as.character(summarized_blup[[heter_groups]])])
   return(as.double(summarized_blup[tst, c("Summed_BLUP")]))
 
 
@@ -284,14 +513,17 @@ if(!is.null(var_cov_str) & !is.null(inter_gen_pos)){
 if(is.null(var_cov_str) & !is.null(inter_gen_pos)){
   for (bb in seq_along(names_in_inv_list)) {
     estimated_breeding_value_list[[bb]] <- as.data.frame(estimated_breeding_value_list[[bb]])
-    estimated_breeding_value_list[[bb]][, gen_name] <- as.character(stringr::str_split_fixed(rownames(estimated_breeding_value_list[[bb]]), "\\)_", 3)[,2])
+    cs_rn <- rownames(estimated_breeding_value_list[[bb]])
+    estimated_breeding_value_list[[bb]][, gen_name] <- sub("^.*\\)_", "", sub(":.*$", "", sub("^[^:]*:vm\\(", "vm(", cs_rn)))
+    attr(estimated_breeding_value_list[[bb]], "coef_env") <- asreml_coef_row_env(cs_rn, heter_groups)
     rownames(estimated_breeding_value_list[[bb]]) <-  NULL
   }
   #################################
   if(!is.null(inter_gen_pos)){
     for (bb in seq_along(names_in_inv_list)) {
+      env_parsed <- attr(estimated_breeding_value_list[[bb]], "coef_env")
       estimated_breeding_value_list[[bb]] <- estimated_breeding_value_list[[bb]][, c(4, 1:2)]
-      estimated_breeding_value_list[[bb]][, heter_groups] <- rep(heter_grp, each=length(unique(estimated_breeding_value_list[[bb]][, gen_name])))
+      estimated_breeding_value_list[[bb]][, heter_groups] <- ifelse(env_parsed %in% heter_grp, env_parsed, NA_character_)
       estimated_breeding_value_list[[bb]] <- estimated_breeding_value_list[[bb]][, c(1, 4, 2:3)]
       colnames(estimated_breeding_value_list[[bb]])[1:3] <- c(gen_name, heter_groups, "BLUP")
       #estimated_breeding_value_list[[bb]][, "Prediction_error_variance"] <-  estimated_breeding_value_list[[bb]][, "Standard_error"]^2
@@ -306,24 +538,20 @@ if(is.null(var_cov_str) & !is.null(inter_gen_pos)){
   #combined_df <- combined_df[order(combined_df[[heter_groups]]), ]
   #colnames(combined_df)[colnames(combined_df)%in%heter_groups] <- "Env"
 
-  # Group by GID and sum the BLUP values for each GID
-  summarized_blup <- combined_df |>
-    dplyr::group_by(!!rlang::sym(gen_name)) |>
-    dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
-
-  summarized_blup <- as.data.frame(summarized_blup)
+  # Genotype-environment cells: kernels summed, main effect added to every env.
+  summarized_blup <- asreml_legacy_met_genetic_values(combined_df, gen_name, heter_groups, heter_grp)
+  names(summarized_blup)[names(summarized_blup) == "BLUP"] <- "Summed_BLUP"
   summarized_blup <- reference_order |>
     dplyr::left_join(summarized_blup, by = stats::setNames(c(gen_name, heter_groups), c(gen_name, heter_groups))) |>
     dplyr::select(!!dplyr::sym(gen_name), !!dplyr::sym(heter_groups), Summed_BLUP)
-  #summarized_blup <- summarized_blup[as.character(summarized_blup[[gen_name]])%in%GID_tst, ]
-  #summarized_blup <- summarized_blup[order(as.character(summarized_blup[[gen_name]])%in%GID_tst), ]
-  #### sik
-  #gen_namess <- as.character(summarized_blup[[gen_name]])
-  # Get the match positions of gen_names in GID_tst
-  #order_indices <- match(gen_namess, GID_tst)
-  # Order the data frame based on these match positions
-  #summarized_blup <- summarized_blup[order(order_indices), ]
-  #colnames(summarized_blup)[colnames(summarized_blup)%in%heter_groups] <- "Env"
+  # Lift BLUPs back to the phenotype scale (CS MET fallback).
+  fixed_offsets <- asreml_extract_fixed_offsets(
+    model = modm, heter_groups = heter_groups,
+    env_levels = unique(as.character(summarized_blup[[heter_groups]])),
+    pheno_data = pheno_data, response = response
+  )
+  summarized_blup$Summed_BLUP <- summarized_blup$Summed_BLUP +
+    as.numeric(fixed_offsets[as.character(summarized_blup[[heter_groups]])])
   return(as.double(summarized_blup[tst, c("Summed_BLUP")]))
   }
 
@@ -359,7 +587,7 @@ if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
   # Group by GID and sum the BLUP values for each GID
   summarized_blup <- combined_df |>
     dplyr::group_by(!!rlang::sym(gen_name)) |>
-    dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE))
+    dplyr::summarise(Summed_BLUP = sum(BLUP, na.rm = TRUE), .groups = "drop")
 
   summarized_blup <- as.data.frame(summarized_blup)
 
@@ -377,6 +605,12 @@ if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
     dplyr::left_join(summarized_blup, by = stats::setNames(c(gen_name), c(gen_name))) |>
     dplyr::select(!!dplyr::sym(gen_name), Summed_BLUP)
 
+  # Lift BLUPs back to phenotype scale (single-env CS fallback).
+  intercept <- asreml_extract_fixed_offsets(
+    model = modm, heter_groups = NULL, env_levels = NULL,
+    pheno_data = pheno_data, response = response
+  )
+  summarized_blup$Summed_BLUP <- summarized_blup$Summed_BLUP + as.numeric(intercept)
   return(as.double(summarized_blup[tst, "Summed_BLUP"]))
 
 }
@@ -427,7 +661,19 @@ if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
 
 }
 
-#' Title
+## Fit the response (y) centring/scaling on TRAINING rows only. The resulting
+## scaler is then applied to all rows and used to back-transform predictions.
+## Fitting on the full y would let the held-out test responses leak into the
+## centring/scaling used for the training fit and the reverse transform, which
+## optimistically biases cross-validation RMSE-type metrics. `tst` = held-out
+## (test) row indices for this fold.
+gp_ml_cv_train_y_scaler <- function(y, tst) {
+  y_df <- as.data.frame(as.matrix(y))
+  train_df <- if (length(tst)) y_df[-tst, , drop = FALSE] else y_df
+  caret::preProcess(train_df, method = c("center", "scale"))
+}
+
+#' Cross-validation fit for an XGBoost genomic prediction model
 #'
 #' @param y
 #' @param omics
@@ -449,7 +695,8 @@ if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
 AI_xgboost_cv <- function(y,
                           omics,
                           tst,
-                          xgb_booster = "dart", #"gtree", #
+                          response_family = "gaussian",
+                          xgb_booster = "gbtree",
                           xgb_rate_drop = 0.1,
                           xgb_skip_drop = 0.5,
                           xgb_objective = "reg:squarederror",
@@ -467,137 +714,170 @@ AI_xgboost_cv <- function(y,
                           colsample_bytree = 0.7,
                           xgb_alpha = 0.001, ## gblinear
                           xgb_lambda = 1.0, # gblinear,
-                          early_stop_for_iteration_xgb = FALSE ## use when training set is large
+                          early_stop_for_iteration_xgb = FALSE, ## use when training set is large
+                          xgb_nthread = 1L,
+                          random_state = NULL
                           ){
 
-  # Auto-adjust nthread based on environment
+  fam <- gp_resolve_response_family(response_family, y = y)
+  is_regression <- identical(fam, "gaussian")
+  class_levels <- if (is_regression) NULL else gp_response_class_levels(y, fam)
 
-  #nthread <- if (future::nbrOfWorkers() > 1) 1 else parallel::detectCores(logical = FALSE)
-  nthread <- 1 # set_per_worker_threads()
-
-  if(!is.null(omics)){
-    scaler <- caret::preProcess(omics, method = c("center", "scale"))
-    omics <- stats::predict(scaler, omics)
-
-    cols_with_na <- which(colSums(is.na(omics)) > 0)
-    if(length(cols_with_na)!=0){
-      omics <- omics[, -cols_with_na]
-
-    }
+  nthread <- suppressWarnings(as.integer(xgb_nthread %||% 1L))
+  if (!is.finite(nthread) || nthread < 1L) {
+    nthread <- 1L
   }
 
-  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
+  prep <- gp_ml_preprocess_predictors(omics, scaling = scaling, centering = centering)
+  omics <- prep$data
 
-  # Predict on the training data and get the scaled values
-  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+  if (is_regression) {
+    y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
+    y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+  } else {
+    y_fit <- y
+  }
 
-
-  ### Set the paramters and hyper parameters for extreme graident boosting
-  if(xgb_booster == "gblinear"){
   xgb_params <- list(
-    booster = "gblinear",
     eta = eta,
-    alpha = xgb_alpha,
-    lambda = xgb_lambda,
-    objective = "reg:squarederror",
-    eval_metric = c("rmse", "rmsle", "mape"),
-    nthread = nthread
+    nrounds = nrounds,
+    max_depth = max_depth,
+    subsample = subsample,
+    xgb_gamma = xgb_gamma,
+    colsample_bytree = colsample_bytree,
+    min_child_weight = min_child_weight,
+    xgb_alpha = xgb_alpha,
+    xgb_lambda = xgb_lambda,
+    xgb_booster = xgb_booster,
+    xgb_rate_drop = xgb_rate_drop,
+    xgb_skip_drop = xgb_skip_drop,
+    xgb_sample_type = xgb_sample_type,
+    xgb_normalize_type = xgb_normalize_type,
+    xgb_nthread = nthread,
+    random_state = suppressWarnings(as.integer(random_state %||% gp_ml_random_state()))
   )
-  } else {
+  preds <- gp_py_ml_fit_predict(
+    model_type = "xgboost",
+    X_train = omics[-tst, , drop = FALSE],
+    y_train = y_fit[-tst],
+    X_test = omics[tst, , drop = FALSE],
+    response_family = fam,
+    model_params = xgb_params,
+    class_levels = class_levels,
+    prefer_gpu = TRUE
+  )
+  if (is_regression) {
+    preds <- revert_scaling(as.numeric(preds), y_scaler)
+  }
+  preds
 
-    if(xgb_booster == "gbtree"){
-      xgb_params <- list(
-        booster = "gbtree",
-        objective = "reg:squarederror",
-        eta = eta,
-        max_depth = max_depth,
-        #min_child_weight = min_child_weight,
-        subsample = subsample,
-        nthread = nthread
-        #colsample_bytree = colsample_bytree
-      )
-    }
 
-    if (xgb_booster == "dart") {
-      xgb_params <- list(
-        booster = xgb_booster,
-        sample_type = xgb_sample_type,
-        #normalize_type = xgb_normalize_type,
-        #rate_drop = xgb_rate_drop,
-        #skip_drop = xgb_skip_drop,
-        alpha = xgb_alpha,
-        lambda = xgb_lambda,
-        eta = eta,
-        objective = "reg:squarederror",
-        eval_metric = c("rmse", "rmsle", "mape"),
-        nthread = nthread
-      )
-    }
 }
+######
 
-  omics_Xgb <- xgboost::xgb.DMatrix(data = omics[-tst, ],
-                                    label = y[-tst])
+AI_catboost_cv <- function(y,
+                           omics,
+                           tst,
+                           response_family = "gaussian",
+                           catboost_iterations = 500,
+                           catboost_depth = 6,
+                           catboost_learning_rate = 0.03,
+                           catboost_l2_leaf_reg = 3,
+                           catboost_thread_count = 1L,
+                           scaling = FALSE,
+                           centering = TRUE,
+                           omic_count = NULL) {
+  fam <- gp_resolve_response_family(response_family, y = y)
+  is_regression <- identical(fam, "gaussian")
+  class_levels <- if (is_regression) NULL else gp_response_class_levels(y, fam)
 
-  if(isTRUE(early_stop_for_iteration_xgb)){
+  prep <- gp_ml_preprocess_predictors(omics, scaling = scaling, centering = centering)
+  omics <- prep$data
 
-    yy <- y[-tst]
-    omics_yy <- omics[-tst, ]
-    indices <- dplyr::ntile(yy, 10)  # Creating 10 bins based on quantiles
-
-    #set.seed(123)
-    train_indices <- caret::createDataPartition(indices, p = 0.8, list = FALSE)
-    training <- yy[train_indices]
-    validation <- yy[-train_indices]
-
-    train_geno <- omics_yy[train_indices, ]
-    val_geno <- omics_yy[-train_indices, ]
-
-    early_stopping_fraction <- 0.2  # 10% of iterations
-    early_stopping_rounds <- max(50, floor(nrounds * early_stopping_fraction))  # At least 50 rounds
-
-    # Creating DMatrix objects
-    train_dmatrix <- xgboost::xgb.DMatrix(data = train_geno, label = training)
-    eval_dmatrix <- xgboost::xgb.DMatrix(data = val_geno, label = validation)
-
-
-    watchlist <- list(train = train_dmatrix, eval = eval_dmatrix)
-
-    fit <- xgboost::xgb.train(
-      params = xgb_params,
-      data = omics_Xgb,
-      nrounds = nrounds,
-      early_stopping_rounds = early_stopping_rounds,
-      watchlist = watchlist,
-      maximize = FALSE, ##since these areeval_metric = c("rmse", "rmsle", "mape")
-      verbose = 0
-    )
-
+  if (is_regression) {
+    y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
+    y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
   } else {
-
-    fit <- xgboost::xgb.train(
-      params = xgb_params,
-      data = omics_Xgb,
-      nrounds = nrounds,
-      #early_stopping_rounds = early_stopping_rounds,
-      #watchlist = watchlist,
-      #maximize = FALSE, ##since these areeval_metric = c("rmse", "rmsle", "mape")
-      verbose = 0
-    )
+    y_fit <- y
   }
 
+  preds <- gp_py_ml_fit_predict(
+    model_type = "catboost",
+    X_train = omics[-tst, , drop = FALSE],
+    y_train = y_fit[-tst],
+    X_test = omics[tst, , drop = FALSE],
+    response_family = fam,
+    model_params = list(
+      catboost_iterations = catboost_iterations,
+      catboost_depth = catboost_depth,
+      catboost_learning_rate = catboost_learning_rate,
+      catboost_l2_leaf_reg = catboost_l2_leaf_reg,
+      catboost_thread_count = as.integer(catboost_thread_count %||% 1L)
+    ),
+    class_levels = class_levels,
+    prefer_gpu = FALSE
+  )
+  if (is_regression) {
+    preds <- revert_scaling(as.numeric(preds), y_scaler)
+  }
+  preds
+}
+######
 
-  preds <- stats::predict(fit,
-                          omics[tst, ],
-                          reshape = TRUE)
+AI_lightgbm_cv <- function(y,
+                           omics,
+                           tst,
+                           response_family = "gaussian",
+                           lightgbm_nrounds = 100,
+                           lightgbm_learning_rate = 0.05,
+                           lightgbm_num_leaves = 31,
+                           lightgbm_feature_fraction = 1.0,
+                           lightgbm_bagging_fraction = 1.0,
+                           lightgbm_min_data_in_leaf = 20,
+                           lightgbm_lambda_l1 = 0,
+                           lightgbm_lambda_l2 = 0,
+                           lightgbm_nthread = 1L,
+                           scaling = FALSE,
+                           centering = TRUE,
+                           omic_count = NULL) {
+  fam <- gp_resolve_response_family(response_family, y = y)
+  is_regression <- identical(fam, "gaussian")
+  class_levels <- if (is_regression) NULL else gp_response_class_levels(y, fam)
 
+  prep <- gp_ml_preprocess_predictors(omics, scaling = scaling, centering = centering)
+  omics <- prep$data
 
+  if (is_regression) {
+    y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
+    y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+  } else {
+    y_fit <- y
+  }
 
-  preds <- as.data.frame(preds)
-
-  preds <- revert_scaling(preds[, 1], y_scaler)
-  return(preds)
-
-
+  preds <- gp_py_ml_fit_predict(
+    model_type = "lightgbm",
+    X_train = omics[-tst, , drop = FALSE],
+    y_train = y_fit[-tst],
+    X_test = omics[tst, , drop = FALSE],
+    response_family = fam,
+    model_params = list(
+      lightgbm_nrounds = lightgbm_nrounds,
+      lightgbm_learning_rate = lightgbm_learning_rate,
+      lightgbm_num_leaves = lightgbm_num_leaves,
+      lightgbm_feature_fraction = lightgbm_feature_fraction,
+      lightgbm_bagging_fraction = lightgbm_bagging_fraction,
+      lightgbm_min_data_in_leaf = lightgbm_min_data_in_leaf,
+      lightgbm_lambda_l1 = lightgbm_lambda_l1,
+      lightgbm_lambda_l2 = lightgbm_lambda_l2,
+      lightgbm_nthread = as.integer(lightgbm_nthread %||% 1L)
+    ),
+    class_levels = class_levels,
+    prefer_gpu = FALSE
+  )
+  if (is_regression) {
+    preds <- revert_scaling(as.numeric(preds), y_scaler)
+  }
+  preds
 }
 ######
 
@@ -622,65 +902,27 @@ AI_pls_cv <- function(y,
                       scaling = FALSE,
                       centering = TRUE,
                       omic_count){
+  omics <- gp_ml_preprocess_predictors(omics, scaling = scaling, centering = centering)$data
+  y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
+  y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
 
-  if(!is.null(omics)){
-    scaler <- caret::preProcess(omics, method = c("center", "scale"))
-    omics <- stats::predict(scaler, omics)
-
-    cols_with_na <- which(colSums(is.na(omics)) > 0)
-    if(length(cols_with_na)!=0){
-      omics <- omics[, -cols_with_na]
-
-    }
-  }
-if(!is.null(ncomp)){
-  if(length(ncomp)> ncol(omics)){
-    stop("ncomp cannot be greater than the number of column in the X_variables.")
-  }
-}
-  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
-
-  # Predict on the training data and get the scaled values
-  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
-
-
-if(is.null(ncomp) || !is.numeric(ncomp)){
-  pls_model <- pls::plsr(y[-tst] ~ as.matrix(omics[-tst, ]),
-                         validation = "CV", segments = 5,
-                         scale = FALSE, center = FALSE)
-
-  # Get the cross-validated RMSEP values
-  rmsep_values <- pls::RMSEP(pls_model)
-
-  # Extract the RMSEP values for cross-validation
-  rmsep_cv <- rmsep_values$val["CV", , ]
-
-  # Find the optimal number of components
-  optimal_components <- which.min(rmsep_cv)
-  if(is.na(optimal_components) || optimal_components==0){
-    optimal_components <- 3
+  use_auto <- is.null(ncomp) || !is.numeric(ncomp)
+  model_params <- if (use_auto) {
+    list(pls_auto_components = TRUE, pls_max_components = ncol(omics))
+  } else {
+    list(ncomp = as.integer(ncomp[[1]]))
   }
 
-} else {
-  optimal_components <- ncomp
-}
-
-  pls_model <- pls::plsr(y[-tst]~ omics[-tst, ],
-                         scale = FALSE,
-                         center = FALSE,
-                         ncomp = optimal_components
-                         #validation = "none"
-                         )
-
-  preds <- stats::predict(pls_model,
-                          newdata =omics[tst, ],
-                          ncomp = optimal_components)
-
-  preds <- as.data.frame(preds)
-  preds <- revert_scaling(preds[, 1], y_scaler)
-  return(preds)
-
-
+  preds <- gp_py_ml_fit_predict(
+    model_type = "pls",
+    X_train = omics[-tst, , drop = FALSE],
+    y_train = y_fit[-tst],
+    X_test = omics[tst, , drop = FALSE],
+    response_family = "gaussian",
+    model_params = model_params,
+    prefer_gpu = FALSE
+  )
+  revert_scaling(as.numeric(preds), y_scaler)
 }
 ######
 #' Title
@@ -689,6 +931,10 @@ if(is.null(ncomp) || !is.numeric(ncomp)){
 #' @param omics
 #' @param tst
 #' @param ntree
+#' @param mtry
+#' @param maxnodes
+#' @param nodesize
+#' @param rf_n_jobs
 #' @param scaling
 #' @param centering
 #' @param omic_count
@@ -700,46 +946,45 @@ if(is.null(ncomp) || !is.numeric(ncomp)){
 AI_randomforest_cv <- function(y,
                                omics,
                                tst,
+                               response_family = "gaussian",
                                ntree = 500,
+                               mtry = NULL,
+                               maxnodes = NULL,
+                               nodesize = NULL,
+                               rf_n_jobs = 1L,
                                scaling = FALSE,
                                centering = TRUE,
                                omic_count){
+  fam <- gp_resolve_response_family(response_family, y = y)
+  is_regression <- identical(fam, "gaussian")
+  omics <- gp_ml_preprocess_predictors(omics, scaling = scaling, centering = centering)$data
 
-  if(!is.null(omics)){
-    scaler <- caret::preProcess(omics, method = c("center", "scale"))
-    omics <- stats::predict(scaler, omics)
-
-    cols_with_na <- which(colSums(is.na(omics)) > 0)
-    if(length(cols_with_na)!=0){
-      omics <- omics[, -cols_with_na]
-
-    }
-  }
-
-  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
-
-  # Predict on the training data and get the scaled values
-  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
-
-  if(!is.null(ntree)){
-
-  fit <- randomForest::randomForest(x = omics[-tst, ],
-                                   y = y[-tst],
-                                   ntree = ntree,
-                                   importance = TRUE)
+  if (is_regression) {
+    y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
+    y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
   } else {
-    fit <- randomForest::randomForest(x = omics[-tst, ],
-                                      y = y[-tst],
-                                      importance = TRUE)
+    y_fit <- y
   }
 
-  preds <- stats::predict(fit,
-                          omics[tst, ],
-                          reshape = TRUE)
-  preds <- as.data.frame(preds)
-  preds <- revert_scaling(preds[, 1], y_scaler)
-
-  return(preds)
+  preds <- gp_py_ml_fit_predict(
+    model_type = "randomforest",
+    X_train = omics[-tst, , drop = FALSE],
+    y_train = y_fit[-tst],
+    X_test = omics[tst, , drop = FALSE],
+    response_family = fam,
+    model_params = list(
+      ntree = ntree,
+      mtry = mtry,
+      maxnodes = maxnodes,
+      nodesize = nodesize,
+      rf_n_jobs = rf_n_jobs
+    ),
+    prefer_gpu = FALSE
+  )
+  if (is_regression) {
+    preds <- revert_scaling(as.numeric(preds), y_scaler)
+  }
+  preds
 
 
 }
@@ -763,49 +1008,20 @@ AI_ridge_regression_cv <- function(y,
                                    scaling = FALSE,
                                    centering = TRUE,
                                    omic_count){
+  omics <- gp_ml_preprocess_predictors(omics, scaling = scaling, centering = centering)$data
+  y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
+  y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
 
-  if(!is.null(omics)){
-    scaler <- caret::preProcess(omics, method = c("center", "scale"))
-    omics <- stats::predict(scaler, omics)
-
-    cols_with_na <- which(colSums(is.na(omics)) > 0)
-    if(length(cols_with_na)!=0){
-      omics <- omics[, -cols_with_na]
-
-    }
-  }
-
-  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
-
-  # Predict on the training data and get the scaled values
-  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
-
-  fit_CV<-glmnet::cv.glmnet(x= omics[-tst, ],
-                            y = y[-tst],
-                            #nfolds = 5,
-                            alpha = 0,
-                            standardize = FALSE
-                            )
-  # Optimal lambda for Ridge
-
-  #lambda_1se_ridge <- cv_ridge$lambda.1se
-  fit <-  glmnet::glmnet(x=omics[-tst, ],
-                         y = y[-tst],
-                         alpha = 0,
-                         standardize = FALSE,
-                         lambda =fit_CV$lambda.min)
-
-  preds <- stats::predict(object = fit,
-                          s= fit_CV$lambda.min,
-                          newx = omics[tst, ],
-                          reshape = TRUE)
-
-  preds <- as.data.frame(preds)
-
-  preds <- revert_scaling(preds[, 1], y_scaler)
-  return(preds)
-
-
+  preds <- gp_py_ml_fit_predict(
+    model_type = "ridge",
+    X_train = omics[-tst, , drop = FALSE],
+    y_train = y_fit[-tst],
+    X_test = omics[tst, , drop = FALSE],
+    response_family = "gaussian",
+    model_params = list(),
+    prefer_gpu = FALSE
+  )
+  revert_scaling(as.numeric(preds), y_scaler)
 }
 ######
 #' Title
@@ -827,48 +1043,20 @@ AI_lasso_cv <- function(y,
                         scaling = FALSE,
                         centering = TRUE,
                         omic_count){
+  omics <- gp_ml_preprocess_predictors(omics, scaling = scaling, centering = centering)$data
+  y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
+  y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
 
-  if(!is.null(omics)){
-    scaler <- caret::preProcess(omics, method = c("center", "scale"))
-    omics <- stats::predict(scaler, omics)
-
-    cols_with_na <- which(colSums(is.na(omics)) > 0)
-    if(length(cols_with_na)!=0){
-      omics <- omics[, -cols_with_na]
-
-    }
-  }
-
-  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
-
-  # Predict on the training data and get the scaled values
-  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
-
-  fit_CV<-glmnet::cv.glmnet(x= omics[-tst, ],
-                            y= y[-tst],
-                            #nfolds = 5,
-                            alpha = 1,
-                            standardize = FALSE
-                            )
-
-  fit <-  glmnet::glmnet(x= omics[-tst, ],
-                         y = y[-tst],
-                         alpha = 1,
-                         standardize = FALSE,
-                         lambda =fit_CV$lambda.min)
-
-  preds <- stats::predict(object = fit,
-                          s= fit_CV$lambda.min,
-                          newx = omics[tst, ],
-                          reshape = TRUE)
-
-  preds <- as.data.frame(preds)
-
-  preds <- revert_scaling(preds[, 1], y_scaler)
-
-  return(preds)
-
-
+  preds <- gp_py_ml_fit_predict(
+    model_type = "lasso",
+    X_train = omics[-tst, , drop = FALSE],
+    y_train = y_fit[-tst],
+    X_test = omics[tst, , drop = FALSE],
+    response_family = "gaussian",
+    model_params = list(),
+    prefer_gpu = FALSE
+  )
+  revert_scaling(as.numeric(preds), y_scaler)
 }
 #####
 #' Title
@@ -888,48 +1076,35 @@ AI_lasso_cv <- function(y,
 AI_knn_cv <- function(y,
                       omics,
                       tst,
+                      response_family = "gaussian",
                       scaling = FALSE,
                       centering = TRUE,
                       omic_count = NULL,
                       k = 5){
+  fam <- gp_resolve_response_family(response_family, y = y)
+  is_regression <- identical(fam, "gaussian")
+  omics <- gp_ml_preprocess_predictors(omics, scaling = scaling, centering = centering)$data
 
-
-  if(!is.null(omics)){
-    scaler <- caret::preProcess(omics, method = c("center", "scale"))
-    omics <- stats::predict(scaler, omics)
-
-    cols_with_na <- which(colSums(is.na(omics)) > 0)
-    if(length(cols_with_na)!=0){
-      omics <- omics[, -cols_with_na]
-
-    }
+  if (is_regression) {
+    y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
+    y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+  } else {
+    y_fit <- y
   }
 
-  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
-
-  # Predict on the training data and get the scaled values
-  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
-
-  # }
-  # if(!is.null(omic_count)) {
-  #   if(isTRUE(scaling) || isFALSE(scaling)){
-  #     omics <- scale(omics, center = TRUE, scale = TRUE)
-  #   }
-  # }
-
-     fit <-  caret::knnreg(x = omics[-tst, ],
-                           y = y[-tst],
-                           k = k)
-
-  preds <- stats::predict(fit,
-                          omics[tst, ],
-                          reshape = TRUE)
-
-  preds <- as.data.frame(preds)
-
-  preds <- revert_scaling(preds[, 1], y_scaler)
-
-  return(preds)
+  preds <- gp_py_ml_fit_predict(
+    model_type = "knn",
+    X_train = omics[-tst, , drop = FALSE],
+    y_train = y_fit[-tst],
+    X_test = omics[tst, , drop = FALSE],
+    response_family = fam,
+    model_params = list(k = k),
+    prefer_gpu = FALSE
+  )
+  if (is_regression) {
+    preds <- revert_scaling(as.numeric(preds), y_scaler)
+  }
+  preds
 
 
 }
@@ -953,93 +1128,50 @@ AI_knn_cv <- function(y,
 AI_svm_cv <- function(y,
                       omics,
                       tst,
+                      response_family = "gaussian",
                       scaling = FALSE,
                       centering = TRUE,
                       omic_count,
                       svm_kernel = "Gaussian", # "Gaussian", "Linear","Hyperbolic_tangent", "Polynomial"
-                      sigma_value  = 0.1,       # Default sigma value for RBF kernel
+                      sigma_value  = NULL,      # NULL uses dimension-aware gamma = "scale"
                       C_value  = 1,             # Default cost parameter
                       degree_value = 3,        # Default degree for polynomial kernel
                       scale_value  = 1,         # Default scale for polynomial kernel
                       offset_value = 0,
+                      gamma_value = NULL,
                       svm_type = "eps-regression") {       # Default offset for polynomial kernel
 ## Scale is not used because it inherently
+  fam <- gp_resolve_response_family(response_family, y = y)
+  is_regression <- identical(fam, "gaussian")
+  omics <- gp_ml_preprocess_predictors(omics, scaling = scaling, centering = centering)$data
 
-  if(!is.null(omics)){
-    scaler <- caret::preProcess(omics, method = c("center", "scale"))
-    omics <- stats::predict(scaler, omics)
-
-    cols_with_na <- which(colSums(is.na(omics)) > 0)
-    if(length(cols_with_na)!=0){
-      omics <- omics[, -cols_with_na]
-
-    }
-  }
-
-  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y)), method = c("center", "scale"))
-
-  # Predict on the training data and get the scaled values
-  y <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
-
-  # Translate user-friendly kernel names to `kernlab` kernel function names
-  kernel_type <- switch(svm_kernel,
-                        Gaussian="radial",
-                        Polynomial="polynomial",
-                        Linear="linear",
-                        Hyperbolic_tangent="sigmoid")
-  # Create a list to store kernel-specific parameters
-  kernel_params <- list()
-
-  # Set kernel parameters based on user input or defaults
-  switch(kernel_type,
-         radial = {kernel_params <- list(cost = C_value)},
-         polynomial = {kernel_params <- list(cost = C_value, degree = degree_value)},
-         Linear = {kernel_params <- list(cost = C_value)},  # Linear kernel
-         sigmoid = {kernel_params <- list(cost = C_value, coef0 = offset_value)}  # Sigmoid kernel
-  )
-
-  para_index <- which(!sapply(kernel_params, is.null))
-  if(length(para_index)!=0){
-    kernel_params <-  kernel_params[para_index]
-
+  if (is_regression) {
+    y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
+    y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
   } else {
-    kernel_params <- list()
-    kernel_params[c("degree", "coef0", "cost")] <- c(3, 0, 1)
+    y_fit <- y
   }
 
-  para_names <- names(kernel_params)
-
-  # Ensure default cost is set if not already specified
-  if (!"cost" %in% para_names) {
-    kernel_params$cost <- 1
+  preds <- gp_py_ml_fit_predict(
+    model_type = "svm",
+    X_train = omics[-tst, , drop = FALSE],
+    y_train = y_fit[-tst],
+    X_test = omics[tst, , drop = FALSE],
+    response_family = fam,
+    model_params = list(
+      svm_kernel = svm_kernel,
+      C_value = C_value,
+      degree_value = degree_value,
+      scale_value = scale_value,
+      offset_value = offset_value,
+      gamma_value = gamma_value
+    ),
+    prefer_gpu = FALSE
+  )
+  if (is_regression) {
+    preds <- revert_scaling(as.numeric(preds), y_scaler)
   }
-
-  if ("linear" %in% kernel_type) {
-    svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], kernel = kernel_type, cost = kernel_params$cost, scale = FALSE)
-  } else if ("radial" %in% kernel_type) {
-    if (!"gamma" %in% para_names) {
-      svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], cost = kernel_params$cost, scale = FALSE)
-    } else {
-      svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], cost = kernel_params$cost,
-                              gamma = kernel_params$gamma, scale = FALSE)
-    }
-  } else if ("polynomial" %in% kernel_type) {
-    if (all(c("cost", "degree") %in% para_names)) {
-      svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], cost = kernel_params$cost, degree = kernel_params$degree, scale = FALSE)
-    } else {
-      svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], scale = FALSE)
-    }
-  } else if ("sigmoid" %in% kernel_type) {
-    if ("coef0" %in% para_names) {
-      svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], cost = kernel_params$cost, coef0 = kernel_params$coef0, scale = FALSE)
-    } else {
-      svm_model <- e1071::svm(x = omics[-tst, ], y = y[-tst], scale = FALSE)
-    }
-  }
-
-  preds <- stats::predict(svm_model, omics[tst, ])
-  preds <- revert_scaling(preds, y_scaler)
-  return(preds)
+  preds
   # if(!is.null(omics)) {
   #   if(isTRUE(scaling) || isFALSE(scaling)){
   #     omics <- scale(omics, center = TRUE, scale = TRUE)

@@ -8,12 +8,15 @@
 
 ##indicating how well the predicted rankings match the observed rankings.
 ## This ensures that the correlation measure accurately reflects the presence of ties in the data.
-# Function to calculate Kendall’s Tau
+# Function to calculate Kendall's Tau
 kendalls_tau <- function(x, y) {
   #browser()
   n <- length(x)
   if (n != length(y)) {
     stop("x and y must have the same length")
+  }
+  if (n < 2) {
+    return(NA_real_)
   }
 
   concordant <- 0
@@ -73,8 +76,15 @@ predicted_vs_observed_ranking_plot <- function(
                                                cv_results = NULL,
                                                replication = NULL,
                                                path_plot = NULL,
-                                               system_database = FALSE){
+system_database = FALSE){
 #browser()
+
+safe_mean_logical <- function(x) {
+  if (!length(x) || all(is.na(x))) {
+    return(NA_real_)
+  }
+  mean(x, na.rm = TRUE)
+}
 
 df <- data.frame(
   #genotype = GID_names,
@@ -136,8 +146,8 @@ top_20_subset <- df |> dplyr::filter(top_20_obs | top_20_pred)
 bottom_20_subset <- df |> dplyr::filter(bottom_20_obs | bottom_20_pred)
 
 # Calculate the consistency rates for the top and bottom 20% subsets
-top_20_consistency_rate <- mean(top_20_subset$top_20_obs == top_20_subset$top_20_pred)
-bottom_20_consistency_rate <- mean(bottom_20_subset$bottom_20_obs == bottom_20_subset$bottom_20_pred)
+top_20_consistency_rate <- safe_mean_logical(top_20_subset$top_20_obs == top_20_subset$top_20_pred)
+bottom_20_consistency_rate <- safe_mean_logical(bottom_20_subset$bottom_20_obs == bottom_20_subset$bottom_20_pred)
 
 #mydf$task <- factor(mydf$task, levels = levels_index)
 # Calculate the consistency rates
@@ -295,7 +305,7 @@ proportion_moderate_error <- sum(df$category == "Moderate Error") / nrow(df)
 proportion_significant_error <- sum(df$category == "Significant Error") / nrow(df)
 
 # Calculate correlation and R-squared
-correlation <- cor(df$observed, df$predicted, use = "complete.obs")
+correlation <- suppressWarnings(cor(df$observed, df$predicted, use = "complete.obs"))
 r_squared <- correlation^2
 
 # Create subtitle using sprintf
@@ -303,14 +313,40 @@ subtitle <- sprintf("Highly Accurate: %.2f%% | Moderate Error: %.2f%% | Signific
                     proportion_highly_accurate * 100, proportion_moderate_error * 100, proportion_significant_error * 100)
 
 # Create the plot
+fit_df <- data.frame(
+  observed = df$observed,
+  predicted = df$predicted,
+  fit_type = "Linear Fit",
+  stringsAsFactors = FALSE
+)
+
+can_loess <- nrow(df) >= 4 && length(unique(df$observed)) >= 3 && length(unique(df$predicted)) >= 3
+if (can_loess) {
+  fit_df <- rbind(
+    fit_df,
+    data.frame(
+      observed = df$observed,
+      predicted = df$predicted,
+      fit_type = "LOESS Fit",
+      stringsAsFactors = FALSE
+    )
+  )
+}
+
 p4 <- ggplot2::ggplot(df, ggplot2::aes(x = observed, y = predicted)) +
-      ggplot2::geom_point(ggplot2::aes(color = difference, shape = category), size = 2) +  # Scatter plot points colored by the difference
-      ggplot2::geom_smooth(ggplot2::aes(linetype = "Linear Fit"), formula = y ~ x, method = "lm", se = FALSE, color = "red") +  # Linear fit line (red)
-      ggplot2::geom_smooth(ggplot2::aes(linetype = "LOESS Fit"), formula = y ~ x, method = "loess", se = FALSE, color = "green", span = 1) + # LOESS fit line (green) # span =0.5
-      ggplot2::scale_color_gradient(low = "blue", high = "red", name = "Abs.diff") + # Gradient color scale
-      ggplot2::scale_shape_manual(values = c("Highly Accurate" = 16, "Moderate Error" = 17, "Significant Error" = 18), name = "Category") + # Manual shape scale
+      ggplot2::geom_point(ggplot2::aes(color = difference, shape = category), size = 2) +
+      ggplot2::geom_smooth(
+        data = fit_df[fit_df$fit_type == "Linear Fit", , drop = FALSE],
+        ggplot2::aes(linetype = fit_type),
+        formula = y ~ x,
+        method = "lm",
+        se = FALSE,
+        color = "red"
+      ) +
+      ggplot2::scale_color_gradient(low = "blue", high = "red", name = "Abs.diff") +
+      ggplot2::scale_shape_manual(values = c("Highly Accurate" = 16, "Moderate Error" = 17, "Significant Error" = 18), name = "Category") +
       ggplot2::labs(
-        title = "Evaluation of Observed vs Predicted Values with Linear and LOESS Fits",
+        title = if (can_loess) "Evaluation of Observed vs Predicted Values with Linear and LOESS Fits" else "Evaluation of Observed vs Predicted Values with Linear Fit",
         subtitle = subtitle,
         y = "Predicted Values",
         x = "Observed Values",
@@ -327,10 +363,29 @@ p4 <- ggplot2::ggplot(df, ggplot2::aes(x = observed, y = predicted)) +
         legend.text = ggplot2::element_text(size = 10),
         plot.margin = ggplot2::margin(10, 10, 10, 10)
       ) +
-      ggplot2::annotate("text", x = min(df$observed), y = max(df$predicted),
-                        label = paste("Predictive ability:", round(correlation, 3)),
-               #label = paste("R-squared:", round(r_squared, 3), "\nPredictive ability:", round(correlation, 3)),
-               hjust = 0, vjust = 1, size = 4, fontface = "bold", color = "darkblue")
+      ggplot2::annotate(
+        "text",
+        x = min(df$observed),
+        y = max(df$predicted),
+        label = paste("Predictive ability:", round(correlation, 3)),
+        hjust = 0,
+        vjust = 1,
+        size = 4,
+        fontface = "bold",
+        color = "darkblue"
+      )
+
+if (can_loess) {
+  p4 <- p4 + ggplot2::geom_smooth(
+    data = fit_df[fit_df$fit_type == "LOESS Fit", , drop = FALSE],
+    ggplot2::aes(linetype = fit_type),
+    formula = y ~ x,
+    method = "loess",
+    se = FALSE,
+    color = "green",
+    span = 1
+  )
+}
 
 # Display the plot
 
@@ -411,7 +466,7 @@ p4 <- ggplot2::ggplot(df, ggplot2::aes(x = observed, y = predicted)) +
 
 
 #if(isFALSE(system_database)){
-combined_plot <- gridExtra::grid.arrange(p1, p4, ncol = 2)
+combined_plot <- gp_arrange_grob_safely(p1, p4, ncol = 2)
 
 # name_plot <- paste(paste("Cross_validation_diagonistic_plots", model, sep = "_"), trait, sep = "_")
 #

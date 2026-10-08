@@ -2,7 +2,7 @@
 
 genetic_space_recommendation <- function(recommendation) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   if (recommendation=="All metrics indicate low coverage. Consider expanding the training set.") {
     message(paste(msg,"All the metrics recommendation for determining the power of the training data to predict the testing set is not optimal."))

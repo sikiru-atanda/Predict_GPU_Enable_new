@@ -8,8 +8,7 @@ set_parallel_plan_impute <- function(num_chunks = 1,
   if (num_chunks > 1) {
     if(is.null(num_cores)){
 
-      num_cores <-  parallel::detectCores()
-      num_cores <- num_cores*0.5
+      num_cores <- max(1L, floor(gp_detect_cores() * 0.5))
     }
     future::plan(plan_type, workers = num_cores)
   } else {
@@ -25,6 +24,26 @@ set_parallel_plan_impute <- function(num_chunks = 1,
 #   return(imputed_chunk)
 # }
 impute_chunk <- function(chunk_data, k = 5) {
+  backend <- tolower(trimws(Sys.getenv("PREDICTPROR_KNN_IMPUTE_BACKEND", "auto")))
+  use_native <- backend %in% c("auto", "cpp", "c++", "native", "1", "true", "yes", "on")
+  force_native <- backend %in% c("cpp", "c++", "native")
+  if (isTRUE(use_native) && geno_impute_knn_cpp_available()) {
+    out <- tryCatch(
+      geno_impute_knn_cpp(chunk_data, k = k),
+      error = function(e) {
+        if (isTRUE(force_native)) {
+          stop(e)
+        }
+        NULL
+      }
+    )
+    if (!is.null(out)) {
+      return(out)
+    }
+  } else if (isTRUE(force_native)) {
+    stop("Native KNN imputation is not available in this PredictProR build.", call. = FALSE)
+  }
+
   tryCatch({
     # Initial KNN imputation with default k
     imputed_chunk <- VIM::kNN(chunk_data, k = k, imp_var = FALSE)
@@ -53,7 +72,31 @@ impute_chunk <- function(chunk_data, k = 5) {
 # Function to handle large-scale KNN imputation with parallel processing
 handle_large_scale_knn <- function(data, k = 5, chunk_size = 50, num_cores = NULL) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
+  backend <- tolower(trimws(Sys.getenv("PREDICTPROR_KNN_IMPUTE_BACKEND", "auto")))
+  use_native <- backend %in% c("auto", "cpp", "c++", "native", "1", "true", "yes", "on")
+  force_native <- backend %in% c("cpp", "c++", "native")
+  if (isTRUE(use_native) && geno_impute_knn_cpp_available()) {
+    out <- tryCatch(
+      geno_impute_knn_cpp(data, k = k),
+      error = function(e) {
+        if (isTRUE(force_native)) {
+          stop(e)
+        }
+        warning(
+          "Native KNN imputation failed; falling back to chunked VIM::kNN: ",
+          conditionMessage(e),
+          call. = FALSE
+        )
+        NULL
+      }
+    )
+    if (!is.null(out)) {
+      return(out)
+    }
+  } else if (isTRUE(force_native)) {
+    stop("Native KNN imputation is not available in this PredictProR build.", call. = FALSE)
+  }
 
   num_cols <- ncol(data)
   row_names <- rownames(data)
@@ -73,7 +116,7 @@ handle_large_scale_knn <- function(data, k = 5, chunk_size = 50, num_cores = NUL
                              sys_name = sys_name)
   } else {
     # Automatically determine the number of cores and use half of them
-    detected_cores <- parallel::detectCores(logical = TRUE)
+    detected_cores <- gp_detect_cores(logical = TRUE)
     # For non-Windows systems, consider physical cores only
     num_cores <- round(detected_cores * 0.5)
 
@@ -83,7 +126,7 @@ handle_large_scale_knn <- function(data, k = 5, chunk_size = 50, num_cores = NUL
   }
 
   # Perform imputation on each chunk in parallel
-  imputed_chunks <- future.apply::future_lapply(chunk_indices, function(indices) {
+  imputed_chunks <- gp_future_lapply_session(chunk_indices, function(indices) {
     chunk_data <- data[, indices$start_col:indices$end_col, drop = FALSE]
 
     # Impute the chunk

@@ -1,10 +1,64 @@
 
-#' Title
+predictpror_format_bayes_residual_variance <- function(varE, digits = 3) {
+  if (is.null(varE) || length(varE) < 1L) {
+    return(NA_character_)
+  }
+  values <- suppressWarnings(as.numeric(varE))
+  keep <- is.finite(values)
+  if (!any(keep)) {
+    return(NA_character_)
+  }
+  values <- round(values[keep], digits)
+  labels <- names(varE)
+  if (!is.null(labels) && length(labels) == length(varE)) {
+    labels <- labels[keep]
+  } else {
+    labels <- rep(NA_character_, length(values))
+  }
+  values_chr <- format(values, trim = TRUE, scientific = FALSE)
+  if (length(values_chr) == 1L) {
+    return(values_chr)
+  }
+  has_labels <- !is.na(labels) & nzchar(labels)
+  if (any(has_labels)) {
+    labels[!has_labels] <- paste0("group_", seq_along(labels))[!has_labels]
+    return(paste0(labels, "=", values_chr, collapse = "; "))
+  }
+  paste(values_chr, collapse = "; ")
+}
+
+#' Summarize Bayesian Prediction Outputs
 #'
-#' @param mod
-#' @param ...
+#' Returns a compact summary table for Bayesian model fits, including phenotype
+#' range, residual variance, train/test counts, and user-facing definitions for
+#' target-specific uncertainty metrics when Bayesian prediction outputs are
+#' available.
 #'
-#' @return
+#' For Bayesian prediction tables in this package, `Genetic_variance`, `PEV`,
+#' and `Reliability` are reported for the exact prediction target being shown.
+#' In single-environment analyses this is the individual genotype target. In
+#' multi-environment analyses this can be either the environment-specific
+#' genotype target or the across-environment genotype-average target.
+#'
+#' A near-zero reliability, including for `BayesB`, does not by itself imply the
+#' predictions are wrong. It means that the posterior target-specific prediction
+#' error variance is close to or larger than the corresponding target-specific
+#' genetic variance under the fitted model and data.
+#'
+#' @param mod A fitted Bayesian model object returned by the package.
+#' @param eval_metrics Optional evaluation metrics.
+#' @param GS_model Model name used for the fit.
+#' @param model_result Extracted package prediction output for the model.
+#' @param gen_name Genotype identifier column name.
+#' @param CI_width_thresholds Confidence-interval width thresholds.
+#' @param confidence_level Confidence level used for uncertainty summaries.
+#' @param high_reliability_thres High reliability cutoff.
+#' @param low_reliability_thres Low reliability cutoff.
+#' @param system_database Logical; controls export behavior in higher-level calls.
+#' @param heter_groups Optional environment/location grouping column.
+#' @param ... Additional unused arguments.
+#'
+#' @return A list containing a `summary_statistics` data frame.
 #' @export
 #'
 #' @examples
@@ -13,6 +67,7 @@ summary_statistics_bayes <- function(mod=NULL,
                                      GS_model = NULL,
                                      model_result = NULL,
                                      gen_name = NULL,
+                                     response_family = "gaussian",
                                      CI_width_thresholds = c(0.33, 0.66),
                                      confidence_level = 0.95,
                                      high_reliability_thres = 0.7,
@@ -20,6 +75,7 @@ summary_statistics_bayes <- function(mod=NULL,
                                      system_database = FALSE,
                                      heter_groups = NULL,
                                      ...){
+  fam <- gp_resolve_response_family(response_family, y = mod$model$y)
 
   tst <- NULL
   if(!is.null(eval_metrics) & is.null(heter_groups)){
@@ -33,10 +89,14 @@ summary_statistics_bayes <- function(mod=NULL,
   }
 
   n_pheno <- sum(!is.na(mod$model$y))
-  trn_min <-  round(min(mod$model$y,na.rm=TRUE), 3)
-  trn_max <- round(max(mod$model$y,na.rm=TRUE), 3)
-  var_trn <- round(var(mod$model$y,na.rm=TRUE),3)
-  Res_trn <- round(mod$model$varE,3)
+  trn_min <- if (identical(fam, "gaussian")) round(min(mod$model$y, na.rm = TRUE), 3) else NA
+  trn_max <- if (identical(fam, "gaussian")) round(max(mod$model$y, na.rm = TRUE), 3) else NA
+  var_trn <- if (identical(fam, "gaussian")) round(var(mod$model$y, na.rm = TRUE), 3) else NA
+  Res_trn <- if (identical(fam, "gaussian")) {
+    predictpror_format_bayes_residual_variance(mod$model$varE, 3)
+  } else {
+    NA_character_
+  }
   n_trn <- NA
   n_tst <- NA
 
@@ -84,9 +144,26 @@ summary_statistics_bayes <- function(mod=NULL,
     if(!is.null(eval_metrics)){
     for (i in 1:length(eval_metrics)){
 
+      pred_input <- mod$model$yHat
+      if (!identical(fam, "gaussian") && !is.null(model_result) &&
+          "Predicted_value" %in% names(model_result) &&
+          is.data.frame(model_result[["Predicted_value"]])) {
+        pred_df <- model_result[["Predicted_value"]]
+        prob_cols <- grep("^Prob_", names(pred_df), value = TRUE)
+        if (identical(fam, "binary") && length(prob_cols) >= 1L) {
+          pred_input <- pred_df[[prob_cols[length(prob_cols)]]]
+        } else if (identical(fam, "ordinal") && length(prob_cols) >= 2L) {
+          pred_input <- as.matrix(pred_df[, prob_cols, drop = FALSE])
+          colnames(pred_input) <- gsub("^Prob_", "", prob_cols)
+        } else if ("Predicted_value" %in% names(pred_df)) {
+          pred_input <- pred_df[["Predicted_value"]]
+        }
+      }
+
       Eval_met[i, ] <- evaluation_metrics(y_observed = mod$model$y,
-                                          y_predicted = mod$model$yHat,
-                                          eval_metrics = eval_metrics[i])
+                                          y_predicted = pred_input,
+                                          eval_metrics = eval_metrics[i],
+                                          response_family = fam)
 
      }
 
@@ -116,18 +193,20 @@ summary_statistics_bayes <- function(mod=NULL,
 
   model <- c()
 
-  for(k in 1:length(mod$model$ETA))
-  {
+  if (!is.null(mod$model$ETA) && length(mod$model$ETA) > 0) {
+    for(k in seq_along(mod$model$ETA))
+    {
 
-        if(!is.null(mod$model$ETA[[k]]$model)){
-          #cat(" Coefficientes in ETA[",k,"] (",names(mod$ETA)[k],") modeled as in ", mod$ETA[[k]]$model,"\n")
+          if(!is.null(mod$model$ETA[[k]]$model)){
+            #cat(" Coefficientes in ETA[",k,"] (",names(mod$ETA)[k],") modeled as in ", mod$ETA[[k]]$model,"\n")
 
-           #model <- rbind(model, mod$model$ETA[[k]]$model)
-           model <- cbind(model, mod$model$ETA[[k]]$model)
+             #model <- rbind(model, mod$model$ETA[[k]]$model)
+             model <- cbind(model, mod$model$ETA[[k]]$model)
 
-        }
+          }
 
 
+    }
   }
 
   Stat_Res = as.data.frame(t(data.frame(Min = trn_min,
@@ -136,6 +215,7 @@ summary_statistics_bayes <- function(mod=NULL,
                                         Residual_Variance = Res_trn,
                                         Number_TrainingSet = n_trn,
                                         Number_TestingSet = n_tst,
+                                        Response_Family = fam,
                                         GS_model = GS_model
   )))
   Stat_Res$stat <- rownames( Stat_Res)
@@ -159,6 +239,91 @@ summary_statistics_bayes <- function(mod=NULL,
 
   }
 
+  }
+
+  if (!is.null(model_result) && "Predicted_value" %in% names(model_result) &&
+      is.data.frame(model_result[["Predicted_value"]])) {
+    pred_df <- model_result[["Predicted_value"]]
+    target_variance_col <- if ("Genetic_variance" %in% names(pred_df)) {
+      "Genetic_variance"
+    } else if ("Reliability_reference_variance" %in% names(pred_df)) {
+      "Reliability_reference_variance"
+    } else {
+      NA_character_
+    }
+    has_target_metrics <- !is.na(target_variance_col) &&
+      all(c("PEV", "Reliability") %in% names(pred_df))
+    has_class_metrics <- all(c("Prediction_confidence", "Classification_uncertainty") %in% names(pred_df))
+
+    if (has_target_metrics || has_class_metrics) {
+      if (has_target_metrics) {
+        target_desc <- if (is.null(heter_groups)) {
+          "Individual genotype prediction target"
+        } else {
+          "Environment-specific genotype prediction target"
+        }
+        variance_stat <- if (identical(target_variance_col, "Genetic_variance")) {
+          "Genetic_Variance_Definition"
+        } else {
+          "Reliability_Reference_Variance_Definition"
+        }
+        variance_desc <- if (identical(target_variance_col, "Genetic_variance")) {
+          "Posterior target-specific genetic variance used for each reported prediction target"
+        } else {
+          "Training-response variance used as the GP reference variance for reliability"
+        }
+
+        definition_rows <- data.frame(
+          stat = c(
+            "Prediction_Target",
+            variance_stat,
+            "PEV_Definition",
+            "Reliability_Definition"
+          ),
+          summary = c(
+            target_desc,
+            variance_desc,
+            "Posterior target-specific prediction error variance for each reported prediction target",
+            if (identical(target_variance_col, "Genetic_variance")) {
+              "Computed as 1 - PEV / target-specific genetic variance"
+            } else {
+              "Computed as 1 - PEV / GP reliability reference variance"
+            }
+          ),
+          stringsAsFactors = FALSE
+        )
+      } else {
+        definition_rows <- data.frame(
+          stat = c(
+            "Prediction_Target",
+            "Class_Probability_Definition",
+            "Prediction_Confidence_Definition",
+            "Classification_Uncertainty_Definition"
+          ),
+          summary = c(
+            if (is.null(heter_groups)) "Individual genotype class target" else "Environment-specific class target",
+            "Posterior class probabilities from the fitted Bayesian ordinal model",
+            "Maximum posterior class probability for the reported predicted class",
+            "Computed as 1 - Prediction_confidence"
+          ),
+          stringsAsFactors = FALSE
+        )
+      }
+
+      if ("Total_Predicted_value" %in% names(model_result) &&
+          is.data.frame(model_result[["Total_Predicted_value"]])) {
+        definition_rows <- rbind(
+          definition_rows,
+          data.frame(
+            stat = "Across_Environment_Target",
+            summary = "Across-environment genotype average target reported in Total_Predicted_value",
+            stringsAsFactors = FALSE
+          )
+        )
+      }
+
+      Stat_Res <- rbind(Stat_Res, definition_rows)
+    }
   }
 
 if((is.null(tst) || length(tst)<=1) && !is.null(heter_groups)){

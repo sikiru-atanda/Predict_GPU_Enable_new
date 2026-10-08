@@ -15,6 +15,7 @@ model_execute(
   omics_data_label = list(omic1_data = NULL, omic2_data = NULL, omic3_data = NULL),
   gmatrix = NULL,
   gkernel = NULL,
+  kernel_list = NULL,
   pedigree_matrix = NULL,
   omic1_kernel = NULL,
   omic2_kernel = NULL,
@@ -42,28 +43,62 @@ model_execute(
   gmatrix_method = NULL,
   kernel_method = NULL,
   response = NULL,
+  response_family = "auto",
+  positive_class = NULL,
+  multi_trait_gp = FALSE,
+  multi_trait_bayes = FALSE,
+  multi_trait_asreml = FALSE,
+  hybrid_asreml = FALSE,
+  hybrid_bayes = FALSE,
+  hybrid_gp = FALSE,
+  hybrid_ml = FALSE,
+  hybrid_dl = FALSE,
+  female_parent = NULL,
+  male_parent = NULL,
+  female_gmatrix = NULL,
+  male_gmatrix = NULL,
+  female_geno_data = NULL,
+  male_geno_data = NULL,
+  hybrid_include_sca = TRUE,
+  hybrid_gp_lambda = "auto",
+  hybrid_gp_lambda_grid = c(0.01, 0.03, 0.1, 0.3, 1),
+  hybrid_gp_component_weights = NULL,
+  env_similarity = NULL,
+  env_ids = NULL,
+  env_covariates = NULL,
+  reaction_norm_feature_qc = TRUE,
+  kenv_kernel = "matern32",
+  kenv_bandwidth = 1,
+  kenv_kernel_kwargs = NULL,
+  multi_trait_ml = FALSE,
+  multi_trait_dl = FALSE,
+  met_ml_dl = FALSE,
+  met_kernel_var_explained = 0.95,
+  met_kernel_min_ev = 1e-08,
+  met_kernel_max_pcs = NULL,
   gen_name = NULL,
+  ld_prunning_qc = TRUE,
+  docker_nd_usage = FALSE,
   cova = NULL,
   fixed = NULL,
   random = NULL,
   heter_resid = FALSE,
+  bayes_kernel_heter_resid = NULL,
   heter_groups = NULL,
   var_cov_str = NULL,
   weights = NULL,
   nIter = NULL,
   burnIn = NULL,
   thin = NULL,
-  GS_model = c("GBLUP", "GBLUP_BRR", "RKHS", "BRR", "BayesA", "BayesB", "BayesC", "BL",
-    "Xgboost", "RandomForest", "PartialLeastSquare", "SupportVectorMachine",
-    "K-NearestNeighbors", "Lasso", "Ridge_Regression"),
-  eval_metrics = c("Accuracy", "Mean_Squared_Error", "Bias", "Root_Mean_Squared_Error",
-    "Relative_Squared_Error", "Mean_Absolute_Error", "Mean_Absolute_Percent_Error"),
-  para_tunning = FALSE,
+  GS_model = NULL,
+  eval_metrics = NULL,
   fixed_term_model_bayesian = "FIXED",
   rand_term_model_bayesian = NULL,
-  core = NULL,
+  selected = NULL,
+  max_features = 50,
   engine = NULL,
-  scale = TRUE,
+  scaling = TRUE,
+  centering = FALSE,
   workspace = 1e+08,
   pworkspace = 1e+06,
   maxit = 50,
@@ -79,23 +114,299 @@ model_execute(
   rcn_cutoff = 1e-12,
   optimize_diagonal = FALSE,
   optimize_duplicate = FALSE,
+  kernel_check_level = "auto",
+  kernel_large_n_threshold = 5000L,
+  duplicate_scan = "auto",
+  duplicate_sample_size = 2000L,
+  duplicate_block_size = 1024L,
+  duplicate_max_pairs = 10000L,
+  kernel_fix_method = "auto",
+  kernel_repair_priority = "speed",
+  kernel_rcn_check = "auto",
+  kernel_nearpd_size_limit = 2500L,
+  kernel_cpp_repair_size_limit = 3000L,
+  kernel_cpp_keep_diag = TRUE,
+  kernel_pd_check = "auto",
+  kernel_pd_sample_size = 500L,
+  kernel_sanitize = "auto",
+  kernel_sanitize_value = NULL,
   vcf_file_name = NULL,
   vcf_file_path = NULL,
   vcf_file = NULL,
   hapmap_file_name = NULL,
   hapmap_file_path = NULL,
   hapmap = NULL,
+  csv_file_name = NULL,
+  csv_file_path = NULL,
+  csv_input_coding = c("alt_dosage", "centered_dosage"),
+  met_predict_all_environments = TRUE,
   maf_threshold = 0.01,
   het_threshold = 0.1,
   ind_call_rate_threshold = 0.9,
   snp_call_rate_threshold = 0.9,
-  impute = FALSE,
+  test_train_genetic_space = FALSE,
+  impute = TRUE,
+  impute_omic = TRUE,
+  imputation_method = "knn",
+  beagle_options = list(),
+  impute_knn_k = 5,
+  ploidy = "auto",
+  na_threshold = 0.9,
   recode_format = "0,1,2",
+  ld_pruning = FALSE,
+  ld_pruning_method = "indep-pairwise",
+  window_size = 50,
+  step_size = 5,
+  r2_threshold = 0.2,
+  use_kb_window = TRUE,
+  phased = TRUE,
+  use_founders = FALSE,
   out_put_map = FALSE,
   map_data = NULL,
   qc_filtering = TRUE,
   message = TRUE,
   system_database = FALSE,
+  optimizer_name = "adam",
+  use_amp = TRUE,
+  max_grad_norm = 1,
+  auto_class_weights = FALSE,
+  internal_cv_nfolds = 5L,
+  internal_cv_replication = 3L,
+  dl_internal_calibration = TRUE,
+  cnn_neurons_per_layer = as.integer(c(64, 64, 64)),
+  cnn_kernel_size = 3L,
+  cnn_dense_layers = as.integer(c(256, 128, 64)),
+  cnn_use_max_pool = FALSE,
+  cnn_pool_kernel = 2L,
+  cnn_pool_stride = 2L,
+  cnn_pool_padding = 0L,
+  cnn_learning_rate = 0.001,
+  cnn_separable = TRUE,
+  cnn_dilations = c(1, 2, 4),
+  cnn_use_se = TRUE,
+  cnn_norm_type = "group",
+  cnn_pool_type = "conv",
+  cnn_use_global_pool = FALSE,
+  resnet_neurons_per_block = as.integer(c(256, 128, 64)),
+  resnet_blocks = 3,
+  resnet_learning_rate = 0.001,
+  ft_d_model = 192L,
+  ft_heads = 8L,
+  ft_layers = 3L,
+  ft_ff_mult = 4L,
+  ft_dropout = 0.1,
+  ft_token_dropout = 0,
+  ft_use_cls = TRUE,
+  saint_d_model = 128L,
+  saint_heads = 8L,
+  saint_layers = 3L,
+  saint_ff_mult = 4L,
+  saint_dropout = 0.1,
+  saint_token_dropout = 0,
+  saint_use_cls = TRUE,
+  use_grouping = FALSE,
+  group_trigger = 2048,
+  group_method = "auto",
+  init_group_size = 64,
+  max_tokens = 1024,
+  kmeans_batch = 4096,
+  kmeans_iter = 100,
+  tabnet_steps = 5L,
+  tabnet_feature_dim = 64L,
+  tabnet_output_dim = 64L,
+  tabnet_gamma = 1.5,
+  tabnet_lambda_sparse = 1e-04,
+  node_trees = 8L,
+  node_depth = 3L,
+  deepfm_k = 16L,
+  deepfm_hidden = as.integer(c(128, 64)),
+  dcn_layers = 3L,
+  dcn_hidden = as.integer(c(256, 128, 64)),
+  nam_hidden = as.integer(c(32, 16)),
+  nam_activation = "relu",
+  nam_add_linear = TRUE,
+  nam_l1 = 1e-04,
+  moe_n_experts = 4L,
+  moe_expert_hidden = as.integer(c(128, 64)),
+  moe_gate_hidden = 128L,
+  moe_temperature = 1,
+  moe_sparse_topk = NA,
+  moe_entropy_reg = 0,
+  gp_use_variational = TRUE,
+  gp_num_inducing = 256L,
+  gp_feature_dim = 64L,
+  gp_kernel = "rbf",
+  gp_ard = TRUE,
+  gp_lr_mult = 0.5,
+  rff_features = 1024,
+  rff_lengthscale = 1,
+  rff_deep_hidden = c(128),
+  model_type = "resnet",
+  epochs = 10,
+  batch_size = 64,
+  dropout = 0.2,
+  l2_weight_decay = 1e-04,
+  l2_regularizer_dp = 0.001,
+  dropout_rate = 0.5,
+  batch_norm = TRUE,
+  validation_split = 0.2,
+  compile_model = FALSE,
+  deterministic = TRUE,
+  random_seed = 123,
+  dl_n_seeds = NULL,
+  dl_seeds = NULL,
+  dl_seed_aggregation = "mean",
+  device = NULL,
+  mlp_neurons_per_layer = as.integer(c(128, 64)),
+  mlp_learning_rate = 0.001,
+  final_attention = TRUE,
+  attention_across_multiple_layers = TRUE,
+  heteroscedastic = TRUE,
+  para_tunning = FALSE,
+  param_grid = NULL,
+  early_stop = TRUE,
+  xgb_paras_tunning = list(Iter_tune = seq(100, 500, 100), learning_rate_tune = c(0.01,
+    0.1, 0.1), max_depth = c(3, 6, 9), rate_drop = c(0.1, 0.15, 0.2), skip_drop = c(0.4,
+    0.5, 0.55), xgb_gamma = c(0, 0.01, 0.1), colsample_bytree = c(0.5, 0.75, 1),
+    min_child_weight = c(1, 3, 5), subsample = c(0.5, 0.75, 1), L2_tune = c(0, 0.5, 1),
+    L1_tune = c(0, 0.5, 1)),
+  rf_paras_tunning = list(mtry = TRUE, ntree = c(500, 1000, 1500), nodesize = c(1, 5,
+    10), maxnodes = c(30, 50, NULL)),
+  pls_paras_tunning = list(ncomp = 10),
+  svm_paras_tunning = list(kernel = c("Gaussian", "Linear", "Polynomial",
+    "Hyperbolic_tangent"), offset_value = seq(-2, 2, length.out = 5), sigma = c(0.01,
+    0.05, 0.1), C = c(1, 10, 100), gamma_value = 10^seq(-4, -1, length.out = 4), degree =
+    c(3, 4), scale = c(0.1, 1)),
+  knn_paras_tunning = list(k = seq(3, 21, by = 2)),
+  k = 5,
+  lasso_paras_tunning = list(lambda_tune = seq(1e-06, 0.9, length.out = 100)^4),
+  rr_paras_tunning = NULL,
+  dpl_paras_tunning = NULL,
+  learning_rate = 0.01,
+  max_depth = 6,
+  subsample = 0.7,
+  xgb_booster = "gbtree",
+  iteration = 100,
+  N_feature_impo = 10,
+  resample_method_tune = "cv",
+  number_of_fold_tune = 5,
+  min_child_weight = 0.8,
+  colsample_bytree = 0.7,
+  xgb_alpha = 0.001,
+  xgb_gamma = 0.01,
+  lambda_rr = NULL,
+  xgb_lambda = 1,
+  xgb_rate_drop = 0.1,
+  xgb_skip_drop = 0.5,
+  xgb_objective = "reg:squarederror",
+  xgb_sample_type = "uniform",
+  xgb_normalize_type = "tree",
+  xgb_nthread = 1L,
+  catboost_iterations = 500,
+  catboost_depth = 6,
+  catboost_learning_rate = 0.03,
+  catboost_l2_leaf_reg = 3,
+  catboost_thread_count = 1L,
+  lightgbm_nrounds = 100,
+  lightgbm_learning_rate = 0.05,
+  lightgbm_num_leaves = 31,
+  lightgbm_feature_fraction = 1,
+  lightgbm_bagging_fraction = 1,
+  lightgbm_min_data_in_leaf = 20,
+  lightgbm_lambda_l1 = 0,
+  lightgbm_lambda_l2 = 0,
+  lightgbm_nthread = 1L,
+  ntree = 500,
+  nodesize = NULL,
+  mtry = NULL,
+  maxnodes = NULL,
+  importance = TRUE,
+  rf_n_jobs = 1L,
+  ncomp = 3,
+  svm_kernel = "Gaussian",
+  svm_type = "eps-regression",
+  sigma_value = NULL,
+  C_value = 1,
+  degree_value = 3,
+  scale_value = 1,
+  gamma_value = NULL,
+  offset_value = 0,
+  AI_cv_nfolds = 5,
+  n_bootstrap = 30,
+  early_stop_for_iteration_xgb = FALSE,
+  CI_width_thresholds = c(0.33, 0.66),
+  confidence_level = 0.95,
+  high_reliability_thres = 0.9,
+  low_reliability_thres = 0.5,
+  abs_very_close_threshold = 0.01,
+  abs_close_threshold = 0.05,
+  n_components = 20,
+  threshold = 100,
+  iqr_multiplier = 1.5,
+  interval_width_high_threshold = NULL,
+  interval_width_moderate_threshold = NULL,
+  interval_width_low_threshold = NULL,
+  lowrank_eps_trace = 1e-06,
+  lowrank_max_rank = NULL,
+  lowrank_jitter = NULL,
+  lowrank_noise_grid = NULL,
+  lowrank_kernel_weights = NULL,
+  gp_backend = "auto",
+  gp_output_level = "predict_only",
+  gp_return_se = FALSE,
+  gp_full_vc = FALSE,
+  gp_return_trait_correlations = FALSE,
+  gp_estimate_kernel_weights = FALSE,
+  gp_force_prediction_se = FALSE,
+  gp_varcomp_mode = "reml",
+  gp_fa_rank = 1L,
+  gp_prediction_output = "all",
+  gp_factor_cache = NULL,
+  gp_iters = NULL,
+  gp_lr = NULL,
+  gp_engine = "auto",
+  gp_learn_scales = NULL,
+  gp_exact_fast_cv = NULL,
+  cross_validation = FALSE,
+  cv_evaluation_only = FALSE,
+  cv_generate_plots = NULL,
+  GS_model_cv = NULL,
+  nfolds = 5,
+  sampling_method = NULL,
+  num_cores = NULL,
+  replication = 1,
+  test_size = 0.3,
+  cross_validation_meth = "Stratified_Hold_Out",
+  random_state = 123,
+  metric_for_ranking = "auto",
+  ranking_tie_breakers = NULL,
+  plot_extension = "pdf",
+  plot_width = 17,
+  plot_height = 12,
+  plot_units = "in",
+  plot_dpi = 300,
+  plot_filename = "trait",
+  Plot_name_result_diagnostic = NULL,
+  feature_selected = NULL,
+  feature_scoring = FALSE,
+  feature_scoring_model = "Ridge_Regression",
+  feature_k_grid = NULL,
+  feature_k = NULL,
+  feature_scoring_cv = "fixed",
+  feature_score_metadata = NULL,
+  feature_scoring_seed = NULL,
+  feature_ridge_lambda = 1,
+  feature_bayes_nIter = 1500L,
+  feature_bayes_burnIn = 500L,
+  feature_bayes_thin = 5L,
+  globals_max_GB = 4,
+  worker_memory_gb = NULL,
+  memory_budget_gb = NULL,
+  parallel_mode = c("auto", "future", "sequential", "base_parallel", "foreach", "mirai"),
+  parallel_backend_prefer_fork = TRUE,
+  sequential_models = NULL,
+  verbose = TRUE,
+  multi_trait = FALSE,
   ...
 )
 }
@@ -120,9 +431,21 @@ and -1, 0, 1 is also allowed (where -1 is minor allele, 0 is hetero and 1 is maj
 
 \item{omics_data_label}{lable/name of the omics data}
 
-\item{gmatrix}{Genomic relationship matrix, NA not allowed. Dataframe or matrix is allowed}
+\item{gmatrix}{Genomic relationship matrix, with no missing values. When
+several kernels are supplied through `gmatrix`, `gkernel`, the named omics
+kernel arguments, or `kernel_list`, PredictProR retains every kernel.
+Covariance models fit separate kernel terms; ML/DL models use separate
+named eigenfeature blocks.}
 
-\item{gkernel}{relationship matrix using different kernel methods}
+\item{gkernel}{Genomic kernel. If both `gmatrix` and `gkernel` are supplied,
+both are retained as distinct named kernel sources rather than one taking
+precedence over the other.}
+
+\item{kernel_list}{Optional named list of additional relationship or kernel
+matrices.}
+
+\item{pedigree_matrix}{Optional pedigree-derived relationship matrix `A`
+(rows/cols = genotypes), used for pedigree-based GBLUP variants.}
 
 \item{omic1_kernel}{relationship matrix using different kernel methods}
 
@@ -140,6 +463,9 @@ and -1, 0, 1 is also allowed (where -1 is minor allele, 0 is hetero and 1 is maj
 
 \item{train_omic3_data}{Omic data for training set}
 
+\item{train_omics_label, test_omics_label}{Optional labels for the train /
+test omics blocks (mirrors `omics_data_label`).}
+
 \item{test_geno_data}{Genomic data for testing set if geno_data is not provided or not included in the geno_data by the user.
 In that scenario geno_data is considered training set and training_geno_data is not provided by the user. Dataframe or matrix is allowed}
 
@@ -153,22 +479,173 @@ In that scenario omic1_data is considered training set and training_geno_data is
 \item{coefficient_1}{coefficient for the training set using either genomic or any omics data.
 We allowed up to 4 omics data for model fit}
 
+\item{coefficient_2, coefficient_3, coefficient_4}{Optional weighting
+coefficients applied to omics layers 2, 3 and 4 when combining genomic +
+multi-omics relationship matrices.}
+
 \item{train_set}{Dataframe with column name of the individual in the training set. This is useful maining
 for purpose of cross-validation exercise.}
 
 \item{test_set}{Dataframe with column name of the individual in the testing set. Not required
 if pheno_data contain individuals (testing set) with no phenotypic record as NA.}
 
-\item{gmatrix_method}{two methods are currently available to calculate the genomic relationship matrix
-Yang and Van-raden}
+\item{gmatrix_method}{Character vector of genomic relationship matrices to
+calculate from marker data. Supported methods include additive VanRaden,
+weighted VanRaden, Yang, epistasis, and dominance relationship matrices.
+When `met_ml_dl = TRUE` and the user supplies `geno_data` but no
+precomputed kernel and no explicit `gmatrix_method`, the input guardrail
+auto-sets `gmatrix_method = "Yang"` so the MET ML/DL kernel-feature
+pipeline has a kernel to PCA over. Set this argument explicitly to
+override the default (e.g. `"VanRaden"`).}
 
-\item{kernel_method}{kernel methods to calculate relationship matrix for the
-different omics. Currently available are Gaussian kernel, exponential kernel
-Polynomia kernel (order 2, 3, 4) and linear}
+\item{kernel_method}{Character vector of kernel methods to calculate for
+omics data. Supported methods include Gaussian, linear, composite,
+polynomial, Matern-family, Laplacian, and rational quadratic kernels.}
 
 \item{response}{trait(s) of interest to the user}
 
+\item{response_family}{Response family for the target trait. One of `auto`,
+`gaussian`, `binary`, `ordinal`, or `multiclass`.}
+
+\item{positive_class}{For binary responses, the class treated as the event
+for precision, recall, specificity, F1, MCC, Brier score, and one-column
+probability vectors. The value must match one observed class. When omitted,
+the second factor level is used and recorded in the CV selection output.}
+
+\item{multi_trait_gp}{Logical. If `TRUE`, enable the dedicated joint
+Gaussian-process multi-trait path for true prediction or single-environment
+genotype-blocked CV. This is different from passing multiple response
+columns for ordinary independent per-trait execution.}
+
+\item{multi_trait_bayes}{Logical. If `TRUE`, enable the dedicated joint
+Bayesian BGLR multi-trait path for `GBLUP_BRR` or `RKHS`, including
+single-environment genotype-blocked CV. This is different from passing
+multiple response columns for ordinary independent per-trait execution.}
+
+\item{multi_trait_asreml}{Logical. If `TRUE`, enable the dedicated unbalanced
+Gaussian multi-trait `ASReml-R` path (`GS_model = "GBLUP"` with
+`engine = "asreml"`). Supports single-environment and grouped MT-MET true
+prediction plus genotype-blocked `K-Folds` or `Repeated_K-Folds` CV. For
+automatic `multi_trait = TRUE` comparison, `cv_evaluation_only = FALSE`
+evaluates candidates and then refits the selected model for final
+prediction. Each fold masks all trait-environment responses for its held-out
+genotypes. Fold fits return predictions only; biological variance components
+are extracted from the stable final/direct fit.}
+
+\item{hybrid_asreml}{Logical. If `TRUE`, enable the dedicated Gaussian
+hybrid `ASReml-R` true-prediction path with explicit female GCA, male GCA,
+and SCA covariance construction.}
+
+\item{hybrid_bayes}{Logical. If `TRUE`, enable the dedicated Gaussian
+hybrid Bayesian-kernel path using explicit female GCA, male GCA, and SCA
+covariance construction for `GBLUP_BRR` and `RKHS`.}
+
+\item{hybrid_gp}{Logical. If `TRUE`, enable the dedicated Gaussian hybrid
+GP/KRR path using explicit female GCA, male GCA, and SCA additive kernels.
+Use `response = c(...)` for joint cross-trait multi-trait hybrid GP and
+`heter_groups` for hybrid multi-environment data.}
+
+\item{hybrid_ml}{Logical. If `TRUE`, enable the dedicated Gaussian hybrid
+machine-learning path using hybrid-level genotype features. Single-environment
+CV can use parent-aware scenarios; hybrid MET uses CV0, CV1, or CV2.}
+
+\item{hybrid_dl}{Logical. If `TRUE`, enable the dedicated Gaussian hybrid
+deep-learning path using hybrid-level genotype features. Single-environment
+CV can use parent-aware scenarios; hybrid MET uses CV0, CV1, or CV2.}
+
+\item{female_parent}{Column name in `pheno_data` identifying the female
+parent of each hybrid.}
+
+\item{male_parent}{Column name in `pheno_data` identifying the male parent
+of each hybrid.}
+
+\item{female_gmatrix, male_gmatrix}{Sex-specific genomic relationship
+matrices (one per parental population) used by the hybrid GBLUP path.}
+
+\item{female_geno_data}{Optional female-parent genotype matrix (row names =
+parent IDs) for the hybrid paths. Use this when female and male parents come
+from separate pools. With `hybrid_ml`/`hybrid_dl`, `het_threshold` is applied
+to these inbred parents and markers that fail in either pool are dropped from
+the hybrid features; if no hybrid-level `geno_data` is supplied, the hybrid
+features are the expected F1 dosages `(female + male) / 2`. The parent QC
+summary is returned as `hybrid_parent_qc`.}
+
+\item{male_geno_data}{Optional male-parent genotype matrix; see
+`female_geno_data`. If only one of the two is supplied it is used for both
+pools.}
+
+\item{hybrid_include_sca}{Logical; include a specific-combining-ability
+(SCA) random term in the hybrid model in addition to female and male GCA.}
+
+\item{hybrid_gp_lambda}{Ridge/noise ratio for `hybrid_gp`. Use `"auto"` to
+select from `hybrid_gp_lambda_grid` by deterministic internal CV.}
+
+\item{hybrid_gp_lambda_grid}{Positive lambda values considered when
+`hybrid_gp_lambda = "auto"`.}
+
+\item{hybrid_gp_component_weights}{Optional named numeric weights for
+`female_gca`, `male_gca`, `sca`, and `gxe` kernels in the hybrid GP
+additive/reaction-norm kernel.}
+
+\item{env_similarity}{Optional environment similarity matrix for hybrid GP
+MET. This defines the environment side of the hybrid-by-environment
+reaction-norm kernel.}
+
+\item{env_ids}{Optional environment IDs for an unnamed `env_similarity`
+matrix.}
+
+\item{env_covariates}{Optional environment covariate data. When supplied for
+hybrid GP, PredictPro converts the covariates to an environment similarity
+kernel after QC. Pass exactly one of `env_similarity` or `env_covariates`.}
+
+\item{reaction_norm_feature_qc}{Logical; when `TRUE`, apply environment
+covariate QC before building a reaction-norm environment kernel.}
+
+\item{kenv_kernel}{Environment-covariate kernel family used when
+`env_covariates` is supplied. Supported hybrid GP values are `matern32`,
+`matern52`, `rbf`, and `linear`.}
+
+\item{kenv_bandwidth}{Positive bandwidth for distance-based environment
+kernels.}
+
+\item{kenv_kernel_kwargs}{Optional named list of additional environment
+kernel arguments.}
+
+\item{multi_trait_ml}{Logical. If `TRUE`, enable the dedicated unbalanced
+Gaussian multi-trait machine-learning path. Current scope is
+`GS_model = "RandomForest"`, `"Ridge_Regression"`, or
+`"PartialLeastSquare"`.}
+
+\item{multi_trait_dl}{Logical; route to the joint deep-learning multi-trait
+model.}
+
+\item{met_ml_dl}{Logical; enable the environment-aware MET classical-ML / DL
+routes for multi-environment panels. PredictProR also auto-enables this
+flag when an advertised MET ML/DL model is requested on a valid MET panel.
+Every model named in the call must be listed by `met_data_standard()`;
+mixed supported/unsupported requests stop before any fitting instead of
+dropping the unsupported model. Required inputs: `pheno_data` with repeated
+genotype rows across environments, a single `response` column, and an
+environment column named via `heter_groups`. Genomic side: any of
+`geno_data` (a GRM will be auto-built via `gmatrix_method = "Yang"` if
+no kernel is supplied), `omic1_data`/`omic2_data`/`omic3_data`, a
+precomputed `gmatrix`/`gkernel`/`omic*_kernel`, or a `kernel_list` of
+additional N×N PSD kernels keyed by `gen_name`. Each kernel is eigen-
+decomposed per-kernel and the top components (controlled by
+`met_kernel_var_explained` / `met_kernel_min_ev` / `met_kernel_max_pcs`)
+are concatenated into the feature matrix the ML/DL model consumes. These
+routes report predictive uncertainty, not genetic variance, mixed-model
+PEV, or heritability.}
+
+\item{met_kernel_var_explained, met_kernel_min_ev, met_kernel_max_pcs}{Controls for the MET kernel reduction: target variance explained,
+minimum eigenvalue and maximum number of principal components.}
+
 \item{gen_name}{Column name containing individuals/genotypes}
+
+\item{ld_prunning_qc}{Logical; apply LD-based marker pruning during QC
+(note: the historical spelling is kept for backward compatibility).}
+
+\item{docker_nd_usage}{Reserved Docker / NDSU runtime hint.}
 
 \item{cova}{covariate if any.Its epected in formula i.e cova  = ~ Rain + Temp}
 
@@ -178,11 +655,35 @@ Polynomia kernel (order 2, 3, 4) and linear}
 
 \item{heter_resid}{True or False if user want heterogeneous residual variance or not}
 
+\item{bayes_kernel_heter_resid}{Optional override for the kernel-Bayes
+(GBLUP_BRR / RKHS) MET routing decision, independent of
+`heter_resid`. `NULL` (default) inherits from `heter_resid`. `TRUE`
+forces the env-as-trait `BGLR::Multitrait` path (heterogeneous σ²_g
+per env + per-env σ²_e) and requires `weights = NULL` because
+`BGLR::Multitrait` has no observation-weight argument. `FALSE` forces the
+univariate `BGLR::BGLR`
+path with `~GID + GID:Loc` (single σ²_g, single σ²_gxe, single σ²_e
+-- the BGLR-inherent homogeneous case) and is the RKHS mode that accepts
+Stage 2 observation weights. ASReml and GP families keep following
+`heter_resid` regardless.}
+
 \item{heter_groups}{Column name for Environment or location}
 
-\item{var_cov_str}{user defined variance-covariance structure}
+\item{var_cov_str}{User-defined variance-covariance structure. For
+single-environment multi-trait ASReml models, choose \code{"us"},
+\code{"corgh"}, or \code{"diag"}; \code{NULL} defaults to \code{"us"}. For
+grouped MT-MET ASReml GBLUP, use a validated factor-analytic structure such
+as \code{"fa1"}, \code{"fa2"}, or \code{"fa3"}; \code{NULL} selects rank up to
+three according to the number of trait-environment groups.}
 
-\item{weights}{weight for the response variable. Only dataframe}
+\item{weights}{Optional Stage 2 observation precision weights for Gaussian
+GP, ASReml, and univariate BGLR fits. Supply a positive numeric vector, the
+name of a numeric column in the phenotype data (for example,
+`weights = "Weight"`), or a one-column data frame/matrix. PredictProR uses
+`Var(e_i) = 1 / weights_i` for GP and ASReml (ASReml is fitted with
+`asr_gaussian(dispersion = 1)`) and passes `sqrt(weights_i)` to BGLR,
+whose native contract is `Var(e_i)` proportional to the inverse squared
+BGLR weight. Unsupported weighted routes fail instead of ignoring weights.}
 
 \item{nIter}{number of iteration for Bayesian models}
 
@@ -197,20 +698,27 @@ Bayesian reproducing kernel Hilbert spaces regressions (RKHS),
 Bayesian Genomic Best linear unbias estimate (BGBLUP). Both RKHS and BGBLUP can
 fit both single and multiple location using reaction norm.
 Genomic Best linear unbias estimate using asreml-R package with different
-variance structure such as (FA, RR, US, CORGH, CORGV, CORH, CORV)
+variance structure such as (FA, RR, US, CORGH, CORH, CORV)
 for multi-location/environment.
 Machine learning models include:
 Extreme Gradiant Boosting, Random Forest, KNN, Lasso, Ridge Regression,
 Partial Least Square, Support Vector Machine. All the machine learning only work
 in single location.}
 
+\item{eval_metrics}{Character vector of evaluation metrics
+(e.g. `"accuracy"`, `"rmse"`).}
+
 \item{fixed_term_model_bayesian}{model for the fixed term which is always fixed}
 
 \item{rand_term_model_bayesian}{model for the random terms which can be any of the above mentioned model}
 
-\item{core}{number of ram for paralllel job}
+\item{selected, max_features}{Optional feature-selection controls
+(pre-selected feature subset and maximum number of features).}
 
 \item{engine}{if user has asreml}
+
+\item{scaling, centering}{Logical; scale to unit variance / mean-centre the
+feature matrix before fitting.}
 
 \item{workspace}{allocate memory for asreml model fit}
 
@@ -218,16 +726,601 @@ in single location.}
 
 \item{maxit}{number of iteration for asreml}
 
+\item{inverse}{Logical / attribute; treat the supplied kernel as an
+inverse relationship matrix.}
+
+\item{epsilon}{Ridge added to the kernel diagonal before inversion.}
+
 \item{bending}{this is important when the relationship matrix is not positive definitive. It fix it for the user. it has be TRUE}
+
+\item{bend_value}{Eigenvalue floor for kernel bending toward positive
+definiteness.}
+
+\item{blending, blending_value}{Logical / numeric; blend the kernel with the
+identity at the given weight to stabilise an ill-conditioned matrix.}
+
+\item{high_diag_cut_off, low_diag_cut_off}{Kernel-diagnostic cut-offs for
+abnormally high / low diagonal entries.}
+
+\item{duplicate_cut_off}{Correlation threshold above which rows are flagged
+as duplicates in the kernel duplicate scan.}
+
+\item{rcn_cutoff}{Reciprocal-condition-number cut-off above which the
+kernel is considered ill-conditioned.}
+
+\item{optimize_diagonal, optimize_duplicate}{Logical; let the kernel
+QC engine optimise the diagonal / duplicate handling automatically.}
+
+\item{kernel_check_level}{Kernel QC level. Use `"auto"` for full checks on moderate kernels
+and bounded checks on large kernels.}
+
+\item{kernel_large_n_threshold}{Row count above which large-kernel
+shortcuts are used in QC.}
+
+\item{duplicate_scan}{Logical; run the C++ duplicate-row scanner.}
+
+\item{duplicate_sample_size, duplicate_block_size, duplicate_max_pairs}{Sampling controls for the duplicate scanner (sample size, block size and
+maximum pairs evaluated).}
+
+\item{kernel_fix_method}{Repair method when the kernel is not positive
+definite (`"auto"`, `"nearpd"`, `"ridge"`, ...).}
+
+\item{kernel_repair_priority}{Repair priority used when `kernel_fix_method = "auto"`
+and ridge blending cannot make the kernel positive definite. PredictPro tries
+the native diagonal-preserving spectral repair first when the kernel is within
+`kernel_cpp_repair_size_limit`, then falls back to Matrix `nearPD`.}
+
+\item{kernel_rcn_check}{Logical; perform the reciprocal-condition-number
+check.}
+
+\item{kernel_nearpd_size_limit}{Maximum kernel dimension for which the
+`nearPD` repair path is attempted.}
+
+\item{kernel_cpp_repair_size_limit}{Maximum kernel dimension for exact C++ spectral
+SPD repair. Larger kernels use bounded sanitizer/fallback policy.}
+
+\item{kernel_cpp_keep_diag}{Logical; have the C++ repair preserve the
+diagonal.}
+
+\item{kernel_pd_check}{Logical; run the positive-definiteness check.}
+
+\item{kernel_pd_sample_size}{Sample size for the PD-check spectral probe.}
+
+\item{kernel_sanitize}{Kernel prefit sanitizer policy. `"auto"` applies bounded ridge
+sanitization when exact dense checks are skipped.}
+
+\item{kernel_sanitize_value}{Numeric sanitiser threshold for the kernel
+pre-fit policy.}
+
+\item{vcf_file_name, vcf_file_path}{VCF file name and directory used when
+genotypes are read from a VCF rather than supplied as a matrix.}
+
+\item{vcf_file}{Optional pre-parsed VCF object.}
+
+\item{hapmap_file_name, hapmap_file_path, hapmap}{HapMap counterparts of the
+VCF arguments.}
+
+\item{csv_file_name, csv_file_path}{A CSV or TXT genotype table (comma or tab
+separated) with the VCF marker columns `CHROM`, `POS`, `ID`, `REF`, `ALT`,
+`QUAL`, `FILTER`, `INFO`, `FORMAT` followed by one column per sample
+(sample names = `gen_name` values). It is converted to VCF with
+[convert_csv_to_vcf()] and then follows the VCF route: the same QC,
+imputation (including `imputation_method = "beagle"`) and recoding.}
+
+\item{csv_input_coding}{Coding of the numeric genotypes in `csv_file_name`:
+`"alt_dosage"` (0, 1, 2 copies of the ALT allele; default) or
+`"centered_dosage"` (-1, 0, 1). VCF GT calls such as `0/1` are also read.}
+
+\item{met_predict_all_environments}{Multi-environment true prediction:
+`TRUE` (default) predicts every line in every environment (the full line
+x environment grid) with every engine; `Train_Test_Label` is `"Train"`
+for observed line x environment records, `"Test"` for records supplied
+with `NA` and for lines with no observation, and `"Unobserved"` for
+combinations not in `pheno_data` whose line was observed elsewhere.
+`FALSE` predicts only the combinations present in `pheno_data`.}
+
+\item{maf_threshold, het_threshold, ind_call_rate_threshold, snp_call_rate_threshold}{QC thresholds for minor-allele frequency, per-SNP heterozygosity and
+per-individual / per-SNP call rate. With `hybrid_ml = TRUE` or
+`hybrid_dl = TRUE`, hybrid-level genotypes are never filtered on
+heterozygosity by default, because they are heterozygous by design. When
+`female_geno_data`/`male_geno_data` are supplied, `het_threshold` is
+applied to those inbred parents instead; otherwise it applies to the hybrid
+rows only when supplied explicitly.}
+
+\item{test_train_genetic_space}{Logical; compute the test / train genetic
+space overlap diagnostic.}
+
+\item{impute, impute_omic}{Logical; impute missing genotype / omics values.}
+
+\item{imputation_method, impute_knn_k, na_threshold}{Imputation method
+(`"knn"`, `"mean"`, `"median"`, `"mode"`, or `"beagle"` for raw VCF/HapMap input),
+KNN neighbour count and the maximum per-column NA rate above which a
+column is dropped.}
+
+\item{beagle_options}{Named list passed to [impute_genotypes_with_beagle()]
+when `imputation_method = "beagle"`. Typical entries are `beagle_jar`,
+`output_prefix`, `ref_file`, `map_file`, `nthreads`, and `java_memory`.
+Without `output_prefix`, Beagle's intermediate files are written to a
+per-run temporary folder, not the working directory.}
+
+\item{ploidy}{One positive integer or `"auto"`. Raw VCF GT calls can infer
+a uniform ploidy. Numeric polyploid dosage matrices must supply ploidy
+explicitly or carry a `ploidy` attribute. Beagle remains diploid-only.}
+
+\item{recode_format}{Genotype recoding scheme: ALT dosage, dosage centered
+on `ploidy / 2`, or allele frequency. Legacy diploid aliases are accepted.}
+
+\item{ld_pruning, ld_pruning_method}{LD-pruning toggle and algorithm
+(e.g. `"indep-pairwise"`).}
+
+\item{window_size, step_size, r2_threshold}{LD-pruning window size, step size
+and `r^2` threshold.}
+
+\item{use_kb_window}{Logical; interpret `window_size` in kilobases.}
+
+\item{phased, use_founders}{LD-pruning options for phased data and
+founder-only restriction.}
+
+\item{out_put_map}{Logical; return the SNP map alongside recoded genotypes.}
+
+\item{map_data}{Optional marker map data frame (chromosome, position).}
+
+\item{qc_filtering}{Logical; apply MAF / het / call-rate QC filters.}
 
 \item{message}{if message/warning should be displayed}
 
 \item{system_database}{this dictate if the output will be created in a folder or as list
 the default is FALSE. Thus output will be folder.}
 
-\item{...}{}
+\item{optimizer_name}{Deep-learning optimiser (e.g. `"adam"`, `"sgd"`).}
 
-\item{center}{if X-variables should be standardized}
+\item{use_amp}{Logical; use automatic mixed-precision training.}
+
+\item{max_grad_norm}{Gradient-norm clip used during DL training.}
+
+\item{auto_class_weights}{Logical; auto-balance class weights for
+classification.}
+
+\item{internal_cv_nfolds, internal_cv_replication}{Folds and replication
+used by multi-trait and MET DL internal CV when calibration is enabled.}
+
+\item{dl_internal_calibration}{Logical. Run the extra held-out calibration
+fits for Gaussian DL true prediction. Defaults to `TRUE`. Set to `FALSE`
+to skip those fits; calibrated prediction-error variance, standard errors,
+intervals, and reliability then remain unavailable. This does not disable
+requested outer cross-validation, tuning, or bootstrap fits.}
+
+\item{cnn_neurons_per_layer, cnn_kernel_size, cnn_dense_layers, cnn_use_max_pool, cnn_pool_kernel, cnn_pool_stride, cnn_pool_padding, cnn_learning_rate, cnn_separable, cnn_dilations, cnn_use_se, cnn_norm_type, cnn_pool_type, cnn_use_global_pool}{CNN architecture / training hyper-parameters (depth, kernel / pool
+geometry, separable convolutions, dilations, squeeze-excitation,
+normalisation, global pooling and learning rate).}
+
+\item{resnet_neurons_per_block, resnet_blocks, resnet_learning_rate}{ResNet hyper-parameters.}
+
+\item{ft_d_model, ft_heads, ft_layers, ft_ff_mult, ft_dropout, ft_token_dropout, ft_use_cls}{FT-Transformer hyper-parameters (model dimension, attention heads,
+transformer layers, feed-forward multiplier, dropouts, CLS token).}
+
+\item{saint_d_model, saint_heads, saint_layers, saint_ff_mult, saint_dropout, saint_token_dropout, saint_use_cls}{SAINT hyper-parameters (same layout as the FT-Transformer set).}
+
+\item{use_grouping, group_trigger, group_method, init_group_size, max_tokens, kmeans_batch, kmeans_iter}{Feature-tokenisation / grouping controls for the tabular-Transformer
+models (trigger, method, group size, max tokens, mini-batch K-means
+parameters).}
+
+\item{tabnet_steps, tabnet_feature_dim, tabnet_output_dim, tabnet_gamma, tabnet_lambda_sparse}{TabNet hyper-parameters.}
+
+\item{node_trees, node_depth}{NODE (Neural Oblivious Decision Ensembles)
+tree count and depth.}
+
+\item{deepfm_k, deepfm_hidden}{DeepFM embedding dimension and dense hidden
+widths.}
+
+\item{dcn_layers, dcn_hidden}{Deep & Cross Network cross / dense layers.}
+
+\item{nam_hidden, nam_activation, nam_add_linear, nam_l1}{Neural Additive
+Model hidden widths, activation, optional linear term and L1 penalty.}
+
+\item{moe_n_experts, moe_expert_hidden, moe_gate_hidden, moe_temperature, moe_sparse_topk, moe_entropy_reg}{Mixture-of-Experts hyper-parameters.}
+
+\item{gp_use_variational, gp_num_inducing, gp_feature_dim, gp_kernel, gp_ard, gp_lr_mult, rff_features, rff_lengthscale, rff_deep_hidden}{Deep-GP / random-Fourier-feature hyper-parameters for the DL-GP routes.}
+
+\item{model_type}{DL model family (`"mlp"`, `"cnn"`, `"resnet"`, `"ft"`,
+`"saint"`, `"tabnet"`, `"node"`, `"deepfm"`, `"dcn"`, `"nam"`, `"moe"`,
+`"gp"`, ...).}
+
+\item{epochs, batch_size}{DL training duration and mini-batch size.}
+
+\item{dropout, l2_weight_decay, l2_regularizer_dp, dropout_rate, batch_norm, validation_split, compile_model, deterministic, random_seed, device}{Generic DL controls (regularisation, validation split, model compile,
+determinism, random seed, target device).}
+
+\item{dl_n_seeds}{Optional number of DL training seeds to fit within every
+bootstrap sample for single-trait true prediction. The default is one,
+preserving the historical computational cost.}
+
+\item{dl_seeds}{Optional explicit unique non-negative integer DL training seeds.
+When omitted, `dl_n_seeds` seeds are deterministically derived from
+`random_seed`; all requested seeds are retained and averaged.}
+
+\item{dl_seed_aggregation}{Aggregation across DL training seeds. Currently
+only `"mean"` is supported; PredictProR never selects a seed using unknown
+test-set outcomes.}
+
+\item{mlp_neurons_per_layer, mlp_learning_rate}{MLP-specific size and
+learning rate.}
+
+\item{final_attention, attention_across_multiple_layers, heteroscedastic}{Attention pooling / heteroscedastic-output toggles for the DL wrappers.}
+
+\item{para_tunning}{Logical; run hyper-parameter tuning before fitting the
+classical-ML / DL model.}
+
+\item{param_grid}{Generic hyper-parameter grid (overrides the per-model
+`*_paras_tunning` lists when supplied).}
+
+\item{early_stop}{Logical / control for early stopping during tuning or
+DL training.}
+
+\item{xgb_paras_tunning, rf_paras_tunning, pls_paras_tunning, svm_paras_tunning, knn_paras_tunning, lasso_paras_tunning, rr_paras_tunning, dpl_paras_tunning}{Per-model hyper-parameter tuning grids (XGBoost, RandomForest, PLS,
+SVM, KNN, Lasso, Ridge-Regression and deep-learning) used when
+`para_tunning = TRUE`. Each is a named list of vectors / sequences.}
+
+\item{k}{k for K-Nearest Neighbours.}
+
+\item{learning_rate, max_depth, subsample}{XGBoost / boosting learning rate,
+tree depth and row-subsample ratio.}
+
+\item{xgb_booster}{XGBoost booster (`"gbtree"`, `"gblinear"`, `"dart"`).}
+
+\item{iteration}{XGBoost number of boosting iterations (`nrounds`).}
+
+\item{N_feature_impo}{Top-K features to report by importance.}
+
+\item{resample_method_tune, number_of_fold_tune}{Resampling method and folds
+for hyper-parameter tuning.}
+
+\item{min_child_weight, colsample_bytree, xgb_alpha, xgb_gamma, lambda_rr, xgb_lambda, xgb_rate_drop, xgb_skip_drop, xgb_objective, xgb_sample_type, xgb_normalize_type, xgb_nthread}{XGBoost / Ridge-regression hyper-parameters (min child weight, column
+subsample, L1 / L2, DART drop / skip, objective, sample / normalise
+types, threads).}
+
+\item{catboost_iterations, catboost_depth, catboost_learning_rate, catboost_l2_leaf_reg, catboost_thread_count}{CatBoost hyper-parameters.}
+
+\item{lightgbm_nrounds, lightgbm_learning_rate, lightgbm_num_leaves, lightgbm_feature_fraction, lightgbm_bagging_fraction, lightgbm_min_data_in_leaf, lightgbm_lambda_l1, lightgbm_lambda_l2, lightgbm_nthread}{LightGBM hyper-parameters.}
+
+\item{ntree, nodesize, mtry, maxnodes, importance}{Random Forest
+hyper-parameters and the variable-importance toggle. `mtry = NULL` uses
+R `randomForest` defaults: floor(p/3) predictors per split for
+regression, sqrt(p) for classification.}
+
+\item{rf_n_jobs}{Internal Python RandomForest jobs. Keep at `1` when
+PredictProR is already parallelizing over CV/model tasks.}
+
+\item{ncomp}{Number of PLS components.}
+
+\item{svm_kernel, svm_type, sigma_value, C_value, degree_value, scale_value, gamma_value, offset_value}{SVM kernel family / type and kernel parameters
+(sigma, C, degree, scale, gamma, offset).}
+
+\item{AI_cv_nfolds, n_bootstrap, early_stop_for_iteration_xgb}{Classical-ML
+inner-CV folds, bootstrap resamples (default 30), and XGBoost-specific
+early-stop rounds. In ML/DL true prediction the published prediction is
+the model fitted on all training lines (DL: the average of `dl_n_seeds`
+networks trained on all lines); the `n_bootstrap` refits only describe
+uncertainty and run in parallel across the available cores. Gaussian
+standard errors and intervals are calibrated on cross-fitted held-out
+errors. For Gaussian RandomForest, `PREDICTPRO_RF_UNCERTAINTY=jackknife`
+replaces the refits with the bias-corrected infinitesimal jackknife of the
+full-data forest (Wager, Hastie & Efron 2014): about 10x faster, unbiased
+on average with ~1000 trees but noisier than the bootstrap in simulation,
+so the bootstrap remains the default.}
+
+\item{CI_width_thresholds, confidence_level}{Prediction-interval
+classification quantiles and confidence level.}
+
+\item{high_reliability_thres, low_reliability_thres}{Reliability-band
+thresholds.}
+
+\item{abs_very_close_threshold, abs_close_threshold}{Closeness thresholds
+used in the ranking / stability scoring.}
+
+\item{n_components, threshold, iqr_multiplier}{Component / risk / outlier
+thresholds for the post-prediction summary.}
+
+\item{interval_width_high_threshold, interval_width_moderate_threshold, interval_width_low_threshold}{Optional fixed-value overrides for the prediction-interval-width
+classification bands.}
+
+\item{lowrank_eps_trace, lowrank_max_rank, lowrank_jitter, lowrank_noise_grid, lowrank_kernel_weights}{GP backend controls (trace tolerance, maximum rank, jitter, noise grid,
+and per-kernel weights). Named weights must match the aligned kernel names.
+They are forwarded through direct prediction, cross-validation, and
+automatic multi-trait final refits. They are fixed for kernel-ridge and
+joint multi-trait GP fits and are input/starting weights when
+the exact GP backend learns component scales.}
+
+\item{gp_backend}{Gaussian-process backend route. For `hybrid_gp`, `"auto"`
+uses the Python/Torch additive-kernel backend when available and falls back
+to the R solver; use `"r"` to force the R solver or `"python"`/`"torch"` to
+require the Python/Torch backend.}
+
+\item{gp_output_level}{GP backend output level
+(`"predict_only"`, `"predict_with_se"`, `"full_vc"`).}
+
+\item{gp_return_se}{Logical. For the non-cross-validation direct
+Gaussian-process prediction path, request prediction standard errors and
+prediction error variances in the public prediction output. Cross-validation
+always uses point predictions only.}
+
+\item{gp_full_vc}{Logical. For the non-cross-validation direct
+Gaussian-process prediction path, request full variance-component output
+where the backend supports it. This implies `gp_return_se`.}
+
+\item{gp_return_trait_correlations}{Logical. For non-cross-validation
+multi-trait GP and MT-MET GP paths, request genetic and GxE/residual trait
+correlation matrices where supported by the backend.}
+
+\item{gp_estimate_kernel_weights}{Logical. Joint multi-trait Gaussian-process
+routes combine their kernel bank into one genetic term. By default the
+mixture weights are fixed (equal unless supplied), so each kernel's share
+is an assumption rather than an estimate. Set `TRUE` to fit the relative
+weights by REML profile likelihood; the first kernel is held at 1 because
+the overall genetic scale is already carried by the trait covariance, so
+the fitted values are ratios. Requires `gp_varcomp_mode = "reml"`, at least
+two kernels, and a single-environment panel: the multi-environment joint GP
+backend estimates its variance components by method of moments and has no
+likelihood to profile, so it keeps fixed weights and warns. The fitted
+weights, and the log-likelihood gained over the starting weights, are
+reported in `model_parameters`; a near-zero gain means the data does not
+identify the mixture.}
+
+\item{gp_force_prediction_se}{Logical. Joint multi-trait Gaussian-process
+prediction standard errors and trait correlations cost one linear solve per
+genotype-by-environment test cell per trait, so they are capped: past
+roughly 500 test cells at two traits the fit returns predictions without
+them and warns, rather than spending hours. Set `TRUE` to compute them
+anyway. Leaving this `FALSE` never fails the run; it only omits the
+per-cell trait covariance, and the omission is reported rather than silent.}
+
+\item{gp_varcomp_mode}{GP variance-component estimation mode
+(e.g. `"reml"`, `"mom"`). In joint multi-trait mode the selected model
+determines the statistically valid route: Gaussian-Process-GBLUP uses
+REML, FA-GBLUP uses factor-analytic REML (or MoM for multi-environment
+data), and Scalable-GBLUP uses operator/MoM.}
+
+\item{gp_fa_rank}{FA rank for GP_FA / FA-GBLUP.}
+
+\item{gp_prediction_output}{Which GP prediction summary to return.}
+
+\item{gp_factor_cache}{Optional cached factor object reused across GP
+fits.}
+
+\item{gp_iters}{Optional positive integer optimizer iterations for the exact
+GP backend. `NULL` preserves the Python backend default.}
+
+\item{gp_lr}{Optional positive learning rate for the exact GP backend.
+`NULL` preserves the Python backend default.}
+
+\item{gp_engine}{Character; which REML engine drives GP variance-component
+estimation. `"auto"` (default) picks the fastest available (currently
+resolves to `"dense_v"`); `"dense_v"` keeps the dense V-formulation
+(Phase 1-2); `"mme"` uses the sparse Mixed Model Equations engine
+(Phase 3.4-3.7, fastest at n_geno = 100 for MET but regresses at
+n_geno >= 300 on GBLUP because G^-1 is dense -- see Phase 3.14 NEWS);
+`"eigen"` (Phase 3.15a, experimental) uses an eigen-projected REML
+formulation that beats ASReml at large n on the standalone validation,
+but production integration is incomplete (Phase 3.15b NEWS) so
+`"eigen"` currently falls back to `"dense_v"`. Requires
+`PREDICTPRO_GP_DISABLE_ENV_MAIN=1` for `"mme"` and `"eigen"` on MET.
+Honors `PREDICTPRO_GP_ENGINE` env var.}
+
+\item{gp_learn_scales}{Optional logical override for GP backend scale
+learning. `NULL` learns scales only when full variance-component output is
+requested.}
+
+\item{gp_exact_fast_cv}{Optional control for exact-GP cross-validation speed.
+`NULL` keeps the backend default, which is exact per-fold refitting unless
+explicitly enabled by environment policy. `TRUE` or `"auto"` enables the
+guarded shared-hyperparameter block-delete shortcut for eligible single-
+environment GP CV; `"force"` skips the self-check and is intended for
+benchmarking only. The shortcut is reported as approximate in result
+metadata.}
+
+\item{cross_validation}{Logical; route to the cross-validation pipeline
+instead of true prediction.}
+
+\item{cv_evaluation_only}{Logical; only return CV evaluation outputs
+(skip final fit on the full data). Classification responses include
+family-specific metrics plus out-of-fold reliability and calibration
+summaries under `cv_results_processed`.}
+
+\item{cv_generate_plots}{Logical or `NULL`. When `NULL`, GP-only
+cross-validation defaults to a point-prediction metric path without building
+diagnostic plot objects. Set `TRUE` to force legacy CV plot construction or
+`FALSE` to skip it for faster CV output.}
+
+\item{GS_model_cv}{Model name(s) to fit during cross-validation; defaults
+to `GS_model` when not supplied.}
+
+\item{nfolds}{Number of folds for cross-validation.}
+
+\item{sampling_method}{CV sampling scheme (e.g. `"stratified"`,
+`"unstratified"`).}
+
+\item{num_cores}{Parallel workers for CV / bootstrap. When `NULL` (default)
+the policy uses `parallel::detectCores(logical = TRUE) - 1` capped at the
+number of parallel-eligible tasks. The full set of knobs that influence
+worker count and backend selection (`GP_BLAS_THREADS`, the scoring
+weights, mori / mirai timing, etc.) is documented in
+`inst/parallel-policy-knobs.md` and via the
+\code{\link{gp_parallel_policy_knobs}} helper.}
+
+\item{replication}{Number of CV replications.}
+
+\item{test_size}{Fraction reserved for the held-out test set in holdout CV.}
+
+\item{cross_validation_meth}{Cross-validation method. Every multi-environment
+workflow uses `"CV0"`, `"CV1"`, `"CV2"`, or a repeated variant. CV0 holds
+out environments, CV1 holds out genotypes across environments, and CV2
+holds out genotype-by-environment cells. Single-environment workflows use
+their ordinary holdout or K-fold methods.}
+
+\item{random_state}{Random seed for reproducible CV / bootstrap splits.}
+
+\item{metric_for_ranking}{Metric used to rank models in the CV summary.
+The default, `"auto"`, uses balanced accuracy for binary responses, macro
+F1 for multiclass responses, quadratic-weighted kappa for ordinal
+responses, and correlation (`accuracy`) for Gaussian responses.}
+
+\item{ranking_tie_breakers}{Optional ordered character vector of secondary
+metrics used when candidate models tie on `metric_for_ranking`. `NULL`
+uses family-aware defaults; use `"none"` to disable secondary metrics.}
+
+\item{plot_extension, plot_width, plot_height, plot_units, plot_dpi, plot_filename, Plot_name_result_diagnostic}{Output-plot file extension, geometry, units, DPI, base filename and the
+diagnostic-plot name prefix.}
+
+\item{feature_selected}{Optional exact predictor set to reuse without
+rescoring. Supply a character vector for one common set; a list keyed by
+trait; a list keyed by `geno_data`, `omic1_data`, `omic2_data`, or
+`omic3_data`; a nested trait/source list in either orientation; or a data
+frame containing `predictor` plus optional `trait`, `source_block`, and
+logical `selected` columns. Sets are applied separately to each trait;
+genuinely joint multi-trait fits use their union. In a source-keyed set,
+an omitted source is excluded. Named raw matrices allow PredictProR to
+rebuild marker designs and kernels. With a user-supplied precomputed
+kernel, the package cannot inspect the originating columns and assumes the
+kernel was externally rebuilt from this exact set.}
+
+\item{feature_scoring}{Logical; enable independent predictor scoring and
+dynamic top-k predictor selection after QC/imputation.}
+
+\item{feature_scoring_model}{Predictor scoring model. One of
+`"Ridge_Regression"`, `"BayesB"`, or `"RandomForest"`.}
+
+\item{feature_k_grid}{Integer vector of top-k predictor counts to evaluate in
+cross-validation. `NULL` uses an automatic capped grid. On standard
+single-trait/MET routes the grid always also contains the full predictor
+count (k = all predictors, i.e. no selection), so CV and automatic model
+choice can conclude that selection does not help. Metrics for several
+candidate k values describe the candidate curve; selecting k and quoting the
+same CV score as an unbiased final performance estimate is not nested CV.
+Specialized hybrid and joint multi-trait routes require one pre-specified k
+per run and fail rather than pooling several candidates.}
+
+\item{feature_k}{Optional top-k predictor count for final prediction. Scores
+and selected sets are calculated separately for every trait. A genuinely
+joint multi-trait model uses the union of its trait-specific top-k sets and
+records both the individual sets and the union size.}
+
+\item{feature_scoring_cv}{Cross-validation scoring policy. `"fixed"` reuses
+one full-training ranking in every fold; it is intended for final fitting or
+externally established rankings and is not leakage-free when the same
+responses are used to assess CV performance. `"fold_internal"` recomputes
+the ranking using only each outer training fold. `"both"` returns fixed and
+fold-internal tasks separately for standard model routes; their metrics are
+never averaged, and fold-internal results drive automatic model selection.
+Specialized hybrid/joint routes require choosing one policy per run.}
+
+\item{feature_score_metadata}{Optional reusable metadata from
+`feature_score_predictors()`. Automatic selection rebuilds marker designs and
+kernels from named raw marker/omics columns. Precomputed kernels cannot be
+subset by feature name and therefore fail loudly unless the user supplies an
+externally rebuilt kernel matching `feature_selected`.}
+
+\item{feature_scoring_seed}{Random seed for the feature-scoring pipeline.}
+
+\item{feature_ridge_lambda}{Ridge penalty used by the feature-scoring
+ridge engine.}
+
+\item{feature_bayes_nIter, feature_bayes_burnIn, feature_bayes_thin}{BGLR
+MCMC controls used by the Bayesian feature-scoring engine.}
+
+\item{globals_max_GB}{Maximum exported-globals size (GB) used by the
+parallel-policy scorer.}
+
+\item{worker_memory_gb}{Optional memory (GiB) one parallel worker needs on
+top of the shared data: the R process with PredictProR loaded plus, for
+Python-backed ML/DL/GP models, its Python child. Together with
+`memory_budget_gb` it caps how many workers run at once. `NULL` (default)
+uses `GP_PAR_WORKER_OVERHEAD_GB` if set, otherwise measures one worker on
+this machine once per session (only when more than one worker could run),
+falling back to 0.75 GiB. The value and its source are recorded in
+`Run_metadata` (`policy_worker_memory_gb`, `policy_worker_memory_source`).}
+
+\item{memory_budget_gb}{Optional total memory (GiB) all parallel workers may
+use. `NULL` (default) uses `GP_PAR_MEMORY_BUDGET_GB` if set, otherwise
+`GP_PAR_MEMORY_FRACTION` (default 0.7) of the currently available memory.}
+
+\item{parallel_mode}{Backend selection. One of `"auto"` (default;
+score-based — the engine picks among mirai / future / base_parallel /
+foreach / sequential based on object size, fanout, OS, GPU
+availability, and per-model gates), or one of `"mirai"`, `"future"`,
+`"base_parallel"`, `"foreach"`, `"sequential"` to force a backend.
+The chosen backend and the contributing reason codes are recorded
+in `policy_decision_reason` in the exported `Run_metadata.csv`;
+decode them with \code{\link{gp_policy_decision_reason_glossary}}.
+Tuning is via the env vars / options enumerated by
+\code{\link{gp_parallel_policy_knobs}} and described in
+`inst/parallel-policy-knobs.md`.}
+
+\item{parallel_backend_prefer_fork}{Logical; prefer forking on Unix
+workers when applicable. Set `FALSE` for PSOCK workers. Forking is
+disabled automatically when a worker needs embedded-runtime
+initialization, such as a reticulate Python session.}
+
+\item{sequential_models}{Optional character vector of model names that
+should always run sequentially (e.g. RKHS, XGBoost, CatBoost / LightGBM
+which already use internal threading).}
+
+\item{verbose}{Logical; print verbose progress / diagnostic messages.}
+
+\item{multi_trait}{Logical. High-level automatic multi-trait orchestration.
+If `TRUE`, provide one or more models in `GS_model` (true prediction) or
+`GS_model_cv` (cross-validation) and leave all five family-specific
+`multi_trait_*` flags `FALSE`. PredictProR resolves each model to its existing
+protected ASReml, GP, Bayesian, ML, or DL route and executes one model per
+child call. With cross-validation and `cv_evaluation_only = FALSE`, models
+are ranked by the primary metric averaged across traits and the best joint
+model is refitted for final prediction. The family-specific flags remain
+available for backward-compatible manual single-model routing. Current
+single-environment joint CV candidates include `GBLUP`, `GBLUP_BRR`,
+`RKHS`, `Gaussian-Process-GBLUP`, `FA-GBLUP`, `Scalable-GBLUP`, and the
+supported multi-trait ML/DL models. Joint GP/Bayesian CV holds out complete
+genotypes and masks every response trait together before each model refit.
+Automatic joint CV accepts `K-Folds` or `Repeated_K-Folds`; its protected
+routes use unstratified genotype-level folds. Duplicate names in `response`
+are reduced to unique traits before child models are launched. Grouped
+multi-trait multi-environment CV is available for ASReml GBLUP; the GP and
+Bayesian MT-MET routes remain true-prediction only.}
+
+\item{...}{Additional arguments forwarded to the dispatched engine /
+workflow; reserved for forward compatibility.}
+}
+\value{
+A nested list of per-trait model results. The prediction table
+  (`model_results$predicted_values`) follows a shared column contract that
+  includes `Predicted_value`, `Standard_error`, `PEV`,
+  `lower_bound`/`upper_bound`, and `Reliability`, plus model-specific
+  variance metadata.
+
+  For genetic mixed models, inspect `Reliability_basis`: the reference
+  variance is an estimated genetic variance and PEV has breeding-value
+  semantics. ML/DL models do not estimate that decomposition, so
+  `Genetic_variance` remains unavailable. Their plotting-compatible
+  `Reliability` field equals `Prediction_stability` and is calculated as
+  `max(0, min(1, 1 - U_i / V_yhat))`, where `V_yhat` is the fitted-value
+  variance across all rows in the final prediction table (both `Train` and
+  `Test`, when present) and `U_i` is normally prediction-resampling `SE_i^2`.
+  `Train_Test_Label` identifies the row set but does not subset `V_yhat`.
+  The two inputs are returned in
+  `Reliability_reference_variance` and `Reliability_variance_input`.
+  Held-out predictive PEV and prediction intervals remain separate.
+  ML/DL `Reliability` is an uncalibrated marker-adjustment plotting
+  surrogate, not quantitative-genetic reliability.
+
+  Multi-seed DL true prediction additionally returns `dl_seed_manifest`,
+  `dl_computation_plan`, `dl_seed_predictions`, and
+  `dl_seed_variability`. These remain separate from bootstrap PEV and
+  reliability because they describe optimizer/initialization sensitivity.
+
+  With `multi_trait = TRUE`, the returned
+  `PredictProR_multi_trait_result` keeps each protected child result under
+  `model_results_by_model`, the routing decision under
+  `orchestration_plan`, combined CV summaries and rankings under
+  `cv_results_processed`, and any selected full-data refit under
+  `final_prediction`.
 }
 \description{
 Title

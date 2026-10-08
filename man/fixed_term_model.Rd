@@ -2,7 +2,7 @@
 % Please edit documentation in R/bayesians_preprocess.R
 \name{fixed_term_model}
 \alias{fixed_term_model}
-\title{Title}
+\title{Validate and Set Model Type for Fixed Terms in Bayesian Analysis}
 \usage{
 fixed_term_model(
   fixed_term = NULL,
@@ -11,10 +11,27 @@ fixed_term_model(
 )
 }
 \arguments{
-\item{fixed_term}{all the fixed term, which is an output from fixed_terms function}
+\item{fixed_term}{Unused parameter placeholder for potential future use, allowing for flexibility in function calls.}
 
-\item{fixed_term_model_bayesian}{default is FIXED}
+\item{fixed_term_model_bayesian}{Character string specifying the model type for fixed terms. Expected to be 'FIXED'.}
+
+\item{message}{Logical indicating whether to display warning messages when the model type is missing or incorrectly specified.}
+}
+\value{
+A character string 'FIXED', confirming the model type for fixed terms is correctly set.
 }
 \description{
-Title
+This function checks the specified model type for fixed terms in a Bayesian analysis context,
+ensuring it is correctly set to 'FIXED'. If not set or incorrectly specified, it automatically corrects it.
+}
+\details{
+In the context of Bayesian analysis, especially within certain statistical or machine learning frameworks,
+fixed terms may require specific model type settings. This function ensures that the model type for fixed terms
+is explicitly set to 'FIXED', correcting it if necessary and optionally warning the user of any adjustments made.
+This process helps maintain consistency and prevent errors in model specification.
+}
+\examples{
+fixed_term_model_bayesian <- fixed_term_model(fixed_term_model_bayesian = "INCORRECT", message = TRUE)
+print(fixed_term_model_bayesian)
+
 }

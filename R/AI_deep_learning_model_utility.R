@@ -13,7 +13,7 @@
 #   mod  <- get_dl_module()
 #   dots <- list(...)
 #
-#   # --- Legacy → current arg renames ---
+#   # --- Legacy -> current arg renames ---
 #   # model type
 #   if (!is.null(dots$deep_learning_model) && is.null(dots$model_type)) {
 #     mt <- tolower(as.character(dots$deep_learning_model))
@@ -83,7 +83,7 @@ torch_fit_model <- function(X, y, ...) {
     )
   }
 
-  # --- Legacy → current arg renames ---
+  # --- Legacy -> current arg renames ---
   if (!is.null(dots$deep_learning_model) && is.null(dots$model_type)) {
     mt <- tolower(as.character(dots$deep_learning_model))
     dots$model_type <- switch(mt, "ft" = "ft_transformer", "dcn" = "dcnv2", mt)
@@ -110,7 +110,7 @@ torch_fit_model <- function(X, y, ...) {
     dots$compile <- NULL
   }
 
-  # CNN pool aliases (old → new)
+  # CNN pool aliases (old -> new)
   if (!is.null(dots$pool_kernel) && is.null(dots$cnn_pool_kernel)) {
     dots$cnn_pool_kernel <- as.integer(dots$pool_kernel);  dots$pool_kernel <- NULL
   }
@@ -121,7 +121,7 @@ torch_fit_model <- function(X, y, ...) {
     dots$cnn_pool_padding <- as.integer(dots$pool_padding); dots$pool_padding <- NULL
   }
 
-  # OPTIONAL: auto-dedupe (keep last) if you’d rather not hard-stop:
+  # OPTIONAL: auto-dedupe (keep last) if you'd rather not hard-stop:
   # dots <- dots[!duplicated(names(dots), fromLast = TRUE)]
 
   args <- c(list(X = X, y = y), dots)
@@ -174,7 +174,7 @@ torch_predict <- function(model, X, device = NULL,
 
 # Convenience: return mean & (optional) variance.
 # - For GP-DKL: returns Bayesian mean/variance.
-# - For heteroscedastic reg: returns mean/variance from the model’s second channel.
+# - For heteroscedastic reg: returns mean/variance from the model's second channel.
 # - For classification / plain models: variance may be NULL.
 torch_predict_uncertainty <- function(model, X, device = NULL, prefer_bayesian = TRUE) {
   mod <- get_dl_module()
@@ -189,6 +189,691 @@ torch_predict_proba <- function(model, X, device = NULL) {
 }
 torch_predict_class <- function(model, X, device = NULL, threshold = 0.5) {
   torch_predict(model, X, device = device, type = "class", threshold = threshold)
+}
+
+gp_fast_center_scale_fit <- function(x, center = TRUE, scale = TRUE) {
+  x_mat <- as.matrix(x)
+  storage.mode(x_mat) <- "double"
+  x_center <- if (isTRUE(center)) colMeans(x_mat, na.rm = TRUE) else rep(0, ncol(x_mat))
+  x_scale <- if (isTRUE(scale)) apply(x_mat, 2, stats::sd, na.rm = TRUE) else rep(1, ncol(x_mat))
+  x_scale[!is.finite(x_scale) | x_scale == 0] <- 1
+  x_scaled <- sweep(sweep(x_mat, 2, x_center, "-"), 2, x_scale, "/")
+  list(data = x_scaled, center = x_center, scale = x_scale)
+}
+
+gp_fast_center_scale_apply <- function(x, fit) {
+  x_mat <- as.matrix(x)
+  storage.mode(x_mat) <- "double"
+  sweep(sweep(x_mat, 2, fit$center, "-"), 2, fit$scale, "/")
+}
+
+gp_fast_y_scale_fit <- function(y) {
+  y_num <- as.numeric(y)
+  mu <- mean(y_num, na.rm = TRUE)
+  sdv <- stats::sd(y_num, na.rm = TRUE)
+  if (!is.finite(sdv) || sdv == 0) {
+    sdv <- 1
+  }
+  list(
+    scaled = (y_num - mu) / sdv,
+    mean = mu,
+    std = sdv
+  )
+}
+
+gp_dl_bridge_fit_params <- function(model_type, dl_args = list()) {
+  model_key <- tolower(as.character(model_type %||% "mlp"))
+  args <- dl_args %||% list()
+  args$response_family <- NULL
+  out <- switch(
+    model_key,
+    "cnn" = canon_cnn_args(args),
+    "mlp" = canon_mlp_args(args, with_attention = FALSE),
+    "mlp_with_attention" = canon_mlp_args(args, with_attention = TRUE),
+    "ft_transformer" = canon_ft_args(args),
+    "resnet" = canon_resnet_args(args),
+    "saint" = canon_saint_args(args),
+    "tabnet" = canon_tabnet_args(args),
+    "node" = canon_node_args(args),
+    "deepfm" = canon_deepfm_args(args),
+    "dcnv2" = canon_dcnv2_args(args),
+    "nam" = canon_nam_args(args),
+    "moe" = canon_moe_args(args),
+    "gp_dkl" = canon_gp_dkl_args(args),
+    args
+  )
+  # NULL or a single NA means "not set": leave it to the Python default
+  Filter(function(v) !is.null(v) && !(length(v) == 1L && is.atomic(v) && is.na(v)), out)
+}
+
+gp_dl_payload_matrix <- function(x) {
+  if (!is.matrix(x)) {
+    x <- as.matrix(x)
+  }
+  if (!is.double(x)) {
+    storage.mode(x) <- "double"
+  }
+  if (!is.null(dimnames(x))) {
+    dimnames(x) <- NULL
+  }
+  x
+}
+
+gp_dl_bridge_script_path <- function() {
+  pyfile <- system.file("python/dl_bridge.py", package = "PredictProR")
+  if (!nzchar(pyfile)) {
+    candidates <- c("inst/python/dl_bridge.py", "python/dl_bridge.py", "../inst/python/dl_bridge.py")
+    hit <- candidates[file.exists(candidates)]
+    if (length(hit)) {
+      pyfile <- normalizePath(hit[1], winslash = "/", mustWork = TRUE)
+    }
+  }
+  if (!nzchar(pyfile)) {
+    stop("dl_bridge.py not found under inst/python/.", call. = FALSE)
+  }
+  pyfile
+}
+
+gp_detect_dl_python <- function() {
+  py <- Sys.getenv("PREDICTPRO_DL_PYTHON", unset = "")
+  if (nzchar(py) && file.exists(py)) {
+    return(normalizePath(py, winslash = "/", mustWork = TRUE))
+  }
+  py <- Sys.getenv("PREDICTPRO_PYTHON_DL", unset = "")
+  if (nzchar(py) && file.exists(py)) {
+    return(normalizePath(py, winslash = "/", mustWork = TRUE))
+  }
+  preferred <- gp_preferred_python(purpose = "dl")
+  if (!is.null(preferred) && nzchar(preferred)) {
+    return(normalizePath(preferred, winslash = "/", mustWork = TRUE))
+  }
+  NULL
+}
+
+gp_dl_subprocess_env <- function() {
+  paste0(
+    "CUBLAS_WORKSPACE_CONFIG=",
+    gp_configure_torch_runtime_env()
+  )
+}
+
+gp_dl_run_cli <- function(command,
+                          args,
+                          python_bin = NULL,
+                          max_attempts = 1L,
+                          run_fn = system2) {
+  python_bin <- python_bin %||% gp_detect_dl_python()
+  if (is.null(python_bin) || !nzchar(python_bin)) {
+    stop(
+      "No configured Python runtime was found for Python DL models.\n",
+      "Set PREDICTPRO_DL_PYTHON or configure a preferred DL Python runtime.",
+      call. = FALSE
+    )
+  }
+  max_attempts <- suppressWarnings(as.integer(max_attempts)[1L])
+  if (!is.finite(max_attempts) || max_attempts < 1L || max_attempts > 2L) {
+    stop("max_attempts must be one or two.", call. = FALSE)
+  }
+  if (!is.function(run_fn)) {
+    stop("run_fn must be a function.", call. = FALSE)
+  }
+  cmd_args <- c(gp_dl_bridge_script_path(), command, args)
+  gp_dl_subprocess_env()
+  for (attempt in seq_len(max_attempts)) {
+    out <- suppressWarnings(run_fn(
+      python_bin,
+      args = gp_quote_system_args(cmd_args),
+      stdout = TRUE,
+      stderr = TRUE
+    ))
+    status <- suppressWarnings(as.integer(attr(out, "status") %||% 0L)[1L])
+    if (identical(status, 0L)) return(invisible(out))
+    if (attempt < max_attempts) {
+      # Training bridges write only to a call-private temporary output
+      # directory. Remove known partial products before repeating the exact
+      # deterministic command; retain params.json, which is an input.
+      out_flag <- match("--out-dir", args)
+      if (!is.na(out_flag) && out_flag < length(args)) {
+        out_dir <- args[[out_flag + 1L]]
+        partial_products <- file.path(
+          out_dir,
+          c("predictions.csv", "bootstrap.csv", "standard_error.csv",
+            "probabilities.csv", "meta.json", "embeddings.csv")
+        )
+        unlink(partial_products[file.exists(partial_products)], force = TRUE)
+      }
+      warning(
+        "DL Python bridge exited with status ", status,
+        "; retrying the same deterministic command once.",
+        call. = FALSE
+      )
+      next
+    }
+    stop(
+      paste0(
+        "DL Python bridge failed with status ", status, ".\n",
+        paste(out, collapse = "\n")
+      ),
+      call. = FALSE
+    )
+  }
+}
+
+gp_dl_write_matrix_csv <- function(x, path) {
+  gp_bridge_csv_write(as.data.frame(unname(gp_dl_payload_matrix(x)), check.names = FALSE), path, quote = FALSE)
+  invisible(path)
+}
+
+gp_dl_write_vector_csv <- function(x, path) {
+  gp_bridge_csv_write(data.frame(value = x, stringsAsFactors = FALSE), path, quote = TRUE)
+  invisible(path)
+}
+
+gp_dl_write_target_csv <- function(x, path) {
+  x_mat <- if (is.matrix(x) || is.data.frame(x)) as.matrix(x) else matrix(x, ncol = 1L)
+  gp_bridge_csv_write(as.data.frame(unname(x_mat), check.names = FALSE), path, quote = TRUE)
+  invisible(path)
+}
+
+gp_dl_write_json <- function(x, path) {
+  writeLines(jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", pretty = TRUE), path, useBytes = TRUE)
+  invisible(path)
+}
+
+gp_dl_write_seed_json <- function(x, path) {
+  seeds <- gp_dl_validate_seed_vector(x, name = "training_seeds")
+  gp_dl_write_json(unname(as.list(seeds)), path)
+}
+
+gp_dl_bridge_read_cli_result <- function(out_dir) {
+  pred_path <- file.path(out_dir, "predictions.csv")
+  if (!file.exists(pred_path)) {
+    stop("DL Python bridge did not write predictions.csv.", call. = FALSE)
+  }
+  pred_df <- utils::read.csv(pred_path, stringsAsFactors = FALSE, check.names = FALSE)
+  prob_path <- file.path(out_dir, "probabilities.csv")
+  prob <- if (file.exists(prob_path)) {
+    as.matrix(utils::read.csv(prob_path, stringsAsFactors = FALSE, check.names = FALSE))
+  } else {
+    NULL
+  }
+  meta_path <- file.path(out_dir, "meta.json")
+  meta <- if (file.exists(meta_path)) {
+    tryCatch(jsonlite::fromJSON(meta_path, simplifyVector = TRUE), error = function(e) list())
+  } else {
+    list()
+  }
+  list(
+    predictions = if (ncol(pred_df) == 1L) pred_df[[1L]] else as.matrix(pred_df),
+    probabilities = prob,
+    classes = meta$classes %||% NULL,
+    meta = meta
+  )
+}
+
+gp_dl_bridge_response_family <- function(response_family = NULL, y = NULL) {
+  fam <- tolower(trimws(as.character(response_family %||% "auto")[1L]))
+  if (fam %in% c("multitask", "multi_task", "multioutput", "multi_output", "multitask_regression")) {
+    return("multitask_regression")
+  }
+  gp_resolve_response_family(response_family, y = y)
+}
+
+gp_dl_bridge_class_levels <- function(y, fam, class_levels = NULL) {
+  if (!identical(fam, "binary") && !identical(fam, "multiclass")) {
+    return(NULL)
+  }
+  if (!is.null(class_levels) && length(class_levels)) {
+    return(as.character(class_levels))
+  }
+  if (exists("gp_py_ml_class_levels", mode = "function")) {
+    return(gp_py_ml_class_levels(y, fam))
+  }
+  if (is.factor(y) || is.ordered(y)) {
+    return(as.character(levels(y)))
+  }
+  sort(unique(as.character(stats::na.omit(y))))
+}
+
+gp_dl_bridge_prepare_target <- function(y, fam, class_levels = NULL) {
+  if (!identical(fam, "binary") && !identical(fam, "multiclass")) {
+    return(list(y = y, class_levels = NULL))
+  }
+  levs <- gp_dl_bridge_class_levels(y, fam, class_levels)
+  if (!length(levs)) {
+    stop("Classification deep-learning target has no observed class levels.", call. = FALSE)
+  }
+  y_chr <- as.character(y)
+  y_int <- suppressWarnings(as.integer(y_chr))
+  non_na <- !is.na(y)
+  encoded_levels <- seq_along(levs) - 1L
+  already_encoded <- any(non_na) &&
+    all(!is.na(y_int[non_na])) &&
+    all(y_int[non_na] %in% encoded_levels) &&
+    !any(y_chr[non_na] %in% levs)
+  if (already_encoded) {
+    return(list(y = as.integer(y_int), class_levels = levs))
+  }
+  y_encoded <- as.integer(factor(y_chr, levels = levs)) - 1L
+  bad <- non_na & is.na(y_encoded)
+  if (any(bad)) {
+    stop("Classification deep-learning target contains labels outside class_levels.", call. = FALSE)
+  }
+  list(y = y_encoded, class_levels = levs)
+}
+
+gp_dl_bridge_fit_predict_gaussian_fast <- function(model_type,
+                                                   X_train,
+                                                   y_train,
+                                                   X_test,
+                                                   dl_args = list()) {
+  res <- gp_dl_bridge_fit_predict_raw(
+    model_type = model_type,
+    X_train = X_train,
+    y_train = y_train,
+    X_test = X_test,
+    response_family = "gaussian",
+    dl_args = dl_args
+  )
+  as.numeric(res$predictions)
+}
+
+gp_dl_bridge_fit_predict_raw <- function(model_type,
+                                         X_train,
+                                         y_train,
+                                         X_test,
+                                         response_family = "gaussian",
+                                         dl_args = list(),
+                                         class_levels = NULL) {
+  fam <- gp_dl_bridge_response_family(response_family, y = y_train)
+  filtered <- gp_py_ml_filter_missing_training(
+    X_train = X_train,
+    y_train = y_train,
+    response_family = fam,
+    context = paste("DL fit-predict", model_type)
+  )
+  X_train <- filtered$X_train
+  y_train <- filtered$y_train
+  fit_params <- gp_dl_bridge_fit_params(model_type = model_type, dl_args = dl_args)
+  x_train_payload <- unname(gp_dl_payload_matrix(X_train))
+  x_test_payload <- unname(gp_dl_payload_matrix(X_test))
+  target <- gp_dl_bridge_prepare_target(y_train, fam, class_levels = class_levels)
+  y_payload <- target$y
+  class_levels <- target$class_levels
+  write_payload <- function(input_dir) {
+    gp_dl_write_matrix_csv(x_train_payload, file.path(input_dir, "x_train.csv"))
+    gp_dl_write_target_csv(y_payload, file.path(input_dir, "y_train.csv"))
+    gp_dl_write_matrix_csv(x_test_payload, file.path(input_dir, "x_test.csv"))
+    if (!is.null(class_levels)) {
+      gp_dl_write_json(as.character(class_levels), file.path(input_dir, "class_levels.json"))
+    }
+    invisible(input_dir)
+  }
+  payload_cache <- gp_bridge_payload_cache_prepare(
+    prefix = "DL",
+    purpose = paste("fit_predict", fam, sep = "::"),
+    key_parts = list(
+      response_family = fam,
+      x_train = x_train_payload,
+      y_train = y_payload,
+      x_test = x_test_payload,
+      class_levels = as.character(class_levels %||% character())
+    ),
+    cells = gp_bridge_payload_cache_cells(x_train_payload, y_payload, x_test_payload),
+    build_fun = write_payload,
+    min_cells = 20000L,
+    max_entries = 12L
+  )
+  if (is.null(payload_cache)) {
+    bridge_dir <- tempfile("predictpror_dl_bridge_")
+    input_dir <- file.path(bridge_dir, "input")
+    out_dir <- file.path(bridge_dir, "out")
+    dir.create(input_dir, recursive = TRUE, showWarnings = FALSE)
+    dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+    on.exit(unlink(bridge_dir, recursive = TRUE, force = TRUE), add = TRUE)
+    write_payload(input_dir)
+  } else {
+    input_dir <- payload_cache$input_dir
+    out_dir <- tempfile("predictpror_dl_bridge_out_")
+    dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+    on.exit(unlink(out_dir, recursive = TRUE, force = TRUE), add = TRUE)
+  }
+  x_train_csv <- file.path(input_dir, "x_train.csv")
+  y_train_csv <- file.path(input_dir, "y_train.csv")
+  x_test_csv <- file.path(input_dir, "x_test.csv")
+  levels_json <- file.path(input_dir, "class_levels.json")
+  params_json <- file.path(out_dir, "params.json")
+  gp_dl_write_json(Filter(Negate(is.null), fit_params), params_json)
+  args <- c(
+    "--model-type", tolower(as.character(model_type)),
+    "--task", fam,
+    "--x-train-csv", x_train_csv,
+    "--y-train-csv", y_train_csv,
+    "--x-test-csv", x_test_csv,
+    "--params-json", params_json,
+    "--out-dir", out_dir
+  )
+  if (!is.null(class_levels)) {
+    args <- c(args, "--class-levels-json", levels_json)
+  }
+  # One fit-predict runs per CV fold; retry a transient native exit once, as
+  # the bootstrap and multi-trait DL paths already do.
+  gp_dl_run_cli("fit-predict", args, max_attempts = 2L)
+  invisible(gc(verbose = FALSE))
+
+  gp_dl_bridge_read_cli_result(out_dir)
+}
+
+gp_dl_bridge_fit_predict_batch_raw <- function(jobs) {
+  if (is.null(jobs) || !length(jobs)) {
+    return(list())
+  }
+  batch_dir <- tempfile("predictpror_dl_batch_")
+  dir.create(batch_dir, recursive = TRUE, showWarnings = FALSE)
+  on.exit(unlink(batch_dir, recursive = TRUE, force = TRUE), add = TRUE)
+  manifest_jobs <- vector("list", length(jobs))
+  out_dirs <- character(length(jobs))
+
+  for (i in seq_along(jobs)) {
+    job <- jobs[[i]]
+    model_type <- tolower(as.character(job$model_type %||% "mlp")[1L])
+    fam <- gp_dl_bridge_response_family(job$response_family %||% "gaussian", y = job$y_train)
+    filtered <- gp_py_ml_filter_missing_training(
+      X_train = job$X_train,
+      y_train = job$y_train,
+      response_family = fam,
+      context = paste("DL batch fit-predict", model_type)
+    )
+    job$X_train <- filtered$X_train
+    job$y_train <- filtered$y_train
+    fit_params <- gp_dl_bridge_fit_params(model_type = model_type, dl_args = job$dl_args %||% list())
+    x_train_payload <- unname(gp_dl_payload_matrix(job$X_train))
+    x_test_payload <- unname(gp_dl_payload_matrix(job$X_test %||% job$X_pred))
+    target <- gp_dl_bridge_prepare_target(job$y_train, fam, class_levels = job$class_levels %||% NULL)
+    y_payload <- target$y
+    class_levels <- target$class_levels
+    write_payload <- function(input_dir) {
+      gp_dl_write_matrix_csv(x_train_payload, file.path(input_dir, "x_train.csv"))
+      gp_dl_write_target_csv(y_payload, file.path(input_dir, "y_train.csv"))
+      gp_dl_write_matrix_csv(x_test_payload, file.path(input_dir, "x_test.csv"))
+      if (!is.null(class_levels)) {
+        gp_dl_write_json(as.character(class_levels), file.path(input_dir, "class_levels.json"))
+      }
+      invisible(input_dir)
+    }
+    payload_cache <- gp_bridge_payload_cache_prepare(
+      prefix = "DL",
+      purpose = paste("fit_predict", fam, sep = "::"),
+      key_parts = list(
+        response_family = fam,
+        x_train = x_train_payload,
+        y_train = y_payload,
+        x_test = x_test_payload,
+        class_levels = as.character(class_levels %||% character())
+      ),
+      cells = gp_bridge_payload_cache_cells(x_train_payload, y_payload, x_test_payload),
+      build_fun = write_payload,
+      min_cells = 20000L,
+      max_entries = 12L
+    )
+    if (is.null(payload_cache)) {
+      input_dir <- file.path(batch_dir, "input", sprintf("job_%05d", i))
+      dir.create(input_dir, recursive = TRUE, showWarnings = FALSE)
+      write_payload(input_dir)
+    } else {
+      input_dir <- payload_cache$input_dir
+    }
+    out_dir <- file.path(batch_dir, "out", sprintf("job_%05d", i))
+    dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+    params_json <- file.path(out_dir, "params.json")
+    gp_dl_write_json(Filter(Negate(is.null), fit_params), params_json)
+
+    out_dirs[[i]] <- out_dir
+    manifest_jobs[[i]] <- list(
+      id = as.character(job$id %||% i),
+      model_type = model_type,
+      task = fam,
+      x_train_csv = file.path(input_dir, "x_train.csv"),
+      y_train_csv = file.path(input_dir, "y_train.csv"),
+      x_test_csv = file.path(input_dir, "x_test.csv"),
+      params_json = params_json,
+      class_levels_json = if (!is.null(class_levels)) file.path(input_dir, "class_levels.json") else NULL,
+      out_dir = out_dir
+    )
+  }
+
+  manifest_json <- file.path(batch_dir, "manifest.json")
+  gp_dl_write_json(list(jobs = manifest_jobs), manifest_json)
+  gp_dl_run_cli("batch-fit-predict", c("--manifest-json", manifest_json))
+  lapply(out_dirs, gp_dl_bridge_read_cli_result)
+}
+
+gp_dl_bridge_format_prediction <- function(res,
+                                           fam,
+                                           class_levels = NULL) {
+  if (identical(fam, "gaussian")) {
+    return(as.numeric(res$predictions))
+  }
+
+  if (identical(fam, "multitask_regression")) {
+    pred <- as.matrix(res$predictions)
+    storage.mode(pred) <- "double"
+    return(pred)
+  }
+
+  prob <- if (is.null(res$probabilities)) NULL else {
+    prob_mat <- as.matrix(res$probabilities)
+    storage.mode(prob_mat) <- "double"
+    prob_mat
+  }
+
+  if (identical(fam, "binary")) {
+    pred <- if (!is.null(prob)) as.numeric(prob[, ncol(prob), drop = TRUE]) else as.numeric(res$predictions)
+    pred <- pmax(0, pmin(1, pred))
+    if (!is.null(prob)) {
+      if (!is.null(class_levels) && length(class_levels) == ncol(prob)) {
+        colnames(prob) <- class_levels
+      } else if (is.null(colnames(prob))) {
+        colnames(prob) <- c("0", "1")[seq_len(ncol(prob))]
+      }
+      attr(pred, "probabilities") <- prob
+    }
+    return(pred)
+  }
+
+  if (!is.null(prob)) {
+    classes <- as.character(class_levels %||% colnames(prob) %||% res$classes %||% paste0("class_", seq_len(ncol(prob))))
+    if (length(classes) == ncol(prob)) {
+      colnames(prob) <- classes
+      pred <- classes[max.col(prob, ties.method = "first")]
+      attr(pred, "probabilities") <- prob
+      return(pred)
+    }
+  }
+
+  pred <- as.character(res$predictions)
+  if (!is.null(prob)) {
+    attr(pred, "probabilities") <- prob
+  }
+  pred
+}
+
+gp_dl_bridge_fit_predict <- function(model_type,
+                                     X_train,
+                                     y_train,
+                                     X_test,
+                                     response_family = "gaussian",
+                                     dl_args = list(),
+                                     class_levels = NULL) {
+  fam <- gp_dl_bridge_response_family(response_family, y = y_train)
+  class_levels <- gp_dl_bridge_class_levels(y_train, fam, class_levels = class_levels)
+  res <- gp_dl_bridge_fit_predict_raw(
+    model_type = model_type,
+    X_train = X_train,
+    y_train = y_train,
+    X_test = X_test,
+    response_family = fam,
+    dl_args = dl_args,
+    class_levels = class_levels
+  )
+
+  gp_dl_bridge_format_prediction(res, fam = fam, class_levels = class_levels)
+}
+
+gp_dl_bridge_fit_predict_batch <- function(jobs) {
+  if (is.null(jobs) || !length(jobs)) {
+    return(list())
+  }
+  prepared <- lapply(jobs, function(job) {
+    fam <- gp_dl_bridge_response_family(job$response_family %||% "gaussian", y = job$y_train)
+    job$response_family <- fam
+    job$class_levels <- gp_dl_bridge_class_levels(job$y_train, fam, class_levels = job$class_levels %||% NULL)
+    job
+  })
+  raw <- gp_dl_bridge_fit_predict_batch_raw(prepared)
+  Map(function(result, job) {
+    gp_dl_bridge_format_prediction(
+      result,
+      fam = job$response_family,
+      class_levels = job$class_levels %||% NULL
+    )
+  }, raw, prepared)
+}
+
+gp_dl_bridge_bootstrap <- function(model_type,
+                                   X_train,
+                                   y_train,
+                                   X_pred,
+                                   n_bootstrap,
+                                   response_family = "gaussian",
+                                   dl_args = list(),
+                                   seed = 123L,
+                                   training_seeds = NULL,
+                                   seed_aggregation = "mean") {
+  fam <- gp_dl_bridge_response_family(response_family, y = y_train)
+  filtered <- gp_py_ml_filter_missing_training(
+    X_train = X_train,
+    y_train = y_train,
+    response_family = fam,
+    context = paste("DL bootstrap", model_type)
+  )
+  X_train <- filtered$X_train
+  y_train <- filtered$y_train
+  fit_params <- gp_dl_bridge_fit_params(model_type = model_type, dl_args = dl_args)
+  x_train_payload <- unname(gp_dl_payload_matrix(X_train))
+  x_pred_payload <- unname(gp_dl_payload_matrix(X_pred))
+  y_payload <- if (identical(fam, "gaussian")) y_train else y_train
+  write_payload <- function(input_dir) {
+    gp_dl_write_matrix_csv(x_train_payload, file.path(input_dir, "x_train.csv"))
+    gp_dl_write_target_csv(y_payload, file.path(input_dir, "y_train.csv"))
+    gp_dl_write_matrix_csv(x_pred_payload, file.path(input_dir, "x_pred.csv"))
+    invisible(input_dir)
+  }
+  payload_cache <- gp_bridge_payload_cache_prepare(
+    prefix = "DL",
+    purpose = paste("bootstrap", fam, sep = "::"),
+    key_parts = list(
+      response_family = fam,
+      x_train = x_train_payload,
+      y_train = y_payload,
+      x_pred = x_pred_payload
+    ),
+    cells = gp_bridge_payload_cache_cells(x_train_payload, y_payload, x_pred_payload),
+    build_fun = write_payload,
+    min_cells = 20000L,
+    max_entries = 12L
+  )
+  if (is.null(payload_cache)) {
+    bridge_dir <- tempfile("predictpror_dl_bootstrap_")
+    input_dir <- file.path(bridge_dir, "input")
+    out_dir <- file.path(bridge_dir, "out")
+    dir.create(input_dir, recursive = TRUE, showWarnings = FALSE)
+    dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+    on.exit(unlink(bridge_dir, recursive = TRUE, force = TRUE), add = TRUE)
+    write_payload(input_dir)
+  } else {
+    input_dir <- payload_cache$input_dir
+    out_dir <- tempfile("predictpror_dl_bootstrap_out_")
+    dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+    on.exit(unlink(out_dir, recursive = TRUE, force = TRUE), add = TRUE)
+  }
+  x_train_csv <- file.path(input_dir, "x_train.csv")
+  y_train_csv <- file.path(input_dir, "y_train.csv")
+  x_pred_csv <- file.path(input_dir, "x_pred.csv")
+  params_json <- file.path(out_dir, "params.json")
+  training_seeds_json <- file.path(out_dir, "training_seeds.json")
+  gp_dl_write_json(Filter(Negate(is.null), fit_params), params_json)
+  training_seeds <- gp_dl_validate_seed_vector(
+    training_seeds %||% fit_params$random_seed %||% seed %||% 123L,
+    name = "training_seeds"
+  )
+  gp_dl_write_seed_json(training_seeds, training_seeds_json)
+  gp_dl_run_cli(
+    "bootstrap-fit-predict",
+    c(
+      "--model-type", tolower(as.character(model_type)),
+      "--task", fam,
+      "--x-train-csv", x_train_csv,
+      "--y-train-csv", y_train_csv,
+      "--x-pred-csv", x_pred_csv,
+      "--params-json", params_json,
+      "--n-bootstrap", as.character(as.integer(n_bootstrap)),
+      "--seed", as.character(as.integer(seed %||% 123L)),
+      "--training-seeds-json", training_seeds_json,
+      "--seed-aggregation", gp_dl_seed_aggregation(seed_aggregation),
+      "--out-dir", out_dir
+    ),
+    max_attempts = 2L
+  )
+  boot_path <- file.path(out_dir, "bootstrap.csv")
+  if (!file.exists(boot_path)) {
+    stop("DL Python bridge did not write bootstrap.csv.", call. = FALSE)
+  }
+  boot <- as.matrix(utils::read.csv(boot_path, stringsAsFactors = FALSE, check.names = FALSE))
+  seed_predictions_path <- file.path(out_dir, "seed_predictions.csv")
+  seed_predictions <- if (file.exists(seed_predictions_path)) {
+    as.matrix(utils::read.csv(
+      seed_predictions_path,
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    ))
+  } else {
+    NULL
+  }
+  seed_variability_path <- file.path(out_dir, "seed_variability.csv")
+  seed_variability <- if (file.exists(seed_variability_path)) {
+    utils::read.csv(
+      seed_variability_path,
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+  } else {
+    NULL
+  }
+  meta_path <- file.path(out_dir, "meta.json")
+  meta <- if (file.exists(meta_path)) {
+    tryCatch(jsonlite::fromJSON(meta_path, simplifyVector = TRUE), error = function(e) list())
+  } else {
+    list()
+  }
+  invisible(gc(verbose = FALSE))
+
+  list(
+    bootstrap = as.matrix(boot),
+    classes = meta$classes %||% NULL,
+    task = fam,
+    seed_manifest = data.frame(
+      seed_index = seq_along(training_seeds),
+      training_seed = as.integer(training_seeds),
+      source = rep("resolved_by_R_api", length(training_seeds)),
+      stringsAsFactors = FALSE
+    ),
+    seed_predictions = seed_predictions,
+    seed_variability = seed_variability,
+    seed_aggregation = meta$seed_aggregation %||% seed_aggregation,
+    n_model_fits = meta$n_model_fits %||%
+      (as.double(n_bootstrap) * length(training_seeds))
+  )
 }
 
 
@@ -319,7 +1004,7 @@ torch_predict_class <- function(model, X, device = NULL, threshold = 0.5) {
 #   send_num_hidden <- if (uses_hidden) num_hidden_layers else NULL
 #   send_neurons    <- if (uses_hidden) neurons_per_layer else NULL
 #
-#   # ---- y: make sure it’s numeric-coded even if character ----
+#   # ---- y: make sure it's numeric-coded even if character ----
 #   y_vec <-
 #     if (is.character(y_train)) as.numeric(factor(y_train)) else
 #       if (is.factor(y_train))    as.numeric(y_train) else
@@ -809,7 +1494,7 @@ torch_predict_class <- function(model, X, device = NULL, threshold = 0.5) {
 #                                          batch_normalization = TRUE,
 #                                          validation_split = 0.2) {
 # #browser()
-#   msg <- "\n==================================================\n"
+#   msg <- ""
 #   # Convert input parameters to appropriate types
 #   if(!is.null(batch_size))   batch_size <- as.integer(batch_size)
 #   if(!is.null(epochs)) epochs <- as.integer(epochs)

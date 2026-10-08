@@ -1,30 +1,86 @@
+gp_kernel_dense_cpp_available <- function() {
+  !is.null(tryCatch(
+    getNativeSymbolInfo("predictpror_kernel_dense", PACKAGE = "PredictProR"),
+    error = function(e) NULL
+  ))
+}
+
+gp_kernel_backend <- function(backend = NULL, method = NULL) {
+  if (is.null(backend)) {
+    backend <- Sys.getenv("PREDICTPRO_KERNEL_BACKEND", "auto")
+  }
+  backend <- as.character(backend)
+  if (!identical(length(backend), 1L) || !(backend %in% c("auto", "cpp", "r"))) {
+    stop("backend must be one of: auto, cpp, r.", call. = FALSE)
+  }
+  if (identical(backend, "auto") && gp_kernel_dense_cpp_available()) {
+    method <- if (is.null(method)) "" else as.character(method)
+    native_auto_methods <- c(
+      "Matern_kernel",
+      "Matern12_kernel",
+      "Matern32_kernel",
+      "Matern52_kernel",
+      "Laplacian_kernel",
+      "RationalQuadratic_kernel"
+    )
+    if (method %in% native_auto_methods) {
+      return("cpp")
+    }
+  }
+  if (identical(backend, "auto")) {
+    return("r")
+  }
+  if (identical(backend, "cpp") && !gp_kernel_dense_cpp_available()) {
+    stop("PredictProR native dense kernel backend is not available.", call. = FALSE)
+  }
+  backend
+}
+
 #' Calculate Kernel Matrix for Omics Data
 #'
-#' This function computes a kernel matrix for omics data using various methods, including Gaussian, Linear,
-#' Composite, and Polynomial kernels. The function allows for scaling of the input matrix and customization of
-#' kernel parameters.
+#' This function computes a dense kernel matrix for omics data using Gaussian,
+#' linear, composite, polynomial, Matern-family, Laplacian, and rational
+#' quadratic kernels. By default, PredictProR uses the
+#' fastest dense route for the selected method unless a backend is forced.
 #'
 #' @param M_matrix_clean A numeric matrix representing the cleaned omics or M matrix.
-#' @param scale Logical, indicating if the input matrix should be scaled. Defaults to TRUE.
-#' @param theta Numeric, the theta parameter for the Gaussian and Exponential kernels. Defaults to 1 if not provided.
+#' @param scaling Logical, indicating if the input matrix should be scaled. Defaults to TRUE.
+#' @param centering Logical, indicating if the input matrix should be centered when `scaling` is FALSE.
+#' @param theta Numeric, the theta parameter for the Gaussian kernel. Defaults to 1 if not provided.
 #' @param alpha Numeric, the mixing parameter for the Composite kernel. Defaults to 0.5.
-#' @param gamma Numeric, the gamma parameter for the Anova radial basis kernel.
-#' @param smoothness_parameter Numeric, the smoothness parameter for the Matérn kernel.
-#' @param length_scale Numeric, the length scale parameter for the Matérn kernel.
-#' @param method Character string specifying the kernel calculation method. Supported methods include "Gaussian_kernel",
-#' "Linear_kernel", "Composite_kernel", "Poly2_kernel", "Poly3_kernel", and "Poly4_kernel".
+#' @param gamma Positive numeric shape parameter for the rational quadratic
+#' kernel.
+#' @param smoothness_parameter Positive numeric smoothness parameter for
+#' `"Matern_kernel"`.
+#' @param length_scale Optional positive numeric bandwidth/length scale for
+#'   distance kernels. The default `NULL` uses the median nonzero Euclidean
+#'   distance after the requested scaling/centering, avoiding dimension-driven
+#'   near-identity kernels.
+#' @param method Character vector specifying one or more kernel calculation
+#' methods. Supported methods include `"Gaussian_kernel"`, `"Linear_kernel"`,
+#' `"Composite_kernel"`, `"Poly2_kernel"`, `"Poly3_kernel"`,
+#' `"Poly4_kernel"`, `"Matern_kernel"`, `"Matern12_kernel"`,
+#' `"Matern32_kernel"`, `"Matern52_kernel"`, `"Laplacian_kernel"`, and
+#' `"RationalQuadratic_kernel"`. Short aliases without `"_kernel"` are also
+#' accepted.
 #' @param message Logical, indicating if messages should be printed. Defaults to TRUE.
+#' @param scale Optional legacy alias for `scaling`, kept for pipeline callers
+#'   that already pass `scale =`.
+#' @param center Optional legacy alias for `centering`.
+#' @param backend Backend selector. One of `"auto"`, `"cpp"`, or `"r"`. `NULL` uses
+#'   `PREDICTPRO_KERNEL_BACKEND` or `"auto"`. The automatic route is
+#'   performance-aware and keeps BLAS-backed dense methods on the R path in
+#'   this phase.
 #' @param ... Additional arguments passed to the kernel calculation function.
 #'
-#' @return Returns a numeric matrix representing the calculated kernel matrix.
+#' @return Returns a numeric matrix for one method, or a named list of matrices
+#' when multiple methods are requested.
 #'
 #' @examples
-#' # Example usage with a Gaussian kernel
-#' M_matrix <- matrix(rnorm(100), ncol=10)
+#' M_matrix <- matrix(rnorm(100), ncol = 10)
 #' kernel_matrix <- kernel_calculation(M_matrix_clean = M_matrix, method = "Gaussian_kernel")
 #'
 #' @export
-#'
 kernel_calculation <- function(
     M_matrix_clean = NULL,
     scaling = TRUE,
@@ -33,374 +89,260 @@ kernel_calculation <- function(
     alpha = 0.5,
     gamma = 1,
     smoothness_parameter = 1.5,
-    length_scale = 2,
+    length_scale = NULL,
     method = NULL,
     message = TRUE,
-    ...){
+    scale = NULL,
+    center = NULL,
+    backend = NULL,
+    ...) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 
-  if(is.null(theta)) theta <- 1
+  if (!is.null(scale)) {
+    scaling <- scale
+  }
+  if (!is.null(center)) {
+    centering <- center
+  }
 
-  if(is.null(M_matrix_clean)){
+  if (is.null(theta)) {
+    theta <- 1
+  }
+  if (is.null(M_matrix_clean)) {
+    stop(paste(msg, "object omics/M_matrix is missing."), call. = FALSE)
+  }
+  input_ploidy <- attr(M_matrix_clean, "ploidy", exact = TRUE)
 
-    stop(print(paste(msg,' object omics/M_matrix is missing. We fix it')), call. = FALSE)
+  kernel_method_avaliable <- gp_kernel_supported_methods()
+  method <- gp_normalize_kernel_methods(method)
+  if (is.null(method) || !length(method) || anyNA(method) || !all(method %in% kernel_method_avaliable)) {
+    stop(
+      "Invalid kernel method. Choose from: ",
+      paste(kernel_method_avaliable, collapse = ", "),
+      call. = FALSE
+    )
+  }
+  method <- unique(method)
+  scalar_or_default <- function(x, default) {
+    if (is.null(x)) {
+      return(default)
+    }
+    as.numeric(x[[1L]])
+  }
+  length_scale_auto <- is.null(length_scale)
+  length_scale <- if (isTRUE(length_scale_auto)) NA_real_ else scalar_or_default(length_scale, NA_real_)
+  smoothness_parameter <- scalar_or_default(smoothness_parameter, 1.5)
+  gamma <- scalar_or_default(gamma, 1)
+  theta <- scalar_or_default(theta, 1)
+  alpha <- scalar_or_default(alpha, 0.5)
+  if (any(method %in% c("Gaussian_kernel", "Composite_kernel")) &&
+      (!is.finite(theta) || theta <= 0)) {
+    stop(paste(msg, "theta must be a positive finite value for Gaussian kernels."), call. = FALSE)
+  }
+  if ("Composite_kernel" %in% method &&
+      (!is.finite(alpha) || alpha < 0 || alpha > 1)) {
+    stop(paste(msg, "alpha must be a finite value in [0, 1] for Composite_kernel."), call. = FALSE)
+  }
+  length_scale_methods <- c(
+    "Matern_kernel",
+    "Matern12_kernel",
+    "Matern32_kernel",
+    "Matern52_kernel",
+    "Laplacian_kernel",
+    "RationalQuadratic_kernel"
+  )
+  if (!isTRUE(length_scale_auto) && any(method %in% length_scale_methods) &&
+      (!is.finite(length_scale) || length_scale <= 0)) {
+    stop(paste(msg, "length_scale must be a positive finite value."), call. = FALSE)
+  }
+  if ("Matern_kernel" %in% method && (!is.finite(smoothness_parameter) || smoothness_parameter <= 0)) {
+    stop(paste(msg, "smoothness_parameter must be a positive finite value."), call. = FALSE)
+  }
+  if ("RationalQuadratic_kernel" %in% method && (!is.finite(gamma) || gamma <= 0)) {
+    stop(paste(msg, "gamma must be a positive finite value."), call. = FALSE)
+  }
 
+  if (!inherits(M_matrix_clean, "matrix")) {
+    M_matrix_clean <- as.matrix(M_matrix_clean)
+    if (isTRUE(message)) {
+      base::message(insight::print_color(paste(msg, "M_matrix is not class matrix. We fix it."), "blue"))
+    }
+  }
+  if (!is.numeric(M_matrix_clean)) {
+    storage.mode(M_matrix_clean) <- "double"
+  }
+  if (anyNA(M_matrix_clean)) {
+    stop(paste(msg, "Missing value is not expected."), call. = FALSE)
+  }
 
+  if (isFALSE(scaling) && isTRUE(message)) {
+    base::message(insight::print_color(
+      paste(msg, "If data is not previously scaled, it is recommended you scale the data."),
+      "blue"
+    ))
+  }
+  if (isTRUE(scaling)) {
+    M_matrix_clean <- scale(x = M_matrix_clean, center = TRUE, scale = TRUE)
+  } else if (isTRUE(centering)) {
+    M_matrix_clean <- scale(x = M_matrix_clean, center = TRUE, scale = FALSE)
+  }
+
+  if (anyNA(M_matrix_clean) || any(!is.finite(M_matrix_clean))) {
+    bad_cols <- colnames(M_matrix_clean)[colSums(is.na(M_matrix_clean) | !is.finite(M_matrix_clean)) > 0]
+    bad_msg <- if (length(bad_cols)) paste(utils::head(bad_cols, 10), collapse = ", ") else "unknown columns"
+    stop(
+      paste(msg, "Kernel input contains non-finite values after scaling; check constant columns:", bad_msg),
+      call. = FALSE
+    )
+  }
+  storage.mode(M_matrix_clean) <- "double"
+
+  if (isTRUE(length_scale_auto)) {
+    if (any(method %in% length_scale_methods)) {
+      distance_values <- as.numeric(stats::dist(M_matrix_clean))
+      distance_values <- distance_values[is.finite(distance_values) & distance_values > 0]
+      if (!length(distance_values)) {
+        stop(paste(msg, "Cannot infer a distance-kernel length scale from identical rows."), call. = FALSE)
+      }
+      length_scale <- stats::median(distance_values)
+    } else {
+      # The native kernel call accepts one common parameter bundle even when a
+      # distance kernel was not requested; keep that unused slot finite.
+      length_scale <- 1
+    }
+  }
+
+  linear_cache <- NULL
+  gaussian_cache <- NULL
+  dist2_cache <- NULL
+  dist_cache <- NULL
+  l1_cache <- NULL
+  linear_kernel <- function(x) {
+    if (is.null(linear_cache)) {
+      linear_cache <<- tcrossprod(x) / ncol(x)
+    }
+    linear_cache
+  }
+  gaussian_kernel <- function(x, theta) {
+    if (is.null(gaussian_cache)) {
+      dist2 <- squared_distance(x)
+      median_dist2 <- stats::median(dist2)
+      if (!is.finite(median_dist2) || median_dist2 <= 0) {
+        stop(paste(msg, "Gaussian kernel median distance must be positive."), call. = FALSE)
+      }
+      gaussian_cache <<- exp(-theta * dist2 / median_dist2)
+    }
+    gaussian_cache
+  }
+  squared_distance <- function(x) {
+    if (is.null(dist2_cache)) {
+      dist2_cache <<- as.matrix(stats::dist(x))^2
+    }
+    dist2_cache
+  }
+  euclidean_distance <- function(x) {
+    if (is.null(dist_cache)) {
+      dist_cache <<- sqrt(squared_distance(x))
+    }
+    dist_cache
+  }
+  manhattan_distance <- function(x) {
+    if (is.null(l1_cache)) {
+      l1_cache <<- as.matrix(stats::dist(x, method = "manhattan"))
+    }
+    l1_cache
+  }
+  matern_general_kernel <- function(x, smoothness, scale_value) {
+    d <- euclidean_distance(x)
+    z <- sqrt(2 * smoothness) * d / scale_value
+    out <- matrix(1, nrow = nrow(d), ncol = ncol(d), dimnames = dimnames(d))
+    nonzero <- z > 0
+    if (any(nonzero)) {
+      out[nonzero] <- (2^(1 - smoothness) / base::gamma(smoothness)) *
+        z[nonzero]^smoothness *
+        exp(-z[nonzero]) *
+        besselK(z[nonzero], nu = smoothness, expon.scaled = TRUE)
+    }
+    out
+  }
+  matern12_kernel <- function(x, scale_value) {
+    exp(-euclidean_distance(x) / scale_value)
+  }
+  matern32_kernel <- function(x, scale_value) {
+    d <- euclidean_distance(x) / scale_value
+    z <- sqrt(3) * d
+    (1 + z) * exp(-z)
+  }
+  matern52_kernel <- function(x, scale_value) {
+    d <- euclidean_distance(x) / scale_value
+    z <- sqrt(5) * d
+    (1 + z + 5 * d^2 / 3) * exp(-z)
+  }
+  laplacian_kernel <- function(x, scale_value) {
+    exp(-manhattan_distance(x) / scale_value)
+  }
+  rational_quadratic_kernel <- function(x, scale_value, rq_alpha) {
+    (1 + squared_distance(x) / (2 * rq_alpha * scale_value^2))^(-rq_alpha)
+  }
+
+  calculate_one_kernel <- function(method_one) {
+    selected_backend <- gp_kernel_backend(backend, method_one)
+    degree <- switch(
+      method_one,
+      Poly2_kernel = 2L,
+      Poly3_kernel = 3L,
+      Poly4_kernel = 4L,
+      1L
+    )
+    if (identical(selected_backend, "cpp")) {
+      KRM <- .Call(
+        "predictpror_kernel_dense",
+        M_matrix_clean,
+        as.character(method_one),
+        as.numeric(theta),
+        as.numeric(alpha),
+        as.integer(degree),
+        as.numeric(length_scale),
+        as.numeric(smoothness_parameter),
+        as.numeric(gamma),
+        PACKAGE = "PredictProR"
+      )
+      rownames(KRM) <- rownames(M_matrix_clean)
+      colnames(KRM) <- rownames(M_matrix_clean)
+      if (!is.null(input_ploidy)) attr(KRM, "ploidy") <- input_ploidy
+      return(KRM)
     }
 
-  kernel_method_avaliable <- c("Gaussian_kernel",
-                               "Linear_kernel",
-                               "Composite_kernel",
-                               "Poly2_kernel",
-                               "Poly3_kernel",
-                               "Poly4_kernel")
+    KRM <- switch(
+      method_one,
+      Gaussian_kernel = gaussian_kernel(M_matrix_clean, theta),
+      Linear_kernel = linear_kernel(M_matrix_clean),
+      Composite_kernel = {
+        alpha * linear_kernel(M_matrix_clean) + (1 - alpha) * gaussian_kernel(M_matrix_clean, theta)
+      },
+      Poly2_kernel = (linear_kernel(M_matrix_clean) + 1)^2,
+      Poly3_kernel = (linear_kernel(M_matrix_clean) + 1)^3,
+      Poly4_kernel = (linear_kernel(M_matrix_clean) + 1)^4,
+      Matern_kernel = matern_general_kernel(M_matrix_clean, smoothness_parameter, length_scale),
+      Matern12_kernel = matern12_kernel(M_matrix_clean, length_scale),
+      Matern32_kernel = matern32_kernel(M_matrix_clean, length_scale),
+      Matern52_kernel = matern52_kernel(M_matrix_clean, length_scale),
+      Laplacian_kernel = laplacian_kernel(M_matrix_clean, length_scale),
+      RationalQuadratic_kernel = rational_quadratic_kernel(M_matrix_clean, length_scale, gamma),
+      stop(paste(msg, "Select method to calculate kernel relationship matrix"), call. = FALSE)
+    )
 
-  if(!is.null(method)){
-    if (!(method %in% kernel_method_avaliable)) {
-      stop("Invalid kernel method. Choose from: ",
-           paste(kernel_method_avaliable, collapse = ", "), call. = FALSE)
-    }
+    KRM <- as.matrix(KRM)
+    rownames(KRM) <- rownames(M_matrix_clean)
+    colnames(KRM) <- rownames(M_matrix_clean)
+    if (!is.null(input_ploidy)) attr(KRM, "ploidy") <- input_ploidy
+    KRM
   }
 
-
-  ## checking if the class attribute "matrix" is present in the vector of class attributes returned by class.
-  if(!inherits(M_matrix_clean, "matrix")) {
-    M_matrix_clean <-  as.matrix(M_matrix_clean)
-    message(insight::print_color(paste(msg,paste("M_matrix is not class matrix. We fix it.")), "blue"))
-
+  if (length(method) > 1L) {
+    return(gp_named_method_list(lapply(method, calculate_one_kernel), method))
   }
 
-  if (any(is.na(M_matrix_clean))){
-    stop(message(paste(msg,' Missing value is not expected.')), call. = FALSE)
-    }
-
-  ##Scaling: Prior to applying the Gaussian kernel,
-  ## scaling (and possibly centering) the data might still be beneficial
-  ## to ensure that all features contribute equally to the distance calculations.
-  ## This is particularly true if the SNP data is combined with other omic data
-  ## that might have different scales or units.
-  if(isFALSE(scaling)){
-    if(isTRUE(message)) message(insight::print_color(paste(msg,paste("If data is not previously scaled.It is recommend you scale the data.")), "blue"))
-    }
-
-  if(isTRUE(scaling)){
-
-    M_matrix_clean = scale(x = M_matrix_clean,center = TRUE,scale = TRUE)
-  }else {
-    if(isTRUE(centering)){
-
-      M_matrix_clean = scale(x = M_matrix_clean,center = TRUE,scale = FALSE)
-    }
-  }
-
-
-  # if(isTRUE(scale) && !method%in%(c("Normalized_laplacian_kernel",
-  #                                    "spectral_kernel_matrix"
-  #                                    #"Matern_kernel_matrix"
-  #                                    ))){
-  #
-  #   M_matrix_clean = scale(x = M_matrix_clean,center = FALSE,scale = TRUE)
-  # }
-  Gaussian_kernel <- function(M_matrix_clean, theta){
-
-    dist<-as.matrix(stats::dist(M_matrix_clean))^2
-
-    #GK<-exp(-dist/stats::median(dist))
-
-     GK<-exp(-theta*dist/stats::median(dist))
-
-
-
-    return(GK)
-  }
-
-  Exponential_kernel <- function(M_matrix_clean, theta){
-
-
-    dist <- as.matrix(stats::dist(M_matrix_clean, method = "euclidian"))/sqrt(ncol(M_matrix_clean))
-
-
-    EK <- exp(-theta*dist)
-
-    #GK<-exp(-h*dist/stats::median(dist))
-
-    return(EK)
-  }
-
-  Polynomial2_kernel = function(M_matrix_clean){
-
-    ### matrix package drop
-    PK2 <- ((Matrix::tcrossprod(M_matrix_clean)/ncol(M_matrix_clean))+1)^2
-
-    return(PK2)
-
-  }
-
-  Polynomial3_kernel = function(M_matrix_clean){
-
-    PK3 <- ((Matrix::tcrossprod(M_matrix_clean)/ncol(M_matrix_clean))+1)^3
-
-    return(PK3)
-
-  }
-
-  Polynomial4_kernel = function(M_matrix_clean){
-
-    PK4 <- ((Matrix::tcrossprod(M_matrix_clean)/ncol(M_matrix_clean))+1)^4
-
-    return(PK4)
-
-  }
-
-
-  Linear_kernel = function(M_matrix_clean){
-
-    LK =  Matrix::tcrossprod(M_matrix_clean)/ncol(M_matrix_clean)
-
-    return(LK)
-  }
-
-  # # Function to compute Composite kernel
-  # Composite_kernel <- function(kernel_list, weights) {
-  #   # Check if the number of kernels matches the number of weights
-  #   if (length(kernel_list) != length(weights)) {
-  #     stop("Number of kernels and weights must match")
-  #   }
-  #
-  #   # Initialize an empty kernel matrix
-  #   composite_matrix <- NULL
-  #
-  #   # Iterate through each kernel and weight, and combine them
-  #   for (i in seq_along(kernel_list)) {
-  #     kernel <- kernel_list[[i]]
-  #     weight <- weights[i]
-  #
-  #     # If it's the first kernel, initialize the composite matrix
-  #     if (is.null(composite_matrix)) {
-  #       composite_matrix <- kernel * weight
-  #     } else {
-  #       # Add the weighted kernel to the composite matrix
-  #       composite_matrix <- composite_matrix + kernel * weight
-  #     }
-  #   }
-  #
-  #   return(composite_matrix)
-  # }
-  Composite_kernel <- function(M_matrix_clean, theta, alpha = 0.5) {
-    linear_term <- Linear_kernel(M_matrix_clean)
-    gaussian_term <- Gaussian_kernel(M_matrix_clean, theta)
-    CK <- (alpha * linear_term + (1 - alpha) * gaussian_term)
-
-    return(CK)
-  }
-  #####
-  # Function to compute Anova radial basis kernel matrix
-  # Anova_radial_basis_kernel <- function(M_matrix_clean, gamma) {
-  #   n <- nrow(M_matrix_clean)
-  #
-  #   # Initialize the kernel matrix
-  #   anova_rbf_kernel_matrix <- matrix(0, n, n)
-  #
-  #   # Compute the Anova radial basis kernel matrix
-  #   for (i in 1:n) {
-  #     for (j in 1:n) {
-  #       diff_squared <- sum((M_matrix_clean[i, ] - M_matrix_clean[j, ])^2)
-  #       anova_rbf_kernel_matrix[i, j] <- exp(-gamma * diff_squared)
-  #     }
-  #   }
-  #
-  #   return(anova_rbf_kernel_matrix)
-  # }
-  # ###
-  # matern_kernel <- function(r, nu, rho) {
-  #   term1 <- 2^(1 - nu) / gamma(nu)
-  #   term2 <- (sqrt(2 * nu) * r / rho)^nu
-  #   term3 <- besselK(sqrt(2 * nu) * r / rho, nu)
-  #
-  #   return(term1 * term2 * term3)
-  # }
-  #
-  # # Function to compute Matérn kernel matrix
-  # Matern_kernel_matrix <- function(M_matrix_clean,
-  #                                  smoothness_parameter,
-  #                                  length_scale
-  #                                  #diag_value = 1e-6
-  #                                  ) {
-  #   n <- nrow(M_matrix_clean)
-  #   matern_matrix <- matrix(0, n, n)
-  #
-  #   for (i in 1:n) {
-  #     for (j in 1:n) {
-  #       distance <- sqrt(sum((M_matrix_clean[i,] - M_matrix_clean[j,])^2))
-  #
-  #       # Handle the case when distance is zero (diagonal)
-  #       if (i == j) {
-  #         #matern_matrix[i, j] <- diag_value
-  #         matern_matrix[i, j] <- 1.00
-  #       } else {
-  #         matern_matrix[i, j] <- matern_kernel(r = distance,
-  #                                              nu = smoothness_parameter,
-  #                                              rho = length_scale)
-  #       }
-  #     }
-  #   }
-  #
-  #   return(matern_matrix)
-  # }
-  #
-  # ####
-  # Spectral_kernel_matrix <- function(M_matrix_clean) {
-  #   n <- nrow(M_matrix_clean)
-  #   spectral_matrix <- matrix(0, n, n)
-  #
-  #   for (i in 1:n) {
-  #     for (j in 1:n) {
-  #       # Compute spectral similarity between SNP profiles
-  #       similarity <- sum(M_matrix_clean[i,] * M_matrix_clean[j,]) / (sqrt(sum(M_matrix_clean[i,]^2)) * sqrt(sum(M_matrix_clean[j,]^2)))
-  #
-  #       # Set the spectral matrix element
-  #       spectral_matrix[i, j] <- similarity
-  #     }
-  #   }
-  #
-  #   return(spectral_matrix)
-  # }
-  # ###########
-  # ###
-  # ## Forming a graph matrix from SNP data involves defining
-  # # relationships between individuals based on genetic similarity
-  # # or other relevant criteria.
-  # jaccard_similarity <- function(x, y) {
-  #   intersection <- sum(x & y)
-  #   union <- sum(x | y)
-  #   return(intersection / union)
-  # }
-  # ##
-  # hamming_distance <- function(x, y) {
-  #   return(sum(x != y))
-  # }
-  # #
-  # euclidean_distance <- function(x, y) {
-  #   return(sqrt(sum((x - y)^2)))
-  # }
-  # #
-  # cosine_similarity <- function(x, y) {
-  #   return(sum(x * y) / (sqrt(sum(x^2)) * sqrt(sum(y^2))))
-  # }
-  # ##
-  # sokal_michener_similarity <- function(x, y) {
-  #   a <- sum(x & y)
-  #   b <- sum(x & !y)
-  #   c <- sum(!x & y)
-  #   d <- sum(!x & !y)
-  #   return((a + d) / (a + b + c + d))
-  # }
-  # ##
-  # dice_similarity <- function(x, y) {
-  #   intersection <- sum(x & y)
-  #   union <- sum(x) + sum(y)
-  #   return(2 * intersection / union)
-  # }
-  # ###
-  # # Function to construct a graph matrix based on Jaccard similarity
-  # construct_graph_matrix <- function(M_matrix_clean, similarity_method = "jaccard_similarity") {
-  #   n <- nrow(M_matrix_clean)
-  #   graph_matrix <- matrix(0, n, n)
-  #
-  #   for (i in 1:n) {
-  #     for (j in 1:n) {
-  #       if (i != j) {
-  #         if(similarity_method =="jaccard_similarity"){
-  #           similarity <- jaccard_similarity(M_matrix_clean[i, ], M_matrix_clean[j, ])
-  #
-  #         } else if (similarity_method =="hamming_distance"){
-  #            similarity <- hamming_distance(M_matrix_clean[i, ], M_matrix_clean[j, ])
-  #         } else if (similarity_method =="euclidean_distance"){
-  #           similarity <- euclidean_distance(M_matrix_clean[i, ], M_matrix_clean[j, ])
-  #         } else if (similarity_method =="cosine_similarity"){
-  #           similarity <- cosine_similarity(M_matrix_clean[i, ], M_matrix_clean[j, ])
-  #         } else if (similarity_method =="sokal_michener_similarity"){
-  #           similarity <- sokal_michener_similarity(M_matrix_clean[i, ], M_matrix_clean[j, ])
-  #
-  #         } else {
-  #           if(similarity_method =="dice_similarity"){
-  #             similarity <- dice_similarity(M_matrix_clean[i, ], M_matrix_clean[j, ])
-  #           }
-  #         }
-  #         graph_matrix[i, j] <- similarity
-  #       }
-  #     }
-  #   }
-  #
-  #   return(graph_matrix)
-  # }
-  # ##
-  # #compute symmetric normalized Laplacian kernel matrix
-  # # Function to compute symmetric normalized Laplacian kernel matrix
-  # Normalized_laplacian_kernel <- function(M_matrix_clean) {
-  #
-  #   graph_matrix <- construct_graph_matrix(M_matrix_clean)
-  #   n <- nrow(graph_matrix)
-  #
-  #   # Compute the degree matrix
-  #   degree_matrix <- diag(rowSums(graph_matrix))
-  #
-  #   # Compute the Laplacian matrix
-  #   laplacian_matrix <- degree_matrix - graph_matrix
-  #
-  #   # Compute the symmetric normalized Laplacian kernel matrix using the pseudo-inverse
-  #   symmetric_normalized_laplacian_kernel <- MASS::ginv(sqrt(degree_matrix)) %*% laplacian_matrix %*% MASS::ginv(sqrt(degree_matrix))
-  #
-  #   return(symmetric_normalized_laplacian_kernel)
-  # }
-
-  switch(method,
-         "Gaussian_kernel" = {
-           KRM <- Gaussian_kernel(M_matrix_clean, theta)
-         },
-         "Linear_kernel" = {
-           KRM <- Linear_kernel(M_matrix_clean)
-         },
-         "Composite_kernel" = {
-           KRM <- Composite_kernel(M_matrix_clean, theta, alpha)
-         },
-         # "Anova_radial_basis_kernel" = {
-         #   KRM <- Anova_radial_basis_kernel(M_matrix_clean, gamma)
-         # },
-         # "Exponential_kernel" = {
-         #   KRM <- Exponential_kernel(M_matrix_clean, theta)
-         # },
-         # "Matern_kernel" = {
-         #   KRM <- Matern_kernel_matrix(M_matrix_clean,
-         #                               smoothness_parameter,
-         #                               length_scale
-         #                               )
-         #
-         # },
-         # "spectral_kernel" = {
-         #     KRM <- Spectral_kernel_matrix(M_matrix_clean)
-         #   },
-         # "Normalized_laplacian_kernel" = {
-         #
-         #   KRM <- Normalized_laplacian_kernel(M_matrix_clean)
-         # },
-         "Poly2_kernel" = {
-           KRM <- Polynomial2_kernel(M_matrix_clean)
-         },
-         "Poly3_kernel" = {
-           KRM <- Polynomial3_kernel(M_matrix_clean)
-         },
-         "Poly4_kernel" = {
-           KRM <- Polynomial4_kernel(M_matrix_clean)
-         },
-         {
-           stop(message(paste(msg,'Select method to calculate kernel ralationship matrix')), call. = FALSE)
-
-         })
-
-
-  return(KRM)
-
-
+  calculate_one_kernel(method)
 }

@@ -1,139 +1,111 @@
-# Define a custom function to convert SNP data from CSV to VCF
-convert_csv_to_vcf <- function(input_csv, output_vcf = NULL) {
+#' Convert a CSV or TXT genotype table to VCF
+#'
+#' Writes a VCF 4.3 file (GT field) from a delimited text table, so numeric
+#' genotype data can be imputed with Beagle ([impute_genotypes_with_beagle()])
+#' or read with [vcf_qc_recode()]. The separator (comma, tab, ...) is detected
+#' automatically. [model_execute()] calls this itself for `csv_file_name`, and
+#' [impute_genotypes_with_beagle()] for CSV/TXT input.
+#'
+#' The table needs the nine VCF marker columns `CHROM`, `POS`, `ID`, `REF`,
+#' `ALT`, `QUAL`, `FILTER`, `INFO`, `FORMAT` (a leading `#` on `CHROM` is
+#' accepted), followed by one column per sample. Genotypes may be numeric
+#' dosages of the ALT allele (`0`, `1`, `2` for diploids; `0..ploidy` in
+#' general), centred dosages (`input_coding = "centered_dosage"`, e.g. -1/0/1),
+#' or VCF GT calls such as `0/1`. `NA`, `"N"` and `"."` are written as missing.
+#'
+#' @param input_csv Path to the CSV/TXT genotype table.
+#' @param output_vcf Path of the VCF to write. `NULL` returns the VCF lines.
+#' @param ploidy Ploidy of the genotype calls (default 2).
+#' @param input_coding `"alt_dosage"` (0..ploidy ALT copies) or
+#'   `"centered_dosage"` (dosage minus ploidy / 2).
+#' @return The VCF lines, or (invisibly) `output_vcf` when it is given.
+#' @seealso [convert_hapmap_to_vcf()], [impute_genotypes_with_beagle()]
+#' @examples
+#' tab <- data.frame(CHROM = 1, POS = c(100, 200), ID = c("m1", "m2"), REF = "A", ALT = "G",
+#'                   QUAL = ".", FILTER = "PASS", INFO = ".", FORMAT = "GT",
+#'                   L1 = c(0, 2), L2 = c(1, NA))
+#' f <- tempfile(fileext = ".csv")
+#' utils::write.csv(tab, f, row.names = FALSE, na = ".")
+#' convert_csv_to_vcf(f)
+#' @export
+convert_csv_to_vcf <- function(input_csv, output_vcf = NULL, ploidy = 2L,
+                               input_coding = c("alt_dosage", "centered_dosage")) {
 
-  # Required VCF fields, ensuring all are present in the data
+  ploidy <- gp_validate_ploidy(ploidy, allow_auto = FALSE)
+  input_coding <- match.arg(input_coding)
   required_headers <- c("CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT")
 
-  # Read the CSV file into a data frame
-  snp_data <- tryCatch({
-     data.table::fread(input_csv, header = TRUE, stringsAsFactors = FALSE,
-                      skip = "#", check.names = FALSE, na.strings = c(NA, "N", "."))
-  }, error = function(e) {
-    # If the skip causes an error, read without skipping
-   data.table::fread(input_csv, header = TRUE, stringsAsFactors = FALSE,
-                      check.names = FALSE, na.strings = c(NA, "N", "."))
-  })
-
-  snp_data <-  as.data.frame(snp_data)
-  data.table::setnames(snp_data, old = names(snp_data), new = gsub("^#", "", names(snp_data)))
-  # Check if all required headers are present
-  if (!all(required_headers %in% colnames(snp_data))) {
-    stop(paste("Missing required VCF headers:",
-               paste(setdiff(required_headers, colnames(snp_data)), collapse = ", "),
-               ". Please provide the necessary columns."))
+  snp_data <- as.data.frame(data.table::fread(
+    input_csv, header = TRUE, colClasses = "character", check.names = FALSE,
+    na.strings = c("", "NA", "N", "."), skip = gp_genotype_table_header_line(input_csv) - 1L
+  ))
+  names(snp_data) <- sub("^#", "", names(snp_data))
+  missing_headers <- setdiff(required_headers, names(snp_data))
+  if (length(missing_headers)) {
+    stop("Missing required VCF marker columns: ", paste(missing_headers, collapse = ", "),
+         ". The table needs CHROM, POS, ID, REF, ALT, QUAL, FILTER, INFO, FORMAT followed by one column per sample.",
+         call. = FALSE)
   }
+  sample_names <- setdiff(names(snp_data), required_headers)
+  if (!length(sample_names)) stop("The genotype table has no sample columns.", call. = FALSE)
+  meta <- snp_data[, required_headers, drop = FALSE]
+  meta[] <- lapply(meta, function(x) { x[is.na(x) | !nzchar(x)] <- "."; x })
+  meta$FORMAT <- "GT"
 
-  # Ensure the data follows the correct VCF format with 9 required fields first, followed by sample data
-  snp_data <- snp_data[, c(required_headers, setdiff(colnames(snp_data), required_headers))]
-
-  # Prepare the VCF data content as a character vector
-  vcf_content <- c()
-
-  # Add VCF file headers
-  vcf_content <- c(vcf_content, "##fileformat=VCFv4.2")
-  vcf_content <- c(vcf_content, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">")
-
-  # Write column headers (with 9 required fields plus sample names)
-  sample_names <- colnames(snp_data)[-(1:9)]  # Sample names start after the 9th column
-  vcf_header <- c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", sample_names)
-  vcf_content <- c(vcf_content, paste(vcf_header, collapse = "\t"))
-
-  # Helper function to check if SNP is already in VCF format (e.g., "0/0", "0/1", "1/1")
-  is_vcf_format <- function(snp_value) {
-    return(grepl("^([0-1]/[0-1])$", snp_value))
+  # All genotypes at once (the former per-marker loop took minutes on real panels).
+  geno <- as.matrix(snp_data[, sample_names, drop = FALSE])
+  values <- trimws(as.vector(geno))
+  missing_gt <- paste(rep(".", ploidy), collapse = "/")
+  gt_pattern <- if (ploidy == 1L) "^(0|1)$" else paste0("^(0|1)", strrep("[/|](0|1)", ploidy - 1L), "$")
+  is_missing <- is.na(values)
+  is_gt <- !is_missing & grepl(gt_pattern, values)
+  is_dosage <- !is_missing & !is_gt
+  dosage <- suppressWarnings(as.numeric(values[is_dosage]))
+  if (identical(input_coding, "centered_dosage")) dosage <- dosage + ploidy / 2
+  bad <- !is.finite(dosage) | dosage < 0 | dosage > ploidy | dosage != round(dosage)
+  if (any(bad)) {
+    stop("Unexpected genotype value for ", input_coding, " at ploidy ", ploidy, ": ",
+         values[is_dosage][which(bad)[1L]], call. = FALSE)
   }
+  dosage_to_gt <- vapply(0:ploidy, function(d) {
+    paste(c(rep("0", ploidy - d), rep("1", d)), collapse = "/")
+  }, character(1L))
+  out <- rep(missing_gt, length(values))
+  out[is_gt] <- values[is_gt]
+  out[is_dosage] <- dosage_to_gt[as.integer(dosage) + 1L]
+  out <- matrix(out, nrow = nrow(geno), ncol = ncol(geno))
 
-  # Helper function to recode SNPs (handles both 0, 1, 2 and -1, 0, 1 coding)
-  recode_snp <- function(snp_value) {
-    if (is_vcf_format(snp_value)) {
-      return(snp_value)  # Already in VCF format, no need to recode
-    } else if (is.na(snp_value) || snp_value == ".") {
-      return("./.")  # Missing genotype
-    } else if (snp_value == 0 || snp_value == -1) {
-      return("0/0")  # Homozygous reference
-    } else if (snp_value == 1 || snp_value == 0) {
-      return("0/1")  # Heterozygous
-    } else if (snp_value == 2 || snp_value == 1) {
-      return("1/1")  # Homozygous alternate
-    } else {
-      stop("Unexpected SNP coding value")
-    }
-  }
+  body <- do.call(paste, c(unname(as.list(meta)), lapply(seq_len(ncol(out)), function(j) out[, j]), sep = "\t"))
+  vcf_content <- c(
+    "##fileformat=VCFv4.3",
+    "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
+    paste(c("#CHROM", required_headers[-1L], sample_names), collapse = "\t"),
+    body
+  )
 
-  # Process each row of SNP data and format it for VCF
-  for (i in 1:nrow(snp_data)) {
-    chrom <- snp_data[i, "CHROM"]
-    pos <- snp_data[i, "POS"]
-    id <- ifelse(snp_data[i, "ID"] == "", ".", snp_data[i, "ID"])  # Handle missing IDs
-    ref <- snp_data[i, "REF"]
-    alt <- snp_data[i, "ALT"]
-    qual <- snp_data[i, "QUAL"]
-    filter <- snp_data[i, "FILTER"]
-    info <- snp_data[i, "INFO"]
-    format <- snp_data[i, "FORMAT"]
-
-    # Apply the recode_snp function to genotype data for each sample
-    genotypes <- sapply(snp_data[i, -(1:9)], recode_snp)
-
-    # Combine all columns into a single VCF row
-    vcf_row <- paste(chrom, pos, id, ref, alt, qual, filter, info, format, paste(genotypes, collapse = "\t"), sep = "\t")
-
-    # Append the row to the VCF content
-    vcf_content <- c(vcf_content, vcf_row)
-  }
-
-  # If output_vcf is provided, save the VCF content to a file
   if (!is.null(output_vcf)) {
     writeLines(vcf_content, output_vcf)
-    cat("VCF file has been successfully created at:", output_vcf, "\n")
-  } else {
-    # Otherwise, return the VCF content as a character vector
-    return(vcf_content)
+    message("VCF file written: ", output_vcf)
+    return(invisible(output_vcf))
   }
+  vcf_content
 }
 
+# Line number of the column-header row (the first line not starting with "##").
+gp_genotype_table_header_line <- function(path) {
+  head_lines <- readLines(path, n = 200L, warn = FALSE)
+  i <- which(!startsWith(head_lines, "##"))[1L]
+  if (is.na(i)) 1L else i
+}
 
-# toy_snp_data <- data.frame(
-#   CHROM = c(1, 1, 2),
-#   POS = c(1001, 1002, 2001),
-#   ID = c("rs1", "rs2", "rs3"),
-#   REF = c("A", "G", "T"),
-#   ALT = c("G", "A", "C"),
-#   QUAL = c(100, 200, 300),
-#   INFO = c(".", ".", "."),
-#   FORMAT = c("GT", "GT", "GT"),
-#   Sample1 = c("0/0", "0/1", "1/1"),
-#   Sample2 = c("0/1", "1/1", "0/0"),
-#   stringsAsFactors = FALSE
-# )
-# toy_snp_data_recode <- data.frame(
-#   CHROM = c(1, 1, 2),
-#   POS = c(1001, 1002, 2001),
-#   ID = c("rs1", "rs2", "rs3"),
-#   REF = c("A", "G", "T"),
-#   ALT = c("G", "A", "C"),
-#   QUAL = c(100, 200, 300),
-#   FILTER = c("PASS", "PASS", "PASS"),
-#   INFO = c(".", ".", "."),
-#   FORMAT = c("GT", "GT", "GT"),
-#   Sample1 = c("0", "1", "2"),
-#   Sample2 = c("1", "0", "."),
-#   stringsAsFactors = FALSE
-# )
-#
-# # # Write this toy data frame to a CSV file for testing
-#  write.csv(toy_snp_data, "toy_snp_data.csv", row.names = FALSE)
-# #
-# snp_data <-  read.csv("soy21_22_AllGenotypeData.csv", header = T, sep = ",", as.is = T,
-#                       stringsAsFactors = FALSE, row.names = 1)
-#
-# snp_data <- t(snp_data)
-# snp_data <- cbind(ID = rownames(snp_data), snp_data)
-#
-# write.csv(snp_data, "snp_data.csv", row.names = FALSE)
-
-# convert_csv_to_vcf(input_csv = "toy_snp_data.csv", "toy_snp_data4.vcf")
-#
-#
-#
-#
+# TRUE when a text file is a genotype table for convert_csv_to_vcf(): its
+# header has the VCF marker columns CHROM, POS, REF and ALT (HapMap headers use
+# lower-case chrom/pos and have no REF/ALT).
+gp_is_genotype_table_file <- function(path) {
+  if (!file.exists(path) || grepl("(?i)\\.vcf(\\.gz)?$", path, perl = TRUE)) return(FALSE)
+  head_lines <- tryCatch(readLines(path, n = 200L, warn = FALSE), error = function(e) character())
+  header <- head_lines[!startsWith(head_lines, "##")][1L]
+  if (is.na(header)) return(FALSE)
+  fields <- sub("^#", "", trimws(gsub("\"", "", strsplit(header, "[\t,;]")[[1L]])))
+  all(c("CHROM", "POS", "REF", "ALT") %in% fields)
+}

@@ -13,7 +13,7 @@ evaluate_genetic_space <- function(
     scale_marker_data = TRUE
 ) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
   # ----------------------------
   # 1) Preliminary checks
   # ----------------------------
@@ -445,7 +445,7 @@ evaluate_genetic_space <- function(
 #
 #     # Local coverage fraction: how many test genotypes are within "threshold" distance
 #     # Because threshold was originally for similarity in GRM, you might choose a different
-#     # numeric if these distances are typically around 2–3 for PC space, etc.
+#     # numeric if these distances are typically around 2-3 for PC space, etc.
 #     local_coverage_value  <- mean(coverage_scores <= local_coverage_threshold)
 #     local_coverage_detail <- coverage_scores
 #   }

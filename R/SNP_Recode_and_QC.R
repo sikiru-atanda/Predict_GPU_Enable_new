@@ -10,7 +10,7 @@ transpose_in_batches <- function(numeric_matrix, batch_size = 10000) {
     t(numeric_matrix[idx, , drop = FALSE])
   })
 
-  # Combine all batches column-wise (since each batch is t(SNPs) = individuals × batch_SNPs)
+  # Combine all batches column-wise (since each batch is t(SNPs) = individuals x batch_SNPs)
   final_transposed <- do.call(cbind, transposed_batches)
   return(final_transposed)
 }
@@ -26,8 +26,8 @@ transpose_in_batches <- function(numeric_matrix, batch_size = 10000) {
 #' @return A single-letter IUPAC code corresponding to the double nucleotide code.
 #'
 #' @examples
-#' double_code_to_IUPAC("AA") # Returns "A"
-#' double_code_to_IUPAC("AT") # Returns "W"
+#' PredictProR:::double_code_to_IUPAC("AA") # Returns "A"
+#' PredictProR:::double_code_to_IUPAC("AT") # Returns "W"
 #'
 
 double_code_to_IUPAC <- function(double_code) {
@@ -62,8 +62,8 @@ double_code_to_IUPAC <- function(double_code) {
 #' @return A standardized SNP in IUPAC single-letter code.
 #'
 #' @examples
-#' standardize_snp_format("A/T") # Returns "W"
-#' standardize_snp_format("AA")  # Returns "A"
+#' PredictProR:::standardize_snp_format("A/T") # Returns "W"
+#' PredictProR:::standardize_snp_format("AA")  # Returns "A"
 #'
 
 standardize_snp_format <- function(snp) {
@@ -89,20 +89,31 @@ standardize_snp_format <- function(snp) {
 #' @return A HapMap data frame with standardized SNP format.
 #'
 #' @examples
-#' hapmap <- data.frame(rs = 1:3, alleles = c("A/T", "C/G", "A/A"), X1 = c("AA", "CC", "AT"), X2 = c("TA", "GC", "AA"))
+#' hapmap <- data.frame(
+#'   rs = "m1", alleles = "A/T", chrom = 1, pos = 10, strand = "+",
+#'   assembly = NA, center = NA, protLSID = NA, assayLSID = NA,
+#'   panelLSID = NA, QCcode = NA, X1 = "AA", X2 = "TA"
+#' )
 #' IUPAC_hapmap_compatible(hapmap)
 #'
+#' @export
 
 IUPAC_hapmap_compatible <- function(hapmap) {
+  hapmap <- as.data.frame(hapmap)
+  if (ncol(hapmap) < 12L) {
+    stop("hapmap must contain 11 metadata columns followed by genotype columns.", call. = FALSE)
+  }
 
   # Identify the SNP columns (starting from the 12th column)
-  snp_cols <- names(hapmap)[12:ncol(hapmap)]
+  snp_cols <- names(hapmap)[seq.int(12L, ncol(hapmap))]
 
   # Standardize SNP format for each SNP column
-  hapmap <- as.data.frame(hapmap)
-  snp_data <- apply(hapmap[, colnames(hapmap)%in%snp_cols], 2, function(col) sapply(col, standardize_snp_format))
-  rownames(snp_data) <- NULL
-  hapmap <- cbind(hapmap[, 1:11], snp_data)
+  snp_data <- lapply(hapmap[snp_cols], function(col) {
+    vapply(col, function(value) as.character(standardize_snp_format(value)), character(1L))
+  })
+  snp_data <- as.data.frame(snp_data, stringsAsFactors = FALSE, check.names = FALSE)
+  rownames(snp_data) <- rownames(hapmap)
+  hapmap <- cbind(hapmap[seq_len(11L)], snp_data)
   hapmap <- data.table::as.data.table(hapmap)
   rm(snp_data)
   rm(snp_cols)
@@ -122,7 +133,7 @@ IUPAC_hapmap_compatible <- function(hapmap) {
 #'
 #' @examples
 #' hapmap <- data.frame(rs = 1:3, alleles = c("A/T/G", "C/G", "A/A"), X1 = c("A", "C", "A"), X2 = c("T", "G", "A"))
-#' remove_multiallelic_markers(hapmap)
+#' PredictProR:::remove_multiallelic_markers(hapmap)
 #'
 remove_multiallelic_markers <- function(hapmap) {
   # Ensure the input is a data.table
@@ -155,12 +166,14 @@ remove_multiallelic_markers <- function(hapmap) {
 #' @return A data.table containing the HapMap data.
 #'
 #' @examples
+#' \dontrun{
 #' # Assuming you have a HapMap file at the specified path
 #' hapmap_data <- read_hapmap_file("path/to/hapmap_file.txt.gz")
+#' }
 #'
 
-read_hapmap_file <- function(filepath) {
-  msg <- "\n==================================================\n"
+read_hapmap_file_legacy <- function(filepath) {
+  msg <- ""
   file_extension <- tools::file_ext(filepath)
 
   if (file_extension == "gz") {
@@ -219,14 +232,15 @@ read_hapmap_file <- function(filepath) {
 #' @return Throws an error if the columns do not match; otherwise, returns invisibly.
 #'
 #' @examples
-#' hapmap <- data.frame(rs = 1:3, alleles = c("A/T", "C/G", "A/A"), chrom = 1:3, pos = 1:3, strand = "+", assembly = NA,
+#' hapmap <- data.frame(`rs#` = 1:3, alleles = c("A/T", "C/G", "A/A"), chrom = 1:3, pos = 1:3, strand = "+", assembly = NA,
 #'                      center = NA, protLSID = NA, assayLSID = NA, panelLSID = NA, QCcode = NA, X1 = c("AA", "CC", "AT"), X2 = c("TA", "GC", "AA"))
-#' check_hapmap_columns(hapmap)
+#' names(hapmap)[1] <- "rs#"
+#' PredictProR:::check_hapmap_columns(hapmap)
 #'
 
 check_hapmap_columns <- function(data) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   required_columns <- c("rs#", "alleles", "chrom", "pos", "strand",
                         "assembly", "center", "protLSID", "assayLSID",
@@ -276,11 +290,9 @@ check_hapmap_columns <- function(data) {
 #' @importFrom data.table := .SD .SDcols apply lapply
 #'
 #' @return A list containing three elements:
-#' \itemize{
 #'   \item{snps_matrix}{A matrix or data.table of the processed and possibly recoded SNP data.}
 #'   \item{snp_map}{An optional data.table containing SNP mapping information, depending on `out_put_map`.}
 #'   \item{qc_metrics_and_summary_stat}{A data.frame summarizing the quality control metrics and actions taken.}
-#' }
 #'
 #' @examples
 #' \dontrun{
@@ -316,9 +328,9 @@ check_hapmap_columns <- function(data) {
 #'                           message = TRUE)
 #' }
 #'
-#' @export
+#' @keywords internal
 
-hmp_qc_recode <- function(hapmap_file_name = NULL,
+hmp_qc_recode_legacy <- function(hapmap_file_name = NULL,
                           hapmap_file_path = NULL,
                           maf_threshold = 0.01,
                           het_threshold = 0.1,
@@ -331,7 +343,7 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
                           ...
 )
 {
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   markers_callrate_removed  <-  0
   ind_callrate_removed  <-  0
@@ -650,13 +662,17 @@ hmp_qc_recode <- function(hapmap_file_name = NULL,
     if(isTRUE(impute)){
       #if(any(is.na(snp_data[, 12:ncol(snp_data)]))==T) {
       if(any(is.na(snp_data[, 1:ncol(snp_data)]))==T) {
-        #This function will impute the missing values
-        #for(j in 12:ncol(snp_data)){
-        for(j in 1:ncol(snp_data)){
-          #tmp <- snp_data[,j, with=FALSE]
-          tmp <- snp_data[,j]
-          tmp = as.double(as.character(unlist(tmp)))
-          snp_data[,j] <- ifelse(is.na(tmp),round(mean(tmp,na.rm=T)),tmp)
+        if (geno_impute_summary_cpp_available()) {
+          snp_data <- geno_impute_summary_cpp(as.matrix(snp_data), method = "mean")
+        } else {
+          #This function will impute the missing values
+          #for(j in 12:ncol(snp_data)){
+          for(j in 1:ncol(snp_data)){
+            #tmp <- snp_data[,j, with=FALSE]
+            tmp <- snp_data[,j]
+            tmp = as.double(as.character(unlist(tmp)))
+            snp_data[,j] <- ifelse(is.na(tmp),round(mean(tmp,na.rm=T)),tmp)
+          }
         }
 
       }

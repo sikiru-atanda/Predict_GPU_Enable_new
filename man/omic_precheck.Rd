@@ -2,13 +2,39 @@
 % Please edit documentation in R/omic_precheck.R
 \name{omic_precheck}
 \alias{omic_precheck}
-\title{Title}
+\title{Pre-check and optionally impute an omics data matrix}
 \usage{
-omic_precheck(object = NULL, message = TRUE)
+omic_precheck(
+  object = NULL,
+  message = TRUE,
+  impute = TRUE,
+  na_threshold = 0.9,
+  imputation_method = "knn",
+  impute_knn_k = 5
+)
 }
 \arguments{
-\item{message}{}
+\item{object}{A numeric matrix or data frame of omics features
+(rows = individuals, columns = features).}
+
+\item{message}{Logical; if `TRUE`, print summary messages about features
+removed and imputation actions.}
+
+\item{impute}{Logical; if `TRUE`, impute the remaining missing values.}
+
+\item{na_threshold}{Numeric in `(0, 1]`; columns with a missing-value
+proportion greater than this are dropped before imputation.}
+
+\item{imputation_method}{One of `"knn"`, `"mean"`, `"median"`.}
+
+\item{impute_knn_k}{Integer; number of nearest neighbours used when
+`imputation_method = "knn"`.}
+}
+\value{
+The pre-checked (and optionally imputed) omics matrix.
 }
 \description{
-Title
+Validates an input omics matrix (rows = individuals, columns = features),
+drops columns whose missing-value rate exceeds `na_threshold`, and optionally
+imputes the remaining missing values via KNN, mean or median.
 }

@@ -1,7 +1,7 @@
 
 # Validate terms in fixed and random effects are present in pheno_data
 validate_terms <- function(term, data, term_type, gen_name, pheno_data) {
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   if (length(pheno_data[[gen_name]]) == length(unique(pheno_data[[gen_name]]))){
     # Convert the formula to a character string
@@ -28,28 +28,82 @@ validate_terms <- function(term, data, term_type, gen_name, pheno_data) {
     return(data)
 }
 
-#' Title
+compute_pheno_connectivity <- function(pheno_data, gen_name, heter_groups) {
+  if (is.null(heter_groups) || !heter_groups %in% names(pheno_data)) {
+    return(NULL)
+  }
+
+  gid_sets <- split(as.character(pheno_data[[gen_name]]), pheno_data[[heter_groups]])
+  gid_sets <- lapply(gid_sets, unique)
+  env_names <- names(gid_sets)
+
+  if (length(gid_sets) < 2) {
+    return(list(
+      env_count = length(gid_sets),
+      pairwise_overlap_mean = NA_real_,
+      shared_genotype_rate = 1,
+      genotype_count_by_env = vapply(gid_sets, length, integer(1))
+    ))
+  }
+
+  pair_idx <- utils::combn(seq_along(gid_sets), 2)
+  pair_overlap <- apply(pair_idx, 2, function(idx) {
+    a <- gid_sets[[idx[1]]]
+    b <- gid_sets[[idx[2]]]
+    union_n <- length(union(a, b))
+    if (union_n == 0) {
+      return(NA_real_)
+    }
+    length(intersect(a, b)) / union_n
+  })
+
+  gid_freq <- table(unlist(gid_sets, use.names = FALSE))
+  shared_rate <- mean(gid_freq > 1)
+
+  list(
+    env_count = length(gid_sets),
+    pairwise_overlap_mean = mean(pair_overlap, na.rm = TRUE),
+    shared_genotype_rate = shared_rate,
+    genotype_count_by_env = setNames(vapply(gid_sets, length, integer(1)), env_names)
+  )
+}
+
+#' Pre-check phenotype data against the requested model spec
 #'
-#' @param pheno_data
-#' @param gen_name
-#' @param response
-#' @param heter_groups
-#' @param ...
+#' Validates a phenotype data frame against the model formula and response
+#' family before fitting: checks that the genotype column, response, and any
+#' heterogeneous-group / random / fixed terms are present, infers the panel
+#' shape (single-env vs MET) and returns the cleaned phenotype frame.
 #'
-#' @return
+#' @param pheno_data Phenotype data frame.
+#' @param gen_name Name of the genotype-ID column.
+#' @param response Name of the response (trait) column, or character vector for
+#'   multi-trait.
+#' @param response_family Response distribution family
+#'   (`"gaussian"`, `"binomial"`, `"multinomial"`, `"ordinal"`).
+#' @param heter_groups Optional column carrying the heterogeneous-group label
+#'   (typically environment) for MET runs.
+#' @param random Optional one-sided formula for random terms (e.g. `~ GID`).
+#' @param fixed Optional one-sided formula for additional fixed terms.
+#' @param type_pheno Optional phenotype-type hint
+#'   (e.g. `"continuous"`, `"binary"`).
+#' @param ... Reserved for future extensions; currently ignored.
+#'
+#' @return The pre-checked phenotype frame plus diagnostic metadata.
 #' @export
 #'
 #' @examples
 phenotype_precheck <- function(pheno_data = NULL,
                                gen_name = NULL,
                                response = NULL,
+                               response_family = "gaussian",
                                heter_groups = NULL,
                                random = NULL,
                                fixed = NULL,
                                type_pheno = NULL,
                                ...) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   if (dplyr::is_grouped_df(pheno_data)) {
     pheno_data <- dplyr::ungroup(pheno_data)
@@ -89,7 +143,7 @@ phenotype_precheck <- function(pheno_data = NULL,
         dplyr::summarize(count = dplyr::n_distinct(!!rlang::sym(gen_name)))
 
       if(length(unique(genotype_count$count)) != 1) {
-        stop(paste(msg, "Genotype counts are NOT identical across all environments."), call. = FALSE)
+        warning(paste(msg, "Genotype counts are not identical across environments. Proceeding with unbalanced phenotypic data."), call. = FALSE)
       }
 
 
@@ -106,7 +160,7 @@ phenotype_precheck <- function(pheno_data = NULL,
 
 
       if(!all_identical) {
-        stop(paste(msg,"Genotype names are NOT identical across all environments."), call. = FALSE)
+        warning(paste(msg,"Genotype names are not identical across environments. Proceeding with unbalanced phenotypic data."), call. = FALSE)
       }
 
     }
@@ -122,14 +176,34 @@ phenotype_precheck <- function(pheno_data = NULL,
     stop(paste(msg, paste("Column '", gen_name, "' should not have NA/missing values.")), call. = FALSE)
   }
 
-  # Ensure response variables are numeric
-  non_numeric_responses <- response[!sapply(pheno_data[response], is.numeric)]
-  pheno_data[non_numeric_responses] <- lapply(pheno_data[non_numeric_responses], function(x) as.numeric(as.character(x)))
+  response_family <- gp_normalize_response_family(response_family)
+  if (identical(response_family, "auto")) {
+    response_family <- gp_resolve_response_family_for_responses(
+      pheno_data = pheno_data,
+      response = response,
+      response_family = response_family
+    )
+  }
+
+  # Ensure response variables are numeric only for gaussian traits.
+  if (identical(response_family, "gaussian")) {
+    non_numeric_responses <- response[!sapply(pheno_data[response], is.numeric)]
+    pheno_data[non_numeric_responses] <- lapply(
+      pheno_data[non_numeric_responses],
+      function(x) as.numeric(as.character(x))
+    )
+  }
 
   # Check for zero variance in response variables
 if(!is.null(type_pheno)){
   if(type_pheno !="test_set"){
-  zero_variance_responses <- response[sapply(pheno_data[response], function(x) var(x, na.rm = TRUE) == 0)]
+  zero_variance_responses <- response[sapply(pheno_data[response], function(x) {
+    if (identical(response_family, "gaussian")) {
+      isTRUE(stats::var(x, na.rm = TRUE) == 0)
+    } else {
+      length(unique(x[!is.na(x)])) <= 1L
+    }
+  })]
   if (length(zero_variance_responses) > 0) {
     msg <- "The following variable(s) have zero variance and cannot be used for prediction model: "
     stop(paste(msg, paste(paste(zero_variance_responses, collapse=", "), ". Check the raw data and model that generate the estimates.")), call. = FALSE)
@@ -149,6 +223,33 @@ if(!is.null(type_pheno)){
     pheno_data <- validate_terms(random, pheno_data, "random", gen_name, pheno_data)
   }
 
+  connectivity_summary <- compute_pheno_connectivity(
+    pheno_data = pheno_data,
+    gen_name = gen_name,
+    heter_groups = heter_groups
+  )
+  if (!is.null(connectivity_summary)) {
+    attr(pheno_data, "connectivity_summary") <- connectivity_summary
+    overlap_mean <- connectivity_summary$pairwise_overlap_mean
+    shared_rate <- connectivity_summary$shared_genotype_rate
+    if (is.finite(overlap_mean) && is.finite(shared_rate) &&
+        (overlap_mean < 0.2 || shared_rate < 0.3)) {
+      warning(
+        paste(
+          msg,
+          sprintf(
+            "Low connectivity detected across %s. Mean pairwise overlap = %.3f; shared genotype rate = %.3f. Model fitting will continue.",
+            heter_groups,
+            overlap_mean,
+            shared_rate
+          )
+        ),
+        call. = FALSE
+      )
+    }
+  }
+
   attr(pheno_data, "cleared") <- "pass"
+  attr(pheno_data, "response_family") <- response_family
   return(pheno_data)
 }

@@ -178,7 +178,7 @@ parse_neurons <- function(x, input_size, num_hidden_layers, scaling = 0.5) {
 
 # Robust validator; only enforces when BOTH are provided and meaningful.
 validate_layers <- function(num_hidden_layers, neurons_per_layer) {
-  msg <- "\n==================================================\n"
+  msg <- ""
   # Nothing to validate
   if (is.null(num_hidden_layers) || is.null(neurons_per_layer)) return(TRUE)
 
@@ -629,7 +629,7 @@ grid_search_deep_learning <- function(
 #'
 #' # Robust validator (vectorized or per-row)
 #' validate_layers <- function(num_hidden_layers, neurons_per_layer) {
-#'   msg <- "\n==================================================\n"
+#'   msg <- ""
 #'   # vectorized case: both are length-1 scalars for a single model
 #'   if (is.numeric(num_hidden_layers) && !is.list(neurons_per_layer)) {
 #'     if (length(neurons_per_layer) != as.integer(num_hidden_layers)) {
@@ -984,7 +984,7 @@ grid_search_deep_learning <- function(
 #'
 #' # Function to validate the number of hidden layers against the neurons_per_layer list
 #' validate_layers <- function(num_hidden_layers, neurons_per_layer) {
-#'   msg <- "\n==================================================\n"
+#'   msg <- ""
 #'   if(is.null(num_hidden_layers) || is.null(neurons_per_layer)){
 #'     if(length(num_hidden_layers)==1 && num_hidden_layers>1) num_hidden_layers <- seq(1:num_hidden_layers)
 #'   if (length(num_hidden_layers) != length(neurons_per_layer)) {
@@ -1037,7 +1037,7 @@ grid_search_deep_learning <- function(
 #'                                       early_stop = TRUE) {
 #'   results <- list()
 #'   np <- reticulate::import("numpy")
-#'   msg <- "\n==================================================\n"
+#'   msg <- ""
 #'
 #'   if(deep_learning_model == "ResNet"){
 #'     if(!is.null(n_blocks) && !is.null(n_neurons_per_block)){

@@ -9,8 +9,7 @@ set_parallel_plan_rf <- function(replication = 1,
   if (replication > 1) {
     if(is.null(num_cores)){
 
-      num_cores <-  parallel::detectCores()
-      num_cores <- num_cores*0.7
+      num_cores <- max(1L, floor(gp_detect_cores() * 0.7))
     }
     future::plan(plan_type, workers = num_cores)
   } else {
@@ -23,7 +22,7 @@ cv_with_replication_stability <- function(X, y, n_folds = 5,
                                           n_tree = 500,
                                           threshold = 0.8,
                                           num_cores = NULL) {
-  set.seed(123)  # For reproducibility in CV
+  gp_set_seed(123)  # For reproducibility in CV
 
   # Initialize matrix to store selection frequency for each marker
   selection_matrix <- matrix(0, nrow = ncol(X), ncol = n_folds * replication)
@@ -39,7 +38,7 @@ cv_with_replication_stability <- function(X, y, n_folds = 5,
                          sys_name = sys_name)
   } else {
     # Automatically determine the number of cores and use half of them
-    detected_cores <- parallel::detectCores(logical = TRUE)
+    detected_cores <- gp_detect_cores(logical = TRUE)
     # For non-Windows systems, consider physical cores only
     num_cores <- round(detected_cores * 0.5)
 
@@ -55,11 +54,21 @@ cv_with_replication_stability <- function(X, y, n_folds = 5,
     train_y <- y[fold]
 
     # Replicate the Random Forest model within each fold in parallel
-    results <- future.apply::future_lapply(seq_len(replication), function(rep) {
+    results <- gp_future_lapply_session(seq_len(replication), function(rep) {
       #results <- future_map(1:replication, function(rep) {
-      set.seed(rep)  # Change seed for each replication
-      rf_model <- randomForest::randomForest(train_X, train_y, ntree = n_tree, importance = TRUE)
-      importance_scores <- randomForest::importance(rf_model, type = 1)  # Mean Decrease Accuracy
+    gp_set_seed(rep)  # Change seed for each replication
+      importance_scores <- gp_py_ml_feature_importance(
+        model_type = "randomforest",
+        X_train = train_X,
+        y_train = train_y,
+        response_family = "auto",
+        model_params = list(
+          ntree = n_tree,
+          n_jobs = 1L,
+          random_state = rep
+        )
+      )
+      names(importance_scores) <- colnames(train_X)
       return(importance_scores)
     }, future.seed = TRUE)
 
@@ -107,7 +116,7 @@ sequential_feature_selection <- function(sorted_markers,
                          sys_name = sys_name)
   } else {
     # Automatically determine the number of cores and use half of them
-    detected_cores <- parallel::detectCores(logical = TRUE)
+    detected_cores <- gp_detect_cores(logical = TRUE)
     # For non-Windows systems, consider physical cores only
     num_cores <- round(detected_cores * 0.7)
 
@@ -116,11 +125,21 @@ sequential_feature_selection <- function(sorted_markers,
                          sys_name = sys_name)
   }
   # Use future_lapply to parallelize the loop
-  results <- future.apply::future_lapply(marker_subsets, function(n) {
+  results <- gp_future_lapply_session(marker_subsets, function(n) {
     subset_X <- X[, sorted_markers[1:n]]
-    model <- randomForest::randomForest(subset_X, y, ntree = n_tree)
-    pred <- stats::predict(model, X)
-    rmse <- sqrt(mean((y - pred)^2))
+    pred <- gp_py_ml_fit_predict(
+      model_type = "randomforest",
+      X_train = subset_X,
+      y_train = y,
+      X_test = subset_X,
+      response_family = "auto",
+      model_params = list(
+        ntree = n_tree,
+        n_jobs = 1L,
+        random_state = 123L
+      )
+    )
+    rmse <- sqrt(mean((y - as.numeric(pred))^2))
     return(data.frame(NumMarkers = n, RMSE = rmse))
   }, future.seed = TRUE)
 

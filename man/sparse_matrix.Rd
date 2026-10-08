@@ -2,15 +2,28 @@
 % Please edit documentation in R/sparse_matrix.R
 \name{sparse_matrix}
 \alias{sparse_matrix}
-\title{Title
-Convert dense matrix to sparse form}
+\title{Convert a dense (kernel) matrix to ASReml-style sparse triplet form}
 \usage{
 sparse_matrix(grm_kernel_data = NULL, inverse = NULL, drop_zero = TRUE)
 }
 \arguments{
-\item{drop_zero}{}
+\item{grm_kernel_data}{Square numeric (G)RM or kernel matrix.}
+
+\item{inverse}{Logical-like flag stamped onto the result as
+`attr(, "INVERSE")`; set to `TRUE` when the input is the inverse
+relationship matrix.}
+
+\item{drop_zero}{Logical; when `TRUE` (default), zero entries are dropped
+from the sparse representation.}
+}
+\value{
+A three-column matrix / data frame (`Row`, `Column`, `value`)
+  representing the lower triangle of `grm_kernel_data`, with the `INVERSE`
+  attribute set from `inverse`.
 }
 \description{
-Title
-Convert dense matrix to sparse form
+Returns the lower triangle (including the diagonal) of a dense GRM / kernel
+matrix in the three-column `(Row, Column, value)` sparse representation that
+ASReml's `vm()` / `ginverse` machinery consumes. The output carries an
+`INVERSE` attribute when the input represents an inverse relationship.
 }

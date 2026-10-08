@@ -2,7 +2,7 @@
 % Please edit documentation in R/phenotype.R
 \name{phenotype}
 \alias{phenotype}
-\title{Prepares phenotypic data}
+\title{Prepare phenotypic data: coerce column types and check NAs}
 \usage{
 phenotype(
   object = NULL,
@@ -12,24 +12,44 @@ phenotype(
   message = TRUE
 )
 }
+\arguments{
+\item{object}{A phenotype data frame.}
+
+\item{to.numeric}{Character vector of column names to coerce to numeric.}
+
+\item{to.factor}{Character vector of column names to coerce to factor.}
+
+\item{noNAon}{Character vector of column names that must not contain `NA`;
+`phenotype()` errors if any are missing.}
+
+\item{message}{Logical; if `TRUE`, print summary messages about coercions
+and NA checks.}
+}
+\value{
+A phenotype data frame with the requested coercions applied.
+}
 \description{
-Prepares phenotypic data
+Casts named columns to numeric or factor, ensures specified response columns
+contain no missing values, and returns the cleaned phenotype frame.
 }
 \examples{
 
-# Messing with the data.
-nassau <- asreml::nassau
-nassau$weight <- 1 ; nassau$weight[1] <- NA
-nassau$Rep <- as.numeric(nassau$Rep)
+pheno <- data.frame(
+  GID = paste0("g", 1:4),
+  Rep = c(1, 1, 2, 2),
+  IncBlock = c("1", "2", "1", "2"),
+  ht6 = c(12.1, 11.4, 13.0, 10.8),
+  weight = c(NA, 2.3, 2.8, 2.1)
+)
 
-nassau. <- nassau |>
+pheno_checked <- pheno |>
   phenotype(
     to.factor = c("Rep"),
     to.numeric = c("IncBlock"),
     noNAon = c("ht6", "weight"))
 
-nassau. |> str()
+pheno_checked |> str()
 
-nassau. |> class()
+pheno_checked |> class()
 
 }

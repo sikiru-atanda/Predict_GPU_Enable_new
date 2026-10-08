@@ -2,7 +2,7 @@
 % Please edit documentation in R/holdout_cv.R
 \name{train_test_split}
 \alias{train_test_split}
-\title{Title}
+\title{Hold-out train/test split indices}
 \usage{
 train_test_split(
   pheno_data = NULL,
@@ -17,8 +17,28 @@ train_test_split(
 )
 }
 \arguments{
-\item{message}{}
+\item{pheno_data}{Phenotype data frame.}
+
+\item{gen_name}{Genotype ID column.}
+
+\item{response}{Response column.}
+
+\item{test_size}{Fraction of rows assigned to the test set.}
+
+\item{random_state}{Optional random seed.}
+
+\item{replication}{Number of repeated split replications.}
+
+\item{method}{Either `"stratified"` or `"unstratified"`.}
+
+\item{message}{Logical; emit splitter messages and warnings.}
+
+\item{...}{Additional arguments forwarded to the underlying splitter;
+reserved for forward compatibility.}
+}
+\value{
+A list of integer test-index vectors, one per replication.
 }
 \description{
-Title
+Legacy wrapper around the canonical hold-out splitter.
 }

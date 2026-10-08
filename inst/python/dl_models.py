@@ -29,6 +29,33 @@ def _pip_uninstall(pkgs: Sequence[str]):
     cmd = [sys.executable, "-m", "pip", "uninstall", "-y", "--quiet"] + list(pkgs)
     return _run(cmd)
 
+# =========================
+# Foundation bootstrap
+# =========================
+def _ensure_foundations():
+    """
+    Ensure critical build-time libraries are present.
+    These must be installed before torch or other packages.
+    """
+    base_pkgs = [
+        "pip>=23.2",
+        "setuptools>=65",
+        "wheel",
+        "packaging",
+        "numpy>=1.24",
+    ]
+    for pkg in base_pkgs:
+        try:
+            importlib.import_module(pkg.split(">=")[0])
+        except Exception:
+            _pip_install([pkg])
+
+# Run this once at import time
+_ensure_foundations()
+
+# Now we can safely import numpy
+import numpy as np
+
 def _has_nvidia_gpu() -> bool:
     try:
         r = _run(["nvidia-smi"])
@@ -304,6 +331,10 @@ def setup_deps(
 # Utilities: device / determinism / compile
 # =========================
 def _as_int_list(x: Sequence) -> List[int]:
+    if x is None:
+        return []
+    if isinstance(x, (int, np.integer)):
+        return [int(x)]
     return [int(v) for v in list(x)]
 
 def _pick_device(device=None):
@@ -362,15 +393,15 @@ def _maybe_compile(model, dev, compile_model=True):
         if platform.system() == "Windows" and shutil.which("cl") is None:
             return model
         backend = "inductor"
-    elif dev.type == "mps":
-        backend = "aot_eager"  # inductor not useful on MPS today
+    elif dev.type in ("mps", "cpu"):
+        return model
     else:
-        backend = "aot_eager"  # CPU
+        return model
 
     try:
         return torch.compile(model, backend=backend, mode="max-autotune")
     except Exception:
-        # Don’t crash training; run eager
+        # Do not crash training; run eager.
         try:
             import torch._dynamo as dynamo
             dynamo.config.suppress_errors = True
@@ -379,6 +410,10 @@ def _maybe_compile(model, dev, compile_model=True):
         return model
 
 def _as_int_list(x: Sequence) -> List[int]:
+    if x is None:
+        return []
+    if isinstance(x, (int, np.integer)):
+        return [int(x)]
     return [int(v) for v in list(x)]
 
 def _pick_device(device=None):
@@ -450,15 +485,15 @@ def _maybe_compile(model, dev, compile_model=True):
         if platform.system() == "Windows" and shutil.which("cl") is None:
             return model
         backend = "inductor"
-    elif dev.type == "mps":
-        backend = "aot_eager"  # inductor not useful on MPS today
+    elif dev.type in ("mps", "cpu"):
+        return model
     else:
-        backend = "aot_eager"  # CPU
+        return model
 
     try:
         return torch.compile(model, backend=backend, mode="max-autotune")
     except Exception:
-        # Don’t crash training; run eager
+        # Do not crash training; run eager.
         try:
             import torch._dynamo as dynamo
             dynamo.config.suppress_errors = True
@@ -825,14 +860,23 @@ class SAINT(nn.Module):
 # TabNet (sparsemax)
 # ---------------------------------------------------------------------
 class Sparsemax(nn.Module):
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        z = input
+    @staticmethod
+    def _tau(z: torch.Tensor) -> torch.Tensor:
         z_sorted, _ = torch.sort(z, descending=True, dim=-1)
         k = torch.arange(1, z.size(-1)+1, device=z.device, dtype=z.dtype).view(1, -1)
         z_cumsum = torch.cumsum(z_sorted, dim=-1)
         support = (1 + k * z_sorted) > z_cumsum
         k_z_int = support.sum(dim=-1, keepdim=True).clamp_min(1)
-        tau = (z_cumsum.gather(-1, k_z_int.long()-1) - 1) / k_z_int.to(z.dtype)
+        return (z_cumsum.gather(-1, k_z_int.long()-1) - 1) / k_z_int.to(z.dtype)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        z = input
+        if z.is_cuda and torch.are_deterministic_algorithms_enabled():
+            # cumsum has no deterministic CUDA kernel: compute the threshold on
+            # the CPU (gradients flow through the device copies)
+            tau = self._tau(z.float().cpu()).to(device=z.device, dtype=z.dtype)
+        else:
+            tau = self._tau(z)
         return torch.clamp(z - tau, min=0)
 
 sparsemax = Sparsemax()
@@ -1631,9 +1675,46 @@ def predict(model, X, device=None):
         if isinstance(model, nn.Module) and was_training:
             model.train()
 
+# ---------------------------------------------------------------------
+# Best-epoch selection guards
+# ---------------------------------------------------------------------
+# On small panels the validation split holds only a handful of lines; its
+# loss is noisy and often never beats the first epochs, so restoring the
+# "best" epoch kept a model that predicts about the mean for everyone.
+def _best_epoch_warmup(epochs) -> int:
+    """Epochs that must pass before an epoch can be selected as best."""
+    e = max(1, int(epochs))
+    return min(e, max(10, e // 4))
+
+def _near_constant(pred, y, rel: float = 0.01) -> bool:
+    """Predictions whose spread is below rel x the spread of the response."""
+    p = np.asarray(pred, dtype=np.float64).ravel()
+    t = np.asarray(y, dtype=np.float64).ravel()
+    sy = np.nanstd(t) if t.size else float("nan")
+    if not np.isfinite(sy) or sy <= 0 or p.size < 2:
+        return False
+    return bool(np.nanstd(p) < rel * sy)
+
+@torch.no_grad()
+def _regression_train_predictions(model, X, dev, batch: int = 1024) -> np.ndarray:
+    was_training = model.training
+    model.eval()
+    out = []
+    try:
+        for i in range(0, X.shape[0], batch):
+            xb = torch.as_tensor(X[i:i + batch], dtype=torch.float32, device=dev)
+            o = model(xb)
+            o = o[:, 0] if o.dim() > 1 else o
+            out.append(o.detach().float().cpu().numpy())
+    finally:
+        if was_training:
+            model.train()
+    return np.concatenate(out) if out else np.zeros(0)
+
 def fit_model(
     X, y,
     model_type: str = "mlp_with_attention",
+    task: Optional[str] = None,
     num_hidden_layers: Optional[int] = None,
     neurons_per_layer: Optional[Sequence[int]] = None,
     learning_rate: float = 1e-3,
@@ -1686,6 +1767,8 @@ def fit_model(
     dcn_layers: int = 3, dcn_hidden: Sequence[int] = (256, 128),
     # Class weighting (optional)
     auto_class_weights: bool = False,
+    # Multi-trait gaussian regression
+    multitask: bool = False,
 ):
     dev = _pick_device(device)
 
@@ -1706,8 +1789,30 @@ def fit_model(
 
     input_dim = int(X.shape[1])
 
-    task, n_classes = _infer_task(y)
-    out_dim = int(n_classes if task == "multiclass" else 1)
+    multitask_regression = bool(multitask) or (y.ndim == 2 and y.shape[1] > 1)
+    if multitask_regression:
+        task = "multitask_regression"
+        n_classes = int(y.shape[1])
+        out_dim = int(y.shape[1])
+    else:
+        task_override = None
+        if task is not None:
+            task_override = str(task).strip().lower()
+            if task_override in ("gaussian", "regression"):
+                task_override = "regression"
+            elif task_override in ("binary", "multiclass"):
+                pass
+            else:
+                task_override = None
+        if task_override is not None:
+            task = task_override
+            if task == "multiclass":
+                n_classes = int(len(np.unique(y)))
+            else:
+                n_classes = 2 if task == "binary" else 1
+        else:
+            task, n_classes = _infer_task(y)
+        out_dim = int(n_classes if task == "multiclass" else 1)
 
     if task == "multiclass":
         classes = np.unique(y)
@@ -1813,7 +1918,8 @@ def fit_model(
                     if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
                         m.eval()
 
-            for _ in range(int(epochs)):               
+            warmup = _best_epoch_warmup(epochs)
+            for epoch_i in range(int(epochs)):
                                
                 # Train
                 total = 0.0
@@ -1843,6 +1949,9 @@ def fit_model(
                 val_loss = total / max(1, cnt)
                 history["train_loss"].append(train_loss); history["val_loss"].append(val_loss)
 
+                if epoch_i + 1 < warmup:          # no best-epoch selection during warm-up
+                    gp_model.train(); likelihood.train()
+                    continue
                 if val_loss < best_val - 1e-7:
                     best_val = val_loss; no_improve = 0
                     best_state = {
@@ -1857,9 +1966,27 @@ def fit_model(
                 gp_model.train(); likelihood.train()
 
             if best_state is not None:
+                final_state = {
+                    "extractor": {k: v.detach().cpu().clone() for k, v in extractor.state_dict().items()},
+                    "gp": {k: v.detach().cpu().clone() for k, v in gp_model.state_dict().items()},
+                    "lik": {k: v.detach().cpu().clone() for k, v in likelihood.state_dict().items()},
+                }
+                # train() clears GPyTorch's eval-mode caches before each check;
+                # predict on the device the model was trained on
+                gp_model.train(); likelihood.train()
+                pred_final = wrapper.predict_mean(X, device=dev.type)
                 extractor.load_state_dict(best_state["extractor"])
                 gp_model.load_state_dict(best_state["gp"])
                 likelihood.load_state_dict(best_state["lik"])
+                gp_model.train(); likelihood.train()
+                pred_best = wrapper.predict_mean(X, device=dev.type)
+                # keep the final epoch when the selected one predicts about the mean
+                if _near_constant(pred_best, y) and not _near_constant(pred_final, y):
+                    extractor.load_state_dict(final_state["extractor"])
+                    gp_model.load_state_dict(final_state["gp"])
+                    likelihood.load_state_dict(final_state["lik"])
+                    setattr(wrapper, "_best_epoch_rejected", True)
+                gp_model.train(); likelihood.train()   # no stale caches for later predictions
 
             return wrapper, history
         # else: prebuilt_model is set for RFF fallback
@@ -1947,17 +2074,25 @@ def fit_model(
 
     model, dev = _safe_to_device(model, dev)
     setattr(model, "_hetero", hetero)
+    setattr(model, "_multitask", multitask_regression)
+    setattr(model, "_multitask_out_dim", int(out_dim) if multitask_regression else None)
     setattr(model, "_expected_input_dim", input_dim)
 
     model = _maybe_compile(model, dev, compile_model=compile_model)
 
     X_t = torch.as_tensor(X, dtype=torch.float32)
-    if task in ("regression", "binary"):
+    if task == "multitask_regression":
+        mask_np = np.isfinite(y)
+        y_filled = np.where(mask_np, y, 0.0).astype(np.float32, copy=False)
+        y_t = torch.as_tensor(y_filled, dtype=torch.float32)
+        mask_t = torch.as_tensor(mask_np.astype(np.float32, copy=False), dtype=torch.float32)
+        dataset = TensorDataset(X_t, y_t, mask_t)
+    elif task in ("regression", "binary"):
         y_t = torch.as_tensor(y.reshape(-1, 1), dtype=torch.float32)
+        dataset = TensorDataset(X_t, y_t)
     else:
         y_t = torch.as_tensor(y.reshape(-1), dtype=torch.long)
-
-    dataset = TensorDataset(X_t, y_t)
+        dataset = TensorDataset(X_t, y_t)
     n_total = len(dataset)
     raw_val = int(float(n_total) * float(validation_split))
     if n_total <= 1 or validation_split <= 0.0:
@@ -1981,7 +2116,13 @@ def fit_model(
     rebuilt_for_cpu = False
 
     # Loss
-    if task == "regression":
+    if task == "multitask_regression":
+        def masked_mse(pred_logits, y_true, y_mask):
+            diff2 = ((pred_logits - y_true) ** 2) * y_mask
+            denom = torch.clamp(y_mask.sum(), min=1.0)
+            return diff2.sum() / denom
+        criterion = masked_mse
+    elif task == "regression":
         if hetero:
             def hetero_nll(y_true, out_logits):
                 mu = out_logits[:, :1]
@@ -2041,19 +2182,30 @@ def fit_model(
     no_improve = 0
     history = {"train_loss": [], "val_loss": []}
     use_val = len(val_ds) > 0
+    warmup = _best_epoch_warmup(epochs)
 
-    for _ in range(int(epochs)):
+    for epoch_i in range(int(epochs)):
         model.train()
         total = 0.0
-        for xb, yb in train_dl:
+        for batch in train_dl:
+            if task == "multitask_regression":
+                xb, yb, mb = batch
+            else:
+                xb, yb = batch
+                mb = None
             if any_bn and xb.size(0) < 2:
                 continue
             xb = xb.to(dev, non_blocking=pin); yb = yb.to(dev, non_blocking=pin)
+            if mb is not None:
+                mb = mb.to(dev, non_blocking=pin)
             opt.zero_grad(set_to_none=True)
             try:
                 with autocast(device_type = device_type, enabled=amp_ok):
                     logits = model(xb)
-                    loss = criterion(yb, logits) if hetero else criterion(logits, yb)
+                    if task == "multitask_regression":
+                        loss = criterion(logits, yb, mb)
+                    else:
+                        loss = criterion(yb, logits) if hetero else criterion(logits, yb)
                     if hasattr(model, "extra_loss") and callable(model.extra_loss):
                         loss = loss + model.extra_loss()
                 scaler.scale(loss).backward()
@@ -2065,6 +2217,9 @@ def fit_model(
             except Exception:
                 # Fallback to CPU and rebuild loaders once with pin_memory=False
                 model, dev = _safe_to_device(model, torch.device("cpu"))
+                if isinstance(criterion, nn.Module):
+                    # class weights (pos_weight / weight) must follow the model
+                    criterion = criterion.to(dev)
                 amp_ok = False
                 pin = False
                 """
@@ -2089,6 +2244,8 @@ def fit_model(
                     rebuilt_for_cpu = True
 
                 xb = xb.to(dev); yb = yb.to(dev)
+                if mb is not None:
+                    mb = mb.to(dev)
 
                 # Recreate optimizer of the same family (and clear grads to be safe)
                 if isinstance(opt, torch.optim.SGD):
@@ -2108,7 +2265,10 @@ def fit_model(
                 opt.zero_grad(set_to_none=True)
 
                 logits = model(xb)
-                loss = criterion(yb, logits) if hetero else criterion(logits, yb)
+                if task == "multitask_regression":
+                    loss = criterion(logits, yb, mb)
+                else:
+                    loss = criterion(yb, logits) if hetero else criterion(logits, yb)
                 if hasattr(model, "extra_loss") and callable(model.extra_loss):
                     loss = loss + model.extra_loss()
                 loss.backward(); opt.step()
@@ -2121,10 +2281,20 @@ def fit_model(
             model.eval()
             total = 0.0
             with torch.no_grad():
-                for xb, yb in val_dl:
+                for batch in val_dl:
+                    if task == "multitask_regression":
+                        xb, yb, mb = batch
+                    else:
+                        xb, yb = batch
+                        mb = None
                     xb = xb.to(dev, non_blocking=pin); yb = yb.to(dev, non_blocking=pin)
+                    if mb is not None:
+                        mb = mb.to(dev, non_blocking=pin)
                     logits = model(xb)
-                    loss = criterion(yb, logits) if hetero else criterion(logits, yb)
+                    if task == "multitask_regression":
+                        loss = criterion(logits, yb, mb)
+                    else:
+                        loss = criterion(yb, logits) if hetero else criterion(logits, yb)
                     if hasattr(model, "extra_loss") and callable(model.extra_loss):
                         loss = loss + model.extra_loss()
                     total += float(loss.detach().item()) * xb.size(0)
@@ -2135,6 +2305,8 @@ def fit_model(
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
 
+        if epoch_i + 1 < warmup:
+            continue                      # no best-epoch selection during warm-up
         if val_loss < best_val - 1e-7:
             best_val = val_loss
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
@@ -2145,6 +2317,173 @@ def fit_model(
                 break
 
     if best_state is not None:
-        model.load_state_dict(best_state)
+        if task == "regression":
+            # keep the final epoch when the selected one predicts about the mean
+            final_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            pred_final = _regression_train_predictions(model, X, dev)
+            model.load_state_dict(best_state)
+            pred_best = _regression_train_predictions(model, X, dev)
+            if _near_constant(pred_best, y) and not _near_constant(pred_final, y):
+                model.load_state_dict(final_state)
+                setattr(model, "_best_epoch_rejected", True)
+        else:
+            model.load_state_dict(best_state)
 
     return model, history
+
+
+def _probabilities_from_logits(logits: np.ndarray, task: str) -> np.ndarray:
+    z = np.asarray(logits, dtype=np.float32)
+    if z.ndim == 1:
+        z = z.reshape(-1, 1)
+    if task == "binary":
+        p1 = 1.0 / (1.0 + np.exp(-z[:, 0]))
+        return np.column_stack([1.0 - p1, p1])
+    if task == "multiclass":
+        z = z - np.max(z, axis=1, keepdims=True)
+        e = np.exp(z)
+        denom = np.sum(e, axis=1, keepdims=True)
+        denom[denom == 0.0] = 1.0
+        return e / denom
+    raise ValueError(f"Probabilities requested for unsupported task: {task}")
+
+
+def fit_predict_payload(
+    model_type: str,
+    X_train,
+    y_train,
+    X_test,
+    params: Optional[Dict[str, object]] = None,
+    task: Optional[str] = None,
+):
+    X_train = np.asarray(X_train, dtype=np.float32)
+    X_test = np.asarray(X_test, dtype=np.float32)
+    y_arr = np.asarray(y_train)
+    fit_params = dict(params or {})
+    fit_task = str(task).strip().lower() if task is not None else None
+    fit_params["task"] = fit_task
+    observed_classes = None
+    if fit_task == "multiclass":
+        observed_classes = [str(x) for x in np.unique(y_arr).tolist()]
+    model, history = fit_model(X_train, y_arr, model_type=model_type, **fit_params)
+
+    if fit_task in ("binary", "multiclass"):
+        raw = predict(model, X_test, device=fit_params.get("device"))
+        prob = _probabilities_from_logits(raw, fit_task)
+        if fit_task == "binary":
+            preds = prob[:, 1]
+            classes = ["0", "1"]
+        else:
+            pred_idx = np.argmax(prob, axis=1).astype(int)
+            classes = observed_classes or [str(i) for i in range(prob.shape[1])]
+            preds = np.asarray([classes[i] for i in pred_idx], dtype=str)
+        return {
+            "predictions": np.asarray(preds),
+            "probabilities": prob,
+            "classes": classes,
+            "history": history,
+        }
+
+    preds = predict(model, X_test, device=fit_params.get("device"))
+    preds = np.asarray(preds)
+    if preds.ndim == 2 and preds.shape[1] == 1:
+        preds = preds[:, 0]
+    return {
+        "predictions": preds.astype(float),
+        "probabilities": None,
+        "classes": [],
+        "history": history,
+    }
+
+
+def bootstrap_fit_predict_payload(
+    model_type: str,
+    X_train,
+    y_train,
+    X_pred,
+    n_bootstrap: int,
+    seed: int = 123,
+    params: Optional[Dict[str, object]] = None,
+    task: Optional[str] = None,
+    training_seeds: Optional[Sequence[int]] = None,
+    seed_aggregation: str = "mean",
+):
+    X_train = np.asarray(X_train, dtype=np.float32)
+    X_pred = np.asarray(X_pred, dtype=np.float32)
+    y_arr = np.asarray(y_train)
+    rng = np.random.default_rng(int(seed))
+    n = int(X_train.shape[0])
+    task_norm = str(task).strip().lower() if task is not None else None
+    aggregation = str(seed_aggregation).strip().lower()
+    if aggregation != "mean":
+        raise ValueError("seed_aggregation currently supports only 'mean'")
+    base_params = dict(params or {})
+    if training_seeds is None:
+        training_seeds = [int(base_params.get("random_seed", seed))]
+    elif isinstance(training_seeds, (int, np.integer)):
+        training_seeds = [int(training_seeds)]
+    training_seeds = [int(value) for value in training_seeds]
+    if not training_seeds or any(value < 0 for value in training_seeds):
+        raise ValueError("training_seeds must contain non-negative integers")
+    if len(set(training_seeds)) != len(training_seeds):
+        raise ValueError("training_seeds must be unique")
+    rows = []
+    seed_rows = [[] for _ in training_seeds]
+    seed_variance_rows = []
+    seed_range_rows = []
+    classes_out = []
+
+    for _ in range(int(n_bootstrap)):
+        idx = rng.integers(0, n, size=n, endpoint=False)
+        predictions_this_bootstrap = []
+        for seed_index, training_seed in enumerate(training_seeds):
+            fit_params = dict(base_params)
+            fit_params["random_seed"] = int(training_seed)
+            res = fit_predict_payload(
+                model_type=model_type,
+                X_train=X_train[idx, :],
+                y_train=y_arr[idx],
+                X_test=X_pred,
+                params=fit_params,
+                task=task_norm,
+            )
+            if task_norm == "multiclass":
+                values = np.asarray(res["probabilities"], dtype=float).T.reshape(-1)
+                classes_out = [str(x) for x in (res.get("classes") or classes_out)]
+            else:
+                values = np.asarray(res["predictions"], dtype=float).reshape(-1)
+                if task_norm == "binary":
+                    classes_out = [str(x) for x in (res.get("classes") or ["0", "1"])]
+            predictions_this_bootstrap.append(values)
+            seed_rows[seed_index].append(values)
+
+        seed_array = np.vstack(predictions_this_bootstrap)
+        rows.append(np.mean(seed_array, axis=0))
+        if len(training_seeds) > 1:
+            seed_variance_rows.append(np.var(seed_array, axis=0, ddof=1))
+            seed_range_rows.append(np.ptp(seed_array, axis=0))
+
+    boot = np.vstack(rows) if rows else np.empty((0, X_pred.shape[0]), dtype=float)
+    seed_predictions = np.vstack([
+        np.mean(np.vstack(values), axis=0)
+        for values in seed_rows
+    ]) if rows else np.empty((len(training_seeds), X_pred.shape[0]), dtype=float)
+    if len(training_seeds) > 1 and seed_variance_rows:
+        seed_variance = np.mean(np.vstack(seed_variance_rows), axis=0)
+        seed_range = np.mean(np.vstack(seed_range_rows), axis=0)
+    else:
+        seed_variance = np.full(boot.shape[1], np.nan, dtype=float)
+        seed_range = np.full(boot.shape[1], np.nan, dtype=float)
+    return {
+        "bootstrap": boot,
+        "seed_predictions": seed_predictions,
+        "seed_variance": seed_variance,
+        "seed_range": seed_range,
+        "task": task_norm,
+        "n_bootstrap": int(n_bootstrap),
+        "n_prediction_rows": int(X_pred.shape[0]),
+        "classes": classes_out,
+        "training_seeds": training_seeds,
+        "seed_aggregation": aggregation,
+        "n_model_fits": int(n_bootstrap) * len(training_seeds),
+    }

@@ -2,23 +2,90 @@
 % Please edit documentation in R/summary_statistics_asreml.R
 \name{summary_statistics_asreml}
 \alias{summary_statistics_asreml}
-\title{Title}
+\title{Assemble accuracy / uncertainty / reliability summary for an ASReml fit}
 \usage{
 summary_statistics_asreml(
   mod = NULL,
   response = NULL,
-  eval_metrics = c("Accuracy", "Mean_Squared_Error", "Bias", "Root_Mean_Squared_Error",
-    "Relative_Squared_Error", "Mean_Absolute_Error", "Mean_Absolute_Percent_Error"),
+  GID_names = NULL,
+  pheno_data = NULL,
+  eval_metrics = NULL,
+  response_family = "gaussian",
   heter_groups = NULL,
   predicted_value = NULL,
   pred_heter_groups = NULL,
   variance_components = NULL,
+  standard_errors = NULL,
+  prediction_error_var = NULL,
+  genetic_var = NULL,
+  gen_name = NULL,
+  CI_width_thresholds = c(0.33, 0.66),
+  confidence_level = 0.95,
+  high_reliability_thres = 0.7,
+  low_reliability_thres = 0.4,
+  system_database = FALSE,
   ...
 )
 }
 \arguments{
-\item{...}{}
+\item{mod}{The fitted asreml model object (or `NULL` when only post-fit
+summary quantities are supplied).}
+
+\item{response}{Name of the response (trait) column in `pheno_data`.}
+
+\item{GID_names}{Vector of genotype IDs aligned with the prediction frame.}
+
+\item{pheno_data}{Phenotype data frame (used to recover observed responses).}
+
+\item{eval_metrics}{Character vector of metrics to compute (e.g.
+`"accuracy"`).}
+
+\item{response_family}{Response distribution family
+(`"gaussian"`, `"binomial"`, `"multinomial"`, `"ordinal"`).}
+
+\item{heter_groups}{Optional column name carrying the heterogeneous-group
+(environment) label for MET runs.}
+
+\item{predicted_value}{Predicted values (typically from `predict.asreml` or
+the coef fallback path).}
+
+\item{pred_heter_groups}{Per-row heterogeneous-group labels aligned with
+`predicted_value`.}
+
+\item{variance_components}{Variance-components table or list produced by
+the ASReml output assembly.}
+
+\item{standard_errors}{Standard errors of `predicted_value` (per row).}
+
+\item{prediction_error_var}{Prediction error variance per row (PEV).}
+
+\item{genetic_var}{Genetic variance used as the denominator for
+reliability (per env or overall).}
+
+\item{gen_name}{Name of the genotype-ID column in `pheno_data`.}
+
+\item{CI_width_thresholds}{Length-2 numeric of quantile thresholds for
+classifying prediction-interval width as Low / Moderate / High.}
+
+\item{confidence_level}{Confidence level for the predicted-value interval
+(e.g. `0.95`).}
+
+\item{high_reliability_thres}{Lower bound for High-reliability band.}
+
+\item{low_reliability_thres}{Upper bound for Low-reliability band.}
+
+\item{system_database}{Logical; if `TRUE`, write outputs to the system
+database path.}
+
+\item{...}{Reserved for future extensions; currently ignored.}
+}
+\value{
+A list of accuracy / uncertainty / reliability summary tables and
+  diagnostics.
 }
 \description{
-Title
+Computes the user-facing summary statistics for an ASReml GBLUP fit:
+accuracy / RMSE / correlation on the test rows, prediction-error variance,
+confidence intervals, and the reliability / uncertainty bands used by the
+output assembly.
 }

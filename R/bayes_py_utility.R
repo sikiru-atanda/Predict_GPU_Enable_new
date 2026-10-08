@@ -167,12 +167,12 @@ setup_bayes_env <- function(
   cuda <- match.arg(cuda)
   has_conda <- tryCatch({ reticulate::conda_binary(); TRUE }, error = function(e) FALSE)
   if (!has_conda) {
-    message("Conda not found. Installing Miniconda (one time)…")
+    message("Conda not found. Installing Miniconda (one time)...")
     reticulate::install_miniconda()
   }
   envs <- tryCatch(reticulate::conda_list()$name, error = function(e) character())
   if (!(env_name %in% envs)) {
-    message("Creating conda env '", env_name, "' with Python ", python_version, " …")
+    message("Creating conda env '", env_name, "' with Python ", python_version, " ...")
     reticulate::conda_create(envname = env_name, packages = paste0("python=", python_version))
   } else {
     message("Using existing conda env '", env_name, "'.")
@@ -191,7 +191,7 @@ setup_bayes_env <- function(
 
   `%||%` <- function(a, b) if (is.null(a)) b else a
   cat(sprintf(
-    "\n✔ Bayes env ready\n  - Python: %s\n  - jax: %s | jaxlib: %s | backend: %s | devices: %s\n  - numpyro: %s | pymc: %s\n",
+    "\nOK: Bayes env ready\n  - Python: %s\n  - jax: %s | jaxlib: %s | backend: %s | devices: %s\n  - numpyro: %s | pymc: %s\n",
     info$python,
     info$jax_version, info$jaxlib_version, info$default_backend %||% "NA",
     if (length(info$devices)) paste(info$devices, collapse = ",") else "none",

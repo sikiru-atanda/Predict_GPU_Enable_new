@@ -1,0 +1,5 @@
+scenario,repetitions,mean_coverage,coverage_monte_carlo_se,mean_pev_to_mse_ratio,mean_standardized_squared_error,mean_interval_width,mean_low_noise_coverage,mean_high_noise_coverage
+exchangeable_homoskedastic,100,0.9548,0.0018599,1.05185,0.96944,4.2126,,
+exchangeable_heteroscedastic,100,0.95322,0.0016447,1.03083,0.99455,4.8474,0.99635,0.9101
+groupwise_Trait_high_noise,100,0.9484,0.0024517,0.99047,1.03247,7.944,,
+groupwise_Trait_low_noise,100,0.95173,0.0019302,1.0116,1.00487,3.9718,,

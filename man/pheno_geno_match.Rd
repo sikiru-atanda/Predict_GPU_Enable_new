@@ -2,38 +2,52 @@
 % Please edit documentation in R/pheno_geno_match.R
 \name{pheno_geno_match}
 \alias{pheno_geno_match}
-\title{Title
-This function perform the following task:}
+\title{Match phenotype IDs with genomic or omic data}
 \usage{
 pheno_geno_match(
-  object_pheno = NULL,
   object_geno = NULL,
+  object_pheno = NULL,
   gen_name = NULL,
-  test_set = NULL,
   train_set = NULL,
-  message = TRUE,
-  ...
+  test_set = NULL,
+  heter_groups = NULL,
+  low_call_rate_inds_removed = NULL,
+  test_set_overrides_inferred = FALSE,
+  message = TRUE
 )
 }
 \arguments{
-\item{object_pheno}{clean phenotypic data}
+\item{object_geno}{Matrix-like genomic/omic data, relationship matrix, or
+kernel matrix.}
 
-\item{object_geno}{clean snp/omic/grm/kernel data}
+\item{object_pheno}{Phenotype data frame.}
 
-\item{gen_name}{column name of the genotypes in the phenotypic data}
+\item{gen_name}{Name of the genotype or sample identifier column in
+\code{object_pheno}.}
 
-\item{...}{}
+\item{train_set}{Optional training-set identifiers.}
+
+\item{test_set}{Optional testing-set identifiers.}
+
+\item{heter_groups}{Optional environment or grouping column used for ordering.}
+
+\item{low_call_rate_inds_removed}{Optional IDs removed during low-call-rate
+QC.}
+
+\item{test_set_overrides_inferred}{Logical. When \code{TRUE}, an explicit
+\code{test_set} is used as supplied and genomic/omic-only individuals are
+not added automatically.}
+
+\item{message}{Logical indicating whether progress messages should be
+printed.}
+}
+\value{
+A list containing \code{geno_pheno_match_data} and, when present,
+  \code{test_data}.
 }
 \description{
-1. This check for NA, match the grm/kernel and geno/omic (M_matrix) to pheno_data
-2. It also order the M_matrix, grm/kernel to the GID in pheno_data
-3. Ordering is not important in asreml but important in Baysiand and machine learning models.
-}
-\details{
-The output is a list with one or two element(s):
-1. the clean M-matrix or grm file that perfectly match with the phenotypic records
-2. test_set that might emmanate from the object_geno
-
-
- NOTE FOR Giovanni ASRgenomics only works with grm/kernel not with M_matrix that was why it not used
+Aligns genomic, omic, relationship, or kernel data to phenotype records.
+Phenotyped IDs missing from genomic/omic data stop the workflow. Extra
+genomic/omic IDs are treated as inferred testing IDs unless an explicit
+test set is configured to override inferred testing IDs.
 }

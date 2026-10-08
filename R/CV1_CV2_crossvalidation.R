@@ -1,20 +1,4 @@
-
-#' Title
-#'
-#' @param pheno_data
-#' @param gen_name
-#' @param heter_groups
-#' @param CV
-#' @param random_state
-#' @param replication
-#' @param nfolds
-#'
-#' @return
-#' @export
-#'
-#' @examples
-
-
+# Historical draft retained as comments below.
 # CV0_CV1_CV2_for_multi_environment <- function(
 #     pheno_data,
 #     gen_name,            # column with genotype IDs
@@ -121,15 +105,27 @@
 #     } else if (CV == 1) {
 #       message(paste0(msg_bar, "CV1: Genotype-level K-fold (predicting entirely new genotypes)."))
 #     } else if (CV == 2) {
-#       message(paste0(msg_bar, "CV2: Sparse within-genotype K-fold (predicting missing G×E cells with data in other envs)."))
+#       message(paste0(msg_bar, "CV2: Sparse within-genotype K-fold (predicting missing GxE cells with data in other envs)."))
 #     }
 #   }
 #
 #   out
 # }
 
-
-
+#' Build CV0, CV1, or CV2 folds for multi-environment data
+#'
+#' @param pheno_data Phenotype data frame.
+#' @param gen_name Genotype identifier column name.
+#' @param heter_groups Environment/grouping column name.
+#' @param CV Cross-validation scenario: 0, 1, or 2.
+#' @param nfolds Number of folds. Defaults depend on \code{CV}.
+#' @param random_state Optional random seed.
+#' @param replication Number of fold-assignment replications.
+#' @param message Logical indicating whether progress messages should be printed.
+#' @param ... Additional arguments reserved for compatibility.
+#'
+#' @return A list of fold-assignment vectors.
+#' @export
 CV0_CV1_CV2_for_multi_environment <- function(
     pheno_data,
     gen_name,            # column with genotype IDs
@@ -150,11 +146,14 @@ CV0_CV1_CV2_for_multi_environment <- function(
   CV <- match.arg(as.character(CV), choices = c("0","1","2"))
   CV <- as.integer(CV)
 
-  g <- pheno_data[[gen_name]]
-  e <- pheno_data[[heter_groups]]
+  g_full <- pheno_data[[gen_name]]
+  e_full <- pheno_data[[heter_groups]]
+  N <- nrow(pheno_data)
 
   # Drop NA rows in keys
-  keep <- !(is.na(g) | is.na(e))
+  keep <- !(is.na(g_full) | is.na(e_full))
+  g <- g_full
+  e <- e_full
   if (any(!keep)) {
     if (verbose) base::warning(paste0(msg_bar, "Removed ", sum(!keep), " rows with NA in key columns."), call. = FALSE)
     g <- g[keep]; e <- e[keep]
@@ -166,7 +165,7 @@ CV0_CV1_CV2_for_multi_environment <- function(
   G <- length(uniq_g)
   E <- length(uniq_e)
 
-  if (!is.null(random_state) && is.numeric(random_state)) set.seed(random_state)
+  if (!is.null(random_state) && is.numeric(random_state)) gp_set_seed(random_state)
 
   # Defaults for nfolds (and clamp to available groups to avoid empty folds)
   if (CV == 0) {
@@ -176,6 +175,7 @@ CV0_CV1_CV2_for_multi_environment <- function(
       if (verbose) base::message(paste0(msg_bar, "CV0: nfolds > #environments; clamping to E = ", E, "."))
       nfolds <- E
     }
+    if (nfolds < 2) stop("For CV0, at least two non-missing environments are required.")
   } else {
     if (is.null(nfolds)) nfolds <- 5L
     if (nfolds < 2) stop("`nfolds` must be >= 2.")
@@ -183,6 +183,7 @@ CV0_CV1_CV2_for_multi_environment <- function(
       if (verbose) base::message(paste0(msg_bar, "CV1: nfolds > #genotypes; clamping to G = ", G, "."))
       nfolds <- G
     }
+    if (CV == 1 && nfolds < 2) stop("For CV1, at least two non-missing genotypes are required.")
   }
 
   # Utility: balanced assignment helper (for group labels, not rows)
@@ -195,7 +196,7 @@ CV0_CV1_CV2_for_multi_environment <- function(
   names(out) <- sprintf("Rep%02d_%dFold_CV%d", seq_len(replication), nfolds, CV)
 
   for (r in seq_len(replication)) {
-    if (!is.null(random_state) && is.numeric(random_state)) set.seed(random_state + r - 1L)
+    if (!is.null(random_state) && is.numeric(random_state)) gp_set_seed(random_state + r - 1L)
 
     if (CV == 0) {
       # ---- CV0: Leave-Environment-Out (or grouped envs) ----
@@ -210,7 +211,9 @@ CV0_CV1_CV2_for_multi_environment <- function(
       # Invariant: each environment should map to exactly one fold
       chk <- tapply(folds, e, function(v) length(unique(v)))
       if (any(chk > 1, na.rm = TRUE)) stop("CV0 invariant failed: some environments map to multiple folds.")
-      out[[r]] <- as.integer(folds)
+      folds_all <- rep(NA_integer_, N)
+      folds_all[keep] <- as.integer(folds)
+      out[[r]] <- folds_all
     }
 
     if (CV == 1) {
@@ -221,7 +224,9 @@ CV0_CV1_CV2_for_multi_environment <- function(
       # Invariant: each genotype should map to exactly one fold
       chk <- tapply(folds, g, function(v) length(unique(v)))
       if (any(chk > 1, na.rm = TRUE)) stop("CV1 invariant failed: some genotypes map to multiple folds.")
-      out[[r]] <- as.integer(folds)
+      folds_all <- rep(NA_integer_, N)
+      folds_all[keep] <- as.integer(folds)
+      out[[r]] <- folds_all
     }
 
     if (CV == 2) {
@@ -231,17 +236,29 @@ CV0_CV1_CV2_for_multi_environment <- function(
       n_singleton <- 0L
 
       for (idx in idx_by_g) {
-        k <- length(idx)
+        env_values <- as.character(e[idx])
+        env_levels <- unique(env_values)
+        k <- length(env_levels)
         if (k <= 1L) {
-          # Singleton genotype: make it train-only by assigning fold = 0 (never selected as test)
+          # A genotype observed in only one environment is train-only. Replicate
+          # rows within that environment do not make the genotype CV2-eligible.
           folds[idx] <- 0L
           n_singleton <- n_singleton + 1L
           next
         }
-        idx_shuf <- sample(idx, k)
-        kk <- min(nfolds, k)                     # can’t use more folds than rows for this genotype
-        per <- sample(seq_len(kk))               # start with a permuted set of folds 1..kk
-        folds[idx_shuf] <- rep(per, length.out = k)  # round-robin to spread over folds
+        env_shuf <- sample(env_levels, k)
+        kk <- min(nfolds, k)                     # no more folds than environments for this genotype
+        per <- sample(seq_len(kk))
+        env2fold <- setNames(rep(per, length.out = k), env_shuf)
+        # All replicates from one genotype-by-environment cell stay together.
+        folds[idx] <- unname(env2fold[env_values])
+      }
+
+      if (!any(folds > 0L)) {
+        stop(
+          "CV2 requires at least one genotype observed in at least two environments.",
+          call. = FALSE
+        )
       }
 
       # Optional check: warn if any multi-env genotype still ends up in a single fold (should be rare)
@@ -255,10 +272,12 @@ CV0_CV1_CV2_for_multi_environment <- function(
       }
 
       if (n_singleton > 0L && verbose) {
-        base::message(sprintf("%sCV2: %d genotype(s) have only one observation; assigned fold=0 (train-only).", msg_bar, n_singleton))
+        base::message(sprintf("%sCV2: %d genotype(s) occur in only one environment; assigned fold=0 (train-only).", msg_bar, n_singleton))
       }
 
-      out[[r]] <- as.integer(folds)
+      folds_all <- rep(NA_integer_, N)
+      folds_all[keep] <- as.integer(folds)
+      out[[r]] <- folds_all
     }
   }
 
@@ -271,7 +290,7 @@ CV0_CV1_CV2_for_multi_environment <- function(
     } else if (CV == 1) {
       base::message(paste0(msg_bar, "CV1: Genotype-level K-fold (predicting entirely new genotypes)."))
     } else if (CV == 2) {
-      base::message(paste0(msg_bar, "CV2: Sparse within-genotype K-fold (predicting missing G×E cells with data in other environments)."))
+      base::message(paste0(msg_bar, "CV2: Sparse within-genotype K-fold (predicting missing GxE cells with data in other environments)."))
     }
   }
 
@@ -290,7 +309,7 @@ CV0_CV1_CV2_for_multi_environment <- function(
 #                                           replication = 1,
 #                                           ...){
 #
-#   msg <- "\n==================================================\n"
+#   msg <- ""
 #
 #   if (is.null(heter_groups)){stop(paste(msg,"Provide the a pointer (heter_groups) to the column contaning the environments."), call. = FALSE)}
 #   if(CV>2){stop(message(paste(msg,"CV must be 1 or 2")), call. = FALSE)}

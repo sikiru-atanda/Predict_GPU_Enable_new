@@ -2,10 +2,7 @@
 % Please edit documentation in R/ETA_compiler.R
 \name{ETA_compiler_bayes}
 \alias{ETA_compiler_bayes}
-\title{Title
-This function does this following:
-1. Extract all the random terms from the formula
-2. Compile all the random terms and set the model for each term}
+\title{Compile ETA for random and fixed term combined for Bayesian Genomic Prediction Models}
 \usage{
 ETA_compiler_bayes(
   fixed = NULL,
@@ -19,37 +16,56 @@ ETA_compiler_bayes(
   omic2_data = NULL,
   omic3_data = NULL,
   gen_name = NULL,
+  scaling = TRUE,
   ...
 )
 }
 \arguments{
-\item{fixed}{fixed effect. it must be in formula separated by +}
+\item{fixed}{Formula specifying the fixed effects to be included in the model.}
 
-\item{random}{random effect, it must be formula separated by +}
+\item{random}{Formula specifying the random effects to be included in the model.}
 
-\item{GS_model}{model defined by user}
+\item{GS_model}{A character string specifying the genomic selection model to be used (e.g., "BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS").}
 
-\item{fixed_term_model_bayesian}{Model for fixed effect/term(s). default is FIXED}
+\item{fixed_term_model_bayesian}{Optionally, specify the model for the fixed terms in the Bayesian framework.}
 
-\item{rand_term_model_bayesian}{Model for all random term(s) defined by the user}
+\item{rand_term_model_bayesian}{Optionally, specify the model for the random terms in the Bayesian framework.}
 
-\item{pheno_data}{phenotypic data. Dataframe or matrix is acceptable}
+\item{pheno_data}{A data frame containing the phenotypic data, including columns for all variables specified in the `fixed` and `random` formulas.}
 
-\item{geno_data}{snp/marker data. Dataframe or matrix is acceptable}
+\item{geno_data}{Genomic relationship matrix or genotype data.}
 
-\item{omic1_data}{omic data .Dataframe or matrix is acceptable}
+\item{omic1_data}{First omics data matrix.}
 
-\item{omic2_data}{omic data .Dataframe or matrix is acceptable}
+\item{omic2_data}{Second omics data matrix.}
 
-\item{omic3_data}{omic data .Dataframe or matrix is acceptable}
+\item{omic3_data}{Third omics data matrix.}
 
-\item{gen_name}{Column name containing the genotype or individuals in the phenotypic data}
+\item{gen_name}{Name of the genotype column in `pheno_data`.}
 
-\item{...}{}
+\item{scaling}{Logical; if `TRUE`, centre and scale the marker / omics data
+before compiling the random-effects ETA components.}
+
+\item{...}{Reserved for future extensions; currently ignored.}
+}
+\value{
+A list containing the compiled ETA components, the modified phenotypic data, and names of the ETA elements. Each element in the ETA list represents a model component (fixed or random effect) along with its corresponding model matrix (`X`) or relationship matrix (`K`), and the specified model type.
 }
 \description{
-Title
-This function does this following:
-1. Extract all the random terms from the formula
-2. Compile all the random terms and set the model for each term
+This function compiles the effects to be estimated (ETA) for Bayesian genomic prediction models, including fixed and random effects, using genomic and omics data. It prepares the model matrices for fixed effects and the relationship matrices for random effects to be used in Bayesian analysis, such as GBLUP, RKHS, and Bayesian Regression.
+}
+\examples{
+\dontrun{
+# Assuming pheno_data is your phenotypic dataset and you have genomic and omics data:
+ETA_result <- ETA_compiler_bayes(
+  fixed = ~ fixed_effect,
+  random = ~ (1|gen_name),
+  GS_model = "BRR",
+  pheno_data = pheno_data,
+  geno_data = geno_matrix,
+  omic1_data = omic1_matrix,
+  # Additional omics data can be added as needed
+  gen_name = "GenotypeID"
+)
+}
 }

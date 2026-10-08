@@ -2,7 +2,7 @@
 % Please edit documentation in R/ETA_compiler_bayes_GBLUP.R
 \name{ETA_compiler_bayes_GBLUP}
 \alias{ETA_compiler_bayes_GBLUP}
-\title{Title}
+\title{Compile ETA for Bayesian Genomic Prediction Models}
 \usage{
 ETA_compiler_bayes_GBLUP(
   fixed = NULL,
@@ -16,14 +16,59 @@ ETA_compiler_bayes_GBLUP(
   omic1_kernel = NULL,
   omic2_kernel = NULL,
   omic3_kernel = NULL,
+  kernel_list = NULL,
   gen_name = NULL,
   heter_groups = NULL,
   ...
 )
 }
 \arguments{
-\item{...}{}
+\item{fixed}{A formula or a list of formulas specifying the fixed effects.}
+
+\item{random}{A formula or a list of formulas specifying the random effects.}
+
+\item{GS_model}{A character string specifying the genomic selection model to use.}
+
+\item{fixed_term_model_bayesian}{Character string specifying the model for fixed terms. Default is NULL.}
+
+\item{rand_term_model_bayesian}{Character vector specifying the models for each random term. Default is NULL.}
+
+\item{pheno_data}{A data.frame containing the phenotypic data.}
+
+\item{gmatrix}{A numeric matrix representing the genomic relationship matrix.}
+
+\item{gkernel}{A numeric matrix representing a genomic kernel for RKHS models. Default is NULL.}
+
+\item{omic1_kernel}{A numeric matrix representing an omics-based kernel. Default is NULL.}
+
+\item{omic2_kernel}{Same as `omic1_kernel`. Default is NULL.}
+
+\item{omic3_kernel}{Same as `omic1_kernel`. Default is NULL.}
+
+\item{kernel_list}{Optional named list of additional relationship or kernel matrices.}
+
+\item{gen_name}{A character string specifying the column name in `pheno_data` that contains the genotype identifiers.}
+
+\item{heter_groups}{A character string specifying the column name in `pheno_data` for heterogeneous groups. Default is NULL.}
+
+\item{...}{Reserved for future extensions; currently ignored.}
+}
+\value{
+A list containing the compiled ETA components, the modified phenotypic data, and names of ETA elements.
 }
 \description{
-Title
+This function compiles the ETA components for Bayesian genomic prediction models,
+including RKHS, and GBLUP_BRR, based on the provided fixed and random model terms,
+genomic or other omics relationship matrices, and phenotypic data.
+}
+\examples{
+\dontrun{
+# Assuming pheno_data is your phenotypic dataset, gmatrix is the genomic relationship matrix:
+result <- ETA_compiler_bayes_GBLUP(fixed = ~ fixed_effect,
+                                   random = ~ random_effect,
+                                   GS_model = "RKHS",
+                                   pheno_data = pheno_data,
+                                   gmatrix = gmatrix,
+                                   gen_name = "GenotypeID")
+}
 }

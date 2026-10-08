@@ -8,8 +8,6 @@
 #' @param fixed A formula specifying the fixed effects to be included in the model.
 #' @param fixed_term_model_bayesian Optionally specify the model for the fixed terms in the Bayesian framework.
 #'        This is usually "FIXED" but can be left NULL for automatic handling.
-#' @param pheno_data A data frame containing the phenotypic data, including columns for all variables
-#'        specified in the `fixed` formula.
 #' @return A list of lists where each inner list represents an ETA component for a fixed term.
 #'         Each component contains the model matrix (`X`) and the model type (`model`) for that fixed term.
 #' @examples
@@ -20,6 +18,29 @@
 #' }
 #' @export
 
+gp_bayes_normalize_fixed_argument <- function(fixed = NULL,
+                                              fixed_term_model_bayesian = NULL) {
+  if (is.null(fixed) || inherits(fixed, "formula")) {
+    return(fixed)
+  }
+  if (length(fixed) == 1L &&
+      length(fixed_term_model_bayesian) == 1L &&
+      identical(as.character(fixed), as.character(fixed_term_model_bayesian))) {
+    return(NULL)
+  }
+  fixed
+}
+
+#' Compile ETA for Fixed Terms in Bayesian Models
+#'
+#' This function prepares model-matrix ETA components for fixed terms in
+#' Bayesian genomic prediction models.
+#'
+#' @param fixed A formula specifying fixed effects.
+#' @param fixed_term_model_bayesian Optional model label for fixed terms.
+#' @param pheno_data Phenotypic data containing variables in `fixed`.
+#' @return A list of ETA components for fixed terms.
+#' @export
 ETA_compiler_fixed_term <- function(fixed = NULL,
                          fixed_term_model_bayesian = NULL,
                          pheno_data = NULL
@@ -29,9 +50,17 @@ ETA_compiler_fixed_term <- function(fixed = NULL,
   ## Start with creating empty list for ETA compilation
 
   ETA = list()
+  fixed <- gp_bayes_normalize_fixed_argument(
+    fixed = fixed,
+    fixed_term_model_bayesian = fixed_term_model_bayesian
+  )
 
-  #if(!is.null(fixed)){
+  if (is.null(fixed)) {
+    return(ETA)
+  }
+
     fixed_term_no_inter <- fixed_terms(fixed = fixed, pheno_data = pheno_data)
+    fixed_term_no_inter <- setdiff(fixed_term_no_inter, c("1", "0"))
     fixed_model <- fixed_term_model(fixed_term_no_inter,
                                     fixed_term_model_bayesian)
     #### Fit Fixed terms in ETA
@@ -39,13 +68,35 @@ ETA_compiler_fixed_term <- function(fixed = NULL,
       for (ET in 1:length(fixed_term_no_inter)) {
 
 
-        ETA[[ET]] <- list(X=stats::model.matrix(~factor(pheno_data[, fixed_term_no_inter[ET]])-1),
-                          model=fixed_model)
+        fixed_value <- pheno_data[[fixed_term_no_inter[ET]]]
+        fixed_design <- stats::model.matrix(
+          ~ .fixed_value,
+          data = data.frame(.fixed_value = fixed_value)
+        )
+        fixed_design <- fixed_design[
+          , colnames(fixed_design) != "(Intercept)", drop = FALSE
+        ]
+        informative <- if (ncol(fixed_design)) {
+          vapply(seq_len(ncol(fixed_design)), function(j) {
+            x <- fixed_design[, j]
+            x <- as.numeric(x)
+            any(is.finite(x)) && stats::sd(x, na.rm = TRUE) > sqrt(.Machine$double.eps)
+          }, logical(1L))
+        } else {
+          logical()
+        }
+        fixed_design <- fixed_design[, informative, drop = FALSE]
+        if (!ncol(fixed_design)) {
+          next
+        }
+        ETA[[length(ETA) + 1L]] <- list(
+          X = fixed_design,
+          model = fixed_model[[min(ET, length(fixed_model))]]
+        )
 
       }
 
     }
-  #}
 
   return(ETA)
 
@@ -67,6 +118,9 @@ ETA_compiler_fixed_term <- function(fixed = NULL,
 #' @param omic2_data Second omics data matrix.
 #' @param omic3_data Third omics data matrix.
 #' @param gen_name Name of the genotype column in `pheno_data`.
+#' @param scaling Logical; if `TRUE`, centre and scale the marker / omics data
+#'   before compiling the random-effects ETA components.
+#' @param ... Reserved for future extensions; currently ignored.
 #' @return A list containing the compiled ETA components, the modified phenotypic data, and names of the ETA elements. Each element in the ETA list represents a model component (fixed or random effect) along with its corresponding model matrix (`X`) or relationship matrix (`K`), and the specified model type.
 #' @examples
 #' \dontrun{
@@ -100,7 +154,11 @@ ETA_compiler_bayes <- function(
     ...
 ) {
   ETA <- list()
-  msg <- "\n==================================================\n"
+  msg <- ""
+  fixed <- gp_bayes_normalize_fixed_argument(
+    fixed = fixed,
+    fixed_term_model_bayesian = fixed_term_model_bayesian
+  )
 
   rand_term_no_inter <- random_terms(random = random, pheno_data = pheno_data)
 
@@ -109,7 +167,7 @@ ETA_compiler_bayes <- function(
     gen_name = gen_name,
     rand_terms_model_bayesian = rand_term_model_bayesian,
     GS_model = GS_model,
-    message = message
+    message = TRUE
   )
 
   if (!is.null(fixed)) {
@@ -157,5 +215,3 @@ ETA_compiler_bayes <- function(
   names(output) <- c("ETA", "pheno_data", "ETA_element_name")
   return(output)
 }
-
-

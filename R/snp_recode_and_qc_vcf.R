@@ -221,14 +221,14 @@ process_vcf_in_batches_parallel <- function(vcf_file_name_qc_plink,
     if (total_lines>batch_size) {
       if(is.null(num_cores)){
 
-        num_cores <-  parallel::detectCores()
+      num_cores <- gp_detect_cores()
         num_cores <- num_cores*0.7
       }
       future::plan(plan_type, workers = num_cores)
     }
 
     # Parallel processing
-    results <- future.apply::future_lapply(seq_along(batch_starts), function(i) {
+    results <- gp_future_lapply_session(seq_along(batch_starts), function(i) {
 
       start_line <- batch_starts[i]
       skip_lines <- start_line + length(header) - 1
@@ -290,20 +290,36 @@ process_vcf_in_batches_parallel <- function(vcf_file_name_qc_plink,
     results <- process_batch(vcf_data,het_threshold, recode_format)
 
     combined_geno <- results[["vcf_data"]]
-    total_het_markers_removed <- results[["total_het_markers_removed"]]
+    total_het_markers_removed <- results[["het_markers_removed"]]
 
     rm(vcf_data); gc()
   }
 
-  #combined_geno <- data.table::rbindlist(results, use.names = TRUE, fill = TRUE)
-  posindex <- grep("pos", colnames(combined_geno), ignore.case = TRUE)
+  chrom_column <- vcf_find_column(combined_geno, c("#CHROM", "CHROM"))
+  pos_column <- vcf_find_column(combined_geno, "POS")
+  ref_column <- vcf_find_column(combined_geno, "REF")
+  alt_column <- vcf_find_column(combined_geno, "ALT")
 
-  # Check if the position column is found
-  if(length(posindex) != 0){
-    pos_column <- colnames(combined_geno)[posindex]
+  if (!is.null(chrom_column) && !is.null(pos_column) && !is.null(ref_column) && !is.null(alt_column)) {
+    coord_key <- paste(combined_geno[[chrom_column]], combined_geno[[pos_column]], sep = "\r")
+    allele_key <- paste(combined_geno[[ref_column]], combined_geno[[alt_column]], sep = "\r")
+    coord_has_conflict <- vapply(split(allele_key, coord_key), function(x) {
+      length(unique(x)) > 1L
+    }, logical(1))
+    conflict_coords <- names(coord_has_conflict)[coord_has_conflict]
+    if (length(conflict_coords)) {
+      combined_geno <- combined_geno[!(coord_key %in% conflict_coords), ]
+      coord_key <- paste(combined_geno[[chrom_column]], combined_geno[[pos_column]], sep = "\r")
+    }
 
-    # Remove duplicated rows based on the position column
-    combined_geno <- combined_geno[!duplicated(combined_geno[[pos_column]]), ]
+    marker_key <- paste(
+      combined_geno[[chrom_column]],
+      combined_geno[[pos_column]],
+      combined_geno[[ref_column]],
+      combined_geno[[alt_column]],
+      sep = "\r"
+    )
+    combined_geno <- combined_geno[!duplicated(marker_key), ]
   }
 
   combined_geno <- compute_call_rate(combined_geno, ind_call_rate_threshold)
@@ -326,7 +342,6 @@ process_vcf_in_batches_parallel <- function(vcf_file_name_qc_plink,
 #'
 #' @param vcf_file_name Name of the VCF file (optional).
 #' @param vcf_file_path Path to the directory containing the VCF file (optional).
-#' @param vcf_file An object containing the VCF data (optional).
 #' @param maf_threshold Threshold for minor allele frequency below which SNPs will be removed.
 #' @param het_threshold Threshold for heterozygosity above which SNPs will be removed.
 #' @param ind_call_rate_threshold Threshold for individual call rate below which individuals will be removed.
@@ -335,6 +350,22 @@ process_vcf_in_batches_parallel <- function(vcf_file_name_qc_plink,
 #' @param recode_format String specifying the format for recoding genotypes. Can be "0,1,2" for homozygous reference,
 #' heterozygous, and homozygous alternate, respectively, or "-1,0,1" for an alternative coding scheme.
 #' @param out_put_map Logical indicating whether to output the SNP map along with the recoded data.
+#' @param batch_size Integer; number of variants to read / process per batch
+#'   (used for memory-bounded streaming over large VCFs).
+#' @param num_cores Optional integer; number of parallel workers for the
+#'   batched read / recode (default uses serial execution).
+#' @param ld_pruning Logical; if `TRUE`, apply LD pruning after QC.
+#' @param ld_pruning_method LD-pruning algorithm
+#'   (e.g. `"indep-pairwise"`).
+#' @param window_size Window size used by LD pruning (in kb when
+#'   `use_kb_window = TRUE`, otherwise in number of variants).
+#' @param step_size Step size between successive windows for LD pruning.
+#' @param r2_threshold `r^2` threshold for LD pruning.
+#' @param use_kb_window Logical; if `TRUE`, `window_size` is interpreted as
+#'   kilobases, otherwise as a marker count.
+#' @param phased Logical; if `TRUE`, treat genotypes as phased during pruning.
+#' @param use_founders Logical; if `TRUE`, restrict pruning to founder
+#'   individuals only.
 #' @param message Logical indicating whether messages about the QC process should be displayed.
 #'
 #' @details The function supports reading VCF data from a file or directly from an R object. It applies several QC
@@ -342,21 +373,21 @@ process_vcf_in_batches_parallel <- function(vcf_file_name_qc_plink,
 #' The function allows for the imputation of missing data and the inclusion of a SNP map in the output.
 #'
 #' @return A list containing the following elements:
-#' \itemize{
 #'   \item{snps_matrix}{Matrix of the recoded genotype data.}
 #'   \item{snp_map}{Data frame of the SNP map, if \code{out_put_map} is TRUE.}
 #'   \item{qc_metrics_and_summary_stat}{Data frame summarizing the QC metrics and the number of SNPs/individuals removed.}
-#' }
 #'
 #' @examples
-#' # Assuming `vcf_data` is your VCF data frame
-#' result <- vcf_qc_recode(vcf_file = vcf_data, maf_threshold = 0.05, het_threshold = 0.15,
+#' \dontrun{
+#' result <- vcf_qc_recode(vcf_file_name = "variants.vcf", vcf_file_path = ".",
+#'                         maf_threshold = 0.05, het_threshold = 0.15,
 #'                         ind_call_rate_threshold = 0.9, snp_call_rate_threshold = 0.9,
 #'                         recode_format = "0,1,2", out_put_map = TRUE, message = TRUE)
-#' @export
+#' }
+#' @keywords internal
 #' @importFrom data.table := .SD .SDcols lapply
 
-vcf_qc_recode <-   function(vcf_file_name = NULL,
+vcf_qc_recode_legacy <- function(vcf_file_name = NULL,
                            vcf_file_path = NULL,
                            #vcf_file = NULL,
                            maf_threshold = 0.05,
@@ -373,14 +404,13 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
                            ld_pruning_method = "indep-pairwise", # LD pruning method
                            window_size = 50,           # Window size for LD pruning
                            step_size = 5,              # Step size for LD pruning
-                           r2_threshold = 0.2,         # r² threshold for LD pruning
+                           r2_threshold = 0.2,         # r^2 threshold for LD pruning
                            use_kb_window = TRUE,      # Use kb for window size in LD pruning
                            phased = TRUE,             # Option for phased LD pruning
                            use_founders = FALSE,
-                           #beagle_path = "D:/PredictProR",
                            message = TRUE) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   #### Place holders
   markers_callrate_removed  <-  0
@@ -389,10 +419,12 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
   maf_markers_removed <-  0
 
   main_dir <- getwd()
+  on.exit(setwd(main_dir), add = TRUE)
   if(is.null(vcf_file_path)) vcf_file_path <- getwd()
 
   if(!is.null(vcf_file_name) && !is.null(vcf_file_path)){
     # Construct the full file path
+    vcf_file_path <- normalizePath(vcf_file_path, winslash = "/", mustWork = TRUE)
     setwd(vcf_file_path)
     full_file_path <- file.path(vcf_file_path, vcf_file_name)
     systime <- format(Sys.time(), "%Y%m%d_%H%M%S")
@@ -431,7 +463,7 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
                        ld_pruning_method = ld_pruning_method, # LD pruning method
                        window_size = window_size,           # Window size for LD pruning
                        step_size = step_size,              # Step size for LD pruning
-                       r2_threshold = r2_threshold,         # r² threshold for LD pruning
+                       r2_threshold = r2_threshold,         # r^2 threshold for LD pruning
                        use_kb_window = use_kb_window,      # Use kb for window size in LD pruning
                        phased = TRUE,             # Option for phased LD pruning
                        use_founders = FALSE)
@@ -507,13 +539,24 @@ vcf_qc_recode <-   function(vcf_file_name = NULL,
    if(isTRUE(impute)){
      #if(any(is.na(snp_data[, 12:ncol(snp_data)]))==T) {
      if(any(is.na(vcf_processed_data[, 10:ncol(vcf_processed_data)]))==T) {
-       #This function will impute the missing values
-       #for(j in 12:ncol(snp_data)){
-       for(j in 10:ncol(vcf_processed_data)){
-         tmp <- vcf_processed_data[,j, with=FALSE]
-         #tmp <- vcf_processed_data[,j]
-         tmp = as.double(as.character(unlist(tmp)))
-         vcf_processed_data[,j] <- ifelse(is.na(tmp),round(mean(tmp,na.rm=T)),tmp)
+       if (geno_impute_summary_cpp_available()) {
+         geno_cols <- names(vcf_processed_data)[10:ncol(vcf_processed_data)]
+         imputed <- geno_impute_summary_cpp(
+           as.matrix(vcf_processed_data[, geno_cols, with = FALSE]),
+           method = "mean"
+         )
+         for (j in seq_along(geno_cols)) {
+           data.table::set(vcf_processed_data, j = geno_cols[[j]], value = imputed[, j])
+         }
+       } else {
+         #This function will impute the missing values
+         #for(j in 12:ncol(snp_data)){
+         for(j in 10:ncol(vcf_processed_data)){
+           tmp <- vcf_processed_data[,j, with=FALSE]
+           #tmp <- vcf_processed_data[,j]
+           tmp = as.double(as.character(unlist(tmp)))
+           vcf_processed_data[,j] <- ifelse(is.na(tmp),round(mean(tmp,na.rm=T)),tmp)
+         }
        }
 
      }

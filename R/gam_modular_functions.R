@@ -22,10 +22,73 @@ get_hybrid <- function(observed, predicted) {
   return((r2 + corr) / 2)
 }
 
+pls_transform_python <- function(X_train, y, X_test = NULL, n_comp = NULL) {
+  if (!requireNamespace("reticulate", quietly = TRUE)) {
+    stop("reticulate is required for Python-backed PLS transforms.", call. = FALSE)
+  }
+  py_bin <- tryCatch(gp_detect_python(), error = function(e) NULL)
+  if (!is.null(py_bin) && nzchar(py_bin)) {
+    try(gp_init_python_once(py_bin), silent = TRUE)
+  }
+  ensure_ml_pydeps(prefer_gpu = FALSE)
+  sk_cross <- reticulate::import("sklearn.cross_decomposition", delay_load = FALSE)
+  sk_model_selection <- reticulate::import("sklearn.model_selection", delay_load = FALSE)
+
+  X_train <- as.matrix(X_train)
+  y <- as.numeric(y)
+  max_comp <- min(ncol(X_train), nrow(X_train))
+  if (is.null(n_comp)) {
+    max_search <- max(1L, min(max_comp, 10L))
+    k_splits <- max(2L, min(5L, nrow(X_train)))
+    best_comp <- 1L
+    best_score <- -Inf
+    for (cc in seq_len(max_search)) {
+      est <- sk_cross$PLSRegression(n_components = as.integer(cc), scale = FALSE)
+      cv <- sk_model_selection$KFold(
+        n_splits = as.integer(k_splits),
+        shuffle = TRUE,
+        random_state = as.integer(123L)
+      )
+      score <- mean(sk_model_selection$cross_val_score(
+        est,
+        X_train,
+        y,
+        cv = cv,
+        scoring = "neg_mean_squared_error"
+      ))
+      if (is.finite(score) && score > best_score) {
+        best_score <- score
+        best_comp <- cc
+      }
+    }
+    n_comp <- best_comp
+  } else {
+    n_comp <- min(as.integer(n_comp[[1]]), max_comp)
+  }
+
+  pls_model <- sk_cross$PLSRegression(n_components = as.integer(n_comp), scale = FALSE)
+  pls_model$fit(X_train, y)
+  train_scores <- as.matrix(pls_model$x_scores_)
+  colnames(train_scores) <- paste0("comp", seq_len(ncol(train_scores)))
+
+  test_scores <- NULL
+  if (!is.null(X_test)) {
+    test_scores <- as.matrix(pls_model$transform(as.matrix(X_test)))
+    colnames(test_scores) <- colnames(train_scores)
+  }
+
+  list(
+    train_scores = as.data.frame(train_scores),
+    test_scores = if (!is.null(test_scores)) as.data.frame(test_scores) else NULL,
+    n_comp = n_comp,
+    pls_model = pls_model
+  )
+}
+
 
 
 cv_model_score <- function(X, y, metric = c("r2", "correlation", "hybrid"), k = 5, seed = 123) {
-  set.seed(seed)
+  gp_set_seed(seed)
   folds <- caret::createFolds(y, k = k, list = TRUE)
   scores <- numeric(k)
 
@@ -49,35 +112,7 @@ cv_model_score <- function(X, y, metric = c("r2", "correlation", "hybrid"), k = 
 }
 
 pls_gam_transform <- function(X_train, y, X_test = NULL, n_comp = NULL) {
-  df_train <- data.frame(y = y, X_train)
-
-  # Train PLS with cross-validation if n_comp is not specified
-  if (is.null(n_comp)) {
-    pls_model <- pls::plsr(y ~ ., data = df_train, validation = "CV")
-    n_comp <- which.min(pls_model$validation$PRESS)
-  } else {
-    pls_model <- pls::plsr(y ~ ., data = df_train, ncomp = n_comp)
-  }
-
-  # Extract training scores
-  train_scores <- pls::scores(pls_model)[, 1:n_comp, drop = FALSE]
-  colnames(train_scores) <- paste0("comp", 1:ncol(train_scores))
-
-  # Project test set (if provided)
-  test_scores <- NULL
-  if (!is.null(X_test)) {
-    # Make sure test set has same column order and names
-    X_test_scaled <- scale(X_test, center = pls_model$Xmeans, scale = FALSE)
-    test_scores <- as.matrix(X_test_scaled) %*% pls_model$loadings[, 1:n_comp, drop = FALSE]
-    colnames(test_scores) <- colnames(train_scores)
-  }
-
-  return(list(
-    train_scores = as.data.frame(train_scores),
-    test_scores = if (!is.null(test_scores)) as.data.frame(test_scores) else NULL,
-    n_comp = n_comp,
-    pls_model = pls_model
-  ))
+  pls_transform_python(X_train = X_train, y = y, X_test = X_test, n_comp = n_comp)
 }
 
 
@@ -127,8 +162,18 @@ rf_importance_stat <- function(data, indices, response_col = "y", mtry = NULL) {
     mtry <- floor(sqrt(ncol(X)))
   }
 
-  rf_model <- randomForest::randomForest(x = X, y = y, mtry = mtry, importance = TRUE)
-  imp <- randomForest::importance(rf_model, type = 2)[, 1]
+  imp <- gp_py_ml_feature_importance(
+    model_type = "randomforest",
+    X_train = X,
+    y_train = y,
+    response_family = "auto",
+    model_params = list(
+      mtry = mtry,
+      n_jobs = 1L,
+      random_state = 123L
+    )
+  )
+  names(imp) <- colnames(X)
   full_names <- colnames(X)
   imp_full <- setNames(rep(0, length(full_names)), full_names)
   imp_full[names(imp)] <- imp
@@ -146,7 +191,7 @@ boot_rf_feature_selection <- function(X, y, R = 100, seed = 123, mtry = 500, per
                                       method_cum_importance_thres = TRUE,
                                       method_cross_val_tune = TRUE,
                                       method_sd = TRUE) {
-  set.seed(seed)
+  gp_set_seed(seed)
   df <- as.data.frame(X)
   df$y <- y
 
@@ -277,28 +322,14 @@ transform_features <- function(X, y = NULL, method, selected, X_test = NULL, n_c
     test_scores <- if (!is.null(X_test)) predict(pca, X_test[, selected, drop = FALSE])[, 1:n_pc, drop = FALSE] else NULL
     if(!is.null(test_scores)) colnames(test_scores) <- colnames(train_scores)
   } else if (method == "pls") {
-    df_train <- data.frame(y = y, X_sel)
-
-    # Train PLS with cross-validation if n_comp is not specified
-    if (is.null(n_comp)) {
-      pls_model <- pls::plsr(y ~ ., data = df_train, validation = "CV")
-      n_comp <- which.min(pls_model$validation$PRESS)
-    } else {
-      pls_model <- pls::plsr(y ~ ., data = df_train, ncomp = n_comp)
-    }
-
-    # Extract training scores
-    train_scores <- pls::scores(pls_model)[, 1:n_comp, drop = FALSE]
-    colnames(train_scores) <- paste0("comp", 1:ncol(train_scores))
-
-    # Project test set (if provided)
-    test_scores <- NULL
-    if (!is.null(X_test)) {
-      # Make sure test set has same column order and names
-      X_test_scaled <- scale(X_test[, selected, drop = FALSE], center = pls_model$Xmeans, scale = FALSE)
-      test_scores <- as.matrix(X_test_scaled) %*% pls_model$loadings[, 1:n_comp, drop = FALSE]
-      colnames(test_scores) <- colnames(train_scores)
-    }
+    pls_res <- pls_transform_python(
+      X_train = X_sel,
+      y = y,
+      X_test = if (!is.null(X_test)) X_test[, selected, drop = FALSE] else NULL,
+      n_comp = n_comp
+    )
+    train_scores <- pls_res$train_scores
+    test_scores <- pls_res$test_scores
   }
   return(list(train_scores = train_scores, test_scores = test_scores))
 }

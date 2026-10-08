@@ -2,7 +2,7 @@
 % Please edit documentation in R/single_loc_BayesA_B_C_BL_BRR.R
 \name{M_matrix_bayes_mod_single_loc}
 \alias{M_matrix_bayes_mod_single_loc}
-\title{Title}
+\title{Fit a Bayesian marker-effect model (BayesA / B / C / BL / BRR) at a single location}
 \usage{
 M_matrix_bayes_mod_single_loc(
   object = NULL,
@@ -16,8 +16,32 @@ M_matrix_bayes_mod_single_loc(
 )
 }
 \arguments{
-\item{verbose}{}
+\item{object}{Cleaned phenotype data frame containing the response column.}
+
+\item{response}{Name of the response (trait) column in `object`.}
+
+\item{weights}{Optional positive Stage 2 observation precisions, supplied as
+a numeric vector, one-column table, or column name in `object`. These are
+converted to `sqrt(weights)` before calling BGLR because BGLR defines
+residual variance as inverse squared native weight.}
+
+\item{ETA}{Pre-compiled ETA list (from [ETA_compiler_bayes]) describing the
+fixed and random terms.}
+
+\item{bayes_para}{Named list of BGLR MCMC controls (`nIter`, `burnIn`,
+`thin`) from [bayes_parameter_check].}
+
+\item{verbose}{Logical; passed through to BGLR for its progress output.}
+
+\item{core}{Integer; reserved compute / parallel hint.}
+
+\item{...}{Additional arguments forwarded to BGLR.}
+}
+\value{
+The fitted BGLR model object.
 }
 \description{
-Title
+Wraps a [BGLR::BGLR] call for the marker (single-location) Bayesian models,
+using the pre-compiled ETA list, MCMC controls in `bayes_para` and writing
+the run's auxiliary files under a timestamped working directory.
 }

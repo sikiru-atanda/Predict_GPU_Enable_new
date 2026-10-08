@@ -1,12 +1,25 @@
-#' Title
+#' Prepare omics data for model fitting (pre-check, impute, align train/test)
 #'
-#' @param omic_data
-#' @param train_omic_data
-#' @param test_omic_data
-#' @param message
-#' @param ...
+#' Wraps [omic_precheck] for the model-fitting workflow: accepts either a single
+#' omics matrix `omic_data` or pre-split `train_omic_data` / `test_omic_data`,
+#' applies the missingness threshold, optionally imputes, and returns the
+#' matrix / matrices ready to be passed to a model.
 #'
-#' @return
+#' @param omic_data Single omics matrix for the full set (used when no separate
+#'   train / test split is supplied).
+#' @param train_omic_data Optional training omics matrix.
+#' @param test_omic_data Optional test-set omics matrix matching
+#'   `train_omic_data`.
+#' @param message Logical; if `TRUE`, print summary messages.
+#' @param impute_omic Logical; if `TRUE`, impute missing values.
+#' @param imputation_method One of `"knn"`, `"mean"`, `"median"`.
+#' @param impute_knn_k Integer; number of nearest neighbours when
+#'   `imputation_method = "knn"`.
+#' @param na_threshold Numeric in `(0, 1]`; columns whose missing-value
+#'   proportion exceeds this are dropped.
+#' @param ... Reserved for future extensions; currently ignored.
+#'
+#' @return The pre-checked omics matrix or list of (train, test) matrices.
 #' @export
 #'
 #' @examples
@@ -20,7 +33,7 @@ omic_to_model <- function(omic_data = NULL,
                           na_threshold = 0.9,
                           ...) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   if (is.null(omic_data) & is.null(train_omic_data) & is.null(test_omic_data)) {
     stop(paste(msg, 'Omic data is missing.'), call. = FALSE)

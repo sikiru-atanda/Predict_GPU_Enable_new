@@ -2,7 +2,7 @@
 % Please edit documentation in R/bayes_finalize_RKHS_GBLUPBRR.R
 \name{bayes_finalize_RKHS_GBLUPBRR}
 \alias{bayes_finalize_RKHS_GBLUPBRR}
-\title{Title}
+\title{Compile Bayesian RKHS, GBLUP_BRR Models}
 \usage{
 bayes_finalize_RKHS_GBLUPBRR(
   fixed = NULL,
@@ -18,18 +18,115 @@ bayes_finalize_RKHS_GBLUPBRR(
   omic1_kernel = NULL,
   omic2_kernel = NULL,
   omic3_kernel = NULL,
+  kernel_list = NULL,
   gen_name = NULL,
   nIter = NULL,
   burnIn = NULL,
   thin = NULL,
   heter_groups = NULL,
+  heter_resid = FALSE,
   omics_kernel_label = NULL,
+  cross_validation = FALSE,
+  response_family = "gaussian",
   ...
 )
 }
 \arguments{
-\item{...}{}
+\item{fixed}{Formula or character vector specifying the fixed effects to be included in the model.}
+
+\item{random}{Formula or character vector specifying the random effects to be included in the model.}
+
+\item{GS_model}{Character string specifying the type of genomic selection model to be used: "RKHS", "GBLUP_BRR", or "BRR". Use "GBLUP" through the ASReml/GBLUP route, not this Bayesian finalizer.}
+
+\item{response}{Character string specifying the response variable in the phenotypic data.}
+
+\item{weights}{Optional positive Stage 2 observation precisions, supplied as
+a numeric vector, one-column table, or phenotype column name. Gaussian BGLR
+fits receive their square roots to match BGLR's inverse-squared convention.}
+
+\item{fixed_term_model_bayesian}{Character vector specifying the fixed terms in the Bayesian model.}
+
+\item{rand_term_model_bayesian}{Character vector specifying the random terms in the Bayesian model.}
+
+\item{pheno_data}{Data frame containing the phenotypic data.}
+
+\item{gkernel}{Kernel matrix for genomic data (optional).}
+
+\item{gmatrix}{Genomic relationship matrix (optional).}
+
+\item{omic1_kernel}{Kernel matrix for the first omics data type (optional).}
+
+\item{omic2_kernel}{Kernel matrix for the second omics data type (optional).}
+
+\item{omic3_kernel}{Kernel matrix for the third omics data type (optional).}
+
+\item{kernel_list}{Optional named list of additional relationship or kernel matrices.}
+
+\item{gen_name}{Character string specifying the name of the genotype factor in the genomic data.}
+
+\item{nIter}{Integer specifying the number of iterations for the Bayesian model.}
+
+\item{burnIn}{Integer specifying the number of burn-in iterations for the Bayesian model.}
+
+\item{thin}{Integer specifying the thinning interval for the Bayesian model.}
+
+\item{heter_groups}{Character string identifying the grouping variable for heterogeneity (optional).}
+
+\item{heter_resid}{Logical indicating whether Gaussian Bayesian fits should estimate residual variance by `heter_groups` when supported.}
+
+\item{omics_kernel_label}{Character vector specifying labels for the omic data sets (optional).}
+
+\item{cross_validation}{Logical indicating whether to return cross-validation preparation objects instead of fitting the final model.}
+
+\item{response_family}{Response family for the Bayesian fit.}
+
+\item{...}{Additional arguments for future extensions.}
+}
+\value{
+A list containing two elements: `bayes_result`, which holds the processed output from the Bayesian model, and `bayes_model`, which contains the raw model object from the Bayesian analysis.
 }
 \description{
-Title
+This function prepares inputs for, and executes, Bayesian genomic selection models specifically designed for RKHS (Reproducing Kernel Hilbert Spaces), GBLUP_BRR, and BRR (Bayesian Ridge Regression) approaches. It incorporates fixed and random effects, kernel matrices for genomic and omics data, and handles specific Bayesian parameters.
+}
+\details{
+The function integrates steps required for running specific Bayesian genomic
+selection models, compiling necessary data and model specifications to
+execute the model and format the output. Designed to work with RKHS, GBLUP_BRR,
+and BRR approaches, it can handle complex scenarios involving multiple
+sources of omic data and varying model parameters.
+
+For multi-environment Gaussian `RKHS` fits with random structure such as
+`~ GID + GID:Env`, PredictProR now defaults the internal Bayesian ETA to:
+\itemize{
+\item main `GID` term as `BRR`
+\item interaction `GID:Env` term as `RKHS`
+}
+
+This avoids fitting two highly redundant RKHS kernels on the same GRM
+backbone for both main and interaction effects, which previously depressed
+the fitted marginal genetic variance and reliability. Single-environment
+`RKHS` fits are unchanged.
+
+In multi-environment RKHS, `heter_resid = TRUE` selects the
+environment-as-trait `BGLR::Multitrait` fit with environment-specific
+genetic variances and diagonal environment-specific residual variances. This
+mode requires `weights = NULL`. With `heter_resid = FALSE`, RKHS uses the
+environment-aware genomic-main plus GxE kernel fit with common genetic and
+residual variance parameters; that route accepts Stage 2 precision weights.
+The effective mode and covariance structures are recorded in
+`model_parameters`.
+
+\strong{GBLUP_BRR vs RKHS equivalence in MET heter_resid:} when
+`heter_resid = TRUE` with multiple environments, both `RKHS` and
+`GBLUP_BRR` are routed through `bayes_multitrait_env_heter_fit`, which
+calls `BGLR::Multitrait` with a kernel-prior genetic term (`model = "RKHS"`
+internally). With `X = eigen-sqrt(K)` the BRR-induced genetic covariance
+\eqn{\sigma^2 X X^\top} equals the RKHS prior \eqn{\sigma^2 K}; BGLR's
+multitrait sampler only implements the kernel-prior form, so MET
+`GBLUP_BRR` and MET `RKHS` are \emph{numerically identical given the same
+RNG seed}. This is by design; the `GS_model` label is preserved only in
+the save-prefix and output metadata for traceability. In single-environment
+fits the two diverge (separate `BRR`-design vs `RKHS`-kernel branches in
+`BGLR::BGLR` with different prior scales), both anchored to the ASReml
+GBLUP reference.
 }

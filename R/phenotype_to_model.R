@@ -22,11 +22,23 @@
 #' @param pheno_data_test phenotypic object for the testing set. NA is allowed
 #' @param response y variables/lables
 #' @param gen_name column name containing individuals/genotypes
-#' @param ...
-#' @param train_set
-#' @param test_set
+#' @param response_family Response distribution family
+#'   (`"gaussian"`, `"binomial"`, `"multinomial"`, `"ordinal"`).
+#' @param heter_groups Optional column carrying the heterogeneous-group label
+#'   (typically environment) for MET runs.
+#' @param random Optional one-sided formula for random terms (e.g. `~ GID`).
+#' @param fixed Optional one-sided formula for additional fixed terms.
+#' @param type_pheno Optional phenotype-type hint
+#'   (e.g. `"continuous"`, `"binary"`).
+#' @param train_set Optional integer / character vector of training-set row
+#'   indices or genotype IDs.
+#' @param test_set Optional integer / character vector of test-set row indices
+#'   or genotype IDs (rows with `NA` response are inferred as test if not
+#'   supplied).
+#' @param ... Reserved for future extensions; currently ignored.
 #'
-#' @return
+#' @return The phenotype frame declared for model fitting (and prediction),
+#'   plus the resolved `test_set` indices.
 #' @export
 #'
 #' @examples
@@ -38,6 +50,7 @@ phenotype_to_model <- function(
                               train_set = NULL,
                               test_set = NULL,
                               response=NULL,
+                              response_family = "gaussian",
                               gen_name=NULL,
                               heter_groups = NULL,
                               random = NULL,
@@ -51,8 +64,33 @@ phenotype_to_model <- function(
   pheno_data_test_ <- NULL
   #test_set <-  NULL
 
-msg <- "\n==================================================\n"
+msg <- ""
+normalize_test_id_vector <- function(x) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+  if (is.data.frame(x) || is.matrix(x)) {
+    x <- x[, 1]
+  } else if (is.list(x)) {
+    stop(paste(msg,'The testing set cannot be a list. Should be either dataframe, matrix or a vector.'), call. = FALSE)
+  }
+  x <- unique(as.character(x))
+  x[!is.na(x) & nzchar(x)]
+}
 
+build_test_set_by_trait <- function(pheno_df, response_cols, id_col) {
+  out <- setNames(vector("list", length(response_cols)), response_cols)
+  for (col in response_cols) {
+    out[[col]] <- unique(as.character(pheno_df[[id_col]][is.na(pheno_df[[col]])]))
+  }
+  out
+}
+
+explicit_test_set_supplied <- !is.null(test_set)
+explicit_train_set_supplied <- !is.null(train_set)
+test_set_source <- NULL
+test_set_by_trait <- NULL
+test_set_by_trait_source <- NULL
 
   ## Check availability of pheno_datatypic data (training and testing set). This
   ## accommodate missing value with the assumption that testing will have NA
@@ -64,67 +102,54 @@ msg <- "\n==================================================\n"
     pheno_data <- phenotype_precheck(pheno_data= pheno_data,
                                      gen_name = gen_name,
                                      response = response,
+                                     response_family = response_family,
                                      heter_groups = heter_groups,
                                      random = random,
                                      fixed = fixed)
 
-    # Find the rows with NA in each response column if the user has NA as testing set
-    na_rows <- lapply(response, function(col) which(is.na(pheno_data[[col]])))
+    if (isTRUE(explicit_test_set_supplied)) {
+      test_set <- normalize_test_id_vector(test_set)
+      test_set_source <- "explicit"
+    } else if (isTRUE(explicit_train_set_supplied)) {
+      train_set <- normalize_test_id_vector(train_set)
+      non_train_rows <- !as.character(pheno_data[[gen_name]]) %in% as.character(train_set)
+      test_set <- unique(as.character(pheno_data[[gen_name]][non_train_rows]))
+      test_set_source <- "train_set"
 
-    # Check if all vectors of NA rows are identical across the response, sparse is not allowed
-    if(length(na_rows)!=0){
-      if (!all(sapply(na_rows, function(x) identical(x, na_rows[[1]])))) {
-        stop(paste(msg, sprintf("Rows containing NA did not match across the response columns: %s.", paste(response, collapse = ", "))), call. = FALSE)
+      if(length(test_set)==0){
+
+        message(paste( insight::print_color("WARNINGS\n", "blue"),
+                       insight::print_color(paste(msg,paste("The training set size is the same size as the unique genotypes in the pheno_data.")), "blue")))
+
       }
+    } else {
+      # Find the rows with NA in each response column if the user has NA as testing set
+      na_rows <- lapply(response, function(col) which(is.na(pheno_data[[col]])))
+      has_missing_response <- any(vapply(na_rows, length, integer(1)) > 0L)
 
+      if (isTRUE(has_missing_response)) {
+        same_na_pattern <- all(sapply(na_rows, function(x) identical(x, na_rows[[1]])))
+        test_set_by_trait <- build_test_set_by_trait(pheno_data, response, gen_name)
+        test_set_by_trait_source <- "inferred_missing_response"
 
-    if (length(na_rows[[1]]) > 0) {
-    # Get the unique rows with NA (since all are identical, we can take from the first column)
-      # if(!is.null(heter_groups)) {
-      #   stop(print(paste(msg, "Provide data.frame or vector of the names of the testing set.")), call. = FALSE)
-      #
-      # }
-      if(is.null(test_set) || is.null(pheno_data_test)){
-
-        if(!is.null(heter_groups)){
-          test_set <- unique(as.character(pheno_data[[gen_name]][na_rows[[1]]]))
-        }else{
-      test_set <- unique(na_rows[[1]])
-
-      test_set <- as.character(pheno_data[[gen_name]][test_set])
+        if (!isTRUE(same_na_pattern)) {
+          warning(
+            paste(
+              msg,
+              sprintf(
+                "Rows containing NA did not match across response columns: %s. Proceeding with trait-specific inferred testing sets.",
+                paste(response, collapse = ", ")
+              )
+            ),
+            call. = FALSE
+          )
         }
-
+      } else {
+        test_set <- NULL
       }
-
-
     }
 
-    } else {
-      test_set <- NULL
-  }
-
-    if(!is.null(test_set)){
-
-      if(is.data.frame(test_set) | is.matrix(test_set)){
-
-       test_set <-  as.character(test_set[, 1])
-
-
-      } else if (!is.list(test_set)){
-
-        test_set <-  as.character(test_set)
-
-      } else {
-        if(is.list(test_set)){
-        stop(paste(msg,'The testing set cannot be a list. Should be either dataframe, matrix or a vector.'), call. = FALSE)
-
-        }
-
-      }
-
-      if(length(test_set)>length(unique(as.character(pheno_data[[gen_name]])))){
-        stop(paste(msg, "The testing set size should be less than the unique genotypes in the pheno_data."), call. = FALSE)
-      }
+    if(!is.null(test_set) && length(test_set) > 0L){
 
       # pheno_data[[response]] <- ifelse(pheno_data[[gen_name]]%in%test_set, NA,
       #                                  pheno_data[[response]])
@@ -134,49 +159,15 @@ msg <- "\n==================================================\n"
         pheno_data <- dplyr::ungroup(pheno_data)
       }
 
+      test_rows <- as.character(pheno_data[[gen_name]]) %in% test_set
       for (col in response) {
-        pheno_data[[col]] <- ifelse(pheno_data[[gen_name]] %in% test_set, NA, pheno_data[[col]])
+        pheno_data[[col]][test_rows] <- NA
       }
 
       # test_set_ = test_set
       #
       # rm(test_set)
-
-    } else{
-
-      if(!is.null(train_set)){
-        if(is.data.frame(train_set) | is.matrix(train_set)){
-          train_set = train_set[, 1]
-
-        } else if (!is.list(train_set)){
-
-          train_set <-  train_set
-        } else {
-          if(is.list(train_set)){
-
-            stop(paste(msg,'The training set cannot be a list. Should be either dataframe, matrix or a vector.'), call. = FALSE)
-          }
-
-          }
-
-        pheno_data[[response]] <- ifelse(!pheno_data[[gen_name]]%in%train_set, NA,
-                                         pheno_data[[response]])
-
-        test_set <- data.frame(name = as.character(unique(pheno[!pheno_data[[gen_name]]%in%train_set, gen_name])), stringsAsFactors = FALSE)
-        names(test_set) <- gen_name
-
-        if(nrow(test_set)==0){
-
-          #rm(test_set_)
-
-          message(paste( insight::print_color("WARNINGS\n", "blue"),
-                         insight::print_color(paste(msg,paste("The training set size is the same size as the unique genotypes in the pheno_data.")), "blue")))
-
-        }
-
-      }
-
-      }
+    }
 
     ### The result object has to pass the test attribute before it can be stored/
     ## pass through for the next step of check and declared good for model fit
@@ -188,6 +179,12 @@ msg <- "\n==================================================\n"
     attr(pheno_data, "cleared") <- "for_model_fit"
 
     output <- list(pheno_clean_data = pheno_data)
+    if (!is.null(test_set_by_trait)) {
+      output[["test_set_by_trait"]] <- test_set_by_trait
+    }
+    if (!is.null(test_set_by_trait_source)) {
+      output[["test_set_by_trait_source"]] <- test_set_by_trait_source
+    }
 
     #names(output) <- c("pheno_data")
 
@@ -209,6 +206,7 @@ msg <- "\n==================================================\n"
       pheno_data_train_ <- phenotype_precheck(pheno_data= pheno_data_train,
                                               gen_name = gen_name,
                                               response = response,
+                                              response_family = response_family,
                                               heter_groups = heter_groups,
                                               random = random,
                                               fixed = fixed)
@@ -239,6 +237,7 @@ msg <- "\n==================================================\n"
       pheno_data_test_ <- phenotype_precheck(pheno_data= pheno_data_test,
                                              gen_name = gen_name,
                                              response = response,
+                                             response_family = response_family,
                                              type_pheno = type_pheno)
 
       #if(attr(pheno_data_test_, "cleared")!="pass" && all(class(pheno_data_test_)!=c("data.frame", "phenotype"))) {
@@ -263,6 +262,12 @@ msg <- "\n==================================================\n"
 
         test_set <- data.frame(name = as.character(unique(pheno_data_test_[, gen_name])), stringsAsFactors = FALSE)
         names(test_set) <- gen_name
+        test_set_by_trait <- setNames(
+          replicate(length(response), unique(as.character(pheno_data_test_[, gen_name])), simplify = FALSE),
+          response
+        )
+        test_set_source <- "pheno_data_test"
+        test_set_by_trait_source <- "pheno_data_test"
 
 
         ### The result object has to pass the test attribute before it can be stored
@@ -296,6 +301,15 @@ msg <- "\n==================================================\n"
 
     output <- list(pheno_clean_data = pheno_data,
                    test_set = test_set)
+    if (!is.null(test_set_source)) {
+      output[["test_set_source"]] <- test_set_source
+    }
+    if (exists("test_set_by_trait") && !is.null(test_set_by_trait)) {
+      output[["test_set_by_trait"]] <- test_set_by_trait
+    }
+    if (exists("test_set_by_trait_source") && !is.null(test_set_by_trait_source)) {
+      output[["test_set_by_trait_source"]] <- test_set_by_trait_source
+    }
 
     #rm(pheno_data, test_set)
 
@@ -306,10 +320,16 @@ msg <- "\n==================================================\n"
         ## Recheck to be sure no NA
 
         na_rows <- lapply(response, function(col) which(is.na(pheno_data[[col]])))
-        if (length(na_rows[[1]]) > 0) {
-        stop(paste(msg, "Missing value is not expected in the training set."), call. = FALSE)
+        if (!(exists("test_set_by_trait") && !is.null(test_set_by_trait)) && length(na_rows[[1]]) > 0) {
+          stop(paste(msg, "Missing value is not expected in the training set."), call. = FALSE)
         }
         output <- list(pheno_clean_data = pheno_data)
+        if (exists("test_set_by_trait") && !is.null(test_set_by_trait)) {
+          output[["test_set_by_trait"]] <- test_set_by_trait
+        }
+        if (exists("test_set_by_trait_source") && !is.null(test_set_by_trait_source)) {
+          output[["test_set_by_trait_source"]] <- test_set_by_trait_source
+        }
         #rm(pheno_data, test_set)
 
       }

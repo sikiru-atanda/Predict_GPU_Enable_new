@@ -2,17 +2,23 @@
 % Please edit documentation in R/detect_genomic_coding.R
 \name{detect_genomic_coding}
 \alias{detect_genomic_coding}
-\title{Title
-This function check genomic data for different coding
-schemes: presence/absence or SNP data (coded as 0, 1, 2)}
+\title{Detect genomic marker coding}
 \usage{
-detect_genomic_coding(object_geno = NULL)
+detect_genomic_coding(object_geno = NULL, chunk_size = 1000, ploidy = "auto")
 }
 \arguments{
-\item{object_geno}{}
+\item{object_geno}{Genomic marker matrix or matrix-like object.}
+
+\item{chunk_size}{Number of rows to inspect per chunk.}
+
+\item{ploidy}{One positive integer or `"auto"`. When supplied, the input is
+validated as ALT dosage in `[0, ploidy]` and reported without applying
+legacy diploid recoding heuristics.}
+}
+\value{
+A character label for the detected coding scheme, or
+  \code{"Unknown coding scheme"}.
 }
 \description{
-Title
-This function check genomic data for different coding
-schemes: presence/absence or SNP data (coded as 0, 1, 2)
+Scans marker values in chunks and returns the matching common coding scheme.
 }

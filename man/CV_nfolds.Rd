@@ -2,7 +2,7 @@
 % Please edit documentation in R/CV_nFolds.R
 \name{CV_nfolds}
 \alias{CV_nfolds}
-\title{Title}
+\title{K-fold cross-validation split assignments}
 \usage{
 CV_nfolds(
   pheno_data = NULL,
@@ -15,8 +15,23 @@ CV_nfolds(
 )
 }
 \arguments{
-\item{method}{}
+\item{pheno_data}{Phenotype data frame.}
+
+\item{response}{Response column.}
+
+\item{gen_name}{Genotype ID column.}
+
+\item{nFolds}{Number of folds.}
+
+\item{random_state}{Optional random seed.}
+
+\item{method}{Either `"stratified"` or `"unstratified"`.}
+
+\item{replication}{Number of repeated split replications.}
+}
+\value{
+A list of integer fold-assignment vectors, one per replication.
 }
 \description{
-Title
+Legacy wrapper around the canonical k-fold splitter.
 }

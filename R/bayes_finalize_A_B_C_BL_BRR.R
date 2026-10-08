@@ -8,7 +8,9 @@
 #' @param random Formula or character vector specifying the random effects to be included in the model.
 #' @param GS_model Character string specifying the type of genomic selection model to be used.
 #' @param response Character string specifying the response variable in the phenotypic data.
-#' @param weights Vector of weights for the observations in the model (optional).
+#' @param weights Optional positive Stage 2 observation precisions, supplied as
+#'   a numeric vector, one-column table, or phenotype column name. Gaussian BGLR
+#'   fits receive their square roots to match BGLR's inverse-squared convention.
 #' @param fixed_term_model_bayesian Character vector specifying the fixed terms in the Bayesian model.
 #' @param rand_term_model_bayesian Character vector specifying the random terms in the Bayesian model.
 #' @param pheno_data Data frame containing the phenotypic data.
@@ -21,6 +23,13 @@
 #' @param burnIn Integer specifying the number of burn-in iterations for the Bayesian model.
 #' @param thin Integer specifying the thinning interval for the Bayesian model.
 #' @param omics_data_label Character vector specifying labels for the omic data sets (optional).
+#' @param cross_validation Logical; when `TRUE`, the call is part of a
+#'   cross-validation fold (CV bookkeeping is adjusted accordingly).
+#' @param scaling Logical; if `TRUE`, centre and scale the marker / omics
+#'   matrices before fitting (passed through to the ETA compiler).
+#' @param response_family Response family: `"gaussian"`, `"binary"` (or
+#'   alias `"binomial"`), or `"ordinal"`. Unordered nominal/multiclass outcomes
+#'   are not supported by BGLR.
 #' @param ... Additional arguments for future extensions.
 #'
 #' @return A list containing two elements: `bayes_result`, which holds the processed output from the
@@ -56,8 +65,23 @@
                                         omics_data_label = NULL,
                                         cross_validation = FALSE,
                                         scaling =TRUE,
+                                        response_family = "gaussian",
                                         ...
                                              ) {
+
+            dots <- list(...)
+
+            valid_marker_bayes_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
+            if (length(GS_model) != 1L || !(GS_model %in% valid_marker_bayes_models)) {
+              stop(
+                paste(
+                  "Bayesian marker finalization supports GS_model values",
+                  paste(valid_marker_bayes_models, collapse = ", "),
+                  "only."
+                ),
+                call. = FALSE
+              )
+            }
 
             ETA  <-  ETA_compiler_bayes(
                                       fixed = fixed,
@@ -89,21 +113,35 @@
                                       ETA = ETA[["ETA"]],
                                       bayes_para = bayes_para,
                                       verbose = FALSE,
-                                      GS_model = GS_model
+                                      GS_model = GS_model,
+                                      response_family = response_family
                                       #files_key = "files_key"
             )
 
 
             res_model_output <- mod_output_bayes(mod = mod,
                                                  ETA = ETA,
-                                                 geno_data = geno_data,
-                                                 gen_name = gen_name,
+                                                  pheno_data = ETA[["pheno_data"]],
+                                                  geno_data = geno_data,
+                                                  gen_name = gen_name,
+                                                  response = response,
                                                  omic1_data = omic1_data,
                                                  omic2_data = omic2_data,
                                                  omic3_data = omic3_data,
                                                  omics_data_label = omics_data_label,
                                                  bayes_para = bayes_para,
-                                                 GS_model = GS_model)
+                                                 GS_model = GS_model,
+                                                 CI_width_thresholds = dots[["CI_width_thresholds"]] %||% c(0.33, 0.66),
+                                                 confidence_level = dots[["confidence_level"]] %||% 0.95,
+                                                 high_reliability_thres = dots[["high_reliability_thres"]] %||% 0.9,
+                                                 low_reliability_thres = dots[["low_reliability_thres"]] %||% 0.5,
+                                                 n_components = dots[["n_components"]] %||% 20,
+                                                 threshold = dots[["threshold"]] %||% 100,
+                                                 target = dots[["target"]] %||% "test_set",
+                                                 interval_width_high_threshold = dots[["interval_width_high_threshold"]] %||% NULL,
+                                                 interval_width_low_threshold = dots[["interval_width_low_threshold"]] %||% NULL,
+                                                 interval_width_moderate_threshold = dots[["interval_width_moderate_threshold"]] %||% NULL,
+                                                 response_family = response_family)
 
 
             return(list(bayes_result = res_model_output,

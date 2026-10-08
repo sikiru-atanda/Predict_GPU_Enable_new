@@ -1,12 +1,24 @@
 Package: PredictProR
 Type: Package
-Title: What the Package Does (Title Case)
-Version: 0.20.7
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+Title: Genomic and Multi-Omics Prediction Workflows
+Version: 0.20.188
+Author: Sikiru Atanda
+Maintainer: PredictProR maintainer <sikiru.atanda@ndsu.edu>
+Description: Genomic and multi-omics prediction for diploid and polyploid
+    crops through one workflow function. Covers genotype quality control,
+    recoding and imputation (native k-nearest-neighbour and mean imputation,
+    and 'Beagle' for diploid data), conversion of 'VCF', 'HapMap' and CSV/TXT
+    genotype files, ploidy-aware genomic relationship matrices and kernels,
+    multi-omics layers and kernels, and predictor (feature) selection. Models
+    include Bayesian marker and kernel regression ('BGLR'), 'ASReml-R' mixed
+    models, Gaussian process models, classical machine learning and deep
+    learning (through 'Python'). Supports single- and multi-environment
+    trials, single- and multi-trait analysis, hybrid prediction with general
+    and specific combining ability, and binary, ordinal and multiclass traits,
+    with cross-validation schemes (including CV0, CV1 and CV2), variance
+    components, prediction uncertainty and reliability, and parallel
+    execution.
+License: file LICENSE
 Encoding: UTF-8
 LazyData: true
 Depends: R (>= 4.1.0)
@@ -17,30 +29,51 @@ Imports:
     boot,
     caret,
     corpcor,
-    crew,
     data.table,
     doParallel,
     dplyr,
     foreach,
     future,
     future.apply,
+    ggplot2,
     glmnet,
+    glue,
     gridExtra,
     igraph,
     insight,
+    jsonlite,
     keras,
+    logger,
     MASS,
     Matrix,
+    methods,
+    mgcv,
+    mirai (>= 2.7.0),
     parallel,
-    pls,
-    randomForest,
+    purrr,
+    R6,
     reticulate,
     RhpcBLASctl,
+    rlang,
+    stats,
     stringr,
+    utils,
     VIM,
     xgboost
-SystemRequirements: Python (>= 3.10)
-RoxygenNote: 7.3.0
+SystemRequirements: Python (>= 3.10), Java (>= 8; optional, for Beagle 5.4)
+RoxygenNote: 7.3.3
 Suggests: 
-    testthat (>= 3.0.0)
+    codetools,
+    httpuv,
+    mori (>= 0.2.0),
+    parallelly,
+    plotly,
+    pls,
+    processx,
+    progressr,
+    promises,
+    ps,
+    testthat (>= 3.0.0),
+    withr
 Config/testthat/edition: 3
+NeedsCompilation: yes

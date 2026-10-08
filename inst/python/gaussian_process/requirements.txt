@@ -1,0 +1,9 @@
+numpy
+pandas
+torch
+gpytorch
+linear-operator
+zarr
+pytest
+pyreadr
+

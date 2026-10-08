@@ -2,7 +2,7 @@
 % Please edit documentation in R/deep_learning_model_utility.R
 \name{deep_learning_model_utility}
 \alias{deep_learning_model_utility}
-\title{Title}
+\title{Build and train a simple feed-forward MLP for genomic prediction}
 \usage{
 deep_learning_model_utility(
   X_train,
@@ -15,8 +15,26 @@ deep_learning_model_utility(
 )
 }
 \arguments{
-\item{batch_size}{}
+\item{X_train}{Numeric matrix of training features (rows = individuals,
+columns = features).}
+
+\item{y_train}{Numeric vector of training responses aligned with `X_train`.}
+
+\item{num_hidden_layers}{Integer; number of hidden layers in the MLP.}
+
+\item{neurons_per_layer}{Integer; neurons per hidden layer.}
+
+\item{learning_rate}{Numeric; optimiser learning rate.}
+
+\item{epochs}{Integer; number of training epochs.}
+
+\item{batch_size}{Integer; mini-batch size used during training.}
+}
+\value{
+The trained model object.
 }
 \description{
-Title
+A thin utility that constructs and fits a multi-layer-perceptron regressor
+on the supplied training features and response, using the requested depth /
+width, learning rate and batch size. Used by the deep-learning wrappers.
 }

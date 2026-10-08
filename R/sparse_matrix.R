@@ -1,12 +1,22 @@
 
 
-#' Title
-#' Convert dense matrix to sparse form
+#' Convert a dense (kernel) matrix to ASReml-style sparse triplet form
 #'
-#' @param grm_kernel_data
-#' @param drop_zero
+#' Returns the lower triangle (including the diagonal) of a dense GRM / kernel
+#' matrix in the three-column `(Row, Column, value)` sparse representation that
+#' ASReml's `vm()` / `ginverse` machinery consumes. The output carries an
+#' `INVERSE` attribute when the input represents an inverse relationship.
 #'
-#' @return
+#' @param grm_kernel_data Square numeric (G)RM or kernel matrix.
+#' @param inverse Logical-like flag stamped onto the result as
+#'   `attr(, "INVERSE")`; set to `TRUE` when the input is the inverse
+#'   relationship matrix.
+#' @param drop_zero Logical; when `TRUE` (default), zero entries are dropped
+#'   from the sparse representation.
+#'
+#' @return A three-column matrix / data frame (`Row`, `Column`, `value`)
+#'   representing the lower triangle of `grm_kernel_data`, with the `INVERSE`
+#'   attribute set from `inverse`.
 #' @export
 #'
 #' @examples

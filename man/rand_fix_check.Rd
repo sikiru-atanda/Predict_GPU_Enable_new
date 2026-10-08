@@ -2,19 +2,36 @@
 % Please edit documentation in R/rand_fix_check.R
 \name{rand_fix_check}
 \alias{rand_fix_check}
-\title{Title
-This function do the following:}
+\title{Validate and Process Random/Fixed Effect Terms Against Phenotypic Data}
 \usage{
-rand_fix_check(pheno_data = NULL, rand_fix_term = NULL, ...)
+rand_fix_check(pheno_data = NULL, rand_fix_term = NULL, term_type = NULL, ...)
 }
 \arguments{
-\item{pheno_data}{phenotypic data}
+\item{pheno_data}{A data frame, data.table, or an object of class "phenotype" containing the phenotypic data against which the terms are validated.}
 
-\item{rand_fix_term}{this can be random or fixed term and expected to be class formula}
+\item{rand_fix_term}{A formula specifying the random or fixed effect terms to be included in the model.}
+
+\item{term_type}{character indicating if the term is random or fixed}
+
+\item{...}{Additional arguments for future extensions or compatibility.}
+}
+\value{
+The validated and potentially modified `rand_fix_term` as a formula object, with an attribute "cleared" set to "pass" indicating successful validation.
 }
 \description{
-1. Check if the random and fixed term are in formula. If not it will stop
-2. Check if the ranom and fixed term are in class factor in the pheno_data,
-   if not we fix it for the user
-3. The output will be class formula and attribute pass
+This function checks the validity of specified random or fixed effect terms against a provided phenotypic dataset. It ensures that the terms are correctly specified as a formula and that all variables in the formula are present in the dataset. It also attempts to convert variables to factors if they are not already.
+}
+\details{
+The function is crucial for ensuring the integrity of the model specification before executing statistical analyses, particularly in genetic studies. It performs several checks:
+- Verifies that `rand_fix_term` is a formula.
+- Ensures that all variables specified in `rand_fix_term` are present in `pheno_data`.
+- Converts variables in `pheno_data` referenced by `rand_fix_term` to factors, if they are not already.
+This preprocessing helps prevent common errors in model specification and data analysis workflows.
+}
+\examples{
+pheno_data <- data.frame(Trait1 = rnorm(100), Trait2 = rnorm(100), Genotype = factor(rep(1:10, each = 10)))
+rand_fix_term <- ~ Trait1 + Trait2 + Genotype
+validated_term <- rand_fix_check(pheno_data = pheno_data, rand_fix_term = rand_fix_term)
+print(validated_term)
+
 }

@@ -10,8 +10,17 @@
 #' @param het_threshold Numeric, threshold for heterozygosity above which SNPs are removed.
 #' @param ind_call_rate_threshold Numeric, threshold for individual call rate below which individuals are removed.
 #' @param snp_call_rate_threshold Numeric, threshold for SNP call rate below which SNPs are removed.
-#' @param impute Logical, if TRUE, indicates that missing values should be imputed. This feature is planned but not yet implemented.
+#' @param impute Logical; if `TRUE`, impute missing genotype dosages after QC.
 #' @param map_data A data.frame or matrix containing marker information. Used alongside `geno_data` if provided.
+#' @param imputation_method Imputation method for missing genotype values when
+#'   `impute = TRUE`; one of `"knn"`, `"mean"`, `"median"`, or `"mode"`.
+#' @param impute_knn_k Integer; number of nearest neighbours used when
+#'   `imputation_method = "knn"`.
+#' @param ploidy One positive integer or `"auto"`. Unannotated polyploid
+#'   numeric matrices require an explicit value; annotated matrices retain the
+#'   same ploidy through QC and train/test assembly.
+#' @param ld_prunning_qc Logical; if `TRUE`, apply LD-based pruning of markers
+#'   after the QC filters.
 #' @param message Logical, if TRUE, messages about the QC and data preparation process are displayed.
 #' @param ... Additional arguments affecting the QC process.
 #'
@@ -20,10 +29,12 @@
 #'   - \code{qc_metrics_and_summary_stat}: A data frame summarizing the QC process, including the number of markers and individuals removed.
 #'
 #' @examples
+#' \dontrun{
 #' # Assuming `genomic_data` is a matrix with SNP data for the full dataset
 #' result <- geno_to_model(geno_data = genomic_data, qc_filtering = TRUE)
 #' prepared_genomic_data <- result$snps_matrix
 #' qc_summary <- result$qc_metrics_and_summary_stat
+#' }
 #'
 #' @importFrom stats colMeans
 #' @importFrom dplyr rename rownames_to_column
@@ -41,11 +52,12 @@ geno_to_model <- function(geno_data = NULL,
                           impute = TRUE,
                           imputation_method = "knn",
                           impute_knn_k = 5,
+                          ploidy = "auto",
                           ld_prunning_qc = TRUE,
                           map_data = NULL,
                           message = TRUE,
                           ...) {
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   check_and_prepare <- function(data,...) {
     geno_object <- geno_precheck(object_geno = data,
@@ -57,14 +69,18 @@ geno_to_model <- function(geno_data = NULL,
                                  impute = impute,
                                  imputation_method = imputation_method,
                                  impute_knn_k = impute_knn_k,
+                                 ploidy = ploidy,
                                  ld_prunning_qc = ld_prunning_qc,
                                  #map_data  = map_data,
                                  message = message)
 
 
 
-    if (attr(geno_object[[1]], "cleared") == "pass" && all(class(geno_object[[1]]) == c("matrix", "array"))) {
-      #class(geno_object[[1]]) <- c("matrix", "array", "geno_data")
+    # VCF/HapMap recoders tag their matrix with an extra "genotype" class; the
+    # old exact-class test rejected every file input. Accept any QC-passed
+    # matrix and hand on a plain one (other attributes such as ploidy kept).
+    if (identical(attr(geno_object[[1]], "cleared"), "pass") && is.matrix(geno_object[[1]])) {
+      oldClass(geno_object[[1]]) <- NULL
       attr(geno_object[[1]], "cleared") <- "for_model_fit"
     } else {
       geno_object <- NULL

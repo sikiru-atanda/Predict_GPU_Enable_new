@@ -48,63 +48,59 @@ cal_coeff_ebv_pev_rel_RHKS_glub <- function(mod = NULL,
                                             hetero = NULL,
                                             heter_groups = NULL,
                                             gid_name = NULL,
+                                            eta_index = 1L,
                                             ...){
 
-  g_ebv <- mod$model$yHat - mod$model$mu
-  # the breeding values (posterior)
-  # Posterior means of marker effects/coefficient approximation
-  coeffRaw = solve(t(gmatrix)*gmatrix)*t(gmatrix)*gmatrix
+  eta_obj <- mod$model$ETA[[eta_index]]
+  u_mean <- as.double(eta_obj$u)
+  u_sd <- as.double(eta_obj$SD.u)
+  pev <- u_sd^2
 
-  # Posterior means of marker effects/coefficient
-
-  if(!is.null(heter_groups)){
-    Coeff <- data.frame(x_variables = rep(gid_name , length(unique(hetero))),
-                        Env = rep(unique(hetero), each= length(gid_name)),
-                        coeff = colMeans(coeffRaw),
-                        stringsAsFactors = FALSE)
+  if (is.null(hetero)) {
+    Coeff <- data.frame(
+      x_variables = gid_name,
+      coeff = u_mean,
+      stringsAsFactors = FALSE
+    )
+    EBV <- data.frame(
+      names = gid_name,
+      Estimated_breeding_value = u_mean,
+      stringsAsFactors = FALSE
+    )
+  } else {
+    if (length(gid_name) == length(u_mean) && length(hetero) == length(u_mean)) {
+      # Record-level kernel (Z K Z'): one effect per phenotype record, in
+      # record order. Label each record with its own genotype and group; a
+      # genotype x group grid only matches this order for balanced data
+      # sorted group-first in kernel order.
+      coeff_ids <- as.character(gid_name)
+      coeff_envs <- as.character(hetero)
+    } else {
+      coeff_ids <- rep(gid_name, length(unique(hetero)))
+      coeff_envs <- rep(unique(hetero), each = length(gid_name))
+    }
+    Coeff <- data.frame(
+      x_variables = coeff_ids,
+      Env = coeff_envs,
+      coeff = u_mean,
+      stringsAsFactors = FALSE
+    )
     names(Coeff)[2] <- heter_groups
-  } else {
-    Coeff <- data.frame(x_variables = gid_name,
-                        coeff = colMeans(coeffRaw),
-                        stringsAsFactors = FALSE)
 
-  }
-
-
-  if(is.null(hetero)){
-    # Genomic estimated breeding values
-    EBV <- data.frame(names = rownames(gmatrix),
-                      Estimated_breeding_value= g_ebv,
-                      stringsAsFactors = FALSE)
-
-  } else {
-    EBV <- data.frame(names = rep(gid_name , length(unique(hetero))),
-                      Env = rep(unique(hetero), each= length(gid_name)),
-                      Estimated_breeding_value= g_ebv,
-                      stringsAsFactors = FALSE)
-
+    EBV <- data.frame(
+      names = coeff_ids,
+      Env = coeff_envs,
+      Estimated_breeding_value = u_mean,
+      stringsAsFactors = FALSE
+    )
     names(EBV)[2] <- heter_groups
-
   }
 
   colnames(EBV)[1] <- gen_name
 
-  ### Calculate the SEP, PEV and Reliability
-  # sep_pev_rel <- sep_pev_rel_gblup(geno_object = gmatrix,
-  #                                  va = var_u,
-  #                                  ve = var_E)
-
-  # EBV <- EBV |>
-  #   dplyr::mutate(Standard_error = sep_pev_rel$sep,
-  #                 Prediction_error_variance = sep_pev_rel$pev,
-  #                 Reliability = sep_pev_rel$rel)
-  Standard_error = mod$model$SD.yHat
-  PEV <- (mod$model$SD.yHat)^2
-
-  #Reliability <- 1 - (PEV/var(mod$model$yHat))
-  Reliability <- 1 - (PEV/ var_u)
-
-
+  Standard_error <- u_sd
+  PEV <- pev
+  Reliability <- 1 - (PEV / var_u)
   Reliability <- pmax(0, pmin(1, Reliability))
   EBV <- EBV |>
     dplyr::mutate(Standard_error = Standard_error,
@@ -112,7 +108,7 @@ cal_coeff_ebv_pev_rel_RHKS_glub <- function(mod = NULL,
                   Reliability = Reliability)
 
 
-  output <- list(Posterior = coeffRaw, Coefficient = Coeff,
+  output <- list(Posterior = u_mean, Coefficient = Coeff,
                  Estimated_breeding_value = EBV, PEV = PEV,
                  Reliability = Reliability,
                  Standard_error = Standard_error)

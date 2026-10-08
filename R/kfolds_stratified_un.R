@@ -46,7 +46,7 @@ kfolds_stratified_un <- function(
   n <- length(y_raw)
   if (nfolds > n) stop("`nfolds` cannot exceed the number of rows after NA filtering.")
 
-  # Gentle hint: repeated measures per genotype (not necessarily ‘multi-environment’)
+  # Gentle hint: repeated measures per genotype (not necessarily 'multi-environment')
   if (isTRUE(message) && length(unique(g_ids)) < length(y_raw)) {
     warning(paste0(msg_bar,
                    "You appear to have repeated measurements per genotype (e.g., replicates or multi-env).\n",
@@ -54,7 +54,7 @@ kfolds_stratified_un <- function(
             call. = FALSE)
   }
 
-  if (!is.null(random_state) && is.numeric(random_state)) set.seed(random_state)
+  if (!is.null(random_state) && is.numeric(random_state)) gp_set_seed(random_state)
   method <- match.arg(sampling_method)
 
   # ---------- Build strata ONCE ----------
@@ -62,11 +62,10 @@ kfolds_stratified_un <- function(
   #  - If factor or binary/low-cardinality: use factor levels.
   #  - Else numeric: use quantile bins (default 5), dedup if ties in cutpoints.
   make_groups <- function(y) {
-    # treat integer/binary as categories if <=2 unique values
-    if (is.factor(y) || length(unique(y)) <= 2) {
-      as.integer(factor(y, exclude = NULL))
-    } else if (method == "unstratified") {
+    if (method == "unstratified") {
       rep(1L, length(y))
+    } else if (is.factor(y) || length(unique(y)) <= 2) {
+      as.integer(factor(y, exclude = NULL))
     } else {
       num_bins <- 5L
       cps <- stats::quantile(y, probs = seq(0, 1, length.out = num_bins + 1), na.rm = TRUE)
@@ -108,17 +107,15 @@ kfolds_stratified_un <- function(
 
   for (r in seq_len(replication)) {
     # Make each replication reproducible but distinct
-    if (!is.null(random_state) && is.numeric(random_state)) set.seed(random_state + r - 1L)
+    if (!is.null(random_state) && is.numeric(random_state)) gp_set_seed(random_state + r - 1L)
 
-    # Build per-stratum assignments, then merge
-    fold_assign_named <- unlist(
-      lapply(split_idx, assign_folds_balanced, k = nfolds),
-      use.names = TRUE
-    )
     folds <- integer(n)
-    folds[as.integer(names(fold_assign_named))] <- as.integer(fold_assign_named)
+    for (idx in split_idx) {
+      fold_assign_named <- assign_folds_balanced(idx, nfolds)
+      folds[as.integer(names(fold_assign_named))] <- as.integer(fold_assign_named)
+    }
 
-    # Safety: if any unassigned (shouldn’t happen), fill unstratified
+    # Safety: if any unassigned (shouldn't happen), fill unstratified
     if (any(folds == 0L)) {
       left <- which(folds == 0L)
       folds[left] <- sample(rep(seq_len(nfolds), length.out = length(left)))
@@ -141,7 +138,7 @@ kfolds_stratified_un <- function(
 #     ...
 # ) {
 #
-#   msg <- "\n==================================================\n"
+#   msg <- ""
 #
 #   if (!is.null(random_state) && is.numeric(random_state)) {
 #     set.seed(random_state)

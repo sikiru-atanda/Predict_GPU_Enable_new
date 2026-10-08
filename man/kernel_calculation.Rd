@@ -2,31 +2,81 @@
 % Please edit documentation in R/kernel_calculation.R
 \name{kernel_calculation}
 \alias{kernel_calculation}
-\title{Title
-This function calculate the relationship for using different kernel methods
-M_matrix_clean is not expected with NA value
-The following kernel methods are available:
-Gaussian, Linear, Exponential, Poly2, Poly3, Poly4. The number at the end of poly
-means polynomial order 2, 3 and 4}
+\title{Calculate Kernel Matrix for Omics Data}
 \usage{
 kernel_calculation(
   M_matrix_clean = NULL,
-  scale = TRUE,
+  scaling = TRUE,
+  centering = FALSE,
   theta = NULL,
   alpha = 0.5,
   gamma = 1,
   smoothness_parameter = 1.5,
-  length_scale = 2,
+  length_scale = NULL,
   method = NULL,
   message = TRUE,
+  scale = NULL,
+  center = NULL,
+  backend = NULL,
   ...
 )
 }
 \arguments{
-\item{M_matrix_clean}{snp or omics matrix data.}
+\item{M_matrix_clean}{A numeric matrix representing the cleaned omics or M matrix.}
 
-\item{...}{}
+\item{scaling}{Logical, indicating if the input matrix should be scaled. Defaults to TRUE.}
+
+\item{centering}{Logical, indicating if the input matrix should be centered when `scaling` is FALSE.}
+
+\item{theta}{Numeric, the theta parameter for the Gaussian kernel. Defaults to 1 if not provided.}
+
+\item{alpha}{Numeric, the mixing parameter for the Composite kernel. Defaults to 0.5.}
+
+\item{gamma}{Positive numeric shape parameter for the rational quadratic
+kernel.}
+
+\item{smoothness_parameter}{Positive numeric smoothness parameter for
+`"Matern_kernel"`.}
+
+\item{length_scale}{Optional positive numeric bandwidth/length scale for
+distance kernels. The default `NULL` uses the median nonzero Euclidean
+distance after the requested scaling/centering, avoiding dimension-driven
+near-identity kernels.}
+
+\item{method}{Character vector specifying one or more kernel calculation
+methods. Supported methods include `"Gaussian_kernel"`, `"Linear_kernel"`,
+`"Composite_kernel"`, `"Poly2_kernel"`, `"Poly3_kernel"`,
+`"Poly4_kernel"`, `"Matern_kernel"`, `"Matern12_kernel"`,
+`"Matern32_kernel"`, `"Matern52_kernel"`, `"Laplacian_kernel"`, and
+`"RationalQuadratic_kernel"`. Short aliases without `"_kernel"` are also
+accepted.}
+
+\item{message}{Logical, indicating if messages should be printed. Defaults to TRUE.}
+
+\item{scale}{Optional legacy alias for `scaling`, kept for pipeline callers
+that already pass `scale =`.}
+
+\item{center}{Optional legacy alias for `centering`.}
+
+\item{backend}{Backend selector. One of `"auto"`, `"cpp"`, or `"r"`. `NULL` uses
+`PREDICTPRO_KERNEL_BACKEND` or `"auto"`. The automatic route is
+performance-aware and keeps BLAS-backed dense methods on the R path in
+this phase.}
+
+\item{...}{Additional arguments passed to the kernel calculation function.}
+}
+\value{
+Returns a numeric matrix for one method, or a named list of matrices
+when multiple methods are requested.
 }
 \description{
-To DO: in the new version, option to impute missing data will be provided
+This function computes a dense kernel matrix for omics data using Gaussian,
+linear, composite, polynomial, Matern-family, Laplacian, and rational
+quadratic kernels. By default, PredictProR uses the
+fastest dense route for the selected method unless a backend is forced.
+}
+\examples{
+M_matrix <- matrix(rnorm(100), ncol = 10)
+kernel_matrix <- kernel_calculation(M_matrix_clean = M_matrix, method = "Gaussian_kernel")
+
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/process_geno_omic_kernel_gmatrix_data.R
 \name{process_geno_data}
 \alias{process_geno_data}
-\title{Title}
+\title{Clean and process genomic data into kernels / relationship matrices}
 \usage{
 process_geno_data(
   geno_data = NULL,
@@ -10,24 +10,111 @@ process_geno_data(
   test_geno_data = NULL,
   test_set = NULL,
   train_set = NULL,
+  pheno_clean_list = NULL,
   gen_name = NULL,
   kernel_method = NULL,
   gmatrix_method = NULL,
-  scale = NULL,
+  scale = FALSE,
+  center = TRUE,
   map_data = NULL,
   maf_threshold = NULL,
   het_threshold = NULL,
   ind_call_rate_threshold = NULL,
   snp_call_rate_threshold = NULL,
-  impute = NULL,
+  impute = FALSE,
+  imputation_method = "knn",
+  impute_knn_k = 5,
+  ploidy = "auto",
   qc_filtering = NULL,
-  message = NULL,
+  message = TRUE,
+  heter_groups = NULL,
+  test_set_overrides_inferred = FALSE,
+  ld_prunning_qc = TRUE,
   ...
 )
 }
 \arguments{
-\item{...}{}
+\item{geno_data}{Genomic-marker matrix or data frame for the full set
+(rows = individuals, columns = SNPs).}
+
+\item{train_geno_data}{Optional training-set genomic matrix.}
+
+\item{test_geno_data}{Optional test-set genomic matrix matching
+`train_geno_data`.}
+
+\item{test_set}{Optional integer / character vector identifying the test-set
+rows (otherwise inferred from missing phenotypes).}
+
+\item{train_set}{Optional integer / character vector identifying the
+training-set rows.}
+
+\item{pheno_clean_list}{Pre-checked phenotype list (from
+[phenotype_precheck]) used to align rows.}
+
+\item{gen_name}{Name of the genotype-ID column in the phenotype data.}
+
+\item{kernel_method}{Character vector of marker-kernel methods to calculate.
+When more than one method is supplied, the returned `gmatrix` is a named
+list of kernel matrices.}
+
+\item{gmatrix_method}{Character vector of marker relationship-matrix methods
+to calculate. When more than one method is supplied, the returned
+`gmatrix` is a named list of relationship matrices.}
+
+\item{scale}{Logical; scale columns to unit variance before computing the
+relationship.}
+
+\item{center}{Logical; mean-centre columns before computing the
+relationship.}
+
+\item{map_data}{Optional marker map (`Chrom`, `Pos`) used by LD pruning.}
+
+\item{maf_threshold}{Minimum minor-allele frequency (MAF) below which SNPs
+are dropped.}
+
+\item{het_threshold}{Maximum per-SNP heterozygosity above which SNPs are
+dropped.}
+
+\item{ind_call_rate_threshold}{Minimum per-individual call rate; rows below
+this are dropped.}
+
+\item{snp_call_rate_threshold}{Minimum per-SNP call rate; SNPs below this
+are dropped.}
+
+\item{impute}{Logical; impute remaining missing genotype values.}
+
+\item{imputation_method}{Imputation method when `impute = TRUE`; one of
+`"knn"`, `"mean"`, `"median"`, or `"mode"`.}
+
+\item{impute_knn_k}{Integer; number of nearest neighbours when
+`imputation_method = "knn"`.}
+
+\item{ploidy}{One positive integer or `"auto"`; propagated to QC and GRM
+construction.}
+
+\item{qc_filtering}{Logical; apply the QC filters (MAF / het / call-rate).}
+
+\item{message}{Logical; if `TRUE`, print summary messages.}
+
+\item{heter_groups}{Optional heterogeneous-groups column for MET runs.}
+
+\item{test_set_overrides_inferred}{Logical. When `TRUE`, the user-supplied
+`test_set` overrides inferred testing IDs from missing phenotypes or
+geno/omic-only records.}
+
+\item{ld_prunning_qc}{Logical; if `TRUE`, apply LD-based pruning after the
+QC filters.}
+
+\item{...}{Reserved for future extensions; currently ignored.}
+}
+\value{
+A list with the processed genomic matrix, kernel / GRM(s), and the
+  resolved train / test indices.
 }
 \description{
-Title
+Wraps the geno QC + kernel / GRM construction pipeline: applies the SNP-call
+/ individual-call / MAF / heterozygosity filters, optional imputation and
+LD pruning, then builds the requested marker kernels (`kernel_method`) and /
+or genomic relationship matrices (`gmatrix_method`). Handles a single
+`geno_data` input or pre-split `train_geno_data` / `test_geno_data`.
 }

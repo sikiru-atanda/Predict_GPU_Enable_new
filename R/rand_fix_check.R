@@ -31,7 +31,7 @@ rand_fix_check <- function(pheno_data = NULL,
                             ...){
 
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   if (!inherits(rand_fix_term, 'formula')) {
     stop(msg, "The ", term_type, " term is not a class of type 'formula'. Example: ", term_type, " = ~ X + Y")

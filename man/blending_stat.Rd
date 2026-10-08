@@ -2,7 +2,7 @@
 % Please edit documentation in R/blending_statt.R
 \name{blending_stat}
 \alias{blending_stat}
-\title{Title}
+\title{Blend Genomic Relationship Matrix (GRM) with Identity or Pedigree Matrix}
 \usage{
 blending_stat(
   grm_kernel_data = NULL,
@@ -12,8 +12,41 @@ blending_stat(
 )
 }
 \arguments{
-\item{blending_value}{}
+\item{grm_kernel_data}{A square numeric matrix representing the genomic relationship matrix (GRM) of individuals.}
+
+\item{pedigree_matrix}{An optional square numeric matrix representing the pedigree relationship matrix of individuals.
+If provided, this matrix is used for blending with the GRM. It must have the same dimensions
+and the row and column names as `grm_kernel_data`.}
+
+\item{blending}{Logical, if `TRUE`, the blending operation is performed. If `FALSE`, the function returns the original
+`grm_kernel_data` without any modification.}
+
+\item{blending_value}{A numeric value between 0 and 1 specifying the proportion of the identity matrix or
+pedigree matrix to blend with the GRM. The default value is 0.02.}
+}
+\value{
+Returns a matrix which is the result of blending the input GRM with either an identity matrix or a pedigree
+        matrix, depending on the input parameters.
 }
 \description{
-Title
+This function blends a genomic relationship matrix (GRM) with either an identity matrix or a pedigree matrix,
+based on the blending proportion specified by the user. This is often used to adjust the GRM for better
+performance in genetic analyses.
+}
+\examples{
+# Generate a mock GRM matrix
+grm <- matrix(runif(100), ncol=10)
+rownames(grm) <- colnames(grm) <- paste0("Ind", 1:10)
+
+# Blend the GRM with an identity matrix
+blended_grm <- blending_stat(grm_kernel_data = grm, blending = TRUE, blending_value = 0.05)
+
+# Generate a mock pedigree matrix
+pedigree <- matrix(runif(100), ncol=10)
+rownames(pedigree) <- colnames(pedigree) <- paste0("Ind", 1:10)
+
+# Blend the GRM with the pedigree matrix
+blended_grm_pedigree <- blending_stat(grm_kernel_data = grm, pedigree_matrix = pedigree,
+                                      blending = TRUE, blending_value = 0.05)
+
 }

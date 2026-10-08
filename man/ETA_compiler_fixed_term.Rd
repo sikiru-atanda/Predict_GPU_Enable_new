@@ -2,7 +2,7 @@
 % Please edit documentation in R/ETA_compiler.R
 \name{ETA_compiler_fixed_term}
 \alias{ETA_compiler_fixed_term}
-\title{This function deal with fixed terms defined by the user and assign model to each fixed term}
+\title{Compile ETA for Fixed Terms in Bayesian Models}
 \usage{
 ETA_compiler_fixed_term(
   fixed = NULL,
@@ -11,12 +11,16 @@ ETA_compiler_fixed_term(
 )
 }
 \arguments{
-\item{fixed}{fixed terms defined by the user}
+\item{fixed}{A formula specifying fixed effects.}
 
-\item{fixed_term_model_bayesian}{model for the fixed term and the default is FIXED}
+\item{fixed_term_model_bayesian}{Optional model label for fixed terms.}
 
-\item{pheno_data}{phenotypic data}
+\item{pheno_data}{Phenotypic data containing variables in `fixed`.}
+}
+\value{
+A list of ETA components for fixed terms.
 }
 \description{
-This function deal with fixed terms defined by the user and assign model to each fixed term
+This function prepares model-matrix ETA components for fixed terms in
+Bayesian genomic prediction models.
 }

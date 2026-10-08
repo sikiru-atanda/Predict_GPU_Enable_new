@@ -1,7 +1,6 @@
 ensure_environment <- function() {
-  script_path <- system.file("setup_environment.R", package = "PredictProR")
-  message("Please run the following command to set up the Python environment:")
-  message(paste0("source('", script_path, "')"))
+  message("Set PREDICTPRO_DL_PYTHON to a server/runtime Python with the required DL packages.")
+  message("Alternatively, run PredictProR::setup_predictdl_env(prefer_gpu = TRUE, cuda = 'auto') once to provision it.")
 }
 
 ### Setting Up the Python Environment

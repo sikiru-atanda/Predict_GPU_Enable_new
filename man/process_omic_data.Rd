@@ -2,22 +2,85 @@
 % Please edit documentation in R/process_geno_omic_kernel_gmatrix_data.R
 \name{process_omic_data}
 \alias{process_omic_data}
-\title{Title}
+\title{Clean and process omics data into kernels for model fitting}
 \usage{
 process_omic_data(
   omic_data = NULL,
   train_omic_data = NULL,
   test_omic_data = NULL,
   kernel_method = NULL,
+  pheno_clean_list = NULL,
   gen_name = NULL,
   test_set = NULL,
   train_set = NULL,
+  heter_groups = NULL,
+  center = TRUE,
+  scale = FALSE,
+  message = TRUE,
+  impute_omic = FALSE,
+  imputation_method = "knn",
+  impute_knn_k = 5,
+  na_threshold = 0.9,
+  test_set_overrides_inferred = FALSE,
   ...
 )
 }
 \arguments{
-\item{...}{}
+\item{omic_data}{Omics matrix for the full set (rows = individuals).}
+
+\item{train_omic_data}{Optional training omics matrix.}
+
+\item{test_omic_data}{Optional test-set omics matrix matching
+`train_omic_data`.}
+
+\item{kernel_method}{Character vector of omics-kernel methods to calculate.
+When more than one method is supplied, the returned `kernel` is a named
+list of kernel matrices.}
+
+\item{pheno_clean_list}{Pre-checked phenotype list (from
+[phenotype_precheck]) used to align rows.}
+
+\item{gen_name}{Name of the genotype-ID column in the phenotype data.}
+
+\item{test_set}{Optional integer / character vector identifying the test-set
+rows.}
+
+\item{train_set}{Optional integer / character vector identifying the
+training-set rows.}
+
+\item{heter_groups}{Optional heterogeneous-groups column for MET runs.}
+
+\item{center}{Logical; mean-centre columns before computing the kernel.}
+
+\item{scale}{Logical; scale columns to unit variance before computing the
+kernel.}
+
+\item{message}{Logical; if `TRUE`, print summary messages.}
+
+\item{impute_omic}{Logical; impute remaining missing values.}
+
+\item{imputation_method}{Imputation method when `impute_omic = TRUE`;
+one of `"knn"`, `"mean"`, `"median"`.}
+
+\item{impute_knn_k}{Integer; number of nearest neighbours when
+`imputation_method = "knn"`.}
+
+\item{na_threshold}{Numeric in `(0, 1]`; columns whose missing-value
+proportion exceeds this are dropped.}
+
+\item{test_set_overrides_inferred}{Logical. When `TRUE`, the user-supplied
+`test_set` overrides inferred testing IDs from missing phenotypes or
+omic-only records.}
+
+\item{...}{Reserved for future extensions; currently ignored.}
+}
+\value{
+A list with the processed omics matrix, kernel(s), and the resolved
+  train / test indices.
 }
 \description{
-Title
+Wraps the omics QC + kernel construction pipeline: drops high-missingness
+columns, optionally imputes the rest, and builds the requested
+omics kernel(s) for either a single `omic_data` matrix or pre-split
+`train_omic_data` / `test_omic_data`.
 }

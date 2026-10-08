@@ -116,10 +116,7 @@ validate_model_params <- function(models, params = NULL, para_tunning = FALSE, p
 dl_env <- new.env(parent = emptyenv())
 
 get_dl_module <- function() {
-  if (!is.null(dl_env$mod)) return(dl_env$mod)
-
-  pkg <- utils::packageName()
-  pyfile <- system.file("python/dl_models.py", package = pkg)
+  pyfile <- system.file("python/dl_models.py", package = "PredictProR")
 
   # dev fallbacks if running via load_all()
   if (!nzchar(pyfile)) {
@@ -129,11 +126,32 @@ get_dl_module <- function() {
   }
   if (!nzchar(pyfile)) stop("dl_models.py not found under inst/python/.", call. = FALSE)
 
-  pydir <- dirname(pyfile)
-  # import as a proper Python module
-  mod <- reticulate::import_from_path("dl_models", path = pydir, delay_load = FALSE, convert = TRUE)
-  dl_env$mod <- mod
+  py_bin <- gp_preferred_python(purpose = "dl")
+  gp_init_python_once(py_bin)
+
+  pyfile <- normalizePath(pyfile, winslash = "/", mustWork = TRUE)
+  key <- paste(normalizePath(py_bin %||% "", winslash = "/", mustWork = FALSE), pyfile, sep = "::")
+  if (exists(key, envir = dl_env, inherits = FALSE)) {
+    return(get(key, envir = dl_env, inherits = FALSE))
+  }
+
+  importlib <- reticulate::import("importlib.util", delay_load = FALSE, convert = FALSE)
+  spec <- importlib$spec_from_file_location("predictpror_dl_models", pyfile)
+  mod <- importlib$module_from_spec(spec)
+  spec$loader$exec_module(mod)
+  assign(key, mod, envir = dl_env)
   mod
+}
+
+#' Prewarm the PredictDL runtime
+#'
+#' @param python_bin Optional Python executable to use for the prewarm call.
+#'
+#' @return Invisibly returns \code{TRUE}.
+#' @export
+dl_prewarm_runtime <- function(python_bin = NULL) {
+  gp_dl_run_cli("prewarm", character(), python_bin = python_bin %||% gp_detect_dl_python())
+  invisible(TRUE)
 }
 
 # init_dp_module <- function(prefer_gpu = TRUE) {
@@ -150,8 +168,14 @@ get_dl_module <- function() {
 # Ensure NumPy + PyTorch are available in the current reticulate interpreter
 ensure_pydeps <- function(prefer_gpu = TRUE, cuda_version = c("auto","cpu","cu121","cu118")) {
   cuda_version <- match.arg(cuda_version)
+  py_bin <- gp_preferred_python(purpose = "dl")
+  key <- paste(normalizePath(py_bin %||% "", winslash = "/", mustWork = FALSE), isTRUE(prefer_gpu), cuda_version, sep = "::")
+  if (isTRUE(dl_env[[paste0("deps::", key)]])) {
+    return(invisible(TRUE))
+  }
   mod <- get_dl_module()
   info <- mod$setup_deps(prefer_gpu = isTRUE(prefer_gpu), cuda = cuda_version)
+  dl_env[[paste0("deps::", key)]] <- TRUE
   invisible(info)
 }
 #####
@@ -160,7 +184,7 @@ ensure_pydeps <- function(prefer_gpu = TRUE, cuda_version = c("auto","cpu","cu12
 
 
 generate_dynamic_layers <- function(input_size, num_hidden_layers, scaling_factor = 0.5, max_neurons = 1000) {
-  msg <- "\n==================================================\n"
+  msg <- ""
   if (length(num_hidden_layers) != 1) {
     stop(paste(msg, "num_hidden_layers should be a vector of length 1", call. = FALSE))
   }
@@ -551,7 +575,7 @@ get_best_model <- function(
       }
       # coerce vectors to a compact character
       if (length(v) > 20) {
-        v <- paste0(paste(head(as.character(v), 8), collapse = ","), ",…")
+        v <- paste0(paste(head(as.character(v), 8), collapse = ","), ",...")
       } else if (length(v) > 1) {
         v <- paste(as.character(v), collapse = ",")
       }
@@ -800,7 +824,7 @@ get_best_model <- function(
 #                                 ...) {
 #
 #
-#   msg <- "\n==================================================\n"
+#   msg <- ""
 #
 #   # 0) Ensure deps + load module (prefer GPU unless device=='cpu')
 #   prefer_gpu <- !identical(device, "cpu")
@@ -1640,7 +1664,7 @@ get_best_model <- function(
 #'
 #' generate_dynamic_layers <- function(input_size, num_hidden_layers, scaling_factor = 0.5, max_neurons = 1000) {
 #'
-#'   msg <- "\n==================================================\n"
+#'   msg <- ""
 #'
 #'   if (length(num_hidden_layers) > 1 || length(num_hidden_layers) == 0) {
 #'     stop(paste(msg, "num_hidden_layers should be a vector of length 1", call. = FALSE))
@@ -1854,7 +1878,7 @@ get_best_model <- function(
 #'     }
 #'   }
 #'
-#'   msg <- "\n==================================================\n"
+#'   msg <- ""
 #'   if(is.null(dense_layers_cnn)) dense_layers_cnn <-  64
 #'   if (is.null(geno_omic_object) && is.null(pheno_object) && isFALSE(crossval)) {
 #'     stop(paste(msg, "provide matrix of the predictors and the data.frame of the Y variable."), call. = FALSE)

@@ -2,7 +2,7 @@
 % Please edit documentation in R/bayes_finalize_A_B_C_BL_BRR.R
 \name{bayes_finalize_A_B_C_BL_BRR}
 \alias{bayes_finalize_A_B_C_BL_BRR}
-\title{Title}
+\title{Compile Bayesian Genomic Selection Models BRR, BayesA, BayesB, BayesC, BL}
 \usage{
 bayes_finalize_A_B_C_BL_BRR(
   fixed = NULL,
@@ -21,12 +21,77 @@ bayes_finalize_A_B_C_BL_BRR(
   nIter = NULL,
   burnIn = NULL,
   thin = NULL,
-  omics_data_label = NULL
+  omics_data_label = NULL,
+  cross_validation = FALSE,
+  scaling = TRUE,
+  response_family = "gaussian",
+  ...
 )
 }
 \arguments{
-\item{omics_data_label}{}
+\item{fixed}{Formula or character vector specifying the fixed effects to be included in the model.}
+
+\item{random}{Formula or character vector specifying the random effects to be included in the model.}
+
+\item{GS_model}{Character string specifying the type of genomic selection model to be used.}
+
+\item{response}{Character string specifying the response variable in the phenotypic data.}
+
+\item{weights}{Optional positive Stage 2 observation precisions, supplied as
+a numeric vector, one-column table, or phenotype column name. Gaussian BGLR
+fits receive their square roots to match BGLR's inverse-squared convention.}
+
+\item{fixed_term_model_bayesian}{Character vector specifying the fixed terms in the Bayesian model.}
+
+\item{rand_term_model_bayesian}{Character vector specifying the random terms in the Bayesian model.}
+
+\item{pheno_data}{Data frame containing the phenotypic data.}
+
+\item{geno_data}{Matrix or data frame containing the genotypic data.}
+
+\item{omic1_data}{Matrix or data frame containing the first set of omic data (optional).}
+
+\item{omic2_data}{Matrix or data frame containing the second set of omic data (optional).}
+
+\item{omic3_data}{Matrix or data frame containing the third set of omic data (optional).}
+
+\item{gen_name}{Character string specifying the name of the genotype factor in the genotypic data.}
+
+\item{nIter}{Integer specifying the number of iterations for the Bayesian model.}
+
+\item{burnIn}{Integer specifying the number of burn-in iterations for the Bayesian model.}
+
+\item{thin}{Integer specifying the thinning interval for the Bayesian model.}
+
+\item{omics_data_label}{Character vector specifying labels for the omic data sets (optional).}
+
+\item{cross_validation}{Logical; when `TRUE`, the call is part of a
+cross-validation fold (CV bookkeeping is adjusted accordingly).}
+
+\item{scaling}{Logical; if `TRUE`, centre and scale the marker / omics
+matrices before fitting (passed through to the ETA compiler).}
+
+\item{response_family}{Response family: `"gaussian"`, `"binary"` (or
+alias `"binomial"`), or `"ordinal"`. Unordered nominal/multiclass outcomes
+are not supported by BGLR.}
+
+\item{...}{Additional arguments for future extensions.}
+}
+\value{
+A list containing two elements: `bayes_result`, which holds the processed output from the
+Bayesian model, and `bayes_model`, which contains the raw model object from the Bayesian analysis.
 }
 \description{
-Title
+This function compiles inputs for Bayesian genomic selection models, executes the model,
+and processes the output. It supports a range of genomic selection (GS) models, incorporating
+fixed and random effects, multiple omic data sources, and specific Bayesian parameters.
+}
+\details{
+The function integrates various steps required for running Bayesian genomic selection models,
+from compiling necessary data and model specifications to executing the model and formatting the output.
+It is designed to work with multiple types of genomic selection models and can handle complex scenarios
+involving multiple sources of omic data and varying model parameters.
+
+This is a complex function designed for specific genomic selection workflows
+and requires extensive setup for data and model parameters. Example usage:
 }

@@ -1,274 +1,297 @@
+gp_grm_dense_cpp_available <- function() {
+  !is.null(tryCatch(
+    getNativeSymbolInfo("predictpror_grm_dense", PACKAGE = "PredictProR"),
+    error = function(e) NULL
+  ))
+}
+
+gp_grm_backend <- function(backend = NULL, method = NULL) {
+  if (is.null(backend)) {
+    backend <- Sys.getenv("PREDICTPRO_GRM_BACKEND", Sys.getenv("PREDICTPRO_KERNEL_BACKEND", "auto"))
+  }
+  backend <- as.character(backend)
+  if (!identical(length(backend), 1L) || !(backend %in% c("auto", "cpp", "r"))) {
+    stop("backend must be one of: auto, cpp, r.", call. = FALSE)
+  }
+  if (identical(backend, "auto") && gp_grm_dense_cpp_available()) {
+    method <- if (is.null(method)) "" else as.character(method)
+    native_auto_methods <- c(
+      "Dominance",
+      "Dominance_Vitezica",
+      "Dominance_Su",
+      "Dominance_Heterozygosity"
+    )
+    if (method %in% native_auto_methods) {
+      return("cpp")
+    }
+  }
+  if (identical(backend, "auto")) {
+    return("r")
+  }
+  if (identical(backend, "cpp") && !gp_grm_dense_cpp_available()) {
+    stop("PredictProR native dense GRM backend is not available.", call. = FALSE)
+  }
+  backend
+}
 
 #' Calculate Genomic Relationship Matrix (GRM)
 #'
-#' This function computes the genomic relationship matrix using various methods,
-#' including VanRaden, Weighted VanRaden, Yang, and methods that apply weights to
-#' standardized genotypes or allele frequencies. It is designed to work with
-#' matrix data representing genotypes and can incorporate weights to adjust
-#' the contribution of each SNP.
+#' This function computes dense genomic relationship matrices from hard-call
+#' genotype data using additive, dominance, Yang, or epistasis methods.
+#' Additive VanRaden, weighted VanRaden, and additive-by-additive epistasis are
+#' available for uniform diploid or autopolyploid dosage. Yang and the current
+#' dominance parameterizations remain explicitly diploid.
+#' By default, PredictProR selects the fastest dense route for the selected
+#' method unless a backend is forced.
 #'
 #' @param geno_clean A matrix of genotype data where rows represent individuals
-#'   and columns represent SNPs. Genotype data must be coded as 0, 1, 2.
-#' @param weight An optional matrix of weights for SNPs, used in weighted
-#'   calculation methods. If provided, must match the dimensions and order
-#'   of `geno_clean`.
-#' @param method A character vector specifying the method to use for GRM
-#'   calculation. Options include "VanRaden", "Weighted_VanRaden", "Yang",
-#'   "weighted_GRM", and "weightedGRM_AlleleFreq".
+#'   and columns represent SNPs. Genotype data must be ALT dosage from zero
+#'   through `ploidy`.
+#' @param ploidy One positive integer or `"auto"`. Automatic resolution uses
+#'   matrix metadata; an unannotated matrix defaults to diploid only when all
+#'   observed dosages are at most two.
+#' @param weight Optional SNP weights for `Weighted_VanRaden`. A one-column
+#'   marker-named matrix or a square diagonal matrix is accepted. Weights must
+#'   be finite and non-negative; the implemented scaling is
+#'   `Z \%*\% diag(weight) \%*\% t(Z) / sum(ploidy * p * (1 - p))`.
+#' @param method A character scalar specifying the GRM method. Options are
+#'   `"VanRaden"`, `"Weighted_VanRaden"`, `"Yang"`, `"Epistasis"`,
+#'   `"Dominance_Vitezica"`, and `"Dominance_Su"`. `"Dominance"` is an alias
+#'   for `"Dominance_Vitezica"`; `"Dominance_Heterozygosity"` is an alias for
+#'   `"Dominance_Su"`.
+#' @param backend Backend selector. One of `"auto"`, `"cpp"`, or `"r"`. `NULL`
+#'   uses `PREDICTPRO_GRM_BACKEND`, `PREDICTPRO_KERNEL_BACKEND`, or `"auto"`.
+#'   The automatic route is performance-aware and keeps current dense methods
+#'   on the R/BLAS path in this phase.
 #'
 #' @return A matrix representing the genomic relationship matrix calculated
 #'   based on the specified method.
 #'
 #' @examples
-#' # Example genotype data (geno_clean)
 #' geno_clean <- matrix(c(0, 1, 2, 1, 0, 1, 2, 2, 1), nrow = 3, byrow = TRUE)
 #' colnames(geno_clean) <- c("SNP1", "SNP2", "SNP3")
 #' rownames(geno_clean) <- c("Ind1", "Ind2", "Ind3")
-#'
-#' # Calculate GRM using VanRaden method
-#' grm_vanraden <- grm_calculation(geno_clean, method = "VanRaden")
-#'
-#' # Calculate GRM using a weighted method
-#' weights <- diag(c(1, 1, 1))
-#' grm_weighted <- grm_calculation(geno_clean, weight = weights, method = "Weighted_VanRaden")
-#'
-#' @details The function supports several methods for GRM calculation, with
-#'   "VanRaden" being the default. Weighted methods adjust the influence of
-#'   each SNP based on provided weights, which can be useful for incorporating
-#'   prior knowledge about SNP effects.
-#'
-#'   The "weighted_GRM" method applies weights directly to standardized genotypes
-#'   before calculating the GRM, assuming the weights reflect the relative
-#'   importance of each SNP.
-#'
-#'   The "weightedGRM_AlleleFreq" method adjusts allele frequencies by weights
-#'   before calculating the GRM, assuming SNPs with different frequencies
-#'   contribute differently to the genetic variance.
-#'
-#' @note Ensure that genotype data (`geno_clean`) is correctly formatted and
-#'   coded as 0, 1, 2. The function will stop with an error if genotype data
-#'   includes NA values or incorrect coding.
-#'
-
+#' grm_vanraden <- PredictProR:::grm_calculation(geno_clean, method = "VanRaden")
 grm_calculation <- function(
     geno_clean = NULL,
     weight = NULL,
-    method= NULL
-){
+    method = NULL,
+    backend = NULL,
+    ploidy = "auto"
+) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 
-  ### iT important to check the name in the weight data is the match and the same
-  ## order in the geno_clean data
-
-  # Validate input
-  if(!is.matrix(geno_clean)) stop(paste(msg, "snp/marker data must be a matrix."), call. = FALSE)
-  if(!is.null(weight) && !is.matrix(weight)) stop(paste(msg, "weight must be a matrix if provided."), call. = FALSE)
-  if(!is.null(weight) && !all(rownames(weight) %in% colnames(geno_clean))) {
-    stop(paste(msg,"Not all SNPs in weight are present in snp/marker data."), call. = FALSE)
+  if (!is.matrix(geno_clean)) {
+    stop(paste(msg, "snp/marker data must be a matrix."), call. = FALSE)
+  }
+  if (!is.numeric(geno_clean)) {
+    stop(paste(msg, "SNP data must contain numeric ALT-allele dosage."), call. = FALSE)
+  }
+  ploidy <- gp_resolve_matrix_ploidy(geno_clean, ploidy)
+  gp_validate_alt_dosage(geno_clean, ploidy, hard_calls = FALSE, name = "GRM genotype dosage")
+  if (!is.null(weight) && !is.matrix(weight)) {
+    stop(paste(msg, "weight must be a matrix if provided."), call. = FALSE)
   }
 
-  gmatrix_method_available <- c("VanRaden",
-                                "Weighted_VanRaden",
-                                "Yang",
-                                "Epistasis")
+  gmatrix_method_available <- c(
+    "VanRaden",
+    "Weighted_VanRaden",
+    "Yang",
+    "Epistasis",
+    "Dominance",
+    "Dominance_Vitezica",
+    "Dominance_Su",
+    "Dominance_Heterozygosity"
+  )
+  method <- if (is.null(method)) NULL else as.character(method)
+  if (is.null(method) || !length(method) || anyNA(method) || !all(method %in% gmatrix_method_available)) {
+    stop(
+      paste(msg, "Invalid genomic relationship method. Choose from: ",
+            paste(gmatrix_method_available, collapse = ", ")),
+      call. = FALSE
+    )
+  }
+  method <- unique(vapply(method, function(x) switch(
+    x,
+    Dominance = "Dominance_Vitezica",
+    Dominance_Heterozygosity = "Dominance_Su",
+    x
+  ), character(1)))
 
-  if(!is.null(method)){
-    if (!(method %in% gmatrix_method_available)) {
-      stop(paste(msg,"Invalid genomic relationship method. Choose from: ",
-           paste(gmatrix_method_available, collapse = ", ")), call. = FALSE)
+  diploid_only <- c("Yang", "Dominance_Vitezica", "Dominance_Su")
+  incompatible <- intersect(method, diploid_only)
+  if (ploidy != 2L && length(incompatible)) {
+    stop(
+      paste(msg, paste(incompatible, collapse = ", "),
+            "is currently a diploid-only GRM parameterization. For ploidy", ploidy,
+            "use VanRaden, Weighted_VanRaden, Epistasis, or a generic marker kernel."),
+      call. = FALSE
+    )
+  }
+
+
+  storage.mode(geno_clean) <- "double"
+  pre_marker_names <- colnames(geno_clean)
+  marker_has_missing <- colSums(is.na(geno_clean)) > 0
+  marker_unique_counts <- apply(geno_clean, 2, function(x) length(unique(x[!is.na(x)])))
+  keep_markers <- !marker_has_missing & marker_unique_counts > 1
+  if (!all(keep_markers)) {
+    geno_clean <- geno_clean[, keep_markers, drop = FALSE]
+  }
+  if (!ncol(geno_clean)) {
+    stop(paste(msg, "No informative SNP markers remain after genotype cleanup."), call. = FALSE)
+  }
+  if (anyNA(geno_clean)) {
+    stop(paste(msg, "Missing SNP data remain after genotype cleanup."), call. = FALSE)
+  }
+  if (!is.null(weight) && is.null(colnames(geno_clean))) {
+    stop(paste(msg, "SNP marker names are required when weight is provided."), call. = FALSE)
+  }
+
+  gp_grm_weight_vector <- function(weight, marker_names) {
+    if (is.null(weight)) {
+      return(NULL)
     }
+    weight <- as.matrix(weight)
+    if (nrow(weight) == length(marker_names) && ncol(weight) == length(marker_names)) {
+      has_row_names <- !is.null(rownames(weight))
+      has_col_names <- !is.null(colnames(weight))
+      if (has_row_names && has_col_names) {
+        if (!all(marker_names %in% rownames(weight)) || !all(marker_names %in% colnames(weight))) {
+          stop(paste(msg, "square weight matrix names must match SNP marker names."), call. = FALSE)
+        }
+        weight <- weight[marker_names, marker_names, drop = FALSE]
+      } else if (has_row_names && !identical(rownames(weight), marker_names)) {
+        stop(paste(msg, "square weight matrix col names are required when row order differs from SNP marker order."), call. = FALSE)
+      } else if (has_col_names && !identical(colnames(weight), marker_names)) {
+        stop(paste(msg, "square weight matrix row names are required when column order differs from SNP marker order."), call. = FALSE)
+      }
+      off_diag <- weight
+      diag(off_diag) <- 0
+      if (anyNA(off_diag) || any(abs(off_diag) > sqrt(.Machine$double.eps))) {
+        stop(paste(msg, "square weight matrix must be diagonal for Weighted_VanRaden."), call. = FALSE)
+      }
+      return(as.numeric(diag(weight)))
+    }
+    if (is.null(rownames(weight))) {
+      stop(paste(msg, "weight row names must match SNP marker names."), call. = FALSE)
+    }
+    weight <- weight[match(marker_names, rownames(weight)), , drop = FALSE]
+    if (!identical(marker_names, rownames(weight))) {
+      stop(paste(msg, "SNP order in weight does not match geno_clean after marker cleanup."), call. = FALSE)
+    }
+    as.numeric(weight[, 1])
   }
 
-  if(!is.null(weight)){
-
-    weight <- weight[match(colnames(geno_clean), rownames(weight)), , drop = FALSE]
-    if(!identical(colnames(geno_clean), rownames(weight))) stop(paste(msg, "SNP order in weight does not match geno_clean."), call. = FALSE)
-    #weight <- diag(as.vector(weight))
-
-    # Literature
-    # Weighting Strategies for Single-Step Genomic BLUP: An Iterative Approach
-    # for Accurate Calculation of GEBV and  GWAS
-
-    # D (weight) is a diagonal matrix of weights, where dii is the weight
-    # for SNP i. In regular GBLUP-based methods, D = I, which gives
-    # a weight of 1 to all SNP.
-
-   ### It is possible when geno_clean was QC some snp did not meet the standard QC parameters
-   ## and were dropped.This will fit that deficit
-    ## This is lacking in AGHmatrix.
-   # if(isFALSE(all(rownames(weight)%in%colnames(geno_clean)))){
-   #
-   #   ## This ensure that the order of the snp in geno_clean match that in the weight.
-   #   weight = weight[colnames(geno_clean)%in%rownames(weight),]
-   #
-   #   weight <- diag(x= weight[,1], nrow = nrow(weight))
-   #
-   # }
-   # ## This check if the snp name and that in the weight did not match or not the same order.
-   # if (!identical(colnames(geno_clean), rownames(weight))) stop(print(paste(msg, 'Snp marker should be equivalent in both weight geno_clean.')), call. = FALSE)
- }
-  #if(class(geno_clean)[1]!= "matrix") stop(print(paste(msg, 'object geno_clean must be matrix.')), call. = FALSE)
-
-  freq <- colMeans(geno_clean)/2
-  if (any(is.na(geno_clean) | freq == 0 | freq == 1)) geno_clean <- Remove_NA_Mono_SNP(geno= geno_clean)
-
-  ## Check if SNP data is coded 0, 1, 2
-
-  checkG <- c(length(which(geno_clean == -1)))
-
-
-  if (checkG!=0) stop(print(paste(msg, "SNP data must be coded 0, 1, 2")), call. = FALSE)
-
-
-  if(missing(method)) stop(paste(msg, "Select either VanRaden or Yang to compute geno_cleanmic relationship matrix"), call. = FALSE)
-
-
-  N_Individuals <- nrow(geno_clean)  ## Number of informative SNP
-  N_marker <- ncol(geno_clean)  ## Number of geno_cleantypes
-
-  ### Vanraden method
-  VanRaden <- function(geno_clean, freq){
-    #freq <- colMeans(geno_clean) / 2
-
-    geno_clean <- scale(geno_clean, center=T, scale=F)
-    return(tcrossprod(geno_clean) / sum(2*freq*(1-freq)))
+  weights_vec <- gp_grm_weight_vector(weight, colnames(geno_clean))
+  if (any(method %in% "Weighted_VanRaden") && is.null(weights_vec)) {
+    stop(paste(msg, "weight is required for Weighted_VanRaden."), call. = FALSE)
+  }
+  if (!is.null(weights_vec) && (length(weights_vec) != ncol(geno_clean) || anyNA(weights_vec) || any(!is.finite(weights_vec)))) {
+    stop(paste(msg, "weight must provide one finite value per retained SNP marker."), call. = FALSE)
+  }
+  if (!is.null(weights_vec) && (any(weights_vec < 0) || !any(weights_vec > 0))) {
+    stop(paste(msg, "Weighted_VanRaden weights must be non-negative with at least one positive value."), call. = FALSE)
   }
 
-  Epistasis <- function(geno_clean, freq){
-    #freq <- colMeans(geno_clean) / 2
-
-    geno_clean <- scale(geno_clean, center=T, scale=F)
-
-    G <- tcrossprod(geno_clean) / sum(2*freq*(1-freq))
-
-    GG <- G*G
-
-    return(GG)
+  freq <- colMeans(geno_clean) / ploidy
+  denom <- sum(ploidy * freq * (1 - freq))
+  if (!is.finite(denom) || denom <= 0) {
+    stop(paste(msg, "GRM denominator must be positive after genotype cleanup."), call. = FALSE)
   }
 
-  ### Weighted_VanRaden method
-  Weighted_VanRaden <- function(geno_clean, freq, weight){
-    #freq <- colMeans(geno_clean) / 2
-    weightt <- diag(as.vector(weight))
-    geno_clean <- scale(geno_clean, center=T, scale=F)
-    return(((geno_clean %*% weightt)%*% t(geno_clean))/sum(2*freq*(1-freq)))
-  }
-###
-  # In this method, weights are directly applied to the standardized genotypes
-  # before calculating the GRM. This approach assumes that the
-  # weights reflect the relative importance or effect size of each SNP.
+  centered <- scale(geno_clean, center = TRUE, scale = FALSE)
+  base_grm <- tcrossprod(centered) / denom
+  q <- 1 - freq
 
-  weighted_GRM <- function(geno_clean, weight) {
-    # Standardize genotypes (centering)
-    standardizedGeno <- scale(geno_clean, center = TRUE, scale = FALSE)
-    # Apply weights
-    weightedGeno <- standardizedGeno * sqrt(weights)
-    # Calculate GRM
-    grm <- tcrossprod(weightedGeno) / ncol(weightedGeno)
-    return(grm)
+  dominance_vitezica_grm <- function() {
+    dominance_covariates <- matrix(0, nrow = nrow(geno_clean), ncol = ncol(geno_clean))
+    for (k in seq_len(ncol(geno_clean))) {
+      marker <- geno_clean[, k]
+      dominance_covariates[marker == 0, k] <- -2 * freq[[k]]^2
+      dominance_covariates[marker == 1, k] <- 2 * freq[[k]] * q[[k]]
+      dominance_covariates[marker == 2, k] <- -2 * q[[k]]^2
+    }
+    dominance_denom <- sum((2 * freq * q)^2)
+    if (!is.finite(dominance_denom) || dominance_denom <= 0) {
+      stop(paste(msg, "Dominance_Vitezica denominator must be positive after genotype cleanup."), call. = FALSE)
+    }
+    tcrossprod(dominance_covariates) / dominance_denom
   }
 
-  ###
-  # This method involves adjusting allele frequencies by
-  # weights before calculating the GRM, reflecting the
-  # assumption that SNPs with different frequencies
-  # contribute differently to the genetic variance.
-  #
-  weightedGRM_AlleleFreq <- function(geno_clean, weights) {
-    freq <- colMeans(geno_clean) / 2
-    # Apply weights to allele frequencies
-    weightedFreq <- freq * weights
-    # Calculate GRM using weighted allele frequencies
-    p <- 2 * weightedFreq * (1 - weightedFreq)
-    standardizedGeno <- scale(geno_clean, center = TRUE, scale = FALSE)
-    grm <- tcrossprod(standardizedGeno) / sum(p)
-    return(grm)
+  dominance_su_grm <- function() {
+    heterozygosity_covariates <- matrix(0, nrow = nrow(geno_clean), ncol = ncol(geno_clean))
+    for (k in seq_len(ncol(geno_clean))) {
+      marker <- geno_clean[, k]
+      pq2 <- 2 * freq[[k]] * q[[k]]
+      heterozygosity_covariates[marker == 0, k] <- -pq2
+      heterozygosity_covariates[marker == 1, k] <- 1 - pq2
+      heterozygosity_covariates[marker == 2, k] <- -pq2
+    }
+    dominance_denom <- sum(2 * freq * q * (1 - 2 * freq * q))
+    if (!is.finite(dominance_denom) || dominance_denom <= 0) {
+      stop(paste(msg, "Dominance_Su denominator must be positive after genotype cleanup."), call. = FALSE)
+    }
+    tcrossprod(heterozygosity_covariates) / dominance_denom
   }
 
-  ####
-  # Convert the genotype matrix to a dominance matrix
-  convert_to_dominance <- function(geno_clean) {
-    # Convert genotypes to dominance deviations
-    # Heterozygotes (1) have dominance effect, homozygotes (0, 2) do not
-    D <- ifelse(geno_clean == 1, 1, 0)
+  calculate_one_grm <- function(method_one) {
+    selected_backend <- gp_grm_backend(backend, method_one)
+    if (ploidy != 2L && identical(selected_backend, "cpp")) {
+      stop("The native C++ GRM backend is currently diploid-only; use backend = 'r' for polyploid dosage.", call. = FALSE)
+    }
+    if (identical(selected_backend, "cpp")) {
+      Ga <- .Call(
+        "predictpror_grm_dense",
+        geno_clean,
+        as.character(method_one),
+        weights_vec,
+        list(),
+        PACKAGE = "PredictProR"
+      )
+      rownames(Ga) <- rownames(geno_clean)
+      colnames(Ga) <- rownames(geno_clean)
+      attr(Ga, "ploidy") <- ploidy
+      return(Ga)
+    }
 
-    # Calculate the dominance relationship matrix
-    DDM <- tcrossprod(D) / ncol(D)
+    Ga <- switch(
+      method_one,
+      VanRaden = base_grm,
+      Weighted_VanRaden = {
+        weighted_centered <- sweep(centered, 2, weights_vec, `*`)
+        tcrossprod(weighted_centered, centered) / denom
+      },
+      Epistasis = base_grm * base_grm,
+      Yang = {
+        n_marker <- ncol(geno_clean)
+        n_individuals <- nrow(geno_clean)
+        inv_var <- 1 / (2 * freq * (1 - freq))
+        locus <- (1 / n_marker) * (centered %*% (t(centered) * inv_var))
+        locus[lower.tri(locus, diag = TRUE)] <- 0
+        locus <- locus + t(locus)
+        multiplier <- geno_clean^2 -
+          t(t(geno_clean) * (1 + 2 * freq)) +
+          matrix(rep(2 * freq^2, each = n_individuals), ncol = n_marker)
+        diag(locus) <- 1 + (1 / n_marker) * colSums(t(multiplier) * inv_var)
+        locus
+      },
+      Dominance_Vitezica = dominance_vitezica_grm(),
+      Dominance_Su = dominance_su_grm(),
+      stop(paste(msg, "Select method to calculate genomic relationship matrix"), call. = FALSE)
+    )
 
-    return(DDM)
+    Ga <- as.matrix(Ga)
+    rownames(Ga) <- rownames(geno_clean)
+    colnames(Ga) <- rownames(geno_clean)
+    attr(Ga, "ploidy") <- ploidy
+    Ga
   }
-  ##
 
-  ### Yang method
-  Yang <- function(geno){
-
-    freq <- colMeans(geno)/2
-    N_marker = ncol(geno)
-    N_Individuals = nrow(geno)
-
-    locusMat <- scale(x = geno, center = T, scale = F)
-    locusMat <- (1/N_marker)*(locusMat %*% (t(locusMat) * (1/(2*freq*(1-freq)))))
-    locusMat[lower.tri(locusMat, diag = T)] <- 0
-    locusMat <- locusMat + t(locusMat)
-
-    multiplier <- geno^2 - t(t(geno) * (1+2*freq)) + matrix(rep(2*freq^2, each=N_Individuals), ncol=N_marker)
-    diag(locusMat) <- 1+(1/N_marker)*colSums(t(multiplier) *  (1/(2*freq*(1-freq))))
-
-    return(locusMat)
-
-
+  if (length(method) > 1L) {
+    return(gp_named_method_list(lapply(method, calculate_one_grm), method))
   }
 
-  Epistasis
-
-  switch(method,
-         "VanRaden" = {
-           Ga <- VanRaden(geno_clean, freq)
-         },
-         "Weighted_VanRaden" = {
-           Ga <- Weighted_VanRaden(geno_clean, freq, weight)
-         },
-         "Yang" = {
-           Ga <- Yang(geno_clean)
-         },
-         "weighted_GRM"={
-           Ga <- weighted_GRM(geno_clean, weight)
-         },
-         "Epistasis"={
-           Ga <- Epistasis(geno_clean, freq)
-         },
-         "weightedGRM_AlleleFreq"={
-           Ga <- weightedGRM_AlleleFreq(geno_clean, weight)
-         },
-         {
-
-           stop(paste(msg, "Select method to calculate geno_cleanmic relationship matrix"), call. = FALSE)
-         })
-
-
-  return(Ga)
-
+  calculate_one_grm(method)
 }
-
-# pValues <- c(...)  # Vector of p-values from GWAS
-# zScores <- qnorm(pValues / 2, lower.tail = FALSE)  # Convert p-values to Z-scores
-#
-# weights <- zScores^2
-#
-#
-# Converting P-values to Z-scores
-#
-# First, convert the GWAS p-values to Z-scores.
-# The Z-score represents the deviation of the observed association from
-# the null hypothesis (no association), in units of the standard error.
-# Larger Z-scores (either positive or negative) indicate stronger evidence
-# against the null hypothesis.
-#
-# Using Z-scores as Weights
-#
-# One approach is to use the square of the Z-scores as weights.
-# The rationale behind this is that the square of a Z-score is
-# proportional to the chi-square statistic,
-# which in turn is related to the
-# variance explained by the SNP under certain assumptions.

@@ -35,25 +35,48 @@ reliability_thresholds_MPIW_from_CI <- function(boot_results = NULL,
                                                 confidence_level = 0.95,
                                                 model_for_CI_cal = "ML") {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 if(model_for_CI_cal=="ML"){
   if(is.null(boot_results)) stop("Boostrapping results is required for machine learning models result diagonistic")
   #boot_results$t <- revert_scaling(boot_results$t, y_scaler)
-  lower_bound <- apply(boot_results$t, 2, quantile, probs = 0.05)
-  upper_bound <- apply(boot_results$t, 2, quantile, probs = 0.95)
+  # Bootstrap interval at the requested confidence_level. Previously the probs
+  # were hardcoded to 0.05/0.95 (a 90% interval) and ignored confidence_level,
+  # inconsistent with the rest of the package's intervals at confidence_level.
+  ci_alpha <- (1 - confidence_level) / 2
+  finite_stat <- function(x, fun, min_n = 1L) {
+    x <- suppressWarnings(as.numeric(x))
+    x <- x[is.finite(x)]
+    if (length(x) < min_n) return(NA_real_)
+    fun(x)
+  }
+  lower_bound <- apply(
+    boot_results$t, 2,
+    finite_stat,
+    fun = function(x) stats::quantile(x, probs = ci_alpha, names = FALSE)
+  )
+  upper_bound <- apply(
+    boot_results$t, 2,
+    finite_stat,
+    fun = function(x) stats::quantile(x, probs = 1 - ci_alpha, names = FALSE)
+  )
   # lower_bound <- revert_scaling(lower_bound, y_scaler)
   # upper_bound <- revert_scaling(upper_bound, y_scaler)
   interval_width <- upper_bound - lower_bound
-  predictions <- apply(boot_results$t, 2, mean)
-  standard_errors <- apply(boot_results$t, 2, sd)
-  prediction_error_var <- apply(boot_results$t, 2, var)
+  predictions <- apply(boot_results$t, 2, finite_stat, fun = mean)
+  standard_errors <- apply(boot_results$t, 2, finite_stat, fun = stats::sd, min_n = 2L)
+  prediction_error_var <- apply(boot_results$t, 2, finite_stat, fun = stats::var, min_n = 2L)
 
 
 } else if (model_for_CI_cal=="Bayes"){
 
   Predicted_value_for_CI <- Predicted_value_for_CI + mod$model$mu
-  lower_bound <- apply(Predicted_value_for_CI, 1, quantile, probs = 0.05)
-  upper_bound <- apply(Predicted_value_for_CI, 1, quantile, probs = 0.95)
+  # Posterior credible interval at the requested confidence_level. Previously the
+  # probs were hardcoded to 0.05/0.95 (a 90% interval) and ignored
+  # confidence_level, which made marker-model intervals inconsistent with the
+  # kernel/multi-trait normal-approx intervals computed at confidence_level.
+  ci_alpha <- (1 - confidence_level) / 2
+  lower_bound <- apply(Predicted_value_for_CI, 1, quantile, probs = ci_alpha)
+  upper_bound <- apply(Predicted_value_for_CI, 1, quantile, probs = 1 - ci_alpha)
   interval_width <- upper_bound - lower_bound
   predictions <- apply(Predicted_value_for_CI, 1, mean)
   standard_errors <- apply(Predicted_value_for_CI, 1, sd)
@@ -95,12 +118,13 @@ if(model_for_CI_cal=="ML"){
 
 }
 
+finite_interval_width <- interval_width[is.finite(interval_width)]
 if((is.null(interval_width_high_threshold) & is.null(interval_width_low_threshold)) & !is.null(CI_width_thresholds)){
-  high_threshold <- stats::quantile(interval_width, CI_width_thresholds[1])
-  low_threshold <- stats::quantile(interval_width, CI_width_thresholds[2])
+  high_threshold <- if (length(finite_interval_width)) stats::quantile(finite_interval_width, CI_width_thresholds[1], names = FALSE) else NA_real_
+  low_threshold <- if (length(finite_interval_width)) stats::quantile(finite_interval_width, CI_width_thresholds[2], names = FALSE) else NA_real_
 } else if ((is.null(interval_width_high_threshold) | is.null(interval_width_low_threshold)) & !is.null(CI_width_thresholds)){
-  high_threshold <- stats::quantile(interval_width, CI_width_thresholds[1])
-  low_threshold <- stats::quantile(interval_width, CI_width_thresholds[2])
+  high_threshold <- if (length(finite_interval_width)) stats::quantile(finite_interval_width, CI_width_thresholds[1], names = FALSE) else NA_real_
+  low_threshold <- if (length(finite_interval_width)) stats::quantile(finite_interval_width, CI_width_thresholds[2], names = FALSE) else NA_real_
 } else{
   if ((is.null(interval_width_high_threshold) | is.null(interval_width_low_threshold)) & is.null(CI_width_thresholds)) {
     stop(print(paste(msg,'Both interval_width_high_threshold and interval_width_low_threshold must be either NULL or not NULL.')), call. = FALSE)
@@ -114,13 +138,13 @@ if((is.null(interval_width_high_threshold) & is.null(interval_width_low_threshol
   noise_reliability <- ifelse(interval_width < high_threshold, 1,
                               ifelse(interval_width < low_threshold, 0.5, 0))
 
-  avg_interval_width <- mean(interval_width)
+  avg_interval_width <- if (length(finite_interval_width)) mean(finite_interval_width) else NA_real_
   #proportion_high_reliability <- mean(interval_width < quantile(interval_width, thresholds[1]))
 
   # Calculate proportions for each reliability level
-  proportion_low_reliability <- mean(interval_width >= high_threshold)
-  proportion_medium_reliability <- mean(interval_width > high_threshold & interval_width < high_threshold)
-  proportion_high_reliability <- mean(interval_width <= high_threshold)
+  proportion_low_reliability <- mean(interval_width >= high_threshold, na.rm = TRUE)
+  proportion_medium_reliability <- mean(interval_width >= high_threshold & interval_width < low_threshold, na.rm = TRUE)
+  proportion_high_reliability <- mean(interval_width <= high_threshold, na.rm = TRUE)
 
   reliability_percentage <- (proportion_high_reliability + proportion_medium_reliability)*100
 
@@ -151,13 +175,17 @@ reliability_thresholds <- function(prediction_error_var = NULL,
                                    high_reliability_thres = 0.6,
                                    low_reliability_thres = 0.2) {
 
-  msg <- "\n==================================================\n"
-  high_reliability_thres = 0.6
-  low_reliability_thres = 0.2
+  msg <- ""
   if(is.null(genetic_var)){
     stop(print(paste(msg,'Provide genetic or additive variance to calculate reliability.')), call. = FALSE)
   }
-  reliability <- 1-(prediction_error_var/(genetic_var))
+  if (length(genetic_var) == 1L) {
+    genetic_var <- rep(genetic_var, length(prediction_error_var))
+  }
+  invalid_genetic_var <- !is.finite(genetic_var) | genetic_var <= 0
+  reliability <- rep(0, length(prediction_error_var))
+  valid_idx <- !invalid_genetic_var
+  reliability[valid_idx] <- 1 - (prediction_error_var[valid_idx] / genetic_var[valid_idx])
 
   reliability <- pmax(0, pmin(1, reliability))
   # The default is to find the threshold for the top 10 percent and as such,
@@ -209,7 +237,7 @@ composite_reliability_tst <- function(geno_trn = NULL,
                                       interval_width = NULL,
                                       apply_pca = TRUE) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   if (setequal(rownames(geno_trn), rownames(geno_tst))) {
     return(list(trustworthiness=NA,

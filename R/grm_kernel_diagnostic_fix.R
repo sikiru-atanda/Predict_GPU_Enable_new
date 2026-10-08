@@ -30,10 +30,11 @@
 #'
 #' @examples
 #' # Example GRM kernel matrix
-#' grm <- matrix(rnorm(100), ncol=10)
-#' diag(grm) <- runif(10, 0.8, 1.2) # Example diagonal elements
+#' set.seed(1)
+#' marker_scores <- matrix(rnorm(100), ncol = 10)
+#' grm <- stats::cov2cor(tcrossprod(marker_scores))
 #' # Diagnose and optimize the GRM kernel
-#' result <- grm_kernel_diagnostic_fix(grm_kernel_data = grm,
+#' result <- PredictProR:::grm_kernel_diagnostic_fix(grm_kernel_data = grm,
 #'                                     high_diag_cut_off = 1.2,
 #'                                     low_diag_cut_off = 0.8,
 #'                                     duplicate_cut_off = 0.95,
@@ -41,8 +42,8 @@
 #'                                     optimize_duplicate = TRUE)
 #' print(result$clean_matrix)
 #'
-#'This process was infer from ASRgenomics.
-#'It was modified and improved to suite the objective in this package
+#' @details This process was inferred from ASRgenomics and adapted for the
+#' package's genomic-kernel diagnostics.
 #' @export
 grm_kernel_diagnostic_fixOLD <- function(grm_kernel_data = NULL,
                               high_diag_cut_off = 1.2,
@@ -53,7 +54,7 @@ grm_kernel_diagnostic_fixOLD <- function(grm_kernel_data = NULL,
                               ){
 
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   grm_kernel_data_opti <-  NULL
   # Check input value

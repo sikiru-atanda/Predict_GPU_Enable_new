@@ -6,7 +6,7 @@ matrix_diagonistic_check <- function(x, matrix_diagnostic = c(
                                         "is_positive_semi_definite"),
                                         tol = 1e-8) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   # Check if the input is a matrix
   if (!is.matrix(x)) {

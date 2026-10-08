@@ -2,17 +2,57 @@
 % Please edit documentation in R/grm_calculation.R
 \name{grm_calculation}
 \alias{grm_calculation}
-\title{Title}
+\title{Calculate Genomic Relationship Matrix (GRM)}
 \usage{
 grm_calculation(
   geno_clean = NULL,
   weight = NULL,
-  method = c("VanRaden", "Weighted_VanRaden", "Yang", "Epistasis")
+  method = NULL,
+  backend = NULL,
+  ploidy = "auto"
 )
 }
 \arguments{
-\item{method}{}
+\item{geno_clean}{A matrix of genotype data where rows represent individuals
+and columns represent SNPs. Genotype data must be ALT dosage from zero
+through `ploidy`.}
+
+\item{weight}{Optional SNP weights for `Weighted_VanRaden`. A one-column
+marker-named matrix or a square diagonal matrix is accepted. Weights must
+be finite and non-negative; the implemented scaling is
+`Z \%*\% diag(weight) \%*\% t(Z) / sum(ploidy * p * (1 - p))`.}
+
+\item{method}{A character scalar specifying the GRM method. Options are
+`"VanRaden"`, `"Weighted_VanRaden"`, `"Yang"`, `"Epistasis"`,
+`"Dominance_Vitezica"`, and `"Dominance_Su"`. `"Dominance"` is an alias
+for `"Dominance_Vitezica"`; `"Dominance_Heterozygosity"` is an alias for
+`"Dominance_Su"`.}
+
+\item{backend}{Backend selector. One of `"auto"`, `"cpp"`, or `"r"`. `NULL`
+uses `PREDICTPRO_GRM_BACKEND`, `PREDICTPRO_KERNEL_BACKEND`, or `"auto"`.
+The automatic route is performance-aware and keeps current dense methods
+on the R/BLAS path in this phase.}
+
+\item{ploidy}{One positive integer or `"auto"`. Automatic resolution uses
+matrix metadata; an unannotated matrix defaults to diploid only when all
+observed dosages are at most two.}
+}
+\value{
+A matrix representing the genomic relationship matrix calculated
+  based on the specified method.
 }
 \description{
-Title
+This function computes dense genomic relationship matrices from hard-call
+genotype data using additive, dominance, Yang, or epistasis methods.
+Additive VanRaden, weighted VanRaden, and additive-by-additive epistasis are
+available for uniform diploid or autopolyploid dosage. Yang and the current
+dominance parameterizations remain explicitly diploid.
+By default, PredictProR selects the fastest dense route for the selected
+method unless a backend is forced.
+}
+\examples{
+geno_clean <- matrix(c(0, 1, 2, 1, 0, 1, 2, 2, 1), nrow = 3, byrow = TRUE)
+colnames(geno_clean) <- c("SNP1", "SNP2", "SNP3")
+rownames(geno_clean) <- c("Ind1", "Ind2", "Ind3")
+grm_vanraden <- PredictProR:::grm_calculation(geno_clean, method = "VanRaden")
 }

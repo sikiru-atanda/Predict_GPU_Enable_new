@@ -2,13 +2,21 @@
 % Please edit documentation in R/AI_data_processing.R
 \name{merge_data}
 \alias{merge_data}
-\title{Title}
+\title{Merge genomic data with one or more omics data sets}
 \usage{
 merge_data(geno_data, omic_data)
 }
 \arguments{
-\item{omic_data}{}
+\item{geno_data}{Numeric matrix of genomic markers (rows = individuals).
+Can be `NULL` when only omics are supplied.}
+
+\item{omic_data}{Named list of omics matrices (each with rows = individuals,
+row names aligned to `geno_data`).}
+}
+\value{
+A list with the merged feature matrix and the omics count.
 }
 \description{
-Title
+Column-binds a genomic-marker matrix with one or more omics matrices into a
+single feature matrix, after checking that row names align across blocks.
 }

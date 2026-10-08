@@ -27,7 +27,12 @@ phenotype_to_model(
   train_set = NULL,
   test_set = NULL,
   response = NULL,
+  response_family = "gaussian",
   gen_name = NULL,
+  heter_groups = NULL,
+  random = NULL,
+  fixed = NULL,
+  type_pheno = NULL,
   ...
 )
 }
@@ -39,11 +44,35 @@ This is expected if pheno_data was not provided}
 
 \item{pheno_data_test}{phenotypic object for the testing set. NA is allowed}
 
-\item{test_set}{}
+\item{train_set}{Optional integer / character vector of training-set row
+indices or genotype IDs.}
+
+\item{test_set}{Optional integer / character vector of test-set row indices
+or genotype IDs (rows with `NA` response are inferred as test if not
+supplied).}
 
 \item{response}{y variables/lables}
 
+\item{response_family}{Response distribution family
+(`"gaussian"`, `"binomial"`, `"multinomial"`, `"ordinal"`).}
+
 \item{gen_name}{column name containing individuals/genotypes}
+
+\item{heter_groups}{Optional column carrying the heterogeneous-group label
+(typically environment) for MET runs.}
+
+\item{random}{Optional one-sided formula for random terms (e.g. `~ GID`).}
+
+\item{fixed}{Optional one-sided formula for additional fixed terms.}
+
+\item{type_pheno}{Optional phenotype-type hint
+(e.g. `"continuous"`, `"binary"`).}
+
+\item{...}{Reserved for future extensions; currently ignored.}
+}
+\value{
+The phenotype frame declared for model fitting (and prediction),
+  plus the resolved `test_set` indices.
 }
 \description{
 Title

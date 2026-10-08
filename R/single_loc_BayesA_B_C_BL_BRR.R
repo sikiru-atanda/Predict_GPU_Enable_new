@@ -1,16 +1,26 @@
 
 
-#' Title
+#' Fit a Bayesian marker-effect model (BayesA / B / C / BL / BRR) at a single location
 #'
-#' @param object
-#' @param response
-#' @param weights
-#' @param ETA
-#' @param bayes_para
-#' @param ...
-#' @param verbose
+#' Wraps a [BGLR::BGLR] call for the marker (single-location) Bayesian models,
+#' using the pre-compiled ETA list, MCMC controls in `bayes_para` and writing
+#' the run's auxiliary files under a timestamped working directory.
 #'
-#' @return
+#' @param object Cleaned phenotype data frame containing the response column.
+#' @param response Name of the response (trait) column in `object`.
+#' @param weights Optional positive Stage 2 observation precisions, supplied as
+#'   a numeric vector, one-column table, or column name in `object`. These are
+#'   converted to `sqrt(weights)` before calling BGLR because BGLR defines
+#'   residual variance as inverse squared native weight.
+#' @param ETA Pre-compiled ETA list (from [ETA_compiler_bayes]) describing the
+#'   fixed and random terms.
+#' @param bayes_para Named list of BGLR MCMC controls (`nIter`, `burnIn`,
+#'   `thin`) from [bayes_parameter_check].
+#' @param verbose Logical; passed through to BGLR for its progress output.
+#' @param core Integer; reserved compute / parallel hint.
+#' @param ... Additional arguments forwarded to BGLR.
+#'
+#' @return The fitted BGLR model object.
 #' @export
 #'
 #' @examples
@@ -72,7 +82,14 @@ files_key= gsub(":", "_", files_key)
 # }
 
 
-if(is.null(weights)){
+  bglr_weights <- gp_bglr_weights_from_precision(
+    weights = weights,
+    pheno_data = object,
+    response = response,
+    context = "BGLR marker-model Stage 2 observation weights"
+  )
+
+if(is.null(bglr_weights)){
   fm <- BGLR::BGLR(
     y=object[, response],
     ETA = ETA,
@@ -84,11 +101,11 @@ if(is.null(weights)){
 
 } else{
 
-  if(!is.null(weights)){
+  if(!is.null(bglr_weights)){
     fm <- BGLR::BGLR(
       y=object[, response],
       ETA=ETA,
-      weights = weights,
+      weights = bglr_weights,
       nIter= bayes_para$nIter,
       burnIn= bayes_para$burnIn,
       thin = bayes_para$thin,

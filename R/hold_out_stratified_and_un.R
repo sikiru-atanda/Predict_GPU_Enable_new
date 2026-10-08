@@ -32,7 +32,7 @@ hold_out_stratified_and_un <- function (
   if (!gen_name %in% names(pheno_data)) stop("Column `gen_name` not found.")
   if (!is.numeric(test_size) || test_size <= 0 || test_size >= 1)
     stop("`test_size` must be in (0,1).")
-  if (!is.null(random_state) && is.numeric(random_state)) set.seed(random_state)
+  if (!is.null(random_state) && is.numeric(random_state)) gp_set_seed(random_state)
 
   y_raw <- pheno_data[[response]]
   g_ids <- pheno_data[[gen_name]]
@@ -47,7 +47,7 @@ hold_out_stratified_and_un <- function (
 
   # Friendly hints (do not gate any logic on these)
   if (isTRUE(message)) {
-    # Duplicates per genotype ≠ “multiple environments”, but it does signal repeated measures
+    # Duplicates per genotype != "multiple environments", but it does signal repeated measures
     if (length(y_raw) > length(unique(g_ids))) {
       warning(paste0(msg_bar,
                      "You have repeated measurements per genotype (e.g., multi-env or replicates).\n",
@@ -134,7 +134,7 @@ hold_out_stratified_and_un <- function (
 
   for (r in seq_len(replication)) {
     # Make each replication reproducible but distinct
-    if (!is.null(random_state) && is.numeric(random_state)) set.seed(random_state + r - 1L)
+    if (!is.null(random_state) && is.numeric(random_state)) gp_set_seed(random_state + r - 1L)
 
     take_counts <- compute_take_counts()
 
@@ -169,7 +169,7 @@ hold_out_stratified_and_un <- function (
 #     message = TRUE
 # ) {
 #
-#   msg <- "\n==================================================\n"
+#   msg <- ""
 #
 #   if (!is.null(random_state) && is.numeric(random_state)) {
 #     set.seed(random_state)

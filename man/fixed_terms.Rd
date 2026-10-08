@@ -2,21 +2,42 @@
 % Please edit documentation in R/bayesians_preprocess.R
 \name{fixed_terms}
 \alias{fixed_terms}
-\title{Title}
+\title{Process and Validate Fixed Effect Terms for Modeling}
 \usage{
 fixed_terms(fixed = NULL, pheno_data = NULL, ...)
 }
 \arguments{
-\item{fixed}{fixed effect, only formula is accepted}
+\item{fixed}{A formula specifying the fixed effects to be included in the model.}
 
-\item{pheno_data}{phenotypic data}
+\item{pheno_data}{A data frame containing the phenotypic data, which is used by the `rand_fix_check` function to validate the fixed terms.}
 
-\item{...}{}
+\item{...}{Additional arguments passed to the `rand_fix_check` function.}
+}
+\value{
+A character vector of fixed effect terms that have been validated and extracted from the input formula.
 }
 \description{
-Title
+This function checks and validates the fixed effect terms specified for a statistical model,
+ensuring they conform to required conditions. It leverages an auxiliary function `rand_fix_check`
+to perform the validation and extracts the terms from a formula object.
+}
+\details{
+The function is designed to preprocess and validate fixed effect terms before their use in statistical models,
+particularly those involving genetic or phenotypic data analysis. It ensures that the input terms meet the
+necessary conditions for modeling and are properly formatted. The validation process involves checking that
+the fixed effects are appropriately specified as a formula and pass through a custom check (`rand_fix_check`),
+which may involve various validations such as ensuring the presence of the terms in the provided phenotypic data.
 }
 \examples{
-Title
+pheno_data <- data.frame(
+  Trait1 = factor(c("A", "B", "A")),
+  Trait2 = factor(c("low", "high", "low"))
+)
+fixed_effects_formula <- ~ Trait1 + Trait2
+fixed_terms <- fixed_terms(fixed = fixed_effects_formula, pheno_data = pheno_data)
+print(fixed_terms)
 
+}
+\seealso{
+\code{\link{rand_fix_check}} for details on the validation process.
 }

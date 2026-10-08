@@ -2,17 +2,34 @@
 % Please edit documentation in R/feature_impo_xgb.R
 \name{feature_impo_xgb}
 \alias{feature_impo_xgb}
-\title{Title}
+\title{Extract top-ranked XGBoost feature importances}
 \usage{
-feature_impo_xgb(xgb_fit = NULL, X_train = NULL, N_feature_impo = NULL, ...)
+feature_impo_xgb(
+  xgb_fit = NULL,
+  X_train = NULL,
+  N_feature_impo = NULL,
+  xgb_booster = NULL,
+  ...
+)
 }
 \arguments{
-\item{xgb_fit}{trained model}
+\item{xgb_fit}{A trained XGBoost model object.}
 
-\item{X_train}{genomic/omics data}
+\item{X_train}{Numeric matrix of genomic / omics features used to train
+`xgb_fit` (column names are the feature labels).}
 
-\item{N_feature_impo}{number of feature/ x variables to extract based on the importance/weight}
+\item{N_feature_impo}{Number of top features to return ranked by importance
+/ weight.}
+
+\item{xgb_booster}{The XGBoost booster type used (`"gbtree"`, `"gblinear"` or
+`"dart"`); selects the appropriate importance branch.}
+
+\item{...}{Reserved for future extensions; currently ignored.}
+}
+\value{
+A data frame of the top features and their importance scores.
 }
 \description{
-Title
+Returns the top `N_feature_impo` features from a fitted XGBoost model ranked
+by importance / gain, used for downstream feature selection.
 }

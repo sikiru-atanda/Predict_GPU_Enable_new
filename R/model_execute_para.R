@@ -9,7 +9,18 @@
 #' @param omic1_data Omic data (transcriptomic, metabolic, proteomic, environment etc) NA is allowed but not expected. Dataframe or matrix is allowed
 #' @param omic2_data Similar to Omic1_data
 #' @param omic3_data Similar to Omic1_data
-#' @param gmatrix    Genomic relationship matrix, NA not allowed. Dataframe or matrix is allowed
+#' @param gmatrix Genomic relationship matrix, with no missing values. When
+#'   several kernels are supplied through `gmatrix`, `gkernel`, the named omics
+#'   kernel arguments, or `kernel_list`, PredictProR retains every kernel.
+#'   Covariance models fit separate kernel terms; ML/DL models use separate
+#'   named eigenfeature blocks.
+#' @param kernel_list Optional named list of additional relationship or kernel
+#' matrices. Entries must be square numeric matrices keyed by the same IDs as
+#' `gen_name`. ASReml, GP, and kernel-Bayesian routes treat them as covariance
+#' sources according to their model-specific parameterization. ML/DL routes
+#' eigen-decompose each kernel and concatenate the named feature blocks with
+#' any raw genomic/omics features. ML/DL variance output remains predictive,
+#' not genetic variance or heritability.
 #' @param train_geno_data Genomic data for training set if geno_data is not provided by the user. Dataframe or matrix is allowed
 #' @param train_omic1_data Omic data for training set
 #' @param train_omic2_data Omic data for training set
@@ -28,16 +39,40 @@
 #' @param test_omics_label
 #' @param test_set Dataframe with column name of the individual in the testing set. Not required
 #' if pheno_data contain individuals (testing set) with no phenotypic record as NA.
-#' @param gmatrix_method two methods are currently available to calculate the genomic relationship matrix
-#' Yang and Van-raden
+#' @param gmatrix_method Character vector of genomic relationship matrices to
+#' calculate from marker data. Supported methods include additive VanRaden,
+#' weighted VanRaden, Yang, epistasis, and dominance relationship matrices.
+#' When `met_ml_dl = TRUE` and the user supplies `geno_data` but no
+#' precomputed kernel and no explicit `gmatrix_method`, the input guardrail
+#' auto-sets `gmatrix_method = "Yang"` so the MET ML/DL kernel-feature
+#' pipeline has a kernel to PCA over. Set this argument explicitly to
+#' override the default (e.g. `"VanRaden"`).
 #' @param response trait(s) of interest to the user
 #' @param gen_name Column name containing individuals/genotypes
 #' @param cova covariate if any.Its epected in formula i.e cova  = ~ Rain + Temp
 #' @param fixed fixed terms. Its expected in formula i.e fixed = ~ name + Env
 #' @param random random terms. Its expected in formula i.r random = ~ name + Env
 #' @param heter_resid True or False if user want heterogeneous residual variance or not
+#' @param bayes_kernel_heter_resid Optional override for the kernel-Bayes
+#'   (GBLUP_BRR / RKHS) MET routing decision, independent of
+#'   `heter_resid`. `NULL` (default) inherits from `heter_resid`. `TRUE`
+#'   forces the env-as-trait `BGLR::Multitrait` path (heterogeneous σ²_g
+#'   per env + per-env σ²_e) and requires `weights = NULL` because
+#'   `BGLR::Multitrait` has no observation-weight argument. `FALSE` forces the
+#'   univariate `BGLR::BGLR`
+#'   path with `~GID + GID:Loc` (single σ²_g, single σ²_gxe, single σ²_e
+#'   -- the BGLR-inherent homogeneous case) and is the RKHS mode that accepts
+#'   Stage 2 observation weights. ASReml and GP families keep following
+#'   `heter_resid` regardless.
 #' @param heter_groups  Column name for Environment or location
-#' @param weights weight for the response variable. Only dataframe
+#' @param weights Optional Stage 2 observation precision weights for Gaussian
+#'   GP, ASReml, and univariate BGLR fits. Supply a positive numeric vector, the
+#'   name of a numeric column in the phenotype data (for example,
+#'   `weights = "Weight"`), or a one-column data frame/matrix. PredictProR uses
+#'   `Var(e_i) = 1 / weights_i` for GP and ASReml (ASReml is fitted with
+#'   `asr_gaussian(dispersion = 1)`) and passes `sqrt(weights_i)` to BGLR,
+#'   whose native contract is `Var(e_i)` proportional to the inverse squared
+#'   BGLR weight. Unsupported weighted routes fail instead of ignoring weights.
 #' @param nIter  number of iteration for Bayesian models
 #' @param burnIn number of burnin  for Bayesian models
 #' @param thin   number of thinning for Bayesian models
@@ -48,7 +83,7 @@
 #' Bayesian Genomic Best linear unbias estimate (BGBLUP). Both RKHS and BGBLUP can
 #' fit both single and multiple location using reaction norm.
 #' Genomic Best linear unbias estimate using asreml-R package with different
-#' variance structure such as (FA, RR, US, CORGH, CORGV, CORH, CORV)
+#' variance structure such as (FA, RR, US, CORGH, CORH, CORV)
 #' for multi-location/environment.
 #' Machine learning models include:
 #' Extreme Gradiant Boosting, Random Forest, KNN, Lasso, Ridge Regression,
@@ -56,26 +91,196 @@
 #' in single location.
 #' @param fixed_term_model_bayesian model for the fixed term which is always fixed
 #' @param rand_term_model_bayesian model for the random terms which can be any of the above mentioned model
-#' @param core number of ram for paralllel job
 #' @param message if message/warning should be displayed
-#' @param gkernel relationship matrix using different kernel methods
-#' @param kernel_method kernel methods to calculate relationship matrix for the
-#' different omics. Currently available are Gaussian kernel, exponential kernel
-#' Polynomia kernel (order 2, 3, 4) and linear
+#' @param gkernel Genomic kernel. If both `gmatrix` and `gkernel` are supplied,
+#'   both are retained as distinct named kernel sources rather than one taking
+#'   precedence over the other.
+#' @param kernel_method Character vector of kernel methods to calculate for
+#' omics data. Supported methods include Gaussian, linear, composite,
+#' polynomial, Matern-family, Laplacian, and rational quadratic kernels.
 #' @param omic1_kernel  relationship matrix using different kernel methods
 #' @param omic2_kernel  relationship matrix using different kernel methods
 #' @param omic3_kernel  relationship matrix using different kernel methods
 #' @param pheno_data_train phenotypic data for training set. NA not allowed. Dataframe or matrix is allowed
 #' @param pheno_data_test phenotypic data for the testing set. NA is allowed. Dataframe or matrix is allowed
 #' @param cross_validation
+#' @param cv_generate_plots Logical or `NULL`. When `NULL`, GP-only
+#' cross-validation defaults to a point-prediction metric path without building
+#' diagnostic plot objects. Set `TRUE` to force legacy CV plot construction or
+#' `FALSE` to skip it for faster CV output.
 #' @param coefficient_1 coefficient for the training set using either genomic or any omics data.
 #' We allowed up to 4 omics data for model fit
 #' @param coefficient_2
 #' @param coefficient_3
 #' @param coefficient_4
 #' @param eval_metrics
-#' @param para_tunning
-#' @param var_cov_str user defined variance-covariance structure
+#' @param response_family Response family for the target trait. One of `auto`,
+#' `gaussian`, `binary`, `ordinal`, or `multiclass`.
+#' @param positive_class For binary responses, the class treated as the event
+#'   for precision, recall, specificity, F1, MCC, Brier score, and one-column
+#'   probability vectors. The value must match one observed class. When omitted,
+#'   the second factor level is used and recorded in the CV selection output.
+#' @param gp_backend Gaussian-process backend route. For `hybrid_gp`, `"auto"`
+#' uses the Python/Torch additive-kernel backend when available and falls back
+#' to the R solver; use `"r"` to force the R solver or `"python"`/`"torch"` to
+#' require the Python/Torch backend.
+#' @param gp_return_se Logical. For the non-cross-validation direct
+#' Gaussian-process prediction path, request prediction standard errors and
+#' prediction error variances in the public prediction output. Cross-validation
+#' always uses point predictions only.
+#' @param gp_iters Optional positive integer optimizer iterations for the exact
+#' GP backend. `NULL` preserves the Python backend default.
+#' @param gp_lr Optional positive learning rate for the exact GP backend.
+#' `NULL` preserves the Python backend default.
+#' @param gp_learn_scales Optional logical override for GP backend scale
+#' learning. `NULL` learns scales only when full variance-component output is
+#' requested.
+#' @param gp_engine Character; which REML engine drives GP variance-component
+#' estimation. `"auto"` (default) picks the fastest available (currently
+#' resolves to `"dense_v"`); `"dense_v"` keeps the dense V-formulation
+#' (Phase 1-2); `"mme"` uses the sparse Mixed Model Equations engine
+#' (Phase 3.4-3.7, fastest at n_geno = 100 for MET but regresses at
+#' n_geno >= 300 on GBLUP because G^-1 is dense -- see Phase 3.14 NEWS);
+#' `"eigen"` (Phase 3.15a, experimental) uses an eigen-projected REML
+#' formulation that beats ASReml at large n on the standalone validation,
+#' but production integration is incomplete (Phase 3.15b NEWS) so
+#' `"eigen"` currently falls back to `"dense_v"`. Requires
+#' `PREDICTPRO_GP_DISABLE_ENV_MAIN=1` for `"mme"` and `"eigen"` on MET.
+#' Honors `PREDICTPRO_GP_ENGINE` env var.
+#' @param gp_exact_fast_cv Optional control for exact-GP cross-validation speed.
+#' `NULL` keeps the backend default, which is exact per-fold refitting unless
+#' explicitly enabled by environment policy. `TRUE` or `"auto"` enables the
+#' guarded shared-hyperparameter block-delete shortcut for eligible single-
+#' environment GP CV; `"force"` skips the self-check and is intended for
+#' benchmarking only. The shortcut is reported as approximate in result
+#' metadata.
+#' @param gp_force_prediction_se Logical. Joint multi-trait Gaussian-process
+#'   prediction standard errors and trait correlations cost one linear solve per
+#'   genotype-by-environment test cell per trait, so they are capped: past
+#'   roughly 500 test cells at two traits the fit returns predictions without
+#'   them and warns, rather than spending hours. Set `TRUE` to compute them
+#'   anyway. Leaving this `FALSE` never fails the run; it only omits the
+#'   per-cell trait covariance, and the omission is reported rather than silent.
+#' @param gp_estimate_kernel_weights Logical. Joint multi-trait Gaussian-process
+#'   routes combine their kernel bank into one genetic term. By default the
+#'   mixture weights are fixed (equal unless supplied), so each kernel's share
+#'   is an assumption rather than an estimate. Set `TRUE` to fit the relative
+#'   weights by REML profile likelihood; the first kernel is held at 1 because
+#'   the overall genetic scale is already carried by the trait covariance, so
+#'   the fitted values are ratios. Requires `gp_varcomp_mode = "reml"`, at least
+#'   two kernels, and a single-environment panel: the multi-environment joint GP
+#'   backend estimates its variance components by method of moments and has no
+#'   likelihood to profile, so it keeps fixed weights and warns. The fitted
+#'   weights, and the log-likelihood gained over the starting weights, are
+#'   reported in `model_parameters`; a near-zero gain means the data does not
+#'   identify the mixture.
+#' @param gp_return_trait_correlations Logical. For non-cross-validation
+#' multi-trait GP and MT-MET GP paths, request genetic and GxE/residual trait
+#' correlation matrices where supported by the backend.
+#' @param gp_full_vc Logical. For the non-cross-validation direct
+#' Gaussian-process prediction path, request full variance-component output
+#' where the backend supports it. This implies `gp_return_se`.
+#' @param multi_trait Logical. High-level automatic multi-trait orchestration.
+#' If `TRUE`, provide one or more models in `GS_model` (true prediction) or
+#' `GS_model_cv` (cross-validation) and leave all five family-specific
+#' `multi_trait_*` flags `FALSE`. PredictProR resolves each model to its existing
+#' protected ASReml, GP, Bayesian, ML, or DL route and executes one model per
+#' child call. With cross-validation and `cv_evaluation_only = FALSE`, models
+#' are ranked by the primary metric averaged across traits and the best joint
+#' model is refitted for final prediction. The family-specific flags remain
+#' available for backward-compatible manual single-model routing. Current
+#' single-environment joint CV candidates include `GBLUP`, `GBLUP_BRR`,
+#' `RKHS`, `Gaussian-Process-GBLUP`, `FA-GBLUP`, `Scalable-GBLUP`, and the
+#' supported multi-trait ML/DL models. Joint GP/Bayesian CV holds out complete
+#' genotypes and masks every response trait together before each model refit.
+#' Automatic joint CV accepts `K-Folds` or `Repeated_K-Folds`; its protected
+#' routes use unstratified genotype-level folds. Duplicate names in `response`
+#' are reduced to unique traits before child models are launched. Grouped
+#' multi-trait multi-environment CV is available for ASReml GBLUP; the GP and
+#' Bayesian MT-MET routes remain true-prediction only.
+#' @param multi_trait_gp Logical. If `TRUE`, enable the dedicated joint
+#' Gaussian-process multi-trait path for true prediction or single-environment
+#' genotype-blocked CV. This is different from passing multiple response
+#' columns for ordinary independent per-trait execution.
+#' @param multi_trait_bayes Logical. If `TRUE`, enable the dedicated joint
+#' Bayesian BGLR multi-trait path for `GBLUP_BRR` or `RKHS`, including
+#' single-environment genotype-blocked CV. This is different from passing
+#' multiple response columns for ordinary independent per-trait execution.
+#' @param multi_trait_asreml Logical. If `TRUE`, enable the dedicated unbalanced
+#' Gaussian multi-trait `ASReml-R` path (`GS_model = "GBLUP"` with
+#' `engine = "asreml"`). Supports single-environment and grouped MT-MET true
+#' prediction plus genotype-blocked `K-Folds` or `Repeated_K-Folds` CV. For
+#' automatic `multi_trait = TRUE` comparison, `cv_evaluation_only = FALSE`
+#' evaluates candidates and then refits the selected model for final
+#' prediction. Each fold masks all trait-environment responses for its held-out
+#' genotypes. Fold fits return predictions only; biological variance components
+#' are extracted from the stable final/direct fit.
+#' @param hybrid_asreml Logical. If `TRUE`, enable the dedicated Gaussian
+#' hybrid `ASReml-R` true-prediction path with explicit female GCA, male GCA,
+#' and SCA covariance construction.
+#' @param hybrid_bayes Logical. If `TRUE`, enable the dedicated Gaussian
+#' hybrid Bayesian-kernel path using explicit female GCA, male GCA, and SCA
+#' covariance construction for `GBLUP_BRR` and `RKHS`.
+#' @param hybrid_gp Logical. If `TRUE`, enable the dedicated Gaussian hybrid
+#' GP/KRR path using explicit female GCA, male GCA, and SCA additive kernels.
+#' Use `response = c(...)` for joint cross-trait multi-trait hybrid GP and
+#' `heter_groups` for hybrid multi-environment data.
+#' @param hybrid_ml Logical. If `TRUE`, enable the dedicated Gaussian hybrid
+#' machine-learning path using hybrid-level genotype features. Single-environment
+#' CV can use parent-aware scenarios; hybrid MET uses CV0, CV1, or CV2.
+#' @param hybrid_dl Logical. If `TRUE`, enable the dedicated Gaussian hybrid
+#' deep-learning path using hybrid-level genotype features. Single-environment
+#' CV can use parent-aware scenarios; hybrid MET uses CV0, CV1, or CV2.
+#' @param female_parent Column name in `pheno_data` identifying the female
+#' parent of each hybrid.
+#' @param male_parent Column name in `pheno_data` identifying the male parent
+#' of each hybrid.
+#' @param female_geno_data Optional female-parent genotype matrix (row names =
+#' parent IDs) for the hybrid paths. Use this when female and male parents come
+#' from separate pools. With `hybrid_ml`/`hybrid_dl`, `het_threshold` is applied
+#' to these inbred parents and markers that fail in either pool are dropped from
+#' the hybrid features; if no hybrid-level `geno_data` is supplied, the hybrid
+#' features are the expected F1 dosages `(female + male) / 2`. The parent QC
+#' summary is returned as `hybrid_parent_qc`.
+#' @param male_geno_data Optional male-parent genotype matrix; see
+#' `female_geno_data`. If only one of the two is supplied it is used for both
+#' pools.
+#' @param hybrid_gp_lambda Ridge/noise ratio for `hybrid_gp`. Use `"auto"` to
+#' select from `hybrid_gp_lambda_grid` by deterministic internal CV.
+#' @param hybrid_gp_lambda_grid Positive lambda values considered when
+#' `hybrid_gp_lambda = "auto"`.
+#' @param hybrid_gp_component_weights Optional named numeric weights for
+#' `female_gca`, `male_gca`, `sca`, and `gxe` kernels in the hybrid GP
+#' additive/reaction-norm kernel.
+#' @param env_similarity Optional environment similarity matrix for hybrid GP
+#' MET. This defines the environment side of the hybrid-by-environment
+#' reaction-norm kernel.
+#' @param env_ids Optional environment IDs for an unnamed `env_similarity`
+#' matrix.
+#' @param env_covariates Optional environment covariate data. When supplied for
+#' hybrid GP, PredictPro converts the covariates to an environment similarity
+#' kernel after QC. Pass exactly one of `env_similarity` or `env_covariates`.
+#' @param reaction_norm_feature_qc Logical; when `TRUE`, apply environment
+#' covariate QC before building a reaction-norm environment kernel.
+#' @param kenv_kernel Environment-covariate kernel family used when
+#' `env_covariates` is supplied. Supported hybrid GP values are `matern32`,
+#' `matern52`, `rbf`, and `linear`.
+#' @param kenv_bandwidth Positive bandwidth for distance-based environment
+#' kernels.
+#' @param kenv_kernel_kwargs Optional named list of additional environment
+#' kernel arguments.
+#' @param multi_trait_ml Logical. If `TRUE`, enable the dedicated unbalanced
+#' Gaussian multi-trait machine-learning path. Current scope is
+#' `GS_model = "RandomForest"`, `"Ridge_Regression"`, or
+#' `"PartialLeastSquare"`.
+#' @param para_tunning Logical; run hyper-parameter tuning before fitting the
+#'   classical-ML / DL model.
+#' @param var_cov_str User-defined variance-covariance structure. For
+#'   single-environment multi-trait ASReml models, choose \code{"us"},
+#'   \code{"corgh"}, or \code{"diag"}; \code{NULL} defaults to \code{"us"}. For
+#'   grouped MT-MET ASReml GBLUP, use a validated factor-analytic structure such
+#'   as \code{"fa1"}, \code{"fa2"}, or \code{"fa3"}; \code{NULL} selects rank up to
+#'   three according to the number of trait-environment groups.
 #' @param engine if user has asreml
 #' @param workspace allocate memory for asreml model fit
 #' @param pworkspace allocate memory for predict function in asreml
@@ -91,6 +296,16 @@
 #' @param rcn_cutoff
 #' @param optimize_diagonal
 #' @param optimize_duplicate
+#' @param kernel_check_level Kernel QC level. Use `"auto"` for full checks on moderate kernels
+#'        and bounded checks on large kernels.
+#' @param kernel_sanitize Kernel prefit sanitizer policy. `"auto"` applies bounded ridge
+#'        sanitization when exact dense checks are skipped.
+#' @param kernel_repair_priority Repair priority used when `kernel_fix_method = "auto"`
+#'        and ridge blending cannot make the kernel positive definite. PredictPro tries
+#'        the native diagonal-preserving spectral repair first when the kernel is within
+#'        `kernel_cpp_repair_size_limit`, then falls back to Matrix `nearPD`.
+#' @param kernel_cpp_repair_size_limit Maximum kernel dimension for exact C++ spectral
+#'        SPD repair. Larger kernels use bounded sanitizer/fallback policy.
 #' @param pheno_data
 #' @param pheno_data_train
 #' @param pheno_data_test
@@ -101,6 +316,8 @@
 #' @param omics_data_label
 #' @param gmatrix
 #' @param gkernel
+#' @param kernel_list Optional named list of additional relationship or kernel
+#' matrices.
 #' @param pedigree_matrix
 #' @param omic1_kernel
 #' @param omic2_kernel
@@ -132,16 +349,13 @@
 #' @param heter_resid
 #' @param heter_groups
 #' @param var_cov_str
-#' @param weights
 #' @param nIter
 #' @param burnIn
 #' @param thin
 #' @param GS_model
 #' @param eval_metrics
-#' @param para_tunning
 #' @param fixed_term_model_bayesian
 #' @param rand_term_model_bayesian
-#' @param core
 #' @param engine
 #' @param workspace
 #' @param pworkspace
@@ -156,10 +370,21 @@
 #' @param rcn_cutoff
 #' @param optimize_diagonal
 #' @param optimize_duplicate
+#' @param kernel_check_level Kernel QC level. Use `"auto"` for full checks on moderate kernels
+#'        and bounded checks on large kernels.
+#' @param kernel_sanitize Kernel prefit sanitizer policy. `"auto"` applies bounded ridge
+#'        sanitization when exact dense checks are skipped.
+#' @param kernel_repair_priority Repair priority used when `kernel_fix_method = "auto"`
+#'        and ridge blending cannot make the kernel positive definite. PredictPro tries
+#'        the native diagonal-preserving spectral repair first when the kernel is within
+#'        `kernel_cpp_repair_size_limit`, then falls back to Matrix `nearPD`.
+#' @param kernel_cpp_repair_size_limit Maximum kernel dimension for exact C++ spectral
+#'        SPD repair. Larger kernels use bounded sanitizer/fallback policy.
 #' @param message
 #' @param system_database this dictate if the output will be created in a folder or as list
 #'                         the default is FALSE. Thus output will be folder.
-#' @param ...
+#' @param ... Additional arguments forwarded to the dispatched engine /
+#'   workflow; reserved for forward compatibility.
 #' @param scale
 #' @param inverse
 #' @param epsilon
@@ -178,16 +403,425 @@
 #' @param out_put_map
 #' @param map_data
 #' @param qc_filtering
-#' @param xgb_paras_tunning
-#' @param rf_paras_tunning
-#' @param pls_paras_tunning
-#' @param svm_paras_tunning
-#' @param knn_paras_tunning
-#' @param lasso_paras_tunning
-#' @param rr_paras_tunning
-#' @param dpl_paras_tunning
+#' @param xgb_paras_tunning,rf_paras_tunning,pls_paras_tunning,svm_paras_tunning,knn_paras_tunning,lasso_paras_tunning,rr_paras_tunning,dpl_paras_tunning
+#'   Per-model hyper-parameter tuning grids (XGBoost, RandomForest, PLS,
+#'   SVM, KNN, Lasso, Ridge-Regression and deep-learning) used when
+#'   `para_tunning = TRUE`. Each is a named list of vectors / sequences.
+#' @param feature_scoring Logical; enable independent predictor scoring and
+#' dynamic top-k predictor selection after QC/imputation.
+#' @param feature_scoring_model Predictor scoring model. One of
+#' `"Ridge_Regression"`, `"BayesB"`, or `"RandomForest"`.
+#' @param feature_k_grid Integer vector of top-k predictor counts to evaluate in
+#' cross-validation. `NULL` uses an automatic capped grid. On standard
+#' single-trait/MET routes the grid always also contains the full predictor
+#' count (k = all predictors, i.e. no selection), so CV and automatic model
+#' choice can conclude that selection does not help. Metrics for several
+#' candidate k values describe the candidate curve; selecting k and quoting the
+#' same CV score as an unbiased final performance estimate is not nested CV.
+#' Specialized hybrid and joint multi-trait routes require one pre-specified k
+#' per run and fail rather than pooling several candidates.
+#' @param feature_k Optional top-k predictor count for final prediction. Scores
+#' and selected sets are calculated separately for every trait. A genuinely
+#' joint multi-trait model uses the union of its trait-specific top-k sets and
+#' records both the individual sets and the union size.
+#' @param feature_scoring_cv Cross-validation scoring policy. `"fixed"` reuses
+#' one full-training ranking in every fold; it is intended for final fitting or
+#' externally established rankings and is not leakage-free when the same
+#' responses are used to assess CV performance. `"fold_internal"` recomputes
+#' the ranking using only each outer training fold. `"both"` returns fixed and
+#' fold-internal tasks separately for standard model routes; their metrics are
+#' never averaged, and fold-internal results drive automatic model selection.
+#' Specialized hybrid/joint routes require choosing one policy per run.
+#' @param feature_score_metadata Optional reusable metadata from
+#' `feature_score_predictors()`. Automatic selection rebuilds marker designs and
+#' kernels from named raw marker/omics columns. Precomputed kernels cannot be
+#' subset by feature name and therefore fail loudly unless the user supplies an
+#' externally rebuilt kernel matching `feature_selected`.
+#' @param feature_scoring_seed Integer seed for deterministic feature scoring.
+#' @param feature_ridge_lambda Positive ridge penalty used by Gaussian ridge
+#' feature scoring.
+#' @param feature_bayes_nIter,feature_bayes_burnIn,feature_bayes_thin MCMC
+#' controls used by Gaussian BayesB feature scoring.
+#' @param rf_n_jobs Internal Python RandomForest jobs. Keep at `1` when
+#' PredictProR is already parallelizing over CV/model tasks.
 #'
-#' @return
+#' @param pedigree_matrix Optional pedigree-derived relationship matrix `A`
+#'   (rows/cols = genotypes), used for pedigree-based GBLUP variants.
+#' @param female_gmatrix,male_gmatrix Sex-specific genomic relationship
+#'   matrices (one per parental population) used by the hybrid GBLUP path.
+#' @param hybrid_include_sca Logical; include a specific-combining-ability
+#'   (SCA) random term in the hybrid model in addition to female and male GCA.
+#' @param train_omics_label,test_omics_label Optional labels for the train /
+#'   test omics blocks (mirrors `omics_data_label`).
+#' @param coefficient_2,coefficient_3,coefficient_4 Optional weighting
+#'   coefficients applied to omics layers 2, 3 and 4 when combining genomic +
+#'   multi-omics relationship matrices.
+#' @param multi_trait_dl Logical; route to the joint deep-learning multi-trait
+#'   model.
+#' @param met_ml_dl Logical; enable the environment-aware MET classical-ML / DL
+#'   routes for multi-environment panels. PredictProR also auto-enables this
+#'   flag when an advertised MET ML/DL model is requested on a valid MET panel.
+#'   Every model named in the call must be listed by `met_data_standard()`;
+#'   mixed supported/unsupported requests stop before any fitting instead of
+#'   dropping the unsupported model. Required inputs: `pheno_data` with repeated
+#'   genotype rows across environments, a single `response` column, and an
+#'   environment column named via `heter_groups`. Genomic side: any of
+#'   `geno_data` (a GRM will be auto-built via `gmatrix_method = "Yang"` if
+#'   no kernel is supplied), `omic1_data`/`omic2_data`/`omic3_data`, a
+#'   precomputed `gmatrix`/`gkernel`/`omic*_kernel`, or a `kernel_list` of
+#'   additional N×N PSD kernels keyed by `gen_name`. Each kernel is eigen-
+#'   decomposed per-kernel and the top components (controlled by
+#'   `met_kernel_var_explained` / `met_kernel_min_ev` / `met_kernel_max_pcs`)
+#'   are concatenated into the feature matrix the ML/DL model consumes. These
+#'   routes report predictive uncertainty, not genetic variance, mixed-model
+#'   PEV, or heritability.
+#' @param met_kernel_var_explained,met_kernel_min_ev,met_kernel_max_pcs
+#'   Controls for the MET kernel reduction: target variance explained,
+#'   minimum eigenvalue and maximum number of principal components.
+#' @param ld_prunning_qc Logical; apply LD-based marker pruning during QC
+#'   (note: the historical spelling is kept for backward compatibility).
+#' @param docker_nd_usage Reserved Docker / NDSU runtime hint.
+#' @param eval_metrics Character vector of evaluation metrics
+#'   (e.g. `"accuracy"`, `"rmse"`).
+#' @param selected,max_features Optional feature-selection controls
+#'   (pre-selected feature subset and maximum number of features).
+#' @param scaling,centering Logical; scale to unit variance / mean-centre the
+#'   feature matrix before fitting.
+#' @param inverse Logical / attribute; treat the supplied kernel as an
+#'   inverse relationship matrix.
+#' @param epsilon Ridge added to the kernel diagonal before inversion.
+#' @param bend_value Eigenvalue floor for kernel bending toward positive
+#'   definiteness.
+#' @param blending,blending_value Logical / numeric; blend the kernel with the
+#'   identity at the given weight to stabilise an ill-conditioned matrix.
+#' @param high_diag_cut_off,low_diag_cut_off Kernel-diagnostic cut-offs for
+#'   abnormally high / low diagonal entries.
+#' @param duplicate_cut_off Correlation threshold above which rows are flagged
+#'   as duplicates in the kernel duplicate scan.
+#' @param rcn_cutoff Reciprocal-condition-number cut-off above which the
+#'   kernel is considered ill-conditioned.
+#' @param optimize_diagonal,optimize_duplicate Logical; let the kernel
+#'   QC engine optimise the diagonal / duplicate handling automatically.
+#' @param kernel_large_n_threshold Row count above which large-kernel
+#'   shortcuts are used in QC.
+#' @param duplicate_scan Logical; run the C++ duplicate-row scanner.
+#' @param duplicate_sample_size,duplicate_block_size,duplicate_max_pairs
+#'   Sampling controls for the duplicate scanner (sample size, block size and
+#'   maximum pairs evaluated).
+#' @param kernel_fix_method Repair method when the kernel is not positive
+#'   definite (`"auto"`, `"nearpd"`, `"ridge"`, ...).
+#' @param kernel_rcn_check Logical; perform the reciprocal-condition-number
+#'   check.
+#' @param kernel_nearpd_size_limit Maximum kernel dimension for which the
+#'   `nearPD` repair path is attempted.
+#' @param kernel_cpp_keep_diag Logical; have the C++ repair preserve the
+#'   diagonal.
+#' @param kernel_pd_check Logical; run the positive-definiteness check.
+#' @param kernel_pd_sample_size Sample size for the PD-check spectral probe.
+#' @param kernel_sanitize_value Numeric sanitiser threshold for the kernel
+#'   pre-fit policy.
+#' @param vcf_file_name,vcf_file_path VCF file name and directory used when
+#'   genotypes are read from a VCF rather than supplied as a matrix.
+#' @param vcf_file Optional pre-parsed VCF object.
+#' @param hapmap_file_name,hapmap_file_path,hapmap HapMap counterparts of the
+#'   VCF arguments.
+#' @param csv_file_name,csv_file_path A CSV or TXT genotype table (comma or tab
+#'   separated) with the VCF marker columns `CHROM`, `POS`, `ID`, `REF`, `ALT`,
+#'   `QUAL`, `FILTER`, `INFO`, `FORMAT` followed by one column per sample
+#'   (sample names = `gen_name` values). It is converted to VCF with
+#'   [convert_csv_to_vcf()] and then follows the VCF route: the same QC,
+#'   imputation (including `imputation_method = "beagle"`) and recoding.
+#' @param met_predict_all_environments Multi-environment true prediction:
+#'   `TRUE` (default) predicts every line in every environment (the full line
+#'   x environment grid) with every engine; `Train_Test_Label` is `"Train"`
+#'   for observed line x environment records, `"Test"` for records supplied
+#'   with `NA` and for lines with no observation, and `"Unobserved"` for
+#'   combinations not in `pheno_data` whose line was observed elsewhere.
+#'   `FALSE` predicts only the combinations present in `pheno_data`.
+#' @param csv_input_coding Coding of the numeric genotypes in `csv_file_name`:
+#'   `"alt_dosage"` (0, 1, 2 copies of the ALT allele; default) or
+#'   `"centered_dosage"` (-1, 0, 1). VCF GT calls such as `0/1` are also read.
+#' @param maf_threshold,het_threshold,ind_call_rate_threshold,snp_call_rate_threshold
+#'   QC thresholds for minor-allele frequency, per-SNP heterozygosity and
+#'   per-individual / per-SNP call rate. With `hybrid_ml = TRUE` or
+#'   `hybrid_dl = TRUE`, hybrid-level genotypes are never filtered on
+#'   heterozygosity by default, because they are heterozygous by design. When
+#'   `female_geno_data`/`male_geno_data` are supplied, `het_threshold` is
+#'   applied to those inbred parents instead; otherwise it applies to the hybrid
+#'   rows only when supplied explicitly.
+#' @param test_train_genetic_space Logical; compute the test / train genetic
+#'   space overlap diagnostic.
+#' @param impute,impute_omic Logical; impute missing genotype / omics values.
+#' @param imputation_method,impute_knn_k,na_threshold Imputation method
+#'   (`"knn"`, `"mean"`, `"median"`, `"mode"`, or `"beagle"` for raw VCF/HapMap input),
+#'   KNN neighbour count and the maximum per-column NA rate above which a
+#'   column is dropped.
+#' @param ploidy One positive integer or `"auto"`. Raw VCF GT calls can infer
+#'   a uniform ploidy. Numeric polyploid dosage matrices must supply ploidy
+#'   explicitly or carry a `ploidy` attribute. Beagle remains diploid-only.
+#' @param beagle_options Named list passed to [impute_genotypes_with_beagle()]
+#'   when `imputation_method = "beagle"`. Typical entries are `beagle_jar`,
+#'   `output_prefix`, `ref_file`, `map_file`, `nthreads`, and `java_memory`.
+#'   Without `output_prefix`, Beagle's intermediate files are written to a
+#'   per-run temporary folder, not the working directory.
+#' @param recode_format Genotype recoding scheme: ALT dosage, dosage centered
+#'   on `ploidy / 2`, or allele frequency. Legacy diploid aliases are accepted.
+#' @param ld_pruning,ld_pruning_method LD-pruning toggle and algorithm
+#'   (e.g. `"indep-pairwise"`).
+#' @param window_size,step_size,r2_threshold LD-pruning window size, step size
+#'   and `r^2` threshold.
+#' @param use_kb_window Logical; interpret `window_size` in kilobases.
+#' @param phased,use_founders LD-pruning options for phased data and
+#'   founder-only restriction.
+#' @param out_put_map Logical; return the SNP map alongside recoded genotypes.
+#' @param map_data Optional marker map data frame (chromosome, position).
+#' @param qc_filtering Logical; apply MAF / het / call-rate QC filters.
+#' @param optimizer_name Deep-learning optimiser (e.g. `"adam"`, `"sgd"`).
+#' @param use_amp Logical; use automatic mixed-precision training.
+#' @param max_grad_norm Gradient-norm clip used during DL training.
+#' @param auto_class_weights Logical; auto-balance class weights for
+#'   classification.
+#' @param internal_cv_nfolds,internal_cv_replication Folds and replication
+#'   used by multi-trait and MET DL internal CV when calibration is enabled.
+#' @param dl_internal_calibration Logical. Run the extra held-out calibration
+#'   fits for Gaussian DL true prediction. Defaults to `TRUE`. Set to `FALSE`
+#'   to skip those fits; calibrated prediction-error variance, standard errors,
+#'   intervals, and reliability then remain unavailable. This does not disable
+#'   requested outer cross-validation, tuning, or bootstrap fits.
+#' @param cnn_neurons_per_layer,cnn_kernel_size,cnn_dense_layers,cnn_use_max_pool,cnn_pool_kernel,cnn_pool_stride,cnn_pool_padding,cnn_learning_rate,cnn_separable,cnn_dilations,cnn_use_se,cnn_norm_type,cnn_pool_type,cnn_use_global_pool
+#'   CNN architecture / training hyper-parameters (depth, kernel / pool
+#'   geometry, separable convolutions, dilations, squeeze-excitation,
+#'   normalisation, global pooling and learning rate).
+#' @param resnet_neurons_per_block,resnet_blocks,resnet_learning_rate
+#'   ResNet hyper-parameters.
+#' @param ft_d_model,ft_heads,ft_layers,ft_ff_mult,ft_dropout,ft_token_dropout,ft_use_cls
+#'   FT-Transformer hyper-parameters (model dimension, attention heads,
+#'   transformer layers, feed-forward multiplier, dropouts, CLS token).
+#' @param saint_d_model,saint_heads,saint_layers,saint_ff_mult,saint_dropout,saint_token_dropout,saint_use_cls
+#'   SAINT hyper-parameters (same layout as the FT-Transformer set).
+#' @param use_grouping,group_trigger,group_method,init_group_size,max_tokens,kmeans_batch,kmeans_iter
+#'   Feature-tokenisation / grouping controls for the tabular-Transformer
+#'   models (trigger, method, group size, max tokens, mini-batch K-means
+#'   parameters).
+#' @param tabnet_steps,tabnet_feature_dim,tabnet_output_dim,tabnet_gamma,tabnet_lambda_sparse
+#'   TabNet hyper-parameters.
+#' @param node_trees,node_depth NODE (Neural Oblivious Decision Ensembles)
+#'   tree count and depth.
+#' @param deepfm_k,deepfm_hidden DeepFM embedding dimension and dense hidden
+#'   widths.
+#' @param dcn_layers,dcn_hidden Deep & Cross Network cross / dense layers.
+#' @param nam_hidden,nam_activation,nam_add_linear,nam_l1 Neural Additive
+#'   Model hidden widths, activation, optional linear term and L1 penalty.
+#' @param moe_n_experts,moe_expert_hidden,moe_gate_hidden,moe_temperature,moe_sparse_topk,moe_entropy_reg
+#'   Mixture-of-Experts hyper-parameters.
+#' @param gp_use_variational,gp_num_inducing,gp_feature_dim,gp_kernel,gp_ard,gp_lr_mult,rff_features,rff_lengthscale,rff_deep_hidden
+#'   Deep-GP / random-Fourier-feature hyper-parameters for the DL-GP routes.
+#' @param model_type DL model family (`"mlp"`, `"cnn"`, `"resnet"`, `"ft"`,
+#'   `"saint"`, `"tabnet"`, `"node"`, `"deepfm"`, `"dcn"`, `"nam"`, `"moe"`,
+#'   `"gp"`, ...).
+#' @param epochs,batch_size DL training duration and mini-batch size.
+#' @param dropout,l2_weight_decay,l2_regularizer_dp,dropout_rate,batch_norm,validation_split,compile_model,deterministic,random_seed,device
+#'   Generic DL controls (regularisation, validation split, model compile,
+#'   determinism, random seed, target device).
+#' @param dl_n_seeds Optional number of DL training seeds to fit within every
+#'   bootstrap sample for single-trait true prediction. The default is one,
+#'   preserving the historical computational cost.
+#' @param dl_seeds Optional explicit unique non-negative integer DL training seeds.
+#'   When omitted, `dl_n_seeds` seeds are deterministically derived from
+#'   `random_seed`; all requested seeds are retained and averaged.
+#' @param dl_seed_aggregation Aggregation across DL training seeds. Currently
+#'   only `"mean"` is supported; PredictProR never selects a seed using unknown
+#'   test-set outcomes.
+#' @param mlp_neurons_per_layer,mlp_learning_rate MLP-specific size and
+#'   learning rate.
+#' @param final_attention,attention_across_multiple_layers,heteroscedastic
+#'   Attention pooling / heteroscedastic-output toggles for the DL wrappers.
+#' @param param_grid Generic hyper-parameter grid (overrides the per-model
+#'   `*_paras_tunning` lists when supplied).
+#' @param early_stop Logical / control for early stopping during tuning or
+#'   DL training.
+#' @param k k for K-Nearest Neighbours.
+#' @param learning_rate,max_depth,subsample XGBoost / boosting learning rate,
+#'   tree depth and row-subsample ratio.
+#' @param xgb_booster XGBoost booster (`"gbtree"`, `"gblinear"`, `"dart"`).
+#' @param iteration XGBoost number of boosting iterations (`nrounds`).
+#' @param N_feature_impo Top-K features to report by importance.
+#' @param resample_method_tune,number_of_fold_tune Resampling method and folds
+#'   for hyper-parameter tuning.
+#' @param min_child_weight,colsample_bytree,xgb_alpha,xgb_gamma,lambda_rr,xgb_lambda,xgb_rate_drop,xgb_skip_drop,xgb_objective,xgb_sample_type,xgb_normalize_type,xgb_nthread
+#'   XGBoost / Ridge-regression hyper-parameters (min child weight, column
+#'   subsample, L1 / L2, DART drop / skip, objective, sample / normalise
+#'   types, threads).
+#' @param catboost_iterations,catboost_depth,catboost_learning_rate,catboost_l2_leaf_reg,catboost_thread_count
+#'   CatBoost hyper-parameters.
+#' @param lightgbm_nrounds,lightgbm_learning_rate,lightgbm_num_leaves,lightgbm_feature_fraction,lightgbm_bagging_fraction,lightgbm_min_data_in_leaf,lightgbm_lambda_l1,lightgbm_lambda_l2,lightgbm_nthread
+#'   LightGBM hyper-parameters.
+#' @param ntree,nodesize,mtry,maxnodes,importance Random Forest
+#'   hyper-parameters and the variable-importance toggle. `mtry = NULL` uses
+#'   R `randomForest` defaults: floor(p/3) predictors per split for
+#'   regression, sqrt(p) for classification.
+#' @param ncomp Number of PLS components.
+#' @param svm_kernel,svm_type,sigma_value,C_value,degree_value,scale_value,gamma_value,offset_value
+#'   SVM kernel family / type and kernel parameters
+#'   (sigma, C, degree, scale, gamma, offset).
+#' @param AI_cv_nfolds,n_bootstrap,early_stop_for_iteration_xgb Classical-ML
+#'   inner-CV folds, bootstrap resamples (default 30), and XGBoost-specific
+#'   early-stop rounds. In ML/DL true prediction the published prediction is
+#'   the model fitted on all training lines (DL: the average of `dl_n_seeds`
+#'   networks trained on all lines); the `n_bootstrap` refits only describe
+#'   uncertainty and run in parallel across the available cores. Gaussian
+#'   standard errors and intervals are calibrated on cross-fitted held-out
+#'   errors. For Gaussian RandomForest, `PREDICTPRO_RF_UNCERTAINTY=jackknife`
+#'   replaces the refits with the bias-corrected infinitesimal jackknife of the
+#'   full-data forest (Wager, Hastie & Efron 2014): about 10x faster, unbiased
+#'   on average with ~1000 trees but noisier than the bootstrap in simulation,
+#'   so the bootstrap remains the default.
+#' @param CI_width_thresholds,confidence_level Prediction-interval
+#'   classification quantiles and confidence level.
+#' @param high_reliability_thres,low_reliability_thres Reliability-band
+#'   thresholds.
+#' @param abs_very_close_threshold,abs_close_threshold Closeness thresholds
+#'   used in the ranking / stability scoring.
+#' @param n_components,threshold,iqr_multiplier Component / risk / outlier
+#'   thresholds for the post-prediction summary.
+#' @param interval_width_high_threshold,interval_width_moderate_threshold,interval_width_low_threshold
+#'   Optional fixed-value overrides for the prediction-interval-width
+#'   classification bands.
+#' @param lowrank_eps_trace,lowrank_max_rank,lowrank_jitter,lowrank_noise_grid,lowrank_kernel_weights
+#'   GP backend controls (trace tolerance, maximum rank, jitter, noise grid,
+#'   and per-kernel weights). Named weights must match the aligned kernel names.
+#'   They are forwarded through direct prediction, cross-validation, and
+#'   automatic multi-trait final refits. They are fixed for kernel-ridge and
+#'   joint multi-trait GP fits and are input/starting weights when
+#'   the exact GP backend learns component scales.
+#' @param gp_output_level GP backend output level
+#'   (`"predict_only"`, `"predict_with_se"`, `"full_vc"`).
+#' @param gp_varcomp_mode GP variance-component estimation mode
+#'   (e.g. `"reml"`, `"mom"`). In joint multi-trait mode the selected model
+#'   determines the statistically valid route: Gaussian-Process-GBLUP uses
+#'   REML, FA-GBLUP uses factor-analytic REML (or MoM for multi-environment
+#'   data), and Scalable-GBLUP uses operator/MoM.
+#' @param gp_fa_rank FA rank for GP_FA / FA-GBLUP.
+#' @param gp_prediction_output Which GP prediction summary to return.
+#' @param gp_factor_cache Optional cached factor object reused across GP
+#'   fits.
+#' @param cross_validation Logical; route to the cross-validation pipeline
+#'   instead of true prediction.
+#' @param cv_evaluation_only Logical; only return CV evaluation outputs
+#'   (skip final fit on the full data). Classification responses include
+#'   family-specific metrics plus out-of-fold reliability and calibration
+#'   summaries under `cv_results_processed`.
+#' @param GS_model_cv Model name(s) to fit during cross-validation; defaults
+#'   to `GS_model` when not supplied.
+#' @param nfolds Number of folds for cross-validation.
+#' @param sampling_method CV sampling scheme (e.g. `"stratified"`,
+#'   `"unstratified"`).
+#' @param num_cores Parallel workers for CV / bootstrap. When `NULL` (default)
+#'   the policy uses `parallel::detectCores(logical = TRUE) - 1` capped at the
+#'   number of parallel-eligible tasks. The full set of knobs that influence
+#'   worker count and backend selection (`GP_BLAS_THREADS`, the scoring
+#'   weights, mori / mirai timing, etc.) is documented in
+#'   `inst/parallel-policy-knobs.md` and via the
+#'   \code{\link{gp_parallel_policy_knobs}} helper.
+#' @param replication Number of CV replications.
+#' @param test_size Fraction reserved for the held-out test set in holdout CV.
+#' @param cross_validation_meth Cross-validation method. Every multi-environment
+#'   workflow uses `"CV0"`, `"CV1"`, `"CV2"`, or a repeated variant. CV0 holds
+#'   out environments, CV1 holds out genotypes across environments, and CV2
+#'   holds out genotype-by-environment cells. Single-environment workflows use
+#'   their ordinary holdout or K-fold methods.
+#' @param random_state Random seed for reproducible CV / bootstrap splits.
+#' @param metric_for_ranking Metric used to rank models in the CV summary.
+#'   The default, `"auto"`, uses balanced accuracy for binary responses, macro
+#'   F1 for multiclass responses, quadratic-weighted kappa for ordinal
+#'   responses, and correlation (`accuracy`) for Gaussian responses.
+#' @param ranking_tie_breakers Optional ordered character vector of secondary
+#'   metrics used when candidate models tie on `metric_for_ranking`. `NULL`
+#'   uses family-aware defaults; use `"none"` to disable secondary metrics.
+#' @param plot_extension,plot_width,plot_height,plot_units,plot_dpi,plot_filename,Plot_name_result_diagnostic
+#'   Output-plot file extension, geometry, units, DPI, base filename and the
+#'   diagnostic-plot name prefix.
+#' @param feature_selected Optional exact predictor set to reuse without
+#'   rescoring. Supply a character vector for one common set; a list keyed by
+#'   trait; a list keyed by `geno_data`, `omic1_data`, `omic2_data`, or
+#'   `omic3_data`; a nested trait/source list in either orientation; or a data
+#'   frame containing `predictor` plus optional `trait`, `source_block`, and
+#'   logical `selected` columns. Sets are applied separately to each trait;
+#'   genuinely joint multi-trait fits use their union. In a source-keyed set,
+#'   an omitted source is excluded. Named raw matrices allow PredictProR to
+#'   rebuild marker designs and kernels. With a user-supplied precomputed
+#'   kernel, the package cannot inspect the originating columns and assumes the
+#'   kernel was externally rebuilt from this exact set.
+#' @param feature_scoring_seed Random seed for the feature-scoring pipeline.
+#' @param feature_ridge_lambda Ridge penalty used by the feature-scoring
+#'   ridge engine.
+#' @param feature_bayes_nIter,feature_bayes_burnIn,feature_bayes_thin BGLR
+#'   MCMC controls used by the Bayesian feature-scoring engine.
+#' @param globals_max_GB Maximum exported-globals size (GB) used by the
+#'   parallel-policy scorer.
+#' @param worker_memory_gb Optional memory (GiB) one parallel worker needs on
+#'   top of the shared data: the R process with PredictProR loaded plus, for
+#'   Python-backed ML/DL/GP models, its Python child. Together with
+#'   `memory_budget_gb` it caps how many workers run at once. `NULL` (default)
+#'   uses `GP_PAR_WORKER_OVERHEAD_GB` if set, otherwise measures one worker on
+#'   this machine once per session (only when more than one worker could run),
+#'   falling back to 0.75 GiB. The value and its source are recorded in
+#'   `Run_metadata` (`policy_worker_memory_gb`, `policy_worker_memory_source`).
+#' @param memory_budget_gb Optional total memory (GiB) all parallel workers may
+#'   use. `NULL` (default) uses `GP_PAR_MEMORY_BUDGET_GB` if set, otherwise
+#'   `GP_PAR_MEMORY_FRACTION` (default 0.7) of the currently available memory.
+#' @param parallel_mode Backend selection. One of `"auto"` (default;
+#'   score-based — the engine picks among mirai / future / base_parallel /
+#'   foreach / sequential based on object size, fanout, OS, GPU
+#'   availability, and per-model gates), or one of `"mirai"`, `"future"`,
+#'   `"base_parallel"`, `"foreach"`, `"sequential"` to force a backend.
+#'   The chosen backend and the contributing reason codes are recorded
+#'   in `policy_decision_reason` in the exported `Run_metadata.csv`;
+#'   decode them with \code{\link{gp_policy_decision_reason_glossary}}.
+#'   Tuning is via the env vars / options enumerated by
+#'   \code{\link{gp_parallel_policy_knobs}} and described in
+#'   `inst/parallel-policy-knobs.md`.
+#' @param parallel_backend_prefer_fork Logical; prefer forking on Unix
+#'   workers when applicable. Set `FALSE` for PSOCK workers. Forking is
+#'   disabled automatically when a worker needs embedded-runtime
+#'   initialization, such as a reticulate Python session.
+#' @param sequential_models Optional character vector of model names that
+#'   should always run sequentially (e.g. RKHS, XGBoost, CatBoost / LightGBM
+#'   which already use internal threading).
+#' @param verbose Logical; print verbose progress / diagnostic messages.
+#'
+#' @return A nested list of per-trait model results. The prediction table
+#'   (`model_results$predicted_values`) follows a shared column contract that
+#'   includes `Predicted_value`, `Standard_error`, `PEV`,
+#'   `lower_bound`/`upper_bound`, and `Reliability`, plus model-specific
+#'   variance metadata.
+#'
+#'   For genetic mixed models, inspect `Reliability_basis`: the reference
+#'   variance is an estimated genetic variance and PEV has breeding-value
+#'   semantics. ML/DL models do not estimate that decomposition, so
+#'   `Genetic_variance` remains unavailable. Their plotting-compatible
+#'   `Reliability` field equals `Prediction_stability` and is calculated as
+#'   `max(0, min(1, 1 - U_i / V_yhat))`, where `V_yhat` is the fitted-value
+#'   variance across all rows in the final prediction table (both `Train` and
+#'   `Test`, when present) and `U_i` is normally prediction-resampling `SE_i^2`.
+#'   `Train_Test_Label` identifies the row set but does not subset `V_yhat`.
+#'   The two inputs are returned in
+#'   `Reliability_reference_variance` and `Reliability_variance_input`.
+#'   Held-out predictive PEV and prediction intervals remain separate.
+#'   ML/DL `Reliability` is an uncalibrated marker-adjustment plotting
+#'   surrogate, not quantitative-genetic reliability.
+#'
+#'   Multi-seed DL true prediction additionally returns `dl_seed_manifest`,
+#'   `dl_computation_plan`, `dl_seed_predictions`, and
+#'   `dl_seed_variability`. These remain separate from bootstrap PEV and
+#'   reliability because they describe optimizer/initialization sensitivity.
+#'
+#'   With `multi_trait = TRUE`, the returned
+#'   `PredictProR_multi_trait_result` keeps each protected child result under
+#'   `model_results_by_model`, the routing decision under
+#'   `orchestration_plan`, combined CV summaries and rankings under
+#'   `cv_results_processed`, and any selected full-data refit under
+#'   `final_prediction`.
 #' @export
 #'
 #' @examples
@@ -207,6 +841,7 @@ model_execute <- function(
                             omic3_data = NULL),
     gmatrix= NULL,
     gkernel = NULL,
+    kernel_list = NULL,
     pedigree_matrix = NULL,
     omic1_kernel = NULL,
     omic2_kernel = NULL,
@@ -237,6 +872,39 @@ model_execute <- function(
     gmatrix_method = NULL,
     kernel_method = NULL,
     response=NULL,
+    response_family = "auto",
+    positive_class = NULL,
+    multi_trait_gp = FALSE,
+    multi_trait_bayes = FALSE,
+    multi_trait_asreml = FALSE,
+    hybrid_asreml = FALSE,
+    hybrid_bayes = FALSE,
+    hybrid_gp = FALSE,
+    hybrid_ml = FALSE,
+    hybrid_dl = FALSE,
+    female_parent = NULL,
+    male_parent = NULL,
+    female_gmatrix = NULL,
+    male_gmatrix = NULL,
+    female_geno_data = NULL,
+    male_geno_data = NULL,
+    hybrid_include_sca = TRUE,
+    hybrid_gp_lambda = "auto",
+    hybrid_gp_lambda_grid = c(0.01, 0.03, 0.1, 0.3, 1),
+    hybrid_gp_component_weights = NULL,
+    env_similarity = NULL,
+    env_ids = NULL,
+    env_covariates = NULL,
+    reaction_norm_feature_qc = TRUE,
+    kenv_kernel = "matern32",
+    kenv_bandwidth = 1.0,
+    kenv_kernel_kwargs = NULL,
+    multi_trait_ml = FALSE,
+    multi_trait_dl = FALSE,
+    met_ml_dl = FALSE,
+    met_kernel_var_explained = 0.95,
+    met_kernel_min_ev = 1e-8,
+    met_kernel_max_pcs = NULL,
     gen_name=NULL,
     ld_prunning_qc = TRUE,
     docker_nd_usage = FALSE,
@@ -244,6 +912,7 @@ model_execute <- function(
     fixed=NULL,
     random=NULL,
     heter_resid=FALSE,
+    bayes_kernel_heter_resid = NULL,
     heter_groups=NULL,
     var_cov_str = NULL,
     weights =NULL,
@@ -275,12 +944,32 @@ model_execute <- function(
     rcn_cutoff = 1e-12,
     optimize_diagonal = FALSE,
     optimize_duplicate = FALSE,
+    kernel_check_level = "auto",
+    kernel_large_n_threshold = 5000L,
+    duplicate_scan = "auto",
+    duplicate_sample_size = 2000L,
+    duplicate_block_size = 1024L,
+    duplicate_max_pairs = 10000L,
+    kernel_fix_method = "auto",
+    kernel_repair_priority = "speed",
+    kernel_rcn_check = "auto",
+    kernel_nearpd_size_limit = 2500L,
+    kernel_cpp_repair_size_limit = 3000L,
+    kernel_cpp_keep_diag = TRUE,
+    kernel_pd_check = "auto",
+    kernel_pd_sample_size = 500L,
+    kernel_sanitize = "auto",
+    kernel_sanitize_value = NULL,
     vcf_file_name = NULL,
     vcf_file_path = NULL,
     vcf_file = NULL,
     hapmap_file_name = NULL,
     hapmap_file_path = NULL,
     hapmap = NULL,
+    csv_file_name = NULL,
+    csv_file_path = NULL,
+    csv_input_coding = c("alt_dosage", "centered_dosage"),
+    met_predict_all_environments = TRUE,
     maf_threshold = 0.01,
     het_threshold = 0.1,
     ind_call_rate_threshold = 0.9,
@@ -289,14 +978,16 @@ model_execute <- function(
     impute = TRUE,
     impute_omic = TRUE,
     imputation_method = "knn",
+    beagle_options = list(),
     impute_knn_k = 5,
+    ploidy = "auto",
     na_threshold = 0.9,
     recode_format = "0,1,2",  # Specify "0,1,2" or -1, 0, 1
     ld_pruning = FALSE,         # LD pruning option
     ld_pruning_method = "indep-pairwise", # LD pruning method
     window_size = 50,           # Window size for LD pruning
     step_size = 5,              # Step size for LD pruning
-    r2_threshold = 0.2,         # r² threshold for LD pruning
+    r2_threshold = 0.2,         # r^2 threshold for LD pruning
     use_kb_window = TRUE,      # Use kb for window size in LD pruning
     phased = TRUE,             # Option for phased LD pruning
     use_founders = FALSE,
@@ -310,6 +1001,9 @@ model_execute <- function(
     use_amp        = TRUE,
     max_grad_norm  = 1.0,
     auto_class_weights = FALSE,
+    internal_cv_nfolds = 5L,
+    internal_cv_replication = 3L,
+    dl_internal_calibration = TRUE,
     ##### cnn
     cnn_neurons_per_layer = as.integer(c(64, 64, 64)),
     cnn_kernel_size = 3L,
@@ -403,6 +1097,9 @@ model_execute <- function(
     compile_model = FALSE,
     deterministic = TRUE,
     random_seed = 123,
+    dl_n_seeds = NULL,
+    dl_seeds = NULL,
+    dl_seed_aggregation = "mean",
     device = NULL,
     #### mlp and attention
     mlp_neurons_per_layer = as.integer(c(128, 64)),
@@ -453,7 +1150,7 @@ model_execute <- function(
     learning_rate = 0.01, #xgboost
     max_depth = 6, #xgboost
     subsample = 0.7, #xgboost
-    xgb_booster =  "dart", #"gbtree", # #xgboost "gblinear",
+    xgb_booster = "gbtree", # xgboost: "gbtree" (default), "dart" (much slower), "gblinear"
     iteration = 100, #xgboost
     N_feature_impo = 10, #xgboost
     resample_method_tune = "cv", # c("cv","boot") #xgboost
@@ -471,22 +1168,38 @@ model_execute <- function(
     xgb_objective = "reg:squarederror",
     xgb_sample_type = "uniform",
     xgb_normalize_type = "tree",
+    xgb_nthread = 1L,
+    catboost_iterations = 500,
+    catboost_depth = 6,
+    catboost_learning_rate = 0.03,
+    catboost_l2_leaf_reg = 3,
+    catboost_thread_count = 1L,
+    lightgbm_nrounds = 100,
+    lightgbm_learning_rate = 0.05,
+    lightgbm_num_leaves = 31,
+    lightgbm_feature_fraction = 1.0,
+    lightgbm_bagging_fraction = 1.0,
+    lightgbm_min_data_in_leaf = 20,
+    lightgbm_lambda_l1 = 0,
+    lightgbm_lambda_l2 = 0,
+    lightgbm_nthread = 1L,
     ntree=500, ## RF
     nodesize =NULL,
     mtry = NULL, ## RF
     maxnodes = NULL, ## RF
     importance=TRUE, ## RF
+    rf_n_jobs = 1L,
     ncomp = 3, # pls
     svm_kernel = "Gaussian", #svm "Gaussian", "Linear","Hyperbolic_tangent", "Polynomial"
     svm_type = "eps-regression",
-    sigma_value  = 0.1,       #svm Default sigma value for RBF kernel
+    sigma_value  = NULL,      #svm: NULL uses dimension-aware gamma = "scale"
     C_value  = 1,             #svm Default cost parameter
     degree_value = 3,        #svm Default degree for polynomial kernel
     scale_value  = 1,         #svm Default scale for polynomial kernel
     gamma_value = NULL,
     offset_value = 0,
     AI_cv_nfolds = 5,
-    n_bootstrap = 100,
+    n_bootstrap = 30,
     early_stop_for_iteration_xgb = FALSE,
     CI_width_thresholds = c(0.33, 0.66),
     confidence_level = 0.95,
@@ -500,8 +1213,30 @@ model_execute <- function(
     interval_width_high_threshold = NULL,
     interval_width_moderate_threshold = NULL,
     interval_width_low_threshold = NULL,
+    lowrank_eps_trace = 1e-6,
+    lowrank_max_rank = NULL,
+    lowrank_jitter = NULL,
+    lowrank_noise_grid = NULL,
+    lowrank_kernel_weights = NULL,
+    gp_backend = "auto",
+    gp_output_level = "predict_only",
+    gp_return_se = FALSE,
+    gp_full_vc = FALSE,
+    gp_return_trait_correlations = FALSE,
+    gp_estimate_kernel_weights = FALSE,
+    gp_force_prediction_se = FALSE,
+    gp_varcomp_mode = "reml",
+    gp_fa_rank = 1L,
+    gp_prediction_output = "all",
+    gp_factor_cache = NULL,
+    gp_iters = NULL,
+    gp_lr = NULL,
+    gp_engine = "auto",
+    gp_learn_scales = NULL,
+    gp_exact_fast_cv = NULL,
     cross_validation = FALSE,
     cv_evaluation_only = FALSE,
+    cv_generate_plots = NULL,
     GS_model_cv = NULL,
     nfolds = 5,
     sampling_method = NULL,
@@ -510,7 +1245,8 @@ model_execute <- function(
     test_size = 0.3,
     cross_validation_meth = "Stratified_Hold_Out",
     random_state = 123,
-    metric_for_ranking = "accuracy",
+    metric_for_ranking = "auto",
+    ranking_tie_breakers = NULL,
     plot_extension = "pdf",
     plot_width = 17,
     plot_height = 12,
@@ -519,211 +1255,492 @@ model_execute <- function(
     plot_filename = "trait",
     Plot_name_result_diagnostic = NULL,
     feature_selected = NULL,
+    feature_scoring = FALSE,
+    feature_scoring_model = "Ridge_Regression",
+    feature_k_grid = NULL,
+    feature_k = NULL,
+    feature_scoring_cv = "fixed",
+    feature_score_metadata = NULL,
+    feature_scoring_seed = NULL,
+    feature_ridge_lambda = 1,
+    feature_bayes_nIter = 1500L,
+    feature_bayes_burnIn = 500L,
+    feature_bayes_thin = 5L,
     ######
     globals_max_GB = 4,
-    parallel_mode = c("auto","future","sequential","base_parallel","foreach"),
+    worker_memory_gb = NULL,
+    memory_budget_gb = NULL,
+    parallel_mode = c("auto","future","sequential","base_parallel","foreach","mirai"),
     parallel_backend_prefer_fork = TRUE,
     sequential_models = NULL,
     verbose = TRUE,
+    multi_trait = FALSE,
     ...
 ) {
 
 #browser()
-    msg <- "\n==================================================\n"
+    # once-per-call warnings (e.g. variance components not estimable)
+    assign("warned", character(), envir = PredictProR_runtime_cache)
+    gp_reject_obsolete_asreml_structure(var_cov_str)
+    msg <- ""
     on.exit(future::plan("sequential"), add = TRUE)
     parallel_mode <- match.arg(parallel_mode)
+    dl_internal_calibration <- gp_dl_calibration_enabled(dl_internal_calibration)
+    for (mem_arg in c("worker_memory_gb", "memory_budget_gb")) {
+      mem_val <- get(mem_arg)
+      if (!is.null(mem_val) &&
+          (!is.numeric(mem_val) || length(mem_val) != 1L || !is.finite(mem_val) || mem_val <= 0)) {
+        stop(mem_arg, " must be NULL or one positive number of GiB.", call. = FALSE)
+      }
+    }
+    # Hybrid ML/DL features are hybrid-level genotypes, which are heterozygous
+    # by design; the inbred-line heterozygosity filter would discard most
+    # informative markers. With parent genotypes, the filter runs on the
+    # inbred parents and the failing markers are dropped from the hybrid
+    # features; otherwise it stays off unless the user sets it explicitly.
+    hybrid_parent_qc_summary <- NULL
+    if (isTRUE(hybrid_ml) || isTRUE(hybrid_dl)) {
+      if (!is.null(female_geno_data) || !is.null(male_geno_data)) {
+        hybrid_parent_prep <- gp_hybrid_ml_parent_geno_prepare(
+          pheno_data = pheno_data,
+          geno_data = geno_data,
+          female_geno_data = female_geno_data,
+          male_geno_data = male_geno_data,
+          gen_name = gen_name,
+          female_parent = female_parent,
+          male_parent = male_parent,
+          het_threshold = het_threshold,
+          ploidy = ploidy,
+          message = message
+        )
+        geno_data <- hybrid_parent_prep$geno_data
+        hybrid_parent_qc_summary <- hybrid_parent_prep$summary
+        female_geno_data <- NULL
+        male_geno_data <- NULL
+        het_threshold <- NULL
+      } else if (missing(het_threshold)) {
+        het_threshold <- NULL
+      }
+    }
 
 
     `%||%` <- function(a, b) if (is.null(a)) b else a
+    dot_args <- list(...)
+    predictpror_preprocess_cache <-
+      dot_args[[".predictpror_preprocess_cache"]] %||% NULL
+    predictpror_shared_models <-
+      dot_args[[".predictpror_shared_models"]] %||% character()
+    predictpror_shared_requires_asreml <- isTRUE(
+      dot_args[[".predictpror_shared_requires_asreml"]]
+    )
+    predictpror_shared_final_prediction <- isTRUE(
+      dot_args[[".predictpror_shared_final_prediction"]]
+    )
+    gp_shared_preprocess_cache_validate(predictpror_preprocess_cache)
+    if (isTRUE(multi_trait)) {
+      formal_names <- setdiff(names(formals(model_execute)), "...")
+      orchestration_args <- mget(
+        formal_names,
+        envir = environment(),
+        inherits = FALSE
+      )
+      if (length(dot_args)) {
+        if (is.null(names(dot_args)) || any(!nzchar(names(dot_args)))) {
+          stop(
+            "All arguments passed through `...` must be named when multi_trait = TRUE.",
+            call. = FALSE
+          )
+        }
+        orchestration_args[names(dot_args)] <- dot_args
+      }
+      return(gp_model_execute_multitrait_orchestrate(orchestration_args))
+    }
     ######
-    geno_data_process <- NULL
-    if(!is.null(vcf_file_name) & !is.null(vcf_file_path)){
+    raw_preprocess_stage <- "raw_genotype_import"
+    if (gp_shared_preprocess_cache_has(
+      predictpror_preprocess_cache,
+      raw_preprocess_stage
+    )) {
+      raw_preprocess <- gp_shared_preprocess_cache_get(
+        predictpror_preprocess_cache,
+        raw_preprocess_stage
+      )
+      beagle_preprocess <- raw_preprocess$beagle_preprocess
+      geno_data_process <- raw_preprocess$geno_data_process
+      ploidy <- raw_preprocess$ploidy
+      imputation_method <- raw_preprocess$imputation_method
+    } else {
+      beagle_preprocess <- NULL
+      # CSV / TXT genotype tables are converted to VCF once and then take the
+      # VCF route (QC, Beagle or native imputation, recoding).
+      if (!is.null(csv_file_name)) {
+        if (!is.null(vcf_file_name) || !is.null(hapmap_file_name) || !is.null(hapmap)) {
+          stop("Give one raw genotype source: csv_file_name, vcf_file_name or a HapMap input.", call. = FALSE)
+        }
+        csv_input <- file.path(csv_file_path %||% getwd(), csv_file_name)
+        if (!file.exists(csv_input)) {
+          stop("Genotype table not found: ", csv_input, call. = FALSE)
+        }
+        csv_coding <- match.arg(csv_input_coding, c("alt_dosage", "centered_dosage"))
+        if (!is.numeric(ploidy)) {
+          if (identical(tolower(trimws(as.character(imputation_method[[1L]]))), "beagle")) {
+            gp_beagle_check_csv_dosage(csv_input, csv_coding)
+          } else if (tryCatch({ gp_beagle_check_csv_dosage(csv_input, csv_coding); FALSE },
+                              error = function(e) TRUE)) {
+            stop("The genotype table has dosages above 2 (polyploid). Give the ploidy, e.g. ploidy = 4L.",
+                 call. = FALSE)
+          }
+        }
+        csv_vcf <- file.path(tempfile("predictpror-csv-"), "genotypes_from_table.vcf")
+        dir.create(dirname(csv_vcf), recursive = TRUE, showWarnings = FALSE)
+        convert_csv_to_vcf(
+          input_csv = csv_input,
+          output_vcf = csv_vcf,
+          ploidy = if (is.numeric(ploidy)) as.integer(ploidy)[1L] else 2L,
+          input_coding = match.arg(csv_input_coding, c("alt_dosage", "centered_dosage"))
+        )
+        vcf_file_name <- basename(csv_vcf)
+        vcf_file_path <- dirname(csv_vcf)
+      }
+      requested_imputation_method <- tolower(trimws(as.character(imputation_method[[1L]])))
+      if (identical(requested_imputation_method, "beagle")) {
+      if (!isTRUE(impute)) {
+        stop("imputation_method = 'beagle' requires impute = TRUE.", call. = FALSE)
+      }
+      # Beagle is diploid-only: stop early for polyploid data and point to KNN
+      requested_ploidy <- if (is.numeric(ploidy)) as.integer(ploidy)[1L] else
+        suppressWarnings(as.integer(attr(geno_data, "ploidy"))[1L])
+      if (isTRUE(!is.na(requested_ploidy) && requested_ploidy > 2L)) {
+        gp_beagle_polyploid_stop(requested_ploidy)
+      }
+      if (!is.list(beagle_options) || (length(beagle_options) && is.null(names(beagle_options)))) {
+        stop("beagle_options must be a named list.", call. = FALSE)
+      }
+      raw_sources <- c(
+        vcf = !is.null(vcf_file_name),
+        hapmap_file = !is.null(hapmap_file_name),
+        hapmap_table = !is.null(hapmap)
+      )
+      if (sum(raw_sources) != 1L) {
+        stop(
+          "Beagle imputation requires exactly one raw genotype source: VCF, HapMap file, or in-memory HapMap table.",
+          if (!is.null(geno_data)) " For a numeric dosage matrix (geno_data) use imputation_method = \"knn\" or \"mean\"." else "",
+          call. = FALSE
+        )
+      }
+      if (isTRUE(raw_sources[["vcf"]])) {
+        input_path <- file.path(vcf_file_path %||% getwd(), vcf_file_name)
+        input_format <- "vcf"
+      } else if (isTRUE(raw_sources[["hapmap_file"]])) {
+        input_path <- file.path(hapmap_file_path %||% getwd(), hapmap_file_name)
+        input_format <- "hapmap"
+      } else {
+        input_path <- hapmap
+        input_format <- "hapmap"
+      }
+      matrix_fallback_method <- beagle_options$matrix_fallback_method %||% "mean"
+      beagle_options$matrix_fallback_method <- NULL
+      beagle_call <- utils::modifyList(
+        list(
+          input = input_path,
+          input_format = input_format,
+          # Beagle's VCF, logs, converted input and map are intermediate files
+          # here; keep them out of the working directory unless the user sets
+          # beagle_options$output_prefix.
+          output_prefix = file.path(tempfile("predictpror-beagle-"), "beagle_imputed"),
+          ploidy = ploidy,
+          return_genotypes = FALSE,
+          # call-rate QC must see the observed calls, i.e. run before Beagle
+          snp_call_rate_threshold = snp_call_rate_threshold,
+          ind_call_rate_threshold = ind_call_rate_threshold
+        ),
+        beagle_options
+      )
+      beagle_preprocess <- do.call(impute_genotypes_with_beagle, beagle_call)
+      vcf_file_name <- basename(beagle_preprocess$output_vcf)
+      vcf_file_path <- dirname(beagle_preprocess$output_vcf)
+      hapmap_file_name <- NULL
+      hapmap_file_path <- NULL
+      hapmap <- NULL
+      imputation_method <- matrix_fallback_method
+      }
+      geno_data_process <- NULL
+      # qc_filtering = FALSE must switch the file recoders' filters off too (NULL
+      # thresholds), as it does for matrix input.
+      file_qc <- !isFALSE(qc_filtering)
+      if (!is.null(vcf_file_name) && isTRUE(ld_pruning)) {
+        stop(
+          "ld_pruning = TRUE needs the PLINK QC engine, which model_execute() does not run. ",
+          "Use ld_prunning_qc = TRUE (default: built-in LD pruning of the recoded matrix), or ",
+          "pre-process with vcf_qc_recode(..., qc_engine = 'plink', ld_pruning = TRUE) and pass ",
+          "the resulting snps_matrix as geno_data.",
+          call. = FALSE
+        )
+      }
+      if(!is.null(vcf_file_name)){
+      vcf_file_path <- vcf_file_path %||% getwd()
       geno_data_process <- vcf_qc_recode(vcf_file_name = vcf_file_name,
                                  vcf_file_path = vcf_file_path,
-                                 maf_threshold = maf_threshold,
-                                 het_threshold =het_threshold,
-                                 ind_call_rate_threshold = ind_call_rate_threshold,
-                                 snp_call_rate_threshold = snp_call_rate_threshold,
-                                 impute = impute,
+                                 maf_threshold = if (file_qc) maf_threshold else NULL,
+                                 het_threshold = if (file_qc) het_threshold else NULL,
+                                 ind_call_rate_threshold = if (file_qc) ind_call_rate_threshold else NULL,
+                                 snp_call_rate_threshold = if (file_qc) snp_call_rate_threshold else NULL,
+                                 impute = if (is.null(beagle_preprocess)) impute else FALSE,
+                                 imputation_method = imputation_method,
+                                 impute_knn_k = impute_knn_k,
+                                 ploidy = ploidy,
                                  recode_format = recode_format,
                                  ld_pruning = ld_pruning,         # LD pruning option
                                  ld_pruning_method = ld_pruning_method, # LD pruning method
                                  window_size = window_size,           # Window size for LD pruning
                                  step_size = step_size,              # Step size for LD pruning
-                                 r2_threshold = r2_threshold,         # r² threshold for LD pruning
+                                 r2_threshold = r2_threshold,         # r^2 threshold for LD pruning
                                  use_kb_window = use_kb_window,      # Use kb for window size in LD pruning
                                  phased = TRUE,
                                  out_put_map = out_put_map,
                                  message = message)
 
-    } else {
-      if(!is.null(hapmap_file_name) & !is.null(hapmap_file_path)){
+      } else {
+        if(!is.null(hapmap_file_name) || !is.null(hapmap)){
         geno_data_process <- hmp_qc_recode(hapmap_file_name = hapmap_file_name,
                                    hapmap_file_path = hapmap_file_path,
                                    hapmap = hapmap,
-                                   maf_threshold = maf_threshold,
-                                   het_threshold =het_threshold,
-                                   ind_call_rate_threshold = ind_call_rate_threshold,
-                                   snp_call_rate_threshold = snp_call_rate_threshold,
-                                   impute = impute,
+                                   maf_threshold = if (file_qc) maf_threshold else NULL,
+                                   het_threshold = if (file_qc) het_threshold else NULL,
+                                   ind_call_rate_threshold = if (file_qc) ind_call_rate_threshold else NULL,
+                                   snp_call_rate_threshold = if (file_qc) snp_call_rate_threshold else NULL,
+                                   impute = if (is.null(beagle_preprocess)) impute else FALSE,
+                                   imputation_method = imputation_method,
+                                   impute_knn_k = impute_knn_k,
+                                   ploidy = ploidy,
                                    recode_format = recode_format,
                                    out_put_map = out_put_map,
                                    message = message)
+        }
+
+
       }
 
-
+      if (!is.null(geno_data_process) && !is.null(beagle_preprocess)) {
+        geno_data_process$beagle <- beagle_preprocess
+        attr(geno_data_process$snps_matrix, "beagle_provenance") <- beagle_preprocess$beagle
+      }
+      if (!is.null(geno_data_process$ploidy)) {
+        ploidy <- geno_data_process$ploidy
+      }
+      gp_shared_preprocess_cache_set(
+        predictpror_preprocess_cache,
+        raw_preprocess_stage,
+        list(
+          beagle_preprocess = beagle_preprocess,
+          geno_data_process = geno_data_process,
+          ploidy = ploidy,
+          imputation_method = imputation_method
+        )
+      )
     }
 
+    # Ploidy is now final (argument, matrix attribute, or read from the file)
+    gp_reject_polyploid_unsupported_models(
+      models = list(GS_model, GS_model_cv),
+      ploidy = if (is.numeric(ploidy)) ploidy else
+        attr(geno_data, "ploidy") %||% geno_data_process[["ploidy"]]
+    )
+
     if(isTRUE(cross_validation) && !is.null(GS_model)) GS_model <- NULL
-    eval_metrics_available <- c("accuracy", "mean_squared_error", "bias",
-                                "root_mean_squared_error", "relative_squared_error",
-                                "mean_absolute_error", "mean_absolute_percent_error", "kendalls_tau")
-    if(!is.null(eval_metrics)){
-      if (!all(eval_metrics %in% eval_metrics_available)) {
-        stop(paste(msg, "Invalid evaluation metrics for the model. Choose from: ",
-             paste(eval_metrics_available, collapse = ", ")), call. = FALSE)
+    if (!is.null(eval_metrics)) {
+      early_eval_metric_family <- tryCatch(
+        gp_resolve_response_family_for_responses(
+          pheno_data = pheno_data %||% pheno_data_train %||% pheno_data_test,
+          response = response,
+          response_family = response_family
+        ),
+        error = function(e) gp_normalize_response_family(response_family)
+      )
+      if (!identical(early_eval_metric_family, "auto")) {
+        gp_validate_eval_metrics(eval_metrics = eval_metrics, response_family = early_eval_metric_family)
       }
     }
 
     # Define available models and variance structures
-    var_cov_str_available <- c("us","corgh","corgv",
+    var_cov_str_available <- c("us","corgh",
                                "corh","corv","fa1",
                                "fa2", "fa3", "fa4",
                                "rr1","rr2", "rr3", "rr4")
 
-    AI_valid_models <- c("Xgboost", "RandomForest", "PartialLeastSquare",
-                         "SupportVectorMachine", "K-NearestNeighbors", "Lasso",
-                         "Ridge_Regression")
+    AI_valid_models <- gp_classical_ml_supported_models()
 
     bayes_valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL")
     bayes_gblup_valid_models <- c("GBLUP_BRR", "RKHS")
-
-    # gam_method_use = c("ND_mod1", "ND_mod2",
-    #                    "ND_mod3", "ND_mod4",
-    #                    "ND_mod5", "ND_mod6", "ND_mod7", "ND_mod8")
-
-    #gam_method_use = c("ND_mod1", "ND_mod2")
+    gp_valid_models <- gp_lowrank_supported_models()
+    canonical_names <- gp_deep_learning_supported_models()
+    friendly_names <- gp_deep_learning_friendly_models()
+    GS_model_cv_display <- gp_display_supported_model_names(GS_model_cv)
+    GS_model_display <- gp_display_supported_model_names(GS_model)
+    sequential_models <- gp_canonicalize_supported_model_names(sequential_models)
+    GS_model <- gp_canonicalize_supported_model_names(GS_model)
+    GS_model_cv <- gp_canonicalize_supported_model_names(GS_model_cv)
+    gp_validate_single_trait_gp_model_scope(
+      GS_model = GS_model,
+      GS_model_cv = GS_model_cv,
+      multi_trait_gp = multi_trait_gp,
+      hybrid_gp = hybrid_gp
+    )
+    AI_valid_models <- unique(c(AI_valid_models, gp_deep_learning_supported_models()))
+    heter_control <- gp_normalize_single_environment_heter_controls(
+      pheno_data = pheno_data,
+      gen_name = gen_name,
+      heter_groups = heter_groups,
+      heter_resid = heter_resid,
+      var_cov_str = var_cov_str,
+      response = response,
+      response_family = response_family,
+      preserve_heter_groups = isTRUE(hybrid_gp),
+      preserve_var_cov_str = isTRUE(multi_trait_asreml)
+    )
+    heter_groups <- heter_control$heter_groups
+    heter_resid <- heter_control$heter_resid
+    var_cov_str <- heter_control$var_cov_str
+    if (isTRUE(heter_control$changed) && isTRUE(message)) {
+      base::message(
+        paste(
+          msg,
+          "heter_groups, heter_resid, and var_cov_str were ignored because the current data are single-environment for this workflow."
+        )
+      )
+    }
+    gp_public_multitrait_run <- isTRUE(multi_trait_gp) &&
+      !isTRUE(cross_validation) &&
+      length(response) > 1L &&
+      !is.null(GS_model) &&
+      length(GS_model) == 1L &&
+      GS_model %in% gp_valid_models &&
+      !isTRUE(multi_trait_asreml) &&
+      !isTRUE(multi_trait_bayes) &&
+      !isTRUE(multi_trait_ml) &&
+      !isTRUE(multi_trait_dl) &&
+      !isTRUE(hybrid_asreml) &&
+      !isTRUE(hybrid_bayes) &&
+      !isTRUE(hybrid_gp) &&
+      !isTRUE(hybrid_ml) &&
+      !isTRUE(hybrid_dl) &&
+      !isTRUE(met_ml_dl) &&
+      !isTRUE(feature_scoring) &&
+      is.null(feature_score_metadata) &&
+      is.null(feature_k_grid) &&
+      is.null(feature_k) &&
+      is.null(feature_selected)
+    if (isTRUE(gp_return_se) || isTRUE(gp_full_vc)) {
+      gp_output_level <- gp_bridge_output_level(
+        return_se = gp_return_se,
+        full_vc = gp_full_vc
+      )
+    }
+    if (isTRUE(cross_validation)) {
+      gp_output_level <- "predict_only"
+      gp_return_se <- FALSE
+      gp_full_vc <- FALSE
+      gp_return_trait_correlations <- FALSE
+      gp_prediction_output <- "test_only"
+    }
+    if (!isTRUE(cross_validation)) {
+      gp_requested_models <- unique(stats::na.omit(c(GS_model, GS_model_cv)))
+      gp_requested_models <- gp_canonicalize_supported_model_names(gp_requested_models)
+      if (length(intersect(gp_requested_models, gp_valid_models)) > 0L &&
+          identical(gp_output_level, "predict_only")) {
+        gp_output_level <- "full_vc"
+        gp_return_se <- TRUE
+        gp_full_vc <- TRUE
+      }
+      if (length(intersect(gp_requested_models, gp_valid_models)) > 0L &&
+          identical(tolower(as.character(gp_varcomp_mode)[1L]), "reml") &&
+          identical(gp_output_level, "predict_with_se")) {
+        gp_output_level <- "full_vc"
+        gp_return_se <- TRUE
+        gp_full_vc <- TRUE
+      }
+    }
 
     asreml_model <- "GBLUP"
+    kernel_relationship_models <- gp_multi_environment_kernel_models(
+      bayes_gblup_valid_models = bayes_gblup_valid_models,
+      asreml_model = asreml_model,
+      gp_valid_models = gp_valid_models
+    )
+    kernel_relationship_display <- gp_multi_environment_kernel_display_names(
+      bayes_gblup_valid_models = bayes_gblup_valid_models,
+      asreml_model = asreml_model,
+      gp_valid_models = gp_valid_models
+    )
+    multi_environment_supported_display <- gp_multi_environment_supported_display_names(
+      bayes_gblup_valid_models = bayes_gblup_valid_models,
+      asreml_model = asreml_model,
+      gp_valid_models = gp_valid_models
+    )
 
 
     if (any(c(GS_model, GS_model_cv) %in% c(bayes_valid_models,
                                             bayes_gblup_valid_models,
-                                            asreml_model))){
+                                            asreml_model)) &&
+        !isTRUE(multi_trait_asreml) &&
+        !isTRUE(multi_trait_gp) &&
+        !isTRUE(multi_trait_bayes) &&
+        !isTRUE(hybrid_asreml) &&
+        !isTRUE(hybrid_bayes) &&
+        !isTRUE(hybrid_gp) &&
+        !isTRUE(hybrid_ml) &&
+        !isTRUE(hybrid_dl)){
       if(is.null(random)){
         stop(paste(msg, "Selected model(s) required random term."), call. = FALSE)
       }
     }
 
 
-
-
-    # old names
-    # dl_model_names <- c(
-    #   "cnn", "ft_transformer", "saint", "tabnet", "node",
-    #   "deepfm", "dcnv2", "nam", "moe", "gp_dkl", "mlp_with_attention", "mlp",
-    # "resnet")
-    #
-    # # new names
-    # dl_user_names <- c(
-    #   "Conv1DNet", "TabTransformer", "TabAttention", "TabNet", "LightTreeNet",
-    #   "FactorNet", "CrossNet", "NeuralAdditive", "MixtureOfExperts", "GPNet",
-    #   "DenseAttentionNet", "DenseNeuralNet", "ResNet"
-    # )
-    # #dp_models <- setNames(dl_model_names, dl_user_names)
-    #
-    # full_dp_models <- setNames(
-    #   c("cnn", "ft_transformer", "saint", "tabnet", "node",
-    #     "deepfm", "dcnv2", "nam", "moe", "gp_dkl", "mlp_with_attention", "mlp", "resnet"),
-    #   c("Conv1DNet", "TabTransformer", "TabAttention", "TabNet", "LightTreeNet",
-    #     "FactorNet", "CrossNet", "NeuralAdditive", "MixtureOfExperts", "GPNet",
-    #     "DenseAttentionNet", "DenseNeuralNet", "ResNet")
-    # )
-    # # create mapping
-    #
-    # # safely get corresponding internal model names
-    # dp_models_raw <- full_dp_models[c(GS_model, GS_model_cv)]
-    # if(!is.null(dp_models_raw) | !is.na(dp_models_raw)){
-    #
-    #   dp_models <- dp_models_raw
-    # } else {
-    #   dp_models <- dl_user_names
-    # }
-
-    # Canonical names your
-    canonical_names <- c(
-      "cnn", "ft_transformer", "saint", "tabnet", "node",
-      "deepfm", "dcnv2", "nam", "moe", "gp_dkl",
-      "mlp_with_attention", "mlp", "resnet"
+    requested_dl_models <- intersect(
+      c(GS_model_cv, GS_model),
+      gp_deep_learning_supported_models()
     )
 
-    # Friendly names for users
-    friendly_names <- c(
-      "Conv1DNet", "TabTransformer", "TabAttention", "TabNet", "LightTreeNet",
-      "FactorNet", "CrossNet", "NeuralAdditive", "MixtureOfExperts", "GPNet",
-      "DenseAttentionNet", "DenseNeuralNet", "ResNet"
-    )
+    if (!is.null(requested_dl_models) && length(requested_dl_models) > 0){
 
-    # Build lookup table, both canonical and friendly point to canonical
-    name_lookup <- setNames(
-      rep(canonical_names, 2),
-      c(canonical_names, friendly_names)
-    )
-
-
-    dp_models <- NULL
-    dp_models <-  resolve_model_name(c(GS_model_cv, GS_model),
-                                     name_lookup = name_lookup)
-
-    if (!is.null(dp_models) && length(dp_models) > 0){
-
-      AI_valid_models <- c(AI_valid_models, dp_models)
-
-
-      sequential_models <- replace_with_canonical(dp_models,canonical_names = canonical_names,
-                                                   friendly_names = friendly_names)
-
-      GS_model <- replace_with_canonical(GS_model,canonical_names = canonical_names,
-                                         friendly_names = friendly_names)
-
-      GS_model_cv <- replace_with_canonical(GS_model_cv,
-                                            canonical_names = canonical_names,
-                                            friendly_names = friendly_names)
-
-
-        setup_predictdl_env(prefer_gpu = TRUE, cuda = "auto")
-
-        setup_instructions <- paste(
-          "To set up the necessary Python environment for this package, please run the following script:\n",
-          "source(system.file('setup_environment.R', package = 'PredictProR'))\n",
-          "This setup script is designed to be user-friendly, even for users with minimal coding experience.\n",
-          "It automates the entire process, including the installation of `reticulate`, ensuring Miniconda is installed, creating a virtual environment, and installing all essential Python packages."
+        if ((!is.null(dl_n_seeds) || !is.null(dl_seeds)) &&
+            (isTRUE(cross_validation) || isTRUE(multi_trait_dl) ||
+             isTRUE(hybrid_dl) || isTRUE(met_ml_dl))) {
+          stop(
+            "`dl_n_seeds`/`dl_seeds` currently apply to single-trait DL true prediction (`cross_validation = FALSE`). Use `random_seed` for other DL routes.",
+            call. = FALSE
+          )
+        }
+        gp_dl_seed_manifest(
+          dl_n_seeds = dl_n_seeds,
+          dl_seeds = dl_seeds,
+          random_seed = random_seed
         )
+        gp_dl_seed_aggregation(dl_seed_aggregation)
 
-        message(paste(msg, setup_instructions))
-
-
-        # if (!reticulate::py_module_available("tensorflow") ||
-        #     !reticulate::py_module_available("keras") ||
-        #     !reticulate::py_module_available("numpy")) {
-        #
-        #   setup_instructions <- paste(
-        #     "To set up the necessary Python environment for this package, please run the following script:\n",
-        #     "source(system.file('setup_environment.R', package = 'PredictProR'))\n",
-        #     "This setup script is designed to be user-friendly, even for users with minimal coding experience.\n",
-        #     "It automates the entire process, including the installation of `reticulate`, ensuring Miniconda is installed, creating a virtual environment, and installing all essential Python packages."
-        #   )
-        #
-        #   stop(paste(msg, setup_instructions), call. = FALSE)
-        # }
-
-
+        runtime_status <- tryCatch(gp_python_runtime_status(initialize = FALSE, purpose = "dl"), error = function(e) NULL)
+        active_python <- if (is.null(runtime_status)) NULL else (runtime_status$active_python %||% NULL)
+        if (is.null(runtime_status) || !isTRUE(runtime_status$python_configured)) {
+          setup_instructions <- paste(
+            "No configured Python runtime was found for deep-learning models.\n",
+            "Set PREDICTPRO_DL_PYTHON to a Python interpreter with the required DL packages.\n",
+            "You can also run PredictProR::setup_predictdl_env(prefer_gpu = TRUE, cuda = 'auto') as a one-time provisioning helper."
+          )
+          stop(paste(msg, setup_instructions), call. = FALSE)
+        }
 
     }
 
 
     all_models_avail <- c(AI_valid_models, bayes_valid_models,
-                          bayes_gblup_valid_models, asreml_model)
+                          bayes_gblup_valid_models, gp_valid_models, asreml_model)
+    all_models_display <- gp_all_model_display_names(
+      AI_valid_models = AI_valid_models,
+      bayes_valid_models = bayes_valid_models,
+      bayes_gblup_valid_models = bayes_gblup_valid_models,
+      gp_valid_models = gp_valid_models,
+      asreml_model = asreml_model
+    )
 
 #####
     holds_out_methods_avail <- c("Hold_Out",
@@ -744,9 +1761,17 @@ model_execute <- function(
                                       "Repeated_CV1",
                                       "Repeated_CV2")
 
+    hybrid_cv_methods_avail <- gp_hybrid_cv_supported_methods()
+
     all_cv_methods_avail <- c(holds_out_methods_avail,
                               Kfolds_methods_avail,
-                              CVs_multi_envs_methods_avail)
+                              CVs_multi_envs_methods_avail,
+                              hybrid_cv_methods_avail)
+
+    cross_validation_meth <- gp_normalize_cv_method_name(
+      cross_validation_meth,
+      all_cv_methods_avail
+    )
 
     if(is.null(heter_resid)) heter_resid <- FALSE
     ### Check for executing cross_validation
@@ -763,21 +1788,45 @@ model_execute <- function(
 
         if(!all(GS_model_cv%in%all_models_avail)){
           stop(paste(msg,"Invalid model. Choose from: ",
-               paste(all_models_avail, collapse = ", ")), call. = FALSE)
+               paste(all_models_display, collapse = ", ")), call. = FALSE)
         }
 
       if(length(cross_validation_meth)>1){
         stop(paste(msg,'use only one cross_validation method at a time'), call. = FALSE)
       }
 
-      if(!is.null(cross_validation_meth) && !cross_validation_meth%in%all_cv_methods_avail){
+      hybrid_cv_allowed <- c(gp_hybrid_cv_supported_methods(), tolower(gp_hybrid_cv_supported_methods()))
+      if(!is.null(cross_validation_meth) &&
+         !cross_validation_meth%in%all_cv_methods_avail &&
+         !(isTRUE(hybrid_asreml) || isTRUE(hybrid_bayes) || isTRUE(hybrid_gp) || isTRUE(hybrid_ml) || isTRUE(hybrid_dl)) &&
+         !tolower(cross_validation_meth) %in% tolower(hybrid_cv_allowed)){
         stop(paste(msg,"Invalid cross validation method. Choose from: ",
              paste(all_cv_methods_avail, collapse = ", ")), call. = FALSE)
       }
 
       if(is.null(eval_metrics)){
-        stop(paste(msg,"Provide evaluation metrics for models comparison. Choose from: ",
-             paste(eval_metrics_available, collapse = ", ")), call. = FALSE)
+        eval_metric_family <- tryCatch(
+          gp_resolve_response_family_for_responses(
+            pheno_data = pheno_data %||% pheno_data_train %||% pheno_data_test,
+            response = response,
+            response_family = response_family
+          ),
+          error = function(e) {
+            gp_normalize_response_family(response_family)
+          }
+        )
+        if (identical(eval_metric_family, "auto")) {
+          eval_metric_family <- "gaussian"
+        }
+        early_metric_selection <- gp_prepare_cv_metric_selection(
+          eval_metrics = NULL,
+          metric_for_ranking = metric_for_ranking,
+          ranking_tie_breakers = ranking_tie_breakers,
+          response_family = eval_metric_family
+        )
+        eval_metrics <- early_metric_selection[["eval_metrics"]]
+        metric_for_ranking <- early_metric_selection[["metric_for_ranking"]]
+        ranking_tie_breakers <- early_metric_selection[["ranking_tie_breakers"]]
       }
 
       if (!is.null(cross_validation_meth) && any(cross_validation_meth %in% all_cv_methods_avail)) {
@@ -790,53 +1839,17 @@ model_execute <- function(
         }
       }
       ###
-      ## forget to choose sampling stratgy or replication is not defined.
-      patterns <- c("stratified", "Repeated")
-      #
-      # Use sapply to apply grep to each pattern and return a named logical vector indicating presence.
-      if(is.null(sampling_method) | is.null(replication)){
-        matche_strings <- sapply(patterns, function(pattern) {
-          length(grep(pattern, cross_validation_meth, ignore.case = TRUE)) > 0
-        }, simplify = FALSE)
-
-        # Name the list elements with the patterns.
-        names(matche_strings) <- patterns
-
-        # Filter to get only the patterns that were found.
-        present_patterns <- names(matche_strings)[unlist(matche_strings)]
-
-        if("stratified"%in%present_patterns) sampling_method <- "stratified"
-
-        # if("Repeated"%in%present_patterns && replication<2) {
-        #   stop(paste(msg,"You select repeated cross-validation provide number of replications.\n For example, replication = 2"), call. = FALSE)
-        # }
-
-
-      }
+      sampling_method <- gp_resolve_cv_sampling_method(cross_validation_meth, sampling_method)
 
     }
 
-
-
-    # if(!is.null(var_cov_str)){
-    # if (!(var_cov_str %in% var_cov_str_available)) {
-    #   stop("Invalid output variance-covariance structure. Choose from: ",
-    #        paste(var_cov_str_available, collapse = ", "), call. = FALSE)
-    #   }
-    # }
 #######################################
 
-
-
-    kernel_method_avaliable <- c("Gaussian_kernel",
-                                 "Linear_kernel",
-                                 "Composite_kernel",
-                                 "Poly2_kernel",
-                                 "Poly3_kernel",
-                                 "Poly4_kernel")
+    kernel_method_avaliable <- gp_kernel_supported_methods()
+    kernel_method <- gp_normalize_kernel_methods(kernel_method)
 
     if(!is.null(kernel_method)){
-      if (!(kernel_method %in% kernel_method_avaliable)) {
+      if (!all(kernel_method %in% kernel_method_avaliable)) {
         stop(paste(msg,"Invalid kernel method. Choose from: ",
              paste(kernel_method_avaliable, collapse = ", ")), call. = FALSE)
       }
@@ -845,10 +1858,14 @@ model_execute <- function(
     gmatrix_method_available <- c("VanRaden",
                                   "Weighted_VanRaden",
                                   "Yang",
-                                  "Epistasis")
+                                  "Epistasis",
+                                  "Dominance",
+                                  "Dominance_Vitezica",
+                                  "Dominance_Su",
+                                  "Dominance_Heterozygosity")
 
     if(!is.null(gmatrix_method)){
-      if (!(gmatrix_method %in% gmatrix_method_available)) {
+      if (!all(gmatrix_method %in% gmatrix_method_available)) {
         stop(paste(msg,"Invalid genomic relationship method. Choose from: ",
              paste(gmatrix_method_available, collapse = ", ")), call. = FALSE)
       }
@@ -861,24 +1878,28 @@ model_execute <- function(
       if(!isFALSE(cross_validation)){
       if (!any(GS_model_cv %in% c(bayes_valid_models,
                             bayes_gblup_valid_models,
+                            gp_valid_models,
                             asreml_model,
                             AI_valid_models))) {
         stop(paste(msg,"Invalid genomic prediction model. Choose from:\n", paste(c(bayes_valid_models,
                                                                       bayes_gblup_valid_models,
+                                                                      gp_display_supported_model_names(gp_valid_models),
                                                                       asreml_model,
-                                                                      AI_valid_models), collapse = ", ")),
+                                                                      gp_display_supported_model_names(AI_valid_models)), collapse = ", ")),
            call. = FALSE)
       }
       } else {
       if(!is.null(GS_model) & isFALSE(cross_validation)){
         if (!any(GS_model %in% c(bayes_valid_models,
                                  bayes_gblup_valid_models,
+                                 gp_valid_models,
                                  asreml_model,
                                  AI_valid_models))) {
           stop(paste(msg,"Invalid genomic prediction model. Choose from:\n", paste(c(bayes_valid_models,
                                                                            bayes_gblup_valid_models,
+                                                                           gp_display_supported_model_names(gp_valid_models),
                                                                            asreml_model,
-                                                                           AI_valid_models), collapse = ", ")),
+                                                                           gp_display_supported_model_names(AI_valid_models)), collapse = ", ")),
                call. = FALSE)
         }
       }
@@ -992,17 +2013,258 @@ model_execute <- function(
       message(paste(msg,"The pheno data is grouped or a tibble. We fix convert to data.frame"))
       #stop("Your pheno data is grouped or a tibble. Convert data.frame")
     }
-    # else{
-    #   if(!is.null(pheno_data_train) & !is.null(pheno_data_test)){
-    #     if (!gen_name %in% colnames(pheno_data_train) & !gen_name %in% colnames(pheno_data_test)) {
-    #       stop(sprintf("The specified column '%s' in the pheno_data did not match with your data. Please check and use appropriately.", gen_name))
-    #     }
-    #   }
-    # }
+
+    if (!is.null(weights)) {
+      stage2_weight_input <- gp_attach_stage2_precision_weights(
+        pheno_data = pheno_data,
+        weights = weights,
+        response = response,
+        gen_name = gen_name,
+        test_set = test_set,
+        context = "model_execute Stage 2 observation weights"
+      )
+      pheno_data <- stage2_weight_input$pheno_data
+      # Keep weights attached to phenotype rows so later filtering/reordering
+      # cannot detach them from the corresponding Stage 1 estimate.
+      weights <- stage2_weight_input$weights
+    }
 
     if(!is.null(geno_data_process)){
       geno_data <- geno_data_process[["snps_matrix"]]
 
+    }
+
+    raw_kernel_guardrail_ctx <- gp_apply_model_input_guardrails(as.list(environment()))
+    gmatrix <- raw_kernel_guardrail_ctx[["gmatrix"]]
+    gkernel <- raw_kernel_guardrail_ctx[["gkernel"]]
+    female_gmatrix <- raw_kernel_guardrail_ctx[["female_gmatrix"]]
+    male_gmatrix <- raw_kernel_guardrail_ctx[["male_gmatrix"]]
+    pedigree_matrix <- raw_kernel_guardrail_ctx[["pedigree_matrix"]]
+    omic1_kernel <- raw_kernel_guardrail_ctx[["omic1_kernel"]]
+    omic2_kernel <- raw_kernel_guardrail_ctx[["omic2_kernel"]]
+    omic3_kernel <- raw_kernel_guardrail_ctx[["omic3_kernel"]]
+    kernel_list <- raw_kernel_guardrail_ctx[["kernel_list"]]
+    env_similarity <- raw_kernel_guardrail_ctx[["env_similarity"]]
+    # Phase 3.16: write back auto-promoted ctx fields so downstream gates
+    # (e.g. line 1547 below: !isTRUE(met_ml_dl)) see the flipped value
+    # produced by gp_auto_promote_met_ml_dl_flag().
+    met_ml_dl <- isTRUE(raw_kernel_guardrail_ctx[["met_ml_dl"]])
+    gmatrix_method <- raw_kernel_guardrail_ctx[["gmatrix_method"]] %||% gmatrix_method
+
+    if (!isTRUE(hybrid_asreml) &&
+        !isTRUE(hybrid_bayes) &&
+        !isTRUE(hybrid_gp) &&
+        !isTRUE(hybrid_ml) &&
+        !isTRUE(hybrid_dl) &&
+        !isTRUE(multi_trait_asreml) &&
+        !isTRUE(multi_trait_gp) &&
+        !isTRUE(multi_trait_bayes) &&
+        !isTRUE(multi_trait_ml) &&
+        !isTRUE(multi_trait_dl) &&
+        !isTRUE(met_ml_dl)) {
+      validate_general_input_standard(
+        pheno_data = pheno_data,
+        pheno_data_train = pheno_data_train,
+        pheno_data_test = pheno_data_test,
+        geno_data = geno_data,
+        omic1_data = omic1_data,
+        omic2_data = omic2_data,
+        omic3_data = omic3_data,
+        gmatrix = gmatrix,
+        gkernel = gkernel,
+        omic1_kernel = omic1_kernel,
+        omic2_kernel = omic2_kernel,
+        omic3_kernel = omic3_kernel,
+        kernel_list = kernel_list,
+        response = response,
+        gen_name = gen_name,
+        heter_groups = heter_groups,
+        GS_model = GS_model,
+        GS_model_cv = GS_model_cv,
+        cross_validation = cross_validation,
+        cross_validation_meth = cross_validation_meth,
+        AI_valid_models = AI_valid_models,
+        bayes_valid_models = bayes_valid_models,
+        bayes_gblup_valid_models = bayes_gblup_valid_models,
+        gp_valid_models = gp_valid_models,
+        asreml_model = asreml_model
+      )
+    }
+
+    gp_fast_models <- gp_lowrank_supported_models()
+    gp_fast_kernels_available <- !is.null(gmatrix) ||
+      !is.null(omic1_kernel) ||
+      !is.null(omic2_kernel) ||
+      !is.null(omic3_kernel) ||
+      !is.null(kernel_list)
+    gp_fast_single_response <- length(response) == 1L && !is.null(response)
+    gp_fast_no_duplicates <- !is.null(pheno_data) &&
+      !is.null(gen_name) &&
+      gen_name %in% names(pheno_data) &&
+      !gp_is_multi_environment_trait_panel(
+        pheno_data = pheno_data,
+        gen_name = gen_name,
+        heter_groups = heter_groups,
+        response = response,
+        response_family = response_family
+      )
+    gp_fast_plain_run <- !isTRUE(cross_validation) &&
+      !isTRUE(multi_trait_asreml) &&
+      !isTRUE(multi_trait_gp) &&
+      !isTRUE(multi_trait_bayes) &&
+      !isTRUE(multi_trait_ml) &&
+      !isTRUE(multi_trait_dl) &&
+      !isTRUE(hybrid_asreml) &&
+      !isTRUE(hybrid_bayes) &&
+      !isTRUE(hybrid_gp) &&
+      !isTRUE(hybrid_ml) &&
+      !isTRUE(hybrid_dl) &&
+      !isTRUE(met_ml_dl)
+
+    if (gp_fast_plain_run &&
+        gp_fast_single_response &&
+        gp_fast_no_duplicates &&
+        gp_fast_kernels_available &&
+        !is.null(GS_model) &&
+        length(GS_model) == 1L &&
+        GS_model %in% gp_fast_models &&
+        identical(gp_resolve_response_family_for_responses(pheno_data, response, response_family), "gaussian")) {
+      run_profile <- gp_runtime_profile_new("model_execute_gp_fast")
+      run_profile <- gp_runtime_profile_mark(run_profile, "prepare_gp_fast")
+
+      gp_cache <- gp_backend_prepare_kernel_cache(
+        ids = as.character(pheno_data[[gen_name]]),
+        gmatrix = gmatrix,
+        omic1_kernel = omic1_kernel,
+        omic2_kernel = omic2_kernel,
+        omic3_kernel = omic3_kernel,
+        kernel_list = kernel_list,
+        kernel_weights = lowrank_kernel_weights
+      )
+
+      fit <- gp_backend_gaussian_model(
+        model_name = GS_model,
+        pheno_data = pheno_data,
+        response = response,
+        gen_name = gen_name,
+        gmatrix = gmatrix,
+        omic1_kernel = omic1_kernel,
+        omic2_kernel = omic2_kernel,
+        omic3_kernel = omic3_kernel,
+        kernel_list = kernel_list,
+        heter_groups = heter_groups,
+        test_set = test_set,
+        lowrank_eps_trace = lowrank_eps_trace,
+        lowrank_max_rank = lowrank_max_rank,
+        lowrank_jitter = lowrank_jitter,
+        lowrank_noise_grid = lowrank_noise_grid,
+        lowrank_kernel_weights = lowrank_kernel_weights,
+        system_database = system_database,
+        gp_backend_cache = gp_cache,
+        gp_backend = gp_backend,
+        gp_output_level = gp_output_level,
+        gp_varcomp_mode = gp_varcomp_mode,
+        gp_fa_rank = gp_fa_rank,
+        gp_prediction_output = gp_prediction_output,
+        gp_factor_cache = gp_factor_cache,
+        env_similarity = env_similarity,
+        env_ids = env_ids,
+        env_covariates = env_covariates,
+        reaction_norm_feature_qc = reaction_norm_feature_qc,
+        kenv_kernel = kenv_kernel,
+        kenv_bandwidth = kenv_bandwidth,
+        kenv_kernel_kwargs = kenv_kernel_kwargs,
+        gp_iters = gp_iters,
+         gp_lr = gp_lr,
+         gp_engine = gp_engine,
+         gp_learn_scales = gp_learn_scales,
+         observation_weights = weights
+       )
+
+      run_profile <- gp_runtime_profile_mark(run_profile, "fit_gp_fast")
+
+      GS_model_public <- gp_public_model_label(GS_model)[1]
+      fit[["model_parameters"]] <- gp_relabel_public_model_parameters(
+        fit[["model_parameters"]],
+        GS_model
+      )
+      fit <- gp_standardize_model_prediction_outputs(
+        res_model_output = fit,
+        gen_name = gen_name
+      )
+      fit_public <- gp_standardize_public_model_result(
+        res_model_output = fit,
+        gen_name = gen_name,
+        heter_groups = heter_groups,
+        model = GS_model,
+        response_family = "gaussian"
+      )
+      summary_stat <- summary_statistics_AI(
+        predicted_object = fit_public[["predicted_values"]],
+        pheno_object = pheno_data[!is.na(pheno_data[[response]]), , drop = FALSE],
+        response = response,
+        test_set = as.character(test_set %||% pheno_data[[gen_name]][is.na(pheno_data[[response]])]),
+        geno_omic_object = fit[["lowrank_feature_matrix"]],
+        model_parameters = fit_public[["model_parameters"]],
+        eval_metrics = eval_metrics,
+        response_family = "gaussian",
+        GS_model = GS_model_public
+      )
+
+      run_profile <- gp_runtime_profile_mark(run_profile, "summarize_gp_fast")
+
+      run_metadata <- gp_runtime_metadata(
+        python_path = gp_detect_gp_python(),
+        preferred_python = gp_detect_gp_python(),
+        purpose = "gp",
+        include_accelerator = FALSE,
+        context = "model_execute_gp_fast",
+        extra_fields = c(
+          list(
+            mode = "gp_fast",
+            task_unit = "genotype_level",
+            task_models = GS_model_public,
+            task_models_canonical = gp_canonicalize_supported_model_names(GS_model)[1],
+            task_traits = paste(response, collapse = ","),
+            task_replications = 1L
+          ),
+          gp_runtime_profile_metadata_fields(run_profile)
+        )
+      )
+
+      fast_output <- results_handling(
+        GS_model = GS_model_public,
+        res_model_output = fit_public,
+        res_summary_stat = summary_stat,
+        res_plot = NULL,
+        res_plot_mean = NULL,
+        res_plot_result_diagnostic = NULL,
+        test_diagonistic_plots = fit_public[["diagnostic_plots"]],
+        res_mod_results_cv_per_trait_model = NULL,
+        res_plot_result_diagnostic_cv_only = NULL,
+        cv_results_processed = NULL,
+        cv_results_raw = NULL,
+        geno_qc_stat = geno_qc_stat,
+        system_database = system_database,
+        plot_filename = as.character(response[[1L]]),
+        plot_extension = plot_extension,
+        plot_width = plot_width,
+        plot_height = plot_height,
+        plot_units = plot_units,
+        plot_dpi = plot_dpi,
+        feature_selected = NULL,
+        feature_score_metadata = NULL,
+        run_metadata = run_metadata
+      )
+
+      fast_return <- stats::setNames(list(fast_output), response)
+      fast_return[["model_results_by_trait"]] <- stats::setNames(list(fit_public), response)
+      fast_return[["model_results_by_model"]] <- stats::setNames(
+        list(stats::setNames(list(fit_public), response)),
+        make.names(GS_model_public)
+      )
+      fast_return[["run_metadata"]] <- run_metadata
+      return(fast_return)
     }
 
     ## Check for scenrio where user provide pheno_train and pheno_test.
@@ -1044,7 +2306,13 @@ model_execute <- function(
     condition1 <- is.null(geno_data) && is.null(omic1_data) && is.null(omic2_data) && is.null(omic3_data)
     condition1_1 <- is.null(gmatrix_method) && is.null(kernel_method)
 
-    condition2 <- is.null(gmatrix) && is.null(gkernel) && is.null(omic1_kernel) && is.null(omic2_kernel) && is.null(omic3_kernel)
+    condition2 <- is.null(gmatrix) && is.null(gkernel) && is.null(omic1_kernel) && is.null(omic2_kernel) && is.null(omic3_kernel) && is.null(kernel_list)
+    hybrid_relationship_inputs_present <- (isTRUE(hybrid_asreml) || isTRUE(hybrid_bayes) || isTRUE(hybrid_gp)) &&
+      (
+        !is.null(geno_data) ||
+          !is.null(female_geno_data) || !is.null(male_geno_data) ||
+          !is.null(female_gmatrix) || !is.null(male_gmatrix)
+      )
 
     ####
     # Check if all required data sets are null
@@ -1053,24 +2321,46 @@ model_execute <- function(
     condition13 <- is.null(omic2_data) && is.null(train_omic2_data) && is.null(test_omic2_data)
     condition14 <- is.null(omic3_data) && is.null(train_omic3_data) && is.null(test_omic3_data)
 
-    error_message <- paste(msg, "Bayes Alphabets and machine learning models require omics or geno data.")
+    error_message <- paste(
+      msg,
+      "Machine-learning and deep-learning models require marker/omics features or one or more PSD kernels; Bayesian marker-effect models require marker/omics features. Kernel Bayesian models (GBLUP_BRR and RKHS) accept kernels."
+    )
+    # Kernel-aware model families consume every supplied kernel. ML/DL convert
+    # each kernel to a named eigenfeature block; GBLUP_BRR/RKHS retain the
+    # kernels as covariance terms. Bayesian alphabet models still require raw
+    # marker/omics features because their priors are defined on marker effects.
+    kernel_feature_inputs_present <- !is.null(gmatrix) || !is.null(gkernel) ||
+      !is.null(omic1_kernel) || !is.null(omic2_kernel) ||
+      !is.null(omic3_kernel) || !is.null(kernel_list)
+    kernel_only_valid_models <- unique(c(AI_valid_models, bayes_gblup_valid_models))
+    kernel_only_request_is_valid <- function(models) {
+      requested <- intersect(
+        as.character(models),
+        unique(c(AI_valid_models, bayes_valid_models))
+      )
+      length(requested) > 0L &&
+        all(requested %in% kernel_only_valid_models) &&
+        isTRUE(kernel_feature_inputs_present)
+    }
     # Check if GS_model is not null and belongs to valid models
     if (!is.null(GS_model) && any(GS_model %in% c(AI_valid_models, bayes_valid_models)) && isFALSE(cross_validation)) {
       # Check if all conditions are true
-      if (condition11 && condition12 && condition13 && condition14) {
+      if (condition11 && condition12 && condition13 && condition14 &&
+          !kernel_only_request_is_valid(GS_model)) {
         stop(paste(msg,error_message), call. = FALSE)
       }
     }
 
     if (!is.null(GS_model_cv) && any(GS_model_cv %in% c(AI_valid_models, bayes_valid_models))) {
       # Check if all conditions are true
-      if (condition11 && condition12 && condition13 && condition14) {
+      if (condition11 && condition12 && condition13 && condition14 &&
+          !kernel_only_request_is_valid(GS_model_cv)) {
         stop(error_message, call. = FALSE)
       }
     }
     ########################
     ### Bayesian GBLUP further check
-    if (any(bayes_gblup_valid_models %in% na.omit(c(GS_model, GS_model_cv)))) {
+    if (any(c(bayes_gblup_valid_models, gp_valid_models) %in% na.omit(c(GS_model, GS_model_cv)))) {
       omics <- list(omic1_data, omic2_data, omic3_data, geno_data,
                     train_geno_data, train_omic1_data,
                     train_omic2_data, train_omic3_data,
@@ -1111,7 +2401,7 @@ model_execute <- function(
 
       }
     }
-    #################################
+
     ###################
 
     # Check for ASReml requirement for GBLUP
@@ -1223,14 +2513,108 @@ model_execute <- function(
     }
 
 
-    # Check for multi-environment structure and required inputs for GBLUP
-    if (length(pheno_data[[gen_name]]) > length(unique(pheno_data[[gen_name]]))){
+    # Check for multi-environment structure and required model inputs
+    if (isTRUE(hybrid_asreml) || isTRUE(hybrid_bayes) || isTRUE(hybrid_gp) || isTRUE(hybrid_ml) || isTRUE(hybrid_dl)) {
+      validate_hybrid_input_standard(
+        pheno_data = pheno_data,
+        pheno_data_train = pheno_data_train,
+        pheno_data_test = pheno_data_test,
+        geno_data = geno_data,
+        gmatrix = gmatrix,
+        female_gmatrix = female_gmatrix,
+        male_gmatrix = male_gmatrix,
+        female_geno_data = female_geno_data,
+        male_geno_data = male_geno_data,
+        response = response,
+        gen_name = gen_name,
+        female_parent = female_parent,
+        male_parent = male_parent,
+        heter_groups = heter_groups,
+        hybrid_asreml = hybrid_asreml,
+        hybrid_bayes = hybrid_bayes,
+        hybrid_gp = hybrid_gp,
+        hybrid_ml = hybrid_ml,
+        hybrid_dl = hybrid_dl,
+        GS_model = GS_model,
+        GS_model_cv = GS_model_cv,
+        cross_validation = cross_validation,
+        cross_validation_meth = cross_validation_meth
+      )
+    }
+    if (isTRUE(multi_trait_asreml) || isTRUE(multi_trait_gp) || isTRUE(multi_trait_bayes) || isTRUE(multi_trait_ml) || isTRUE(multi_trait_dl)) {
+      validate_multi_trait_input_standard(
+        pheno_data = pheno_data,
+        pheno_data_train = pheno_data_train,
+        pheno_data_test = pheno_data_test,
+        geno_data = geno_data,
+        omic1_data = omic1_data,
+        omic2_data = omic2_data,
+        omic3_data = omic3_data,
+        gmatrix = gmatrix,
+        gkernel = gkernel,
+        omic1_kernel = omic1_kernel,
+        omic2_kernel = omic2_kernel,
+        omic3_kernel = omic3_kernel,
+        kernel_list = kernel_list,
+        response = response,
+        gen_name = gen_name,
+        response_family = response_family,
+        multi_trait_asreml = multi_trait_asreml,
+        multi_trait_ml = multi_trait_ml,
+        multi_trait_dl = multi_trait_dl,
+        multi_trait_gp = multi_trait_gp,
+        multi_trait_bayes = multi_trait_bayes,
+        heter_groups = heter_groups,
+        GS_model = GS_model,
+        GS_model_cv = GS_model_cv,
+        cross_validation = cross_validation,
+        cross_validation_meth = cross_validation_meth
+      )
+    }
+    if (isTRUE(met_ml_dl)) {
+      validate_met_input_standard(
+        pheno_data = pheno_data,
+        pheno_data_train = pheno_data_train,
+        pheno_data_test = pheno_data_test,
+        geno_data = geno_data,
+        omic1_data = omic1_data,
+        omic2_data = omic2_data,
+        omic3_data = omic3_data,
+        gmatrix = gmatrix,
+        omic1_kernel = omic1_kernel,
+        omic2_kernel = omic2_kernel,
+        omic3_kernel = omic3_kernel,
+        kernel_list = kernel_list,
+        response = response,
+        response_family = response_family,
+        gen_name = gen_name,
+        heter_groups = heter_groups,
+        met_ml_dl = met_ml_dl,
+        GS_model = GS_model,
+        GS_model_cv = GS_model_cv,
+        cross_validation = cross_validation,
+        cross_validation_meth = cross_validation_meth
+      )
+    }
+
+    observed_multi_environment <- gp_is_multi_environment_trait_panel(
+      pheno_data = pheno_data,
+      gen_name = gen_name,
+      heter_groups = heter_groups,
+      response = response,
+      response_family = response_family
+    )
+
+    if (isTRUE(observed_multi_environment)){
       if ((any(!is.null(GS_model_cv) & GS_model_cv %in% bayes_valid_models) & isTRUE(cross_validation)) ||
           (any(!is.null(GS_model) & GS_model %in% bayes_valid_models))) {
         stop(paste(
           msg,
           "Your phenotypic data has a multi-environment structure,",
-          "thus, use GBLUP, RKHS, or GBLUP_BRR model.\n"
+          "Bayesian marker-regression models are currently single-environment only.",
+          "For multi-environment genomic prediction, use one of:",
+          paste(multi_environment_supported_display, collapse = ", "),
+          "\n"
         ), call. = FALSE)
       }
 
@@ -1244,61 +2628,69 @@ model_execute <- function(
         )), call. = FALSE)
       }
 
-      if(isTRUE(cross_validation)){
-        if (!any(cross_validation_meth %in% CVs_multi_envs_methods_avail)) {
-          stop(paste(msg, paste(
-            "Provide any of the following as cross-validation strategy for multi-environment GS:",
-            paste(CVs_multi_envs_methods_avail, collapse = ", ")
-          )), call. = FALSE)
-        }
+        if(isTRUE(cross_validation) &&
+           !isTRUE(multi_trait_asreml) &&
+           !isTRUE(hybrid_asreml) && !isTRUE(hybrid_bayes) &&
+           !isTRUE(hybrid_gp) &&
+           !isTRUE(hybrid_ml) && !isTRUE(hybrid_dl)){
+          if (!any(cross_validation_meth %in% CVs_multi_envs_methods_avail)) {
+            stop(paste(msg, paste(
+              "Provide any of the following as cross-validation strategy for multi-environment GS:",
+              paste(CVs_multi_envs_methods_avail, collapse = ", ")
+            )), call. = FALSE)
+          }
       }
 
 
       ###
       if(isFALSE(cross_validation)){
-        if (any(c(GS_model, GS_model_cv) %in% AI_valid_models)) {
-          stop(paste(msg, paste(
-            "Your data suggest multi-environment use any of the GS model for MET:",
-            paste(c(bayes_gblup_valid_models, asreml_model), collapse = ", ")
-          )), call. = FALSE)
+        if (any(c(GS_model, GS_model_cv) %in% AI_valid_models) &&
+            !isTRUE(hybrid_gp) && !isTRUE(hybrid_ml) && !isTRUE(hybrid_dl)) {
+          if (!(isTRUE(met_ml_dl) && any(c(GS_model, GS_model_cv) %in% gp_met_supported_models()))) {
+            stop(paste(msg, paste(
+              "Your data suggest multi-environment structure. Use a supported MET genomic prediction model:",
+              paste(multi_environment_supported_display, collapse = ", ")
+            )), call. = FALSE)
+          }
         }
       }
 
       ### This is important for asreml for multi-environment analysis
       # Define the error messages
-      missing_var_cov_str_msg <- paste(msg, "Your data suggest multi-environment but variance-covariance structure is missing. Choose from:", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
-      missing_heter_resid_msg <- paste(msg, "Your data suggest multi-environment but variance-covariance structure. heter_resid must be TRUE.", call. = FALSE)
-      invalid_var_cov_str_msg <- paste(msg, "Invalid output variance-covariance structure. Choose from:", paste(var_cov_str_available, collapse = ", "), call. = FALSE)
+      missing_var_cov_str_msg <- paste(msg, "Your data suggest multi-environment but variance-covariance structure is missing. Choose from:", paste(var_cov_str_available, collapse = ", "))
+      missing_heter_resid_msg <- paste(msg, "Your data suggest multi-environment with a variance-covariance structure (var_cov_str); set heter_resid = TRUE (environment-specific residual variances).")
+      invalid_var_cov_str_msg <- paste(msg, "Invalid output variance-covariance structure. Choose from:", paste(var_cov_str_available, collapse = ", "))
 
       # Check GS_model
       if (!is.null(GS_model) && any(GS_model %in% c("GBLUP"))||
           !is.null(GS_model_cv) && any(GS_model_cv %in% c("GBLUP"))) {
         if (!is.null(heter_groups) && isTRUE(heter_resid) && is.null(var_cov_str)) {
-          stop(missing_var_cov_str_msg)
+          stop(missing_var_cov_str_msg, call. = FALSE)
         } else if (!is.null(heter_groups) && isFALSE(heter_resid) && !is.null(var_cov_str)) {
-          stop(missing_heter_resid_msg)
+          stop(missing_heter_resid_msg, call. = FALSE)
         } else if (!is.null(var_cov_str) && !(var_cov_str %in% var_cov_str_available)) {
-          stop(invalid_var_cov_str_msg)
+          stop(invalid_var_cov_str_msg, call. = FALSE)
         }
       }
 
       # Check GS_model_cv for cross-validation
       if (isTRUE(cross_validation) && !is.null(GS_model_cv) && any(GS_model_cv %in% c("GBLUP"))) {
         if (!is.null(heter_groups) && isTRUE(heter_resid) && is.null(var_cov_str)) {
-          stop(missing_var_cov_str_msg)
+          stop(missing_var_cov_str_msg, call. = FALSE)
         } else if (!is.null(heter_groups) && isFALSE(heter_resid) && !is.null(var_cov_str)) {
-          stop(missing_heter_resid_msg)
+          stop(missing_heter_resid_msg, call. = FALSE)
         } else if (!is.null(var_cov_str) && !(var_cov_str %in% var_cov_str_available)) {
-          stop(invalid_var_cov_str_msg)
+          stop(invalid_var_cov_str_msg, call. = FALSE)
         }
       }
 
-      # Check for required inputs for multi-environment GBLUP
+      # Check for required inputs for multi-environment relationship/kernel models
       # Check if condition1 is true
       # Define the error message
       error_messagee <- paste(
         msg,
-        paste("To fit a Bayesian or ASReml multi-environment GBLUP model,",
+        paste("To fit multi-environment relationship/kernel genomic prediction models",
+        paste0("(", paste(kernel_relationship_display, collapse = ", "), "),"),
         "you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel),",
         "or an omics kernel. Additionally, you can provide genomic or omics data.",
         "Ensure you provide instructions on the genomic relationship matrix method",
@@ -1306,44 +2698,57 @@ model_execute <- function(
       ))
 
       # Check GS_model
-      if (!is.null(GS_model) && any(GS_model %in% c(bayes_gblup_valid_models, "GBLUP"))) {
-        if (condition1 != condition1_1 && isTRUE(condition2)) {
+      if (!is.null(GS_model) && any(GS_model %in% kernel_relationship_models)) {
+        if (!isTRUE(hybrid_relationship_inputs_present) &&
+            condition1 != condition1_1 && isTRUE(condition2)) {
           stop(error_messagee, call. = FALSE)
         }
       }
 
       # Check GS_model_cv for cross-validation
-      if (isTRUE(cross_validation) && !is.null(GS_model_cv) && any(GS_model_cv %in% c(bayes_gblup_valid_models, "GBLUP"))) {
-        if (condition1 != condition1_1 && isTRUE(condition2)) {
+      if (isTRUE(cross_validation) && !is.null(GS_model_cv) && any(GS_model_cv %in% kernel_relationship_models)) {
+        if (!isTRUE(hybrid_relationship_inputs_present) &&
+            condition1 != condition1_1 && isTRUE(condition2)) {
           stop(error_messagee, call. = FALSE)
         }
       }
 
-      # if (GS_model | GS_model_cv %in% c(bayes_gblup_valid_models, "GBLUP")){
-      #   if (condition1!=condition1_1 & isTRUE(condition2)) {
-      #     #print('ok')
-      #     stop(paste(msg, "To fit a Bayesian or ASReml multi-environment GBLUP model, you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel), or an omics kernel. Additionally, you can provide genomic or omics data. Ensure you provide instructions on the genomic relationship matrix method or kernel method to calculate the relationship matrix."), call. = FALSE)
-      #   }
-      #
-      # }
 
     } else {
 
     # Check for single environment GBLUP and Bayesian models
-    if (length(pheno_data[[gen_name]]) == length(unique(pheno_data[[gen_name]]))){
+    if (!isTRUE(observed_multi_environment)){
  #### In case user erroneously provide this while it is a single location
-      if(!is.null(heter_groups)) heter_groups <- NULL
-      if(!is.null(heter_resid)) heter_resid <- NULL
-      if(!is.null(var_cov_str)) var_cov_str <- NULL
-      if(cross_validation_meth%in%CVs_multi_envs_methods_avail & isTRUE(cross_validation)){
+      preserve_hybrid_gp_heter_groups <- isTRUE(hybrid_gp) &&
+        !is.null(heter_groups) &&
+        heter_groups %in% names(pheno_data) &&
+        isTRUE(gp_is_multi_environment_trait_panel(
+          pheno_data = pheno_data,
+          gen_name = gen_name,
+          heter_groups = heter_groups,
+          response = response,
+          response_family = response_family
+        ))
+      if (!isTRUE(preserve_hybrid_gp_heter_groups)) {
+        heter_groups <- NULL
+        heter_resid <- FALSE
+        if (!isTRUE(multi_trait_asreml)) {
+          var_cov_str <- NULL
+        }
+      }
+      if (isTRUE(cross_validation) &&
+          !is.null(cross_validation_meth) &&
+          !isTRUE(preserve_hybrid_gp_heter_groups) &&
+          cross_validation_meth %in% CVs_multi_envs_methods_avail) {
         stop(paste(msg, paste("You selected cross validation method for multi-environment",
                    "but your phenotypic data is a single environment.\n")), call. = FALSE)
       }
-      # Check for required inputs for Bayesian or ASReml single environment GBLUP models
+      # Check for required inputs for single-environment relationship/kernel models
       # Define the error message
       error_messageee <- paste(
         msg,
-        paste("To fit a Bayesian or ASReml single-environment GBLUP model,",
+        paste("To fit a single-environment relationship/kernel genomic prediction model",
+        paste0("(", paste(kernel_relationship_display, collapse = ", "), "),"),
         "you need either a genomic matrix (gmatrix) or a genomic kernel (gkernel),",
         "or an omics kernel. Additionally, you can provide genomic or omics data.",
         "Ensure you provide instructions on the genomic relationship matrix method",
@@ -1351,14 +2756,23 @@ model_execute <- function(
       ))
 
       # Check GS_model
-      if (!is.null(GS_model) && any(GS_model %in% c(bayes_gblup_valid_models, "GBLUP"))) {
+      if (!isTRUE(hybrid_asreml) &&
+          !isTRUE(hybrid_bayes) &&
+          !isTRUE(hybrid_gp) &&
+          !is.null(GS_model) &&
+          any(GS_model %in% kernel_relationship_models)) {
         if (condition1 != condition1_1 && isTRUE(condition2) & isTRUE(condition11) & isTRUE(condition12) & isTRUE(condition13) & isTRUE(condition14)) {
           stop(error_messageee, call. = FALSE)
         }
       }
 
       # Check GS_model_cv for cross-validation
-      if (isTRUE(cross_validation) && !is.null(GS_model_cv) && any(GS_model_cv %in% c(bayes_gblup_valid_models, "GBLUP"))) {
+      if (!isTRUE(hybrid_asreml) &&
+          !isTRUE(hybrid_bayes) &&
+          !isTRUE(hybrid_gp) &&
+          isTRUE(cross_validation) &&
+          !is.null(GS_model_cv) &&
+          any(GS_model_cv %in% kernel_relationship_models)) {
         if (condition1 != condition1_1 && isTRUE(condition2) & isTRUE(condition11) & isTRUE(condition12) & isTRUE(condition13) & isTRUE(condition14)) {
           stop(error_messageee, call. = FALSE)
         }
@@ -1367,18 +2781,18 @@ model_execute <- function(
       # Check for required inputs for Bayesian models
       if(isTRUE(cross_validation)){
         if(any(GS_model_cv%in%c(bayes_valid_models, AI_valid_models))){
-          if (isTRUE(condition1) & isTRUE(condition11) & isTRUE(condition12) & isTRUE(condition13) & isTRUE(condition14)) {
+          if (isTRUE(condition1) & isTRUE(condition11) & isTRUE(condition12) & isTRUE(condition13) & isTRUE(condition14) &&
+              !kernel_only_request_is_valid(GS_model_cv)) {
             #print('ok')
-            stop(paste(msg, paste("To fit a Bayesian or machine learning model,",
-                       "provide genomic or omics data.")), call. = FALSE)
+            stop(error_message, call. = FALSE)
           }
         }
       } else{
       if (any(GS_model %in% c(bayes_valid_models, AI_valid_models))){
-        if (isTRUE(condition1) & isTRUE(condition11) & isTRUE(condition12) & isTRUE(condition13) & isTRUE(condition14)) {
+        if (isTRUE(condition1) & isTRUE(condition11) & isTRUE(condition12) & isTRUE(condition13) & isTRUE(condition14) &&
+            !kernel_only_request_is_valid(GS_model)) {
           #print('ok')
-          stop(paste(msg, paste("To fit a Bayesian or machine learning model,",
-                     "provide genomic or omics data.")), call. = FALSE)
+          stop(error_message, call. = FALSE)
         }
 
       }
@@ -1395,6 +2809,16 @@ model_execute <- function(
     # validateMultiEnvironment(pheno_data, gen_name, heter_groups, heter_resid, var_cov_str, GS_model, var_cov_str_available,cross_validation, GS_model_cv, msg)
     # validateModelRequirements(GS_model, GS_model_cv, bayes_gblup_valid_models, condition1, condition1_1, condition2, cross_validation, msg)
 ###############
+    gp_guard_asreml_cv0_fixed_environment(
+      cross_validation = cross_validation,
+      cross_validation_meth = cross_validation_meth,
+      GS_model_cv = GS_model_cv,
+      engine = engine,
+      fixed = fixed,
+      heter_groups = heter_groups,
+      msg = msg
+    )
+
     # Ensure response_var exist in df
     if (!all(response %in% colnames(pheno_data))) {
       stop(paste(msg, "Some response variables do not exist in the dataframe."), call. = FALSE)
@@ -1421,12 +2845,8 @@ model_execute <- function(
     # Create a logical matrix indicating NA positions for response variables
     na_matrix <- is.na(pheno_data[response])
 
-    # Check if all rows have the same NA pattern
-    if (any(na_matrix)) { # Only checks when NA exists
-      if (!all(rowSums(na_matrix) %in% c(0, length(response)))) {
-        stop(paste(msg, "Not all response variable columns have NAs in the same positions."), call. = FALSE)
-      }
-    }
+    # Missing response values are interpreted trait by trait as prediction
+    # targets. Different traits can therefore have different inferred test sets.
 
 ##########
     datasets_geno_omic <- list(geno_data, omic1_data, omic2_data, omic3_data)
@@ -1460,7 +2880,11 @@ model_execute <- function(
       datasets_index_kernel <- NULL
     }
 ############
-if (all(na_matrix == FALSE)){
+# Every line in the genotype / kernel data is predicted: lines without a
+# phenotype row are added as NA rows (in every environment for MET data).
+# They used to be dropped whenever pheno_data had any NA, so whether a
+# genotyped-only line was predicted depended on how other lines were entered.
+if (!isTRUE(hybrid_asreml) && !isTRUE(hybrid_bayes) && !isTRUE(hybrid_gp)){
 
 if (length(datasets_index) != 0) {
 
@@ -1494,26 +2918,14 @@ if (length(datasets_index_kernel) != 0) {
   }
 }
 
-} else{
+} else if (!isTRUE(hybrid_asreml) && !isTRUE(hybrid_bayes) && !isTRUE(hybrid_gp)){
 
   if (length(datasets_index) != 0) {
 
     if(length(rownames(datasets_geno_omic[[1]])) > length(unique(pheno_data[[gen_name]]))){
-      if("geno_data"%in%names(datasets_geno_omic)){
-        geno_data <- geno_data[rownames(geno_data)%in%unique(pheno_data[[gen_name]]), ]
-      }
-      ##
-      if("omic1_data"%in%names(datasets_geno_omic)){
-        omic1_data <- omic1_data[rownames(omic1_data)%in%unique(pheno_data[[gen_name]]), ]
-      }
-      ##
-      if("omic2_data"%in%names(datasets_geno_omic)){
-        omic2_data <- omic2_data[rownames(omic2_data)%in%unique(pheno_data[[gen_name]]), ]
-      }
-      ###
-      if("omic3_data"%in%names(datasets_geno_omic)){
-        omic3_data <- omic3_data[rownames(omic3_data)%in%unique(pheno_data[[gen_name]]), ]
-      }
+      # Keep geno/omic-only individuals so pheno_geno_match() can infer them
+      # as testing IDs.
+      # prediction from seeing genomic/omic-only test candidates.
     }
   }
  ########
@@ -1540,22 +2952,56 @@ if (length(datasets_index_kernel) != 0) {
 
 }
 
+# Multi-environment true prediction: predict every line in every environment
+# (the full line x environment grid) with every engine. met_input_keys keeps
+# the input line x environment records, to label the added rows "Unobserved".
+met_input_keys <- NULL
+if (isTRUE(met_predict_all_environments) && !isTRUE(cross_validation) &&
+    !is.null(heter_groups) && heter_groups %in% names(pheno_data) &&
+    anyDuplicated(as.character(pheno_data[[gen_name]])) > 0L &&
+    !isTRUE(hybrid_asreml) && !isTRUE(hybrid_bayes) && !isTRUE(hybrid_gp) &&
+    !isTRUE(hybrid_ml) && !isTRUE(hybrid_dl)) {
+  met_input_keys <- unique(paste(pheno_data[[gen_name]], pheno_data[[heter_groups]], sep = "\r"))
+  pheno_data <- gp_met_complete_grid(
+    pheno_data = pheno_data, gen_name = gen_name, heter_groups = heter_groups,
+    response = response, fixed = fixed,
+    weights = if (is.character(weights) && length(weights) == 1L) weights else NULL
+  )
+}
+
 #########################
 ### Check phenotype_to_model for details
  #    This serve as gateway between phenotype-precheck function and readiness of
  #    the phenotypic data for model fitting.
 
- pheno_clean <- phenotype_to_model(pheno_data = pheno_data,
-                                   pheno_data_train = pheno_data_train,
-                                   pheno_data_test = pheno_data_test,
-                                   train_set = train_set,
-                                   test_set = test_set,
-                                   response = response,
-                                   gen_name = gen_name,
-                                   heter_groups = heter_groups,
-                                   random = random,
-                                   fixed = fixed,
-                                   type_pheno = if(!is.null(pheno_data_test)) "test_set" else NULL)
+ phenotype_preprocess_stage <- "phenotype_to_model"
+ if (gp_shared_preprocess_cache_has(
+   predictpror_preprocess_cache,
+   phenotype_preprocess_stage
+ )) {
+   pheno_clean <- gp_shared_preprocess_cache_get(
+     predictpror_preprocess_cache,
+     phenotype_preprocess_stage
+   )
+ } else {
+   pheno_clean <- phenotype_to_model(pheno_data = pheno_data,
+                                     pheno_data_train = pheno_data_train,
+                                     pheno_data_test = pheno_data_test,
+                                     train_set = train_set,
+                                     test_set = test_set,
+                                     response = response,
+                                     response_family = response_family,
+                                     gen_name = gen_name,
+                                     heter_groups = heter_groups,
+                                     random = random,
+                                     fixed = fixed,
+                                     type_pheno = if(!is.null(pheno_data_test)) "test_set" else NULL)
+   gp_shared_preprocess_cache_set(
+     predictpror_preprocess_cache,
+     phenotype_preprocess_stage,
+     pheno_clean
+   )
+ }
 
  if("test_set"%in%names(pheno_clean)){
    test_set <- pheno_clean[["test_set"]]
@@ -1573,13 +3019,84 @@ if (length(datasets_index_kernel) != 0) {
 
  }
 
+ response_family <- gp_resolve_response_family_for_responses(
+   pheno_data = pheno_clean[["pheno_clean_data"]],
+   response = response,
+   response_family = response_family
+ )
+ for (mod in unique(stats::na.omit(c(GS_model, GS_model_cv)))) {
+   gp_validate_model_response_family(
+     model = mod,
+     response_family = response_family
+   )
+ }
+ positive_class_config <- gp_configure_positive_class_responses(
+   pheno_data = pheno_clean[["pheno_clean_data"]],
+   response = response,
+   response_family = response_family,
+   positive_class = positive_class
+ )
+ pheno_clean[["pheno_clean_data"]] <- positive_class_config[["pheno_data"]]
+ positive_class <- positive_class_config[["positive_class"]]
+ if (isTRUE(cross_validation)) {
+   cv_metric_selection <- gp_prepare_cv_metric_selection(
+     eval_metrics = eval_metrics,
+     metric_for_ranking = metric_for_ranking,
+     ranking_tie_breakers = ranking_tie_breakers,
+     response_family = response_family
+   )
+   eval_metrics <- cv_metric_selection[["eval_metrics"]]
+   metric_for_ranking <- cv_metric_selection[["metric_for_ranking"]]
+   ranking_tie_breakers <- cv_metric_selection[["ranking_tie_breakers"]]
+ } else if (!is.null(eval_metrics)) {
+   gp_validate_eval_metrics(
+     eval_metrics = eval_metrics,
+     response_family = response_family
+   )
+ }
+ gp_validate_stage2_weight_route(as.list(environment()))
 
+ input_guardrail_ctx <- gp_apply_model_input_guardrails(as.list(environment()))
+ pheno_clean <- input_guardrail_ctx[["pheno_clean"]]
+ gmatrix <- input_guardrail_ctx[["gmatrix"]]
+ gkernel <- input_guardrail_ctx[["gkernel"]]
+ female_gmatrix <- input_guardrail_ctx[["female_gmatrix"]]
+ male_gmatrix <- input_guardrail_ctx[["male_gmatrix"]]
+ pedigree_matrix <- input_guardrail_ctx[["pedigree_matrix"]]
+ omic1_kernel <- input_guardrail_ctx[["omic1_kernel"]]
+ omic2_kernel <- input_guardrail_ctx[["omic2_kernel"]]
+ omic3_kernel <- input_guardrail_ctx[["omic3_kernel"]]
+ kernel_list <- input_guardrail_ctx[["kernel_list"]]
+ env_similarity <- input_guardrail_ctx[["env_similarity"]]
+ # Phase 3.16: write back auto-promoted fields from the guardrail ctx so
+ # the downstream CV / true-prediction dispatch reads the flipped values
+ # (met_ml_dl from gp_auto_promote_met_ml_dl_flag, gmatrix_method from
+ # gp_auto_promote_met_ml_dl_kernel_build). Without these, the gates at
+ # main_crossvalidation_execution_logic.R:645/785/943 and
+ # model_execute_pipeline_helpers.R:3358 see the un-flipped scope-local
+ # variables and silently fall through to single-env paths.
+ met_ml_dl <- isTRUE(input_guardrail_ctx[["met_ml_dl"]])
+ gmatrix_method <- input_guardrail_ctx[["gmatrix_method"]] %||% gmatrix_method
 
-user_defined_model <- unlist(list(GS_model, GS_model_cv), use.names = FALSE)
+user_defined_model <- gp_shared_preprocess_requested_models(as.list(environment()))
+run_profile <- gp_runtime_profile_new("model_execute")
 
-valid_models <- c(bayes_gblup_valid_models, asreml_model)
+pre_input_route <- gp_route_pre_input_specialized_models(as.list(environment()))
+if (!is.null(pre_input_route)) {
+  return(pre_input_route)
+}
+if (sum(isTRUE(multi_trait_asreml), isTRUE(multi_trait_gp), isTRUE(multi_trait_bayes), isTRUE(multi_trait_ml), isTRUE(multi_trait_dl), isTRUE(hybrid_asreml), isTRUE(hybrid_bayes), isTRUE(hybrid_gp), isTRUE(hybrid_ml), isTRUE(hybrid_dl)) > 1L) {
+  stop("multi_trait_asreml, multi_trait_gp, multi_trait_bayes, multi_trait_ml, multi_trait_dl, hybrid_asreml, hybrid_bayes, hybrid_gp, hybrid_ml, and hybrid_dl are separate paths; enable only one at a time.", call. = FALSE)
+}
 
-if (!any(user_defined_model %in% valid_models)) {
+valid_models <- gp_kernel_models_for_input_preparation(
+  base_models = kernel_relationship_models,
+  multi_trait_gp = multi_trait_gp
+)
+
+# MET ML/DL builds its features from the relationship matrix, so it keeps the
+# user's gmatrix_method / kernel_method.
+if (!any(user_defined_model %in% valid_models) && !isTRUE(met_ml_dl)) {
       kernel_method <- NULL
       gmatrix_method <- NULL
     }
@@ -1590,301 +3107,141 @@ if (!any(user_defined_model %in% valid_models)) {
  ##
  #if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
 
-low_call_rate_inds_removed <- NULL
- # Process genomic data
- if(isFALSE(((is.null(geno_data) & is.null(train_geno_data)) & is.null(test_geno_data)))){
-     geno_res <- process_geno_data(geno_data = geno_data,
-                                   train_geno_data = train_geno_data,
-                                   test_geno_data = test_geno_data,
-                                   test_set = test_set,
-                                   pheno_clean_list = pheno_clean,
-                                   train_set = train_set,
-                                   gen_name = gen_name,
-                                   kernel_method = kernel_method,
-                                   gmatrix_method = gmatrix_method,
-                                   scale = scale,
-                                   map_data = map_data,
-                                   maf_threshold = maf_threshold,
-                                   het_threshold = het_threshold,
-                                   ind_call_rate_threshold = ind_call_rate_threshold,
-                                   snp_call_rate_threshold = snp_call_rate_threshold,
-                                   impute = impute,
-                                   imputation_method = imputation_method,
-                                   impute_knn_k = impute_knn_k,
-                                   ld_prunning_qc = ld_prunning_qc,
-                                   qc_filtering = if(!is.null(geno_data_process)) FALSE else qc_filtering,
-                                   message = message,
-                                   heter_groups = heter_groups)
-
-     low_call_rate_inds_removed <- geno_res[["low_call_rate_inds_removed"]]
-     if(!is.null(low_call_rate_inds_removed)){
-       pheno_clean[["pheno_clean_data"]] <- pheno_clean[["pheno_clean_data"]][!pheno_clean[["pheno_clean_data"]][[gen_name]] %in% low_call_rate_inds_removed, ]
-     }
- } else {
-     geno_res <-  list()
- }
-
-
- #if(length(geno_res)==0) { stop("geno_res is empty")}
- # Process omic1 data
-if(!is.null(omic1_data) && !is.null(low_call_rate_inds_removed)){
-  omic1_data <- omic1_data[!rownames(omic1_data)%in%low_call_rate_inds_removed, ]
+gp_cv_point_only_kernel_qc <- isTRUE(cross_validation) &&
+  isTRUE(cv_evaluation_only) &&
+  !isTRUE(predictpror_shared_final_prediction) &&
+  length(user_defined_model) > 0L &&
+  all(as.character(user_defined_model) %in% gp_valid_models)
+if (isTRUE(gp_cv_point_only_kernel_qc)) {
+  if (identical(kernel_check_level, "auto")) {
+    kernel_check_level <- "light"
+  }
+  if (identical(kernel_rcn_check, "auto")) {
+    kernel_rcn_check <- "skip"
+  }
+  if (identical(kernel_pd_check, "auto")) {
+    kernel_pd_check <- "sample"
+  }
 }
 
-if(!is.null(train_omic1_data) && !is.null(low_call_rate_inds_removed)){
-  train_omic1_data <- train_omic1_data[!rownames(train_omic1_data)%in%low_call_rate_inds_removed, ]
+model_input_stage <- "model_input_objects"
+if (gp_shared_preprocess_cache_has(
+  predictpror_preprocess_cache,
+  model_input_stage
+)) {
+  model_input_objects <- gp_shared_preprocess_cache_get(
+    predictpror_preprocess_cache,
+    model_input_stage
+  )
+} else {
+  model_input_objects <- gp_prepare_model_input_objects(as.list(environment()))
+  gp_shared_preprocess_cache_set(
+    predictpror_preprocess_cache,
+    model_input_stage,
+    model_input_objects
+  )
+}
+run_profile <- gp_runtime_profile_mark(
+  run_profile,
+  "prepare_model_inputs",
+  detail = paste("responses", length(response %||% character()))
+)
+low_call_rate_inds_removed <- model_input_objects[["low_call_rate_inds_removed"]]
+pheno_clean <- model_input_objects[["pheno_clean"]]
+geno_res <- model_input_objects[["geno_res"]]
+omic1_res <- model_input_objects[["omic1_res"]]
+omic2_res <- model_input_objects[["omic2_res"]]
+omic3_res <- model_input_objects[["omic3_res"]]
+geno_omic_model_ready_list <- model_input_objects[["geno_omic_model_ready_list"]]
+gmatrix_kernel_model_ready_list <- model_input_objects[["gmatrix_kernel_model_ready_list"]]
+test_set <- gp_merge_test_sets(model_input_objects[["test_set"]], pheno_clean[["test_set"]])
+if (!is.null(test_set)) {
+  pheno_clean[["test_set"]] <- test_set
+}
+ml_dat_res <- model_input_objects[["ml_dat_res"]]
+if (!is.null(feature_selected) && !is.null(ml_dat_res)) {
+  ml_dat_res <- gp_feature_apply_explicit_to_ml_dat_res(
+    ml_dat_res = ml_dat_res,
+    feature_selected = feature_selected,
+    trait = NULL
+  )
 }
 
-if(!is.null(test_omic1_data) && !is.null(low_call_rate_inds_removed)){
-  test_omic1_data <- test_omic1_data[!rownames(test_omic1_data)%in%low_call_rate_inds_removed, ]
+feature_scoring_cv <- match.arg(
+  gp_feature_normalize_cv_policy(feature_scoring_cv %||% "fixed"),
+  choices = c("fixed", "fold_internal", "both")
+)
+feature_scoring_active <- isTRUE(feature_scoring) ||
+  !is.null(feature_score_metadata) ||
+  !is.null(feature_k_grid) ||
+  !is.null(feature_k)
+feature_score_metadata <- feature_score_metadata %||% NULL
+feature_k_cv_summary <- NULL
+feature_source_map <- NULL
+if (isTRUE(feature_scoring_active) && !is.null(ml_dat_res) && !is.null(ml_dat_res[["merged_data"]][["merge_data"]])) {
+  feature_scoring_model <- match.arg(
+    as.character(feature_scoring_model %||% "Ridge_Regression"),
+    choices = c("Ridge_Regression", "BayesB", "RandomForest")
+  )
+  feature_scoring_seed <- as.integer(feature_scoring_seed %||% random_state %||% random_seed %||% 123L)
+  feature_matrix_for_scoring <- ml_dat_res[["merged_data"]][["merge_data"]]
+  feature_source_map <- gp_feature_source_map_from_inputs(
+    predictor_data = feature_matrix_for_scoring,
+    source_matrices = list(
+      geno_data = geno_omic_model_ready_list[["geno_model_ready"]] %||% NULL,
+      omic1_data = geno_omic_model_ready_list[["omic1_model_ready"]] %||% NULL,
+      omic2_data = geno_omic_model_ready_list[["omic2_model_ready"]] %||% NULL,
+      omic3_data = geno_omic_model_ready_list[["omic3_model_ready"]] %||% NULL
+    )
+  )
+  if (is.null(feature_score_metadata)) {
+    feature_score_metadata <- feature_score_predictors(
+      predictor_data = feature_matrix_for_scoring,
+      pheno_data = pheno_clean[["pheno_clean_data"]],
+      response = response,
+      gen_name = gen_name,
+      scoring_model = feature_scoring_model,
+      seed = feature_scoring_seed,
+      source_block = feature_source_map,
+      ridge_lambda = feature_ridge_lambda,
+      bayes_nIter = feature_bayes_nIter,
+      bayes_burnIn = feature_bayes_burnIn,
+      bayes_thin = feature_bayes_thin,
+      ntree = ntree,
+      mtry = mtry,
+      nodesize = nodesize,
+      rf_n_jobs = rf_n_jobs,
+      response_family = response_family,
+      selection_mode = if (isTRUE(cross_validation) && identical(feature_scoring_cv, "fold_internal")) {
+        "final_refit"
+      } else {
+        "fixed"
+      }
+    )
+  }
+  if (isTRUE(cross_validation)) {
+    specialized_feature_route <- any(vapply(
+      list(hybrid_asreml, hybrid_bayes, hybrid_gp, hybrid_ml, hybrid_dl,
+           multi_trait_asreml, multi_trait_gp, multi_trait_bayes, multi_trait_ml, multi_trait_dl),
+      isTRUE, logical(1)
+    ))
+    feature_k_grid <- gp_feature_k_grid(
+      feature_k_grid,
+      ncol(feature_matrix_for_scoring),
+      include_all = !specialized_feature_route
+    )
+  } else if (is.null(feature_k)) {
+    feature_k <- "all"
+  }
+  run_profile <- gp_runtime_profile_mark(
+    run_profile,
+    "feature_scoring",
+    detail = paste(
+      "model", feature_scoring_model,
+      "traits", length(unique(feature_score_metadata$trait %||% character()))
+    )
+  )
 }
-##################
-if(!is.null(omic2_data) && !is.null(low_call_rate_inds_removed)){
-  omic2_data <- omic2_data[!rownames(omic2_data)%in%low_call_rate_inds_removed, ]
-}
-
-if(!is.null(train_omic2_data) && !is.null(low_call_rate_inds_removed)){
-  train_omic2_data <- train_omic2_data[!rownames(train_omic2_data)%in%low_call_rate_inds_removed, ]
-}
-
-if(!is.null(test_omic2_data) && !is.null(low_call_rate_inds_removed)){
-  test_omic2_data <- test_omic2_data[!rownames(test_omic2_data)%in%low_call_rate_inds_removed, ]
-}
-#########################
-if(!is.null(omic3_data) && !is.null(low_call_rate_inds_removed)){
-  omic3_data <- omic3_data[!rownames(omic3_data)%in%low_call_rate_inds_removed, ]
-}
-
-if(!is.null(train_omic3_data) && !is.null(low_call_rate_inds_removed)){
-  train_omic3_data <- train_omic3_data[!rownames(train_omic3_data)%in%low_call_rate_inds_removed, ]
-}
-
-if(!is.null(test_omic3_data) && !is.null(low_call_rate_inds_removed)){
-  test_omic3_data <- test_omic3_data[!rownames(test_omic3_data)%in%low_call_rate_inds_removed, ]
-}
-######################
-###
- omic1_res <- process_omic_data(omic_data = omic1_data,
-                                train_omic_data = train_omic1_data,
-                                test_omic_data = test_omic1_data,
-                                kernel_method = kernel_method,
-                                pheno_clean_list = pheno_clean,
-                                gen_name = gen_name,
-                                test_set = test_set,
-                                train_set = train_set,
-                                message = message,
-                                heter_groups = heter_groups,
-                                impute_omic = impute_omic,
-                                imputation_method = imputation_method,
-                                impute_knn_k = impute_knn_k,
-                                na_threshold = na_threshold)
-
- # Process omic2 data
- omic2_res <- process_omic_data(omic_data = omic2_data,
-                                train_omic_data = train_omic2_data,
-                                test_omic_data = test_omic2_data,
-                                kernel_method = kernel_method,
-                                pheno_clean_list = pheno_clean,
-                                gen_name = gen_name,
-                                test_set = test_set,
-                                train_set = train_set,
-                                message = message,
-                                heter_groups = heter_groups,
-                                impute_omic = impute_omic,
-                                imputation_method = imputation_method,
-                                impute_knn_k = impute_knn_k,
-                                na_threshold = na_threshold)
-
- # Process omic3 data
- omic3_res <- process_omic_data(omic_data = omic3_data,
-                                train_omic_data = train_omic3_data,
-                                test_omic_data = test_omic3_data,
-                                kernel_method = kernel_method,
-                                pheno_clean_list = pheno_clean,
-                                gen_name = gen_name,
-                                test_set = test_set,
-                                train_set = train_set,
-                                message = message,
-                                heter_groups = heter_groups,
-                                impute_omic = impute_omic,
-                                imputation_method = imputation_method,
-                                impute_knn_k = impute_knn_k,
-                                na_threshold = na_threshold)
- #################
- geno_omic_model_ready_list <- list()
- gmatrix_kernel_model_ready_list <- list()
-
- if (length(geno_res)!=0 && all(c("gmatrix", "geno_model_ready") %in% names(geno_res))) {
-   gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- geno_res[["gmatrix"]]
-   geno_omic_model_ready_list[["geno_model_ready"]] <- geno_res[["geno_model_ready"]]
- } else {
-   if (length(geno_res)!=0 && "geno_model_ready" %in% names(geno_res)) {
-     geno_omic_model_ready_list[["geno_model_ready"]] <- geno_res[["geno_model_ready"]]
-   }
- }
- ##
- if(!is.null(gmatrix)){
-   if(!is.null(low_call_rate_inds_removed)){
-     gmatrix <- gmatrix[!rownames(gmatrix)%in%low_call_rate_inds_removed,
-                        !colnames(gmatrix)%in%low_call_rate_inds_removed]
-   }
-   gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- gmatrix
- } else {
-   if (!is.null(gkernel)) {
-     if(!is.null(low_call_rate_inds_removed)){
-       gkernel <- gkernel[!rownames(gkernel)%in%low_call_rate_inds_removed,
-                          !colnames(gkernel)%in%low_call_rate_inds_removed]
-     }
-     gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] <- gkernel
-   }
- }
-
- ####
- if (length(omic1_res)!=0 && all(c("kernel", "omic_model_ready")%in%names(omic1_res))) {
-   gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] <- omic1_res[["kernel"]]
-   geno_omic_model_ready_list[["omic1_model_ready"]] <- omic1_res[["omic_model_ready"]]
- } else if(length(omic1_res)!=0 && "omic_model_ready"%in%names(omic1_res)){
-   geno_omic_model_ready_list[["omic1_model_ready"]] <- omic1_res[["omic_model_ready"]]
- } else if(length(omic1_res)!=0 && "kernel"%in%names(omic1_res)){
-       gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] <- omic1_res[["kernel"]]
-
- } else {
-   if (!is.null(omic1_kernel)) {
-     if(!is.null(low_call_rate_inds_removed)){
-       omic1_kernel <- omic1_kernel[!rownames(omic1_kernel)%in%low_call_rate_inds_removed,
-                          !colnames(omic1_kernel)%in%low_call_rate_inds_removed]
-     }
-     gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] <- omic1_kernel
-   }
- }
-
- if (length(omic2_res)!=0 && all(c("kernel", "omic_model_ready")%in%names(omic2_res))) {
-   gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] <- omic2_res[["kernel"]]
-   geno_omic_model_ready_list[["omic2_model_ready"]] <- omic2_res[["omic_model_ready"]]
- } else if(length(omic2_res)!=0 && "omic_model_ready"%in%names(omic2_res)){
-   geno_omic_model_ready_list[["omic2_model_ready"]] <- omic2_res[["omic_model_ready"]]
- } else if(length(omic2_res)!=0 && "kernel"%in%names(omic2_res)){
-       gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] <- omic2_res[["kernel"]]
- } else {
-   if (!is.null(omic2_kernel)) {
-     if(!is.null(low_call_rate_inds_removed)){
-       omic2_kernel <- omic2_kernel[!rownames(omic2_kernel)%in%low_call_rate_inds_removed,
-                                    !colnames(omic2_kernel)%in%low_call_rate_inds_removed]
-     }
-     gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] <- omic2_kernel
-   }
- }
-
-
- if (length(omic3_res)!=0 && all(c("kernel", "omic_model_ready")%in%names(omic3_res))) {
-   gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] <- omic3_res[["kernel"]]
-   geno_omic_model_ready_list[["omic3_model_ready"]] <- omic3_res[["omic_model_ready"]]
- } else if(length(omic3_res)!=0 && "omic_model_ready"%in%names(omic3_res)){
-   geno_omic_model_ready_list[["omic3_model_ready"]] <- omic3_res[["omic_model_ready"]]
- } else if(length(omic3_res)!=0 && "kernel"%in%names(omic3_res)){
-     gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] <- omic3_res[["kernel"]]
- } else {
-   if (!is.null(omic3_kernel)) {
-     if(!is.null(low_call_rate_inds_removed)){
-       omic3_kernel <- omic3_kernel[!rownames(omic3_kernel)%in%low_call_rate_inds_removed,
-                                    !colnames(omic3_kernel)%in%low_call_rate_inds_removed]
-     }
-     gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] <- omic3_kernel
-   }
- }
-
- # Define a list of kernel variables
- kernel_vars <- c("gmatrix_model_ready",
-                  "omic1_kernel_model_ready",
-                  "omic2_kernel_model_ready",
-                  "omic3_kernel_model_ready")
-
-
- # Define a list to store results
- #results_kernel_list <- list()
-
- # Iterate over each kernel variable
- for (kernel_var in kernel_vars) {
-     #checked_var <- paste0(kernel_var, "_checked")
-     gmatrix_kernel_model_ready_list[[kernel_var]]
-     # Check if the kernel variable exists
-     if (!is.null(gmatrix_kernel_model_ready_list[[kernel_var]])) {
-         # Pre-check the kernel data
-         #results_kernel_list[[kernel_var]] <- grm_kernel_precheck(
-       gmatrix_kernel_model_ready_list[[kernel_var]] <- grm_kernel_precheck(
-             grm_kernel_data = gmatrix_kernel_model_ready_list[[kernel_var]],
-             pedigree_matrix = pedigree_matrix,
-             bending = bending,
-             bend_value = bend_value,
-             blending = blending,
-             blending_value = blending_value,
-             high_diag_cut_off = high_diag_cut_off,
-             low_diag_cut_off = low_diag_cut_off,
-             duplicate_cut_off = duplicate_cut_off,
-             rcn_cutoff = rcn_cutoff,
-             optimize_diagonal = optimize_diagonal,
-             optimize_duplicate = optimize_duplicate,
-             message = message
-         )
-
-         # Remove the intermediate kernel variable
-         #rm(list = kernel_var)
-     }
- }
- #gmatrix_kernel_model_ready_list <-  results_kernel_list
- #rm(results_kernel_list)
- # Iterate over each checked kernel variable for pheno-geno match
- if(length(gmatrix_kernel_model_ready_list)!=0){
- for (checked_kernel_var_name in names(gmatrix_kernel_model_ready_list)) {
-     # Check if the checked kernel variable exists
-     if (!is.null(gmatrix_kernel_model_ready_list[[checked_kernel_var_name]])) {
-         # Perform pheno-geno match
-         match_result <- pheno_geno_match(
-             object_pheno = pheno_clean[["pheno_clean_data"]],
-             object_geno = gmatrix_kernel_model_ready_list[[checked_kernel_var_name]],
-             gen_name = gen_name,
-             test_set = test_set,
-             train_set = train_set,
-             message = message
-         )
-
-         # Assign model-ready variable and update test_set if necessary
-         #results_list[[paste0(sub("_checked$", "", checked_kernel_var_name), "_model_ready")]] <- match_result[[1]]
-         #model_ready_name <- paste0(checked_kernel_var_name, "_model_ready")
-         gmatrix_kernel_model_ready_list[[checked_kernel_var_name]] <- match_result[[1]]
-         if (length(match_result) > 1) {
-             test_set <- match_result[[2]]
-             if(is.data.frame(test_set) | is.matrix(test_set)){
-               test_set <-  test_set[, 1]
-               test_set <-  unique(test_set) ## incase of MET pheno data
-             }
-         }
-     }
- }
-
-
- }
-
-### Concatenation of omics for ML
- # When calling the function, pass the external variables as arguments
- if (!is.null(GS_model) && is.null(GS_model_cv)) {
-   ml_dat_res <- AI_process_ml_data_if_valid(
-     model_check = any(GS_model %in% AI_valid_models),
-     geno_omic_model_ready_list, pheno_clean, response, gen_name
-   )
- } else if (!is.null(GS_model_cv) && is.null(GS_model)) {
-   ml_dat_res <- AI_process_ml_data_if_valid(
-     model_check = any(GS_model_cv %in% AI_valid_models),
-     geno_omic_model_ready_list, pheno_clean, response, gen_name
-   )
- } else if (!is.null(GS_model_cv) && !is.null(GS_model)) {
-   ml_dat_res <- AI_process_ml_data_if_valid(
-     model_check = any(c(GS_model, GS_model_cv) %in% AI_valid_models),
-     geno_omic_model_ready_list, pheno_clean, response, gen_name
-   )
- } else {
-   ml_dat_res <- list()
- }
 
  ### Ends
 
@@ -1946,6 +3303,7 @@ if(!is.null(test_omic3_data) && !is.null(low_call_rate_inds_removed)){
  cv_results_processed <-  NULL
  cv_results_raw <- NULL
  cv_results <- NULL
+ cv_run_metadata <- NULL
  model_prep_all_bayes_cv <-  NULL
  asreml_models_prep_cv <- NULL
  res_plot_result_diagnostic <-  NULL
@@ -1955,370 +3313,69 @@ if(!is.null(test_omic3_data) && !is.null(low_call_rate_inds_removed)){
  diagnostic_plots <- NULL
 
  ####
- if("test_set"%in%names(pheno_clean)) {
-
-   test_set <- pheno_clean[["test_set"]]
-
+ test_set <- gp_merge_test_sets(test_set, pheno_clean[["test_set"]])
+ if (!is.null(test_set)) {
+   pheno_clean[["test_set"]] <- test_set
  }
 
- if(!is.null(test_set)){
-   if(is.data.frame(test_set) | is.matrix(test_set)){
-     test_set <-  test_set[, 1]
-     test_set <-  unique(test_set) ## incase of MET pheno data
-   } else {
-     if(is.list(test_set)){
-       stop(paste(msg,'Test_set cannot be a list. Provide it as a vector, single column dataframe or matrix.'), call. = FALSE)
-     }
-   }
+if(docker_nd_usage) sys_name <- "Windows"
 
- }
-
- if(docker_nd_usage) sys_name <- "Windows"
-
- # if(is.null(feature_selected)){
- # models <- c()
- # feature_selected <- NULL
- # if (!is.null(GS_model)) models <- c(models, GS_model)
- # if (!is.null(GS_model_cv)) models <- c(models, GS_model_cv)
- # if (any(models %in% gam_method_use)) {
- #   n_traits <- length(response)
- #   seed_base <- 123
- #   sys_name <- Sys.info()["sysname"]
- #
- #   if(docker_nd_usage) sys_name <- "Windows"
- #
- #   if (!is.null(num_cores) && num_cores > 1) {
- #     set_parallel_plan(n_trait = n_traits, n_model = 1, sys_name = sys_name)
- #   } else {
- #     detected_cores <- parallel::detectCores(logical = TRUE)
- #     num_cores <- round(detected_cores * 0.7)
- #
- #     set_parallel_plan(n_trait = n_traits, n_model = 1, num_cores = num_cores,
- #                       sys_name = sys_name)
- #   }
- #
- #   feature_selected <- future.apply::future_lapply(1:n_traits, function(i) {
- #     current_seed <- seed_base + i
- #
- #     result <- boot_rf_feature_selection(
- #       X = ml_dat_res[["merged_data"]][["merge_data"]],
- #       y = ml_dat_res[["pheno_clean_data"]][, response[i]],
- #       R = 100,
- #       seed = current_seed,
- #       mtry = 500
- #     )
- #
- #     return(result)
- #   }, future.seed = TRUE)
- #
- #   future::plan("sequential")
- #
- #   names(feature_selected) <- response
- #
- # }
- #
- # }
- # if(!is.null(feature_selected)){
- #   load("feature_selected.RData")
- # }
- if(isTRUE(cross_validation)){
-   #model_prep_all_bayes_cv <-  NULL
-   #   if("test_set"%in%names(pheno_clean)) {
-   #
-   #     test_set <- pheno_clean[["test_set"]]
-   #
-   #   }
-   #
-   # if(!is.null(test_set)){
-   #   if(is.data.frame(test_set) | is.matrix(test_set)){
-   #     test_set <-  test_set[, 1]
-   #     test_set <-  unique(test_set) ## incase of MET pheno data
-   #   }
-   #
-   # }
-   pheno_data <-  pheno_clean[["pheno_clean_data"]]
-   if(!is.null(test_set)) {
-
-     pheno_data <-  pheno_data[!pheno_data[[gen_name]] %in% test_set, ]
-
-   }
-
-   if(any(GS_model_cv%in% c(bayes_valid_models, bayes_gblup_valid_models))){
- model_prep_all_bayes_cv <- model_prep_bayes_cv(fixed = fixed,
-                                               random = random,
-                                               GS_model_cv = GS_model_cv,
-                                               response = response,
-                                               gen_name = gen_name,
-                                               pheno_data = pheno_data,
-                                               test_set = test_set,
-                                               weights = weights,
-                                               fixed_term_model_bayesian = fixed_term_model_bayesian,
-                                               rand_term_model_bayesian = rand_term_model_bayesian,
-                                               nIter = nIter,
-                                               burnIn = burnIn,
-                                               thin = thin,
-                                               geno_data = if("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
-                                               omic1_data = if("omic1_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic1_model_ready"]] else NULL,
-                                               omic2_data = if("omic2_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic2_model_ready"]] else NULL,
-                                               omic3_data = if("omic3_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic3_model_ready"]] else NULL,
-                                               omics_data_label = omics_data_label,
-                                               gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
-                                               omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
-                                               omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
-                                               omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
-                                               heter_groups = heter_groups,
-                                               omics_kernel_label = omics_kernel_label,
-                                               cross_validation = TRUE)
-
-   }
-
-   if(any(GS_model_cv%in% c("GBLUP"))){
-     asreml_models_prep_cv <- asreml_utilis_new( fixed = fixed,
-                                                 random = random,
-                                                 engine = engine,
-                                                 cova= cova,
-                                                 GS_model = "GBLUP",
-                                                 response = response,
-                                                 pheno_data = pheno_data,
-                                                 gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
-                                                 omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
-                                                 omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
-                                                 omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
-                                                 inverse = inverse,
-                                                 epsilon = epsilon,
-                                                 gen_name = gen_name,
-                                                 heter_groups = heter_groups,
-                                                 heter_resid = heter_resid,
-                                                 var_cov_str = var_cov_str,
-                                                 weights = weights,
-                                                 workspace = workspace,
-                                                 pworkspace= pworkspace,
-                                                 maxit = maxit,
-                                                 cross_validation = TRUE)
-   }
-
-   cv_results <-   tryCatch({
-                models_execute_crossval(pheno_data = pheno_data,
-                                        test_set = test_set,
-                                        response = response,
-                                        gen_name = gen_name,
-                                        test_size = test_size,
-                                        random_state = random_state,
-                                        replication = replication,
-                                        selected_raw = feature_selected, # nd_mods
-                                        #gam_method = gam_method, # nd_mods
-                                        max_features = max_features,
-                                        heter_groups = heter_groups,
-                                        cross_validation_meth = cross_validation_meth,
-                                        nfolds = nfolds,
-                                        sampling_method = sampling_method,
-                                        model_prep_all_bayes_cv = model_prep_all_bayes_cv,
-                                        asreml_models_prep_cv = asreml_models_prep_cv,
-                                        engine = engine,
-                                        ml_dat_res = ml_dat_res,
-                                        GS_model_cv = GS_model_cv,
-                                        num_cores = num_cores,
-                                        eval_metrics = eval_metrics,
-                                        scaling = scaling,
-                                        centering =centering,
-                                        eta = learning_rate, ## xgboost
-                                        nrounds = iteration, ## xgboost
-                                        max_depth = max_depth, ## xgboost
-                                        xgb_gamma = xgb_gamma, ## xgboost
-                                        subsample = subsample, ## xgboost
-                                        colsample_bytree = colsample_bytree, ## xgboost
-                                        xgb_alpha = xgb_alpha, ## xgboost linear
-                                        xgb_lambda = xgb_lambda, ## xgboost linear
-                                        min_child_weight = min_child_weight, ## xgboost
-                                        early_stop_for_iteration_xgb = early_stop_for_iteration_xgb, ## xgboost
-                                        xgb_booster = xgb_booster,
-                                        ncomp = ncomp, #### pls
-                                        ntree = ntree, ### random forest
-                                        k = k, ## for knn
-                                        svm_kernel = svm_kernel, # "Gaussian", "Linear","Hyperbolic_tangent", "Polynomial"
-                                        sigma_value  = sigma_value,       # Default sigma value for RBF kernel
-                                        C_value  = C_value,             # Default cost parameter
-                                        degree_value = degree_value,        # Default degree for polynomial kernel
-                                        scale_value  = scale_value,         # Default scale for polynomial kernel
-                                        offset_value = offset_value,
-                                        early_stop = early_stop,
-                                        deep_learning_model = deep_learning_model,
-                                        #n_blocks = n_blocks,
-                                        #dense_layers_cnn = dense_layers_cnn,
-                                        #kernel_size = kernel_size,
-                                        #n_neurons_per_block =n_neurons_per_block,
-                                        #attention_on_final_layer = attention_on_final_layer,
-                                        #attention_across_multiple_layers = attention_across_multiple_layers,
-                                        #batch_normalization = batch_normalization,
-                                        #num_hidden_layers = num_hidden_layers,
-                                        #neurons_per_layer = neurons_per_layer,
-                                        #learning_rate_dp = learning_rate_dp,
-                                        #epochs = epochs,
-                                        #batch_size = batch_size,
-                                        #l2_regularizer_dp = l2_regularizer_dp,
-                                        #dropout_rate = dropout_rate,
-                                        optimizer_name = optimizer_name,
-                                        use_amp        = use_amp,
-                                        max_grad_norm  = max_grad_norm,
-                                        auto_class_weights = auto_class_weights,
-                                        ##### cnn
-                                        cnn_neurons_per_layer = cnn_neurons_per_layer,
-                                        cnn_kernel_size = cnn_kernel_size,
-                                        cnn_dense_layers = cnn_dense_layers,
-                                        cnn_use_max_pool = cnn_use_max_pool,
-                                        cnn_pool_kernel = cnn_pool_kernel,
-                                        cnn_pool_stride = cnn_pool_stride,
-                                        cnn_pool_padding = cnn_pool_padding,
-                                        cnn_learning_rate = cnn_learning_rate,
-                                        cnn_separable = cnn_separable,
-                                        cnn_dilations = cnn_dilations,
-                                        cnn_use_se = cnn_use_se,
-                                        cnn_norm_type = cnn_norm_type,
-                                        cnn_pool_type = cnn_pool_type,
-                                        cnn_use_global_pool = cnn_use_global_pool,
-                                        ##### resnet
-                                        resnet_neurons_per_block = resnet_neurons_per_block,
-                                        resnet_blocks = resnet_blocks,
-                                        resnet_learning_rate = resnet_learning_rate,
-                                        #### ft_transformer
-                                        ft_d_model = ft_d_model,
-                                        ft_heads = ft_heads,
-                                        ft_layers = ft_layers,
-                                        ft_ff_mult = ft_ff_mult,
-                                        ft_dropout = ft_dropout,
-                                        ft_token_dropout = ft_token_dropout,
-                                        ft_use_cls = ft_use_cls,
-                                        #### saint
-                                        saint_d_model = saint_d_model,
-                                        saint_heads = saint_heads,
-                                        saint_layers = saint_layers,
-                                        saint_ff_mult = saint_ff_mult,
-                                        saint_dropout = saint_dropout,
-                                        saint_token_dropout = saint_token_dropout,
-                                        saint_use_cls = saint_use_cls,
-                                        ###### Grouping controls (FT/SAINT and NAM/MoE)
-                                        use_grouping = use_grouping,
-                                        group_trigger = group_trigger,
-                                        group_method = group_method,
-                                        init_group_size = init_group_size,
-                                        max_tokens = max_tokens,
-                                        kmeans_batch = kmeans_batch,
-                                        kmeans_iter = kmeans_iter,
-                                        #### tabnet
-                                        tabnet_steps = tabnet_steps,
-                                        tabnet_feature_dim = tabnet_feature_dim,
-                                        tabnet_output_dim = tabnet_output_dim,
-                                        tabnet_gamma = tabnet_gamma,
-                                        tabnet_lambda_sparse = tabnet_lambda_sparse,
-                                        #### node
-                                        node_trees = node_trees,
-                                        node_depth = node_depth,
-                                        #### deepfm
-                                        deepfm_k = deepfm_k,
-                                        deepfm_hidden = deepfm_hidden,
-                                        #### dcnv2
-                                        dcn_layers = dcn_layers,
-                                        dcn_hidden = dcn_hidden,
-                                        #### nam
-                                        nam_hidden = nam_hidden,
-                                        nam_activation = nam_activation,
-                                        nam_add_linear = nam_add_linear,
-                                        nam_l1 = nam_l1,
-                                        ### moe
-                                        moe_n_experts = moe_n_experts,
-                                        moe_expert_hidden = moe_expert_hidden,
-                                        moe_gate_hidden = moe_gate_hidden,
-                                        moe_temperature = moe_temperature,
-                                        moe_sparse_topk = moe_sparse_topk,
-                                        moe_entropy_reg = moe_entropy_reg,
-                                        ### gp_dkl/RFF knobs
-                                        gp_use_variational = gp_use_variational,
-                                        gp_num_inducing = gp_num_inducing,
-                                        gp_feature_dim = gp_feature_dim,
-                                        gp_kernel = gp_kernel,
-                                        gp_ard = gp_ard,
-                                        gp_lr_mult = gp_lr_mult,
-                                        rff_features = rff_features,
-                                        rff_lengthscale = rff_lengthscale,
-                                        rff_deep_hidden = rff_deep_hidden,
-                                        ##### General dp
-                                        model_type = model_type,
-                                        epochs = epochs,
-                                        batch_size = batch_size,
-                                        dropout = dropout,
-                                        l2_weight_decay = l2_weight_decay,
-                                        l2_regularizer_dp = l2_regularizer_dp,
-                                        dropout_rate = dropout_rate,
-                                        batch_norm = batch_norm,
-                                        validation_split = validation_split,
-                                        compile_model = compile_model,
-                                        deterministic = deterministic,
-                                        random_seed = random_seed,
-                                        device = device,
-                                        #### mlp and attention
-                                        mlp_neurons_per_layer = mlp_neurons_per_layer,
-                                        mlp_learning_rate = mlp_learning_rate,
-                                        final_attention = final_attention,
-                                        attention_across_multiple_layers = attention_across_multiple_layers,
-                                        heteroscedastic = heteroscedastic,
-                                        #####
-                                        docker_nd_usage = docker_nd_usage,
-                                        globals_max_GB = globals_max_GB,
-                                        sequential_models = sequential_models,
-                                        parallel_mode = parallel_mode,
-                                        parallel_backend_prefer_fork = parallel_backend_prefer_fork,
-                                        verbose = verbose %||% TRUE)
-
-   }, error = function(e) {
-     message(paste("Error in cross-validation", e$message))
-     return(NULL)
-   })
-
-   if(length(cv_results)==0) {
-     warning(paste(msg, paste("Error in cross-validation.",
-                               "No result for cross-validation.", "Check the model and the data to ensure the data is correct and the model(s) is well specified.")), call. = FALSE)
-     return(NULL)
-   }
-
-if(cross_validation_meth%in%c("CV1",
-                              "CV2",
-                              "Repeated_CV1",
-                              "Repeated_CV2")){
-cv_results_processed <- cv1_cv2_and_across_env_result_plot_process(cv_results_data=cv_results,
-                                                                   eval_metrics = eval_metrics,
-                                                                   heter_groups = heter_groups,
-                                                                   metric_for_ranking = metric_for_ranking)
-
-best_models <- cv_results_processed[["best_models_list"]][[metric_for_ranking]]
-
-best_models_ggplot_rep <- cv_results_processed[["plot_reps_list"]][[metric_for_ranking]][["ggplot_boxplot_reps"]]
-
-best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_ranking]][["ggplot_lineplot_mean"]]
-
-
-} else {
-
-  cv_results_predicted_vs_observed <- single_predicted_vs_observed_result_plots_process(results = cv_results,
-                                                                                        pheno_data = pheno_data,
-                                                                                        abs_very_close_threshold = abs_very_close_threshold,
-                                                                                        abs_close_threshold = abs_close_threshold)
-
-cv_results_processed <- cv_single_loc_result_plot_process(cv_results_data=cv_results,
-                                                          eval_metrics = eval_metrics)
-
-best_models <- cv_results_processed[["best_models_list"]][[metric_for_ranking]]
-
-best_models_ggplot_rep <- cv_results_processed[["plot_reps_list"]][[metric_for_ranking]][["ggplot_boxplot_reps"]]
-
-best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_ranking]][["ggplot_lineplot_mean"]]
-
-
+if(isTRUE(cross_validation)){
+  cv_special_route <- gp_route_cross_validation_specialized_models(as.list(environment()))
+  if (!is.null(cv_special_route)) {
+    if (is.list(cv_special_route) && !is.null(hybrid_parent_qc_summary)) {
+      cv_special_route$hybrid_parent_qc <- hybrid_parent_qc_summary
+    }
+    return(cv_special_route)
   }
+  cv_pipeline <- tryCatch(
+    gp_try_cv_frontdoor_fast_lane(as.list(environment())),
+    error = function(e) {
+      warning(
+        "GP front-door CV fast lane failed; falling back to the standard CV path: ",
+        conditionMessage(e),
+        call. = FALSE
+      )
+      NULL
+    }
+  )
+  if (!is.null(cv_pipeline)) {
+    run_profile <- gp_runtime_profile_mark(
+      run_profile,
+      "gp_cv_frontdoor_fast_lane",
+      detail = paste("results", length(cv_pipeline[["cv_results"]] %||% list()))
+    )
+  } else {
+    cv_artifacts <- gp_prepare_cross_validation_artifacts(as.list(environment()))
+    run_profile <- gp_runtime_profile_mark(
+      run_profile,
+      "prepare_cv_artifacts",
+      detail = paste("models", length(GS_model_cv %||% character()))
+    )
+    pheno_data <- cv_artifacts[["pheno_data"]]
+    model_prep_all_bayes_cv <- cv_artifacts[["model_prep_all_bayes_cv"]]
+    asreml_models_prep_cv <- cv_artifacts[["asreml_models_prep_cv"]]
+
+    cv_pipeline <- gp_run_cross_validation_pipeline(as.list(environment()))
+    run_profile <- gp_runtime_profile_mark(
+      run_profile,
+      "cross_validation_pipeline",
+      detail = paste("results", length(cv_pipeline[["cv_results"]] %||% list()))
+    )
+  }
+  if (is.null(cv_pipeline)) {
+     return(NULL)
+   }
+
+   cv_results <- cv_pipeline[["cv_results"]]
+   cv_results_processed <- cv_pipeline[["cv_results_processed"]]
+   cv_results_predicted_vs_observed <- cv_pipeline[["cv_results_predicted_vs_observed"]]
+   cv_run_metadata <- cv_pipeline[["run_metadata"]]
+   best_models <- cv_pipeline[["best_models"]]
+   best_models_ggplot_rep <- cv_pipeline[["best_models_ggplot_rep"]]
+   best_models_ggplot_mean <- cv_pipeline[["best_models_ggplot_mean"]]
 
  }
-
- ### When vcf or hapmap format was presented and QC filtering is omitted in the
- ## second stage
 
  if(!is.null(geno_data_process)){
    geno_qc_stat <-  geno_data_process[["qc_metrics_and_summary_stat"]]
@@ -2331,27 +3388,30 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
 
  if(isTRUE(cv_evaluation_only) && isTRUE(cross_validation)){
 
-   return(results_handling(GS_model =  NULL,
-                           cv_results_raw = cv_results,
-                           res_model_output =  NULL,
-                           res_summary_stat =  NULL,
-                           res_plot = best_models_ggplot_rep,
-                           res_plot_mean = best_models_ggplot_mean,
-                           res_plot_result_diagnostic = NULL,
-                           test_diagonistic_plots = NULL,
-                           res_plot_result_diagnostic_cv_only = cv_results_predicted_vs_observed$predicted_vs_observed_plots,
-                           res_mod_results_cv_per_trait_model = cv_results_predicted_vs_observed$mod_res_per_trait_per_model,
-                           geno_qc_stat = NULL,
-                           cv_results_processed = cv_results_processed,
-                           system_database = system_database,
-                           plot_filename = "CV_results",
-                           #Plot_name_result_diagnostic = if(!is.null(names(res_mod_results_cv_per_trait_model)[res])) names(results)[res] else paste("trait_diganostic", res, sep = "_"),
-                           plot_extension = plot_extension,
-                           plot_width = plot_width,
-                           plot_height = plot_height,
-                           plot_units = plot_units,
-                           plot_dpi = plot_dpi,
-                           feature_selected = feature_selected))
+   cv_only_result <- results_handling(GS_model = GS_model_cv,
+                                      cv_results_raw = cv_results,
+                                      res_model_output =  NULL,
+                                      res_summary_stat =  NULL,
+                                      res_plot = best_models_ggplot_rep,
+                                      res_plot_mean = best_models_ggplot_mean,
+                                      res_plot_result_diagnostic = NULL,
+                                      test_diagonistic_plots = NULL,
+                                      res_plot_result_diagnostic_cv_only = cv_results_predicted_vs_observed$predicted_vs_observed_plots,
+                                      res_mod_results_cv_per_trait_model = cv_results_predicted_vs_observed$mod_res_per_trait_per_model,
+                                      geno_qc_stat = NULL,
+                                      cv_results_processed = cv_results_processed,
+                                      run_metadata = cv_run_metadata,
+                                      system_database = system_database,
+                                      plot_filename = "CV_results",
+                                      plot_extension = plot_extension,
+                                      plot_width = plot_width,
+                                      plot_height = plot_height,
+                                      plot_units = plot_units,
+                                      plot_dpi = plot_dpi,
+                                      feature_selected = feature_selected,
+                                      feature_score_metadata = feature_score_metadata)
+   cv_only_result$cv_results_predicted_vs_observed <- cv_results_predicted_vs_observed
+   return(cv_only_result)
 
  }
 
@@ -2360,1064 +3420,43 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
    return(NULL)
  }
 
- future::plan("sequential")
+future::plan("sequential")
 ###############################################################
 
- ##########################################################################
- #########################################################################
- ## Start of Bayes A, B, C, BL and BRR Models for Single Location       ##
- ##  This only accommodate n x p matrix  not nxn                        ##
- ##                                                                     ##
- ##########################################################################
- #######################################################################
-
- ## sik ############################################################################################ sik
-
-
- # geno_qc_stat <- if("clean_geno_qcstat" %in% names(geno_res)) geno_res[["clean_geno_qcstat"]][["qc_metrics_and_summary_stat"]] else NULL
-
- #######
- if(!is.null(best_models)){
-   n_trait <- length(best_models[["trait"]])
-   n_model <- length(best_models[["model"]])
-
- } else {
+ true_prediction_route <- gp_route_true_prediction_specialized_models(as.list(environment()))
+ if (!is.null(true_prediction_route)) {
+   if (is.list(true_prediction_route) && !is.null(hybrid_parent_qc_summary)) {
+     true_prediction_route$hybrid_parent_qc <- hybrid_parent_qc_summary
+   }
+   return(true_prediction_route)
+ }
+ cv_best_models <- best_models
+ if(is.null(best_models)){
    if (length(GS_model) > 1) {
      if (length(GS_model) != length(response)) {
        stop(paste(msg, "When the number of models is more than one, the number of models should be the same as the number of traits."), call. = FALSE)
      }
    }
 
-   #task <- data.frame(model = GS_model, trait = response, stringsAsFactors = FALSE)
    best_models <- data.frame(model = GS_model, trait = response, stringsAsFactors = FALSE)
-   n_trait <-  length(response)
-   n_model <- length(GS_model)
  }
- # Main logic
- # sys_name <- Sys.info()["sysname"]
- # if(docker_nd_usage) sys_name <- "Windows"
- # if (!is.null(num_cores) && num_cores > 1) {
- #   #sys_name <- Sys.info()["sysname"]
- #   set_parallel_plan(n_trait = n_trait, n_model = n_model,
- #                     sys_name = sys_name)
- # } else {
- #   # Automatically determine the number of cores and use half of them
- #   detected_cores <- parallel::detectCores(logical = TRUE)
- #   # For non-Windows systems, consider physical cores only
- #   num_cores <- round(detected_cores * 0.5)
- #
- #   set_parallel_plan(n_trait= n_trait, n_model = n_model,num_cores = num_cores,
- #                     sys_name = sys_name)
- # }
+
+  best_models <- gp_build_true_prediction_task_table(
+    best_models = best_models,
+    GS_model = GS_model,
+    GS_model_cv = GS_model_cv,
+    response = response,
+   cv_results_processed = cv_results_processed,
+    metric_for_ranking = metric_for_ranking,
+    cross_validation = cross_validation
+  )
+  cv_best_models <- best_models
+  n_trait <- length(unique(best_models[["trait"]] %||% character()))
+  n_model <- length(unique(best_models[["model"]] %||% character()))
 
  sys_name <- Sys.info()["sysname"]
  if(docker_nd_usage) sys_name <- "Windows"
 
- # workers <- set_parallel_plan(n_trait = n_trait,
- #                              n_model = n_model,
- #                              replication = 1,
- #                              num_cores = num_cores,
- #                              sys_name = sys_name,
- #                              globals_max_GB = globals_max_GB,
- #                              mode = "true_prediction",
- #                              docker_override = docker_nd_usage)
-
- ##########################################################
- #### new for chunk parallel
-
- # Filter datasets
- # filter_datasets <- function(datasets) {
- #   non_null_idx <- !sapply(datasets, is.null)
- #   filtered_datasets <- datasets[non_null_idx]
- #   #filtered_names <- dataset_names[non_null_idx]
- #   if (length(filtered_datasets) > 0) {
- #     #names(filtered_datasets) <- filtered_names
- #   } else {
- #     filtered_datasets <- NULL
- #   }
- #   list(datasets = filtered_datasets)
- # }
- #
- # gmatrix_omic_kernel_filtered <- filter_datasets(gmatrix_kernel_model_ready_list)
- # gmatrix_omic_kernel_filtered <- gmatrix_omic_kernel_filtered$datasets
- # ##
- # geno_omic_filtered <- filter_datasets(geno_omic_model_ready_list)
- # geno_omic_filtered <- geno_omic_filtered$datasets
- #
- # # Validate required datasets
- # if (length(geno_omic_filtered) == 0 && length(gmatrix_omic_kernel_filtered) == 0 && is.null(ml_dat_res)) {
- #   stop("No valid datasets available for model fitting.")
- # }
- # ###
- # # Calculate total size of non-NULL datasets for omics_data
- # if (length(geno_omic_filtered) != 0 && length(gmatrix_omic_kernel_filtered) != 0) {
- #   all_omics_datasets <- c(geno_omic_filtered, gmatrix_omic_kernel_filtered)
- # } else if (length(geno_omic_filtered) == 0 && length(gmatrix_omic_kernel_filtered) != 0){
- #   all_omics_datasets <- c(gmatrix_omic_kernel_filtered)
- # } else if(length(geno_omic_filtered) != 0 && length(gmatrix_omic_kernel_filtered) == 0){
- #   all_omics_datasets <- c(geno_omic_filtered)
- # }
- #
- # omics_data_size_mb <- if (length(all_omics_datasets) == 0) {
- #   0
- # } else {
- #   sum(sapply(all_omics_datasets, function(x) object.size(x) / 1024 / 1024))
- # }
- #
- # if(!is.null(num_cores)){
- #
- #   num_cores <- NULL
- # }
- # # Parallel setup with dynamic core adjustment
- # sys_name <- Sys.info()["sysname"]
- # num_cores <- set_parallel_plan(
- #   n_trait = n_trait,
- #   n_model = n_model,
- #   replication = 1,
- #   GS_model_cv = unique(best_models[["model"]]),
- #   pheno_data = pheno_clean[["pheno_clean_data"]],
- #   omics_data = omics_data_size_mb,
- #   num_cores = num_cores,
- #   sys_name = sys_name
- # )
- #
- # #results_use = results
- # task_indices <- seq_len(nrow(best_models))
- # chunks <- split(task_indices, rep(1:num_cores, length.out = length(task_indices)))
- #
-
-#  chunk_size <- if (workers > 1) ceiling(nrow(best_models) / workers) else NULL
-#
-#
-#
-#  results <- future.apply::future_lapply(seq_len(nrow(best_models)),
-#                                         future.packages   = c("dplyr"),
-#                                         future.seed       = TRUE,
-#                                         future.chunk.size = chunk_size,
-#                                         function(i) {
-#  task_row <- best_models[i, ]
-#  # results <- future.apply::future_lapply(chunks, function(chunk) {
-#  #   lapply(chunk, function(i) {
-#  #     task_row <- best_models[i, ]
-#
-#    response <- as.character(task_row$trait)
-#    GS_model <- as.character(task_row$model)
-#
-#    new_seed <- (123L + i * 10000L) %% .Machine$integer.max
-#    set.seed(new_seed)
-#    options(random_state = new_seed)
-#
-#    if(any(GS_model%in%dp_models)){
-#      #deep_learning_modell <- as.character(task_row$model)
-#      GS_model <- "deep_learning_model"
-#    }
-#
-#    if(!GS_model%in%AI_valid_models) {
-#      model_for_CI_cal <-"Bayes"
-#    } else{
-#      model_for_CI_cal <- "ML"
-#    }
-#
-#    #### These models only works with one environment/location
-#    if(length(pheno_clean[["pheno_clean_data"]][,gen_name])==length(unique(pheno_clean[["pheno_clean_data"]][,gen_name]))){
-#
-#      if ((GS_model %in% bayes_valid_models && is.null(rand_term_model_bayesian)) ||
-#          (is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_valid_models)) ||
-#          (!is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_valid_models))) {
-#
-#        bayes_A_B_C_BRR_mod_process <- tryCatch({
-#        res_model_output <- bayes_finalize_A_B_C_BL_BRR(fixed = fixed,
-#                                                        random = random,
-#                                                        GS_model = GS_model,
-#                                                        response = response,
-#                                                        weights = weights,
-#                                                        fixed_term_model_bayesian = fixed_term_model_bayesian,
-#                                                        rand_term_model_bayesian = rand_term_model_bayesian,
-#                                                        pheno_data = pheno_clean[["pheno_clean_data"]],
-#                                                        geno_data = if("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
-#                                                        omic1_data = if("omic1_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic1_model_ready"]] else NULL,
-#                                                        omic2_data = if("omic2_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic2_model_ready"]] else NULL,
-#                                                        omic3_data = if("omic3_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic3_model_ready"]] else NULL,
-#                                                        gen_name = gen_name,
-#                                                        nIter = nIter,
-#                                                        burnIn = burnIn,
-#                                                        thin = thin,
-#                                                        omics_data_label = omics_data_label,
-#                                                        scaling = scaling,
-#                                                        CI_width_thresholds = CI_width_thresholds,
-#                                                        confidence_level = confidence_level,
-#                                                        high_reliability_thres = high_reliability_thres,
-#                                                        low_reliability_thres = low_reliability_thres,
-#                                                        n_components = n_components,
-#                                                        threshold = threshold,
-#                                                        target = "test_set",
-#                                                        confidence_level = confidence_level,
-#                                                        #iqr_multiplier = iqr_multiplier,
-#                                                        interval_width_high_threshold = interval_width_high_threshold,
-#                                                        interval_width_low_threshold = interval_width_low_threshold,
-#                                                        interval_width_moderate_threshold = interval_width_moderate_threshold)
-#
-#        res_model_output  # Return the model object if everything is successful
-#        }, error = function(e) {
-#          #
-#          cat("Error:", conditionMessage(e), "\n")
-#          return(NULL)  # Return NULL
-#        })
-#        # Compute summary statistics and plot accuracy
-#        if(!is.null(bayes_A_B_C_BRR_mod_process)){
-#
-#          res_model_output <- bayes_A_B_C_BRR_mod_process
-#          #res_model_output <- res_model_output[["bayes_result"]]
-#
-#          bayes_summary_stat_process <- tryCatch({
-#        res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]],
-#                                                     eval_metrics = eval_metrics,
-#                                                     model_result = res_model_output[["bayes_result"]],
-#                                                     GS_model = GS_model,
-#                                                     gen_name = gen_name,
-#                                                     CI_width_thresholds = CI_width_thresholds,
-#                                                     confidence_level = confidence_level,
-#                                                     high_reliability_thres = high_reliability_thres,
-#                                                     low_reliability_thres = low_reliability_thres,
-#                                                     system_database = system_database)
-#        #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
-#        res_summary_stat  # Return the model object if everything is successful
-#          }, error = function(e) {
-#            # Handle the error, you can print a message or take other actions
-#            cat("Error:", conditionMessage(e), "\n")
-#            return(NULL)  # Return NULL or an appropriate value to indicate the failure
-#          })
-#
-#          if(!is.null(bayes_summary_stat_process)){
-#            res_summary_stat <- bayes_summary_stat_process
-#        if("diagnostic_tst_plot"%in%names(res_summary_stat)){
-#
-#          res_model_output[["diagnostic_plots"]] <- res_summary_stat[["diagnostic_tst_plot"]]
-#
-#          res_summary_stat <- res_summary_stat[!names(res_summary_stat) %in% "diagnostic_tst_plot"]
-#        }
-#
-#          } else{
-#            cat(sprintf("Bayesian %s summary statistics failed.\n", GS_model))
-#            res_summary_stat <- NULL
-#          }
-#
-#        } else {
-#          cat(sprintf("Bayesian %s model failed.\n", GS_model))
-#          res_model_output <- NULL
-#          res_summary_stat <- NULL
-#        }
-#
-#        # output <- list(GS_model = GS_model,
-#        #                res_model_output = res_model_output,
-#        #                res_summary_stat = res_summary_stat,
-#        #                geno_qc_stat =geno_qc_stat
-#        # )
-#
-#      }
-#    } ## End of  Bayes A, B, C, BRR, BL
-#
-#    ##########################################################################
-#    #########################################################################
-#    ## Start of Reproducing Kernel Hilbert Spaces Regression RKHS,         ##
-#    ## (BRR- Bayesian GBLUP ) and GBLUP (asreml) Model                     ##
-#    ## for Single Location and multiple loc                                ##
-#    ##                                                                     ##
-#    ##                                                                     ##
-#    ##########################################################################
-#    #######################################################################
-#
-#    ## NOTE
-#    ## BRR is changed to G-BRR to make distinction between BRR for marker matrix and GBLUP
-#    # Check conditions for GS_model and rand_term_model_bayesian
-#    if ((GS_model %in% c("RKHS", "GBLUP_BRR", "GBLUP") && is.null(rand_term_model_bayesian)) ||
-#        (is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_gblup_valid_models)) ||
-#        (!is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_gblup_valid_models))) {
-#
-#      # Rename GS_model for GBLUP_BRR case
-#      if (GS_model == "GBLUP_BRR") {
-#        GS_modeluse <- GS_model
-#        GS_model <- "BRR"
-#      }
-#
-#      if (GS_model %in% c("BRR", "RKHS")) {
-#        # Run Bayesian model for BRR and RKHS
-#        bayes_RKHS_GBLUP_BRR_mod_process <- tryCatch({
-#        res_model_output <- bayes_finalize_RKHS_GBLUPBRR(fixed = fixed,
-#                                                         random = random,
-#                                                         GS_model = GS_model,
-#                                                         response = response,
-#                                                         weights = weights,
-#                                                         fixed_term_model_bayesian = fixed_term_model_bayesian,
-#                                                         rand_term_model_bayesian = rand_term_model_bayesian,
-#                                                         pheno_data = pheno_clean[["pheno_clean_data"]],
-#                                                         gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
-#                                                         omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
-#                                                         omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
-#                                                         omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
-#                                                         gen_name = gen_name,
-#                                                         nIter = nIter,
-#                                                         burnIn = burnIn,
-#                                                         thin = thin,
-#                                                         heter_groups = heter_groups,
-#                                                         omics_kernel_label = omics_kernel_label,
-#                                                         CI_width_thresholds = CI_width_thresholds,
-#                                                         confidence_level = confidence_level,
-#                                                         high_reliability_thres = high_reliability_thres,
-#                                                         low_reliability_thres = low_reliability_thres,
-#                                                         n_components = n_components,
-#                                                         threshold = threshold,
-#                                                         target = "test_set",
-#                                                         cross_validation = FALSE,
-#                                                         confidence_level = confidence_level,
-#                                                         #iqr_multiplier = iqr_multiplier,
-#                                                         interval_width_low_threshold = interval_width_low_threshold,
-#                                                         interval_width_high_threshold = interval_width_high_threshold,
-#                                                         interval_width_moderate_threshold = interval_width_moderate_threshold)
-#
-#        res_model_output  # Return the model object if everything is successful
-#        }, error = function(e) {
-#          #
-#          cat("Error:", conditionMessage(e), "\n")
-#          return(NULL)  # Return NULL
-#        })
-#
-#        if(!is.null(bayes_RKHS_GBLUP_BRR_mod_process)){
-#        # Compute summary statistics and plot accuracy
-#          res_model_output <- bayes_RKHS_GBLUP_BRR_mod_process
-#          #[["bayes_result"]]
-#          bayes_GBLUP_summary_stat_process <- tryCatch({
-#        res_summary_stat <- summary_statistics_bayes(mod = res_model_output[["bayes_model"]],
-#                                                     eval_metrics = eval_metrics,
-#                                                     model_result = res_model_output[["bayes_result"]],
-#                                                     GS_model = GS_model,
-#                                                     gen_name = gen_name,
-#                                                     CI_width_thresholds = CI_width_thresholds,
-#                                                     confidence_level = confidence_level,
-#                                                     high_reliability_thres = high_reliability_thres,
-#                                                     low_reliability_thres = low_reliability_thres,
-#                                                     system_database = system_database)
-#        #res_plot <- plot_acc(mod = res_model_output[["bayes_model"]], response = response)
-#
-#        res_summary_stat  # Return the model object if everything is successful
-#          }, error = function(e) {
-#            #
-#            cat("Error:", conditionMessage(e), "\n")
-#            return(NULL)  # Return NULL
-#          })
-#
-#          if(!is.null(bayes_GBLUP_summary_stat_process)){
-#            res_summary_stat <- bayes_GBLUP_summary_stat_process
-#            if("diagnostic_tst_plot"%in%names(res_summary_stat)){
-#
-#              #res_model_output[["diagnostic_plots"]] <- res_summary_stat[["diagnostic_tst_plot"]]
-#
-#              res_summary_stat <- res_summary_stat[!names(res_summary_stat) %in% "diagnostic_tst_plot"]
-#            }
-#          } else {
-#            res_summary_stat <- NULL
-#            cat(sprintf("Bayesian %s summary statistics failed.\n", GS_model))
-#
-#          }
-#
-#        } else {
-#          cat(sprintf("Bayesian %s summary statistics failed.\n", GS_model))
-#
-#          res_model_output <- NULL
-#          res_summary_stat <- NULL
-#        }
-#
-#        ### This part is for GBLUP_BRR
-#        # if(exists("GS_modeluse")){
-#        #   GS_model <-  GS_modeluse
-#        # }
-#
-#        # output <- list(GS_model = GS_model,
-#        #                res_model_output = res_model_output,
-#        #                res_summary_stat = res_summary_stat,
-#        #                geno_qc_stat =geno_qc_stat
-#        # )
-#
-#      } else {
-#        if (GS_model == "GBLUP" && engine == 'asreml') {
-#
-#          result_asreml_mod <- tryCatch({
-#            # Run GBLUP model with ASReml
-#            mod <- asreml_utilis_new(
-#              fixed = fixed,
-#              random = random,
-#              cova = cova,
-#              GS_model = GS_model,
-#              response = response,
-#              pheno_data = pheno_clean[["pheno_clean_data"]],
-#              gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
-#              omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
-#              omic2_kernel = if("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
-#              omic3_kernel = if("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
-#              gen_name = gen_name,
-#              heter_groups = heter_groups,
-#              heter_resid = heter_resid,
-#              var_cov_str = var_cov_str,
-#              weights = weights,
-#              pworkspace = pworkspace,
-#              workspace = workspace,
-#              maxit = maxit,
-#              inverse = inverse,
-#              epsilon = epsilon,
-#              cross_validation = FALSE,
-#              engine = engine
-#            )
-#
-#            mod  # Return the model object if everything is successful
-#          }, error = function(e) {
-#            # this Handle the error, a message will be printed a message. though other actions can be taking
-#            cat("Error:", conditionMessage(e), "\n")
-#            return(NULL)  # Return NULL or an appropriate value to indicate the failure
-#          })
-#
-#          if (is.null(result_asreml_mod)) {
-#            cat(paste(msg, "Model fitting failed due to convergence problem.\n"))
-#            res_model_output <- NULL
-#            res_summary_stat <- NULL
-#            res_comp_checkk <- NULL
-#          } else {
-#            mod <- result_asreml_mod
-#
-#            # Extract model output for ASReml
-#            vc <-  summary(mod$model)$varcomp
-#
-#            res_comp_checkk <- tryCatch({
-#              VAR_check_Pos <- which(vc$bound == "?" | vc$bound == "S")
-#              if (length(VAR_check_Pos) > 0) {
-#                unstable_components <- paste("variance component for", paste(rownames(vc)[VAR_check_Pos], collapse = " and"), "is unstable, refix the model")
-#                stop(unstable_components, call. = FALSE)
-#              }
-#              vc  # Return the variance components if no error
-#            },
-#            error = function(e) {
-#              # this Handle the error, a message will be printed a message. though other actions can be taking
-#              cat("Error:", conditionMessage(e), "\n")
-#              return(NULL)  # Return NULL
-#            })
-#
-#          }
-#
-#
-#          if(!is.null(res_comp_checkk)){
-#
-#     asreml_mod_output_process <- tryCatch({
-#          res_model_output <- asreml_mod_output_new(
-#            mod_asreml = mod,
-#            pheno_data = pheno_clean[["pheno_clean_data"]],
-#            gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
-#            omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
-#            omic2_kernel = if ("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
-#            omic3_kernel = if ("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
-#            heter_groups = heter_groups,
-#            gen_name = gen_name,
-#            response = response,
-#            var_cov_str = var_cov_str,
-#            heter_resid = heter_resid,
-#            pworkspace = pworkspace,
-#            workspace = workspace,
-#            maxit = maxit
-#          )
-#
-#          res_model_output  # Return the model object if everything is successful
-#     }, error = function(e) {
-#       # Handle the error, you can print a message or take other actions
-#       cat(paste(msg, "Error:", conditionMessage(e), "\n"))
-#       return(NULL)  # Return NULL or an appropriate value to indicate the failure
-#     })
-#
-#     if(!is.null(asreml_mod_output_process)){
-#       res_model_output <- asreml_mod_output_process
-#       asreml_summary_stat_process <- tryCatch({
-#          res_summary_stat <- summary_statistics_asreml(mod =  res_model_output[["Asreml_model"]],
-#                                                        response = response,
-#                                                        pheno_data = pheno_clean[["pheno_clean_data"]],
-#                                                        heter_groups = heter_groups,
-#                                                        GID_names = res_model_output[["Predicted_value"]][gen_name],
-#                                                        predicted_value =  if("Predicted_value"%in%colnames(res_model_output[["Predicted_value"]])) res_model_output[["Predicted_value"]]["Predicted_value"] else res_model_output[["Predicted_value"]]["BLUP"],
-#                                                        standard_errors = res_model_output[["Predicted_value"]]["Standard_error"],
-#                                                        prediction_error_var = res_model_output[["Predicted_value"]]["Prediction_error_variance"],
-#                                                        #genetic_var = var(res_model_output[["Predicted_value"]]["Predicted_value"]),
-#                                                        genetic_var = sum(res_model_output[["Variance_components"]]["genetic_variance", "Components"]),
-#                                                        pred_heter_groups = NULL,
-#                                                        variance_components = res_model_output[["Variance_components"]],
-#                                                        eval_metrics = eval_metrics,
-#                                                        gen_name = gen_name,
-#                                                        CI_width_thresholds = CI_width_thresholds,
-#                                                        confidence_level = confidence_level,
-#                                                        high_reliability_thres = high_reliability_thres,
-#                                                        low_reliability_thres = low_reliability_thres,
-#                                                        system_database = system_database)
-#
-#          res_summary_stat  # Return the model object if everything is successful
-#       }, error = function(e) {
-#         # Handle the error, you can print a message or take other actions
-#         cat(paste(msg, "Error:", conditionMessage(e), "\n"))
-#         return(NULL)  # Return NULL or an appropriate value to indicate the failure
-#       })
-#
-#       if(!is.null(asreml_summary_stat_process)){
-#         res_summary_stat <- asreml_summary_stat_process
-#         if("diagnostic_tst_plot"%in%names(res_summary_stat)){
-#
-#           res_model_output[["diagnostic_plots"]] <- res_summary_stat[["diagnostic_tst_plot"]]
-#
-#           res_summary_stat <- res_summary_stat[!names(res_summary_stat) %in% "diagnostic_tst_plot"]
-#         }
-#       } else{
-#         cat(paste(msg, "Error processing summary statistics for asreml result.\n"))
-#         res_summary_stat <- NULL
-#       }
-#
-#     } else {
-#       cat(paste(msg, "Error processing the output of asreml result.\n"))
-#       res_model_output <- NULL
-#       res_summary_stat <- NULL
-#
-#     }
-#
-#          } else {
-#            res_model_output <- NULL
-#            res_summary_stat <- NULL
-#
-#          }
-#
-#          # output <- list(GS_model = GS_model,
-#          #                res_model_output = res_model_output,
-#          #                res_summary_stat = res_summary_stat,
-#          #                geno_qc_stat =geno_qc_stat
-#          # )
-#
-#        }
-#      }
-#    }
-#    #### END GBLUP_RKHS, GBLUP_BRR and GBLUP (asreml)
-#
-#    ######################################################
-#    ######################################################
-#    ##                                                 ###
-#    ## Machine Learning Models                         ###
-#    ##                                                 ###
-#    ######################################################
-#    ######################################################
-#
-#    if (GS_model %in% AI_valid_models) {
-#      if (length(unique(pheno_clean[["pheno_clean_data"]][, gen_name])) > length(pheno_clean[["pheno_clean_data"]][, gen_name])) {
-#        stop(paste(msg, GS_model, 'only works for single location/enviroment.'), call. = FALSE)
-#      }
-#
-#      # Helper function for Xgboost
-#      run_xgboost <- function() {
-#        tryCatch({
-#          AI_Xgb(
-#            pheno_object = ml_dat_res[["pheno_clean_data"]],
-#            response = response,
-#            geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#            geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#            message = message,
-#            gen_name = gen_name,
-#            scaling = scaling,
-#            centering = centering,
-#            omic_count = ml_dat_res[["omic_count"]],
-#            AI_cv_nfolds = AI_cv_nfolds,
-#            para_tunning = para_tunning,
-#            xgb_paras_tunning = xgb_paras_tunning,
-#            resample_method_tune = resample_method_tune,
-#            number_of_fold_tune = number_of_fold_tune,
-#            learning_rate = learning_rate,
-#            xgb_gamma = xgb_gamma,
-#            xgb_lambda = xgb_lambda,
-#            xgb_alpha = xgb_alpha,
-#            max_depth = max_depth,
-#            subsample = subsample,
-#            xgb_booster = xgb_booster,
-#            colsample_bytree = colsample_bytree,
-#            alpha = alpha,
-#            lambda = lambda,
-#            iteration = iteration,
-#            xgb_rate_drop = xgb_rate_drop,
-#            xgb_skip_drop = xgb_skip_drop,
-#            xgb_objective = xgb_objective,
-#            xgb_sample_type = xgb_sample_type,
-#            xgb_normalize_type = xgb_normalize_type,
-#            early_stop_for_iteration_xgb = early_stop_for_iteration_xgb,
-#            N_feature_impo = N_feature_impo,
-#            CI_width_thresholds = CI_width_thresholds,
-#            high_reliability_thres = high_reliability_thres,
-#            low_reliability_thres = low_reliability_thres,
-#            n_components = n_components,
-#            threshold = threshold,
-#            target = "test_set",
-#            interval_width_low_threshold = interval_width_low_threshold,
-#            interval_width_high_threshold = interval_width_high_threshold,
-#            interval_width_moderate_threshold = interval_width_moderate_threshold,
-#            n_bootstrap = n_bootstrap
-#          )
-#        }, error = function(e) {
-#          cat(paste(msg, "Error in Xgboost model:", conditionMessage(e), "\n"))
-#          NULL
-#        })
-#      }
-#
-#      # Helper function for RandomForest
-#      run_random_forest <- function() {
-#        tryCatch({
-#          AI_randomForest(
-#            pheno_object = ml_dat_res[["pheno_clean_data"]],
-#            response = response,
-#            geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#            geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#            message = message,
-#            gen_name = gen_name,
-#            scaling = scaling,
-#            centering = centering,
-#            omic_count = ml_dat_res[["omic_count"]],
-#            AI_cv_nfolds = AI_cv_nfolds,
-#            para_tunning = para_tunning,
-#            rf_paras_tunning = rf_paras_tunning,
-#            ntree = ntree,
-#            mtry = mtry,
-#            maxnodes = maxnodes,
-#            importance = importance,
-#            CI_width_thresholds = CI_width_thresholds,
-#            high_reliability_thres = high_reliability_thres,
-#            low_reliability_thres = low_reliability_thres,
-#            n_components = n_components,
-#            threshold = threshold,
-#            target = "test_set",
-#            interval_width_low_threshold = interval_width_low_threshold,
-#            interval_width_high_threshold = interval_width_high_threshold,
-#            interval_width_moderate_threshold = interval_width_moderate_threshold,
-#            n_bootstrap = n_bootstrap
-#          )
-#        }, error = function(e) {
-#          cat(paste(msg,"Error in RandomForest model:", conditionMessage(e), "\n"))
-#          NULL
-#        })
-#      }
-#
-#      # Helper function for PartialLeastSquare
-#      run_pls <- function() {
-#        tryCatch({
-#          AI_pls(
-#            pheno_object = ml_dat_res[["pheno_clean_data"]],
-#            response = response,
-#            geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#            geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#            message = message,
-#            gen_name = gen_name,
-#            scaling = scaling,
-#            centering = centering,
-#            omic_count = ml_dat_res[["omic_count"]],
-#            para_tunning = para_tunning,
-#            ncomp = ncomp,
-#            pls_paras_tunning = pls_paras_tunning,
-#            resample_method_tune = resample_method_tune,
-#            N_feature_impo = N_feature_impo,
-#            CI_width_thresholds = CI_width_thresholds,
-#            high_reliability_thres = high_reliability_thres,
-#            low_reliability_thres = low_reliability_thres,
-#            n_components = n_components,
-#            threshold = threshold,
-#            target = "test_set",
-#            interval_width_low_threshold = interval_width_low_threshold,
-#            interval_width_high_threshold = interval_width_high_threshold,
-#            interval_width_moderate_threshold = interval_width_moderate_threshold,
-#            n_bootstrap = n_bootstrap
-#          )
-#        }, error = function(e) {
-#          cat(paste(msg, "Error in PartialLeastSquare model:", conditionMessage(e), "\n"))
-#          NULL
-#        })
-#      }
-#
-#      # Helper function for SupportVectorMachine
-#      run_svm <- function() {
-#        tryCatch({
-#          AI_svm(
-#            pheno_object = ml_dat_res[["pheno_clean_data"]],
-#            response = response,
-#            geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#            geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#            message = message,
-#            gen_name = gen_name,
-#            scaling = scaling,
-#            centering = centering,
-#            omic_count = ml_dat_res[["omic_count"]],
-#            AI_cv_nfolds = AI_cv_nfolds,
-#            para_tunning = para_tunning,
-#            svm_paras_tunning = svm_paras_tunning,
-#            svm_type = svm_type,
-#            svm_kernel = svm_kernel,
-#            sigma_value = sigma_value,
-#            C_value = C_value,
-#            degree_value = degree_value,
-#            scale_value = scale_value,
-#            offset_value = offset_value,
-#            gamma_value = gamma_value,
-#            CI_width_thresholds = CI_width_thresholds,
-#            high_reliability_thres = high_reliability_thres,
-#            low_reliability_thres = low_reliability_thres,
-#            n_components = n_components,
-#            threshold = threshold,
-#            target = "test_set",
-#            interval_width_low_threshold = interval_width_low_threshold,
-#            interval_width_high_threshold = interval_width_high_threshold,
-#            interval_width_moderate_threshold = interval_width_moderate_threshold,
-#            n_bootstrap = n_bootstrap
-#          )
-#        }, error = function(e) {
-#          cat(paste(msg, "Error in SupportVectorMachine model:", conditionMessage(e), "\n"))
-#          NULL
-#        })
-#      }
-#
-#      # Helper function for K-NearestNeighbors
-#      run_knn <- function() {
-#        tryCatch({
-#          AI_knn(
-#            pheno_object = ml_dat_res[["pheno_clean_data"]],
-#            response = response,
-#            geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#            geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#            message = message,
-#            gen_name = gen_name,
-#            scaling = scaling,
-#            centering = centering,
-#            omic_count = ml_dat_res[["omic_count"]],
-#            AI_cv_nfolds = AI_cv_nfolds,
-#            para_tunning = para_tunning,
-#            knn_paras_tunning = knn_paras_tunning,
-#            k = k,
-#            CI_width_thresholds = CI_width_thresholds,
-#            high_reliability_thres = high_reliability_thres,
-#            low_reliability_thres = low_reliability_thres,
-#            n_components = n_components,
-#            threshold = threshold,
-#            target = "test_set",
-#            interval_width_low_threshold = interval_width_low_threshold,
-#            interval_width_high_threshold = interval_width_high_threshold,
-#            interval_width_moderate_threshold = interval_width_moderate_threshold,
-#            n_bootstrap = n_bootstrap
-#          )
-#        }, error = function(e) {
-#          cat(paste(msg, "Error in K-NearestNeighbors model:", conditionMessage(e), "\n"))
-#          NULL
-#        })
-#      }
-#
-#      # Helper function for Lasso
-#      run_lasso <- function() {
-#        tryCatch({
-#          AI_RidgeRegression_Lasso(
-#            pheno_object = ml_dat_res[["pheno_clean_data"]],
-#            response = response,
-#            geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#            geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#            gen_name = gen_name,
-#            para_tunning = para_tunning,
-#            AI_cv_nfolds = AI_cv_nfolds,
-#            lasso_paras_tunning = lasso_paras_tunning,
-#            message = message,
-#            scaling = scaling,
-#            centering = centering,
-#            omic_count = ml_dat_res[["omic_count"]],
-#            GS_model = GS_model,
-#            lambda_rr = lambda_rr,
-#            CI_width_thresholds = CI_width_thresholds,
-#            high_reliability_thres = high_reliability_thres,
-#            low_reliability_thres = low_reliability_thres,
-#            n_components = n_components,
-#            threshold = threshold,
-#            target = "test_set",
-#            interval_width_low_threshold = interval_width_low_threshold,
-#            interval_width_high_threshold = interval_width_high_threshold,
-#            interval_width_moderate_threshold = interval_width_moderate_threshold,
-#            n_bootstrap = n_bootstrap
-#          )
-#        }, error = function(e) {
-#          cat(paste(msg, "Error in Lasso model:", conditionMessage(e), "\n"))
-#          NULL
-#        })
-#      }
-#
-#      # Helper function for Ridge Regression
-#      run_ridge_regression <- function() {
-#        tryCatch({
-#          AI_RidgeRegression_Lasso(
-#            pheno_object = ml_dat_res[["pheno_clean_data"]],
-#            response = response,
-#            geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#            geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#            gen_name = gen_name,
-#            para_tunning = para_tunning,
-#            AI_cv_nfolds = AI_cv_nfolds,
-#            lasso_paras_tunning = rr_paras_tunning,
-#            message = message,
-#            scaling = scaling,
-#            centering = centering,
-#            omic_count = ml_dat_res[["omic_count"]],
-#            GS_model = GS_model,
-#            lambda_rr = lambda_rr,
-#            CI_width_thresholds = CI_width_thresholds,
-#            high_reliability_thres = high_reliability_thres,
-#            low_reliability_thres = low_reliability_thres,
-#            n_components = n_components,
-#            threshold = threshold,
-#            target = "test_set",
-#            interval_width_low_threshold = interval_width_low_threshold,
-#            interval_width_high_threshold = interval_width_high_threshold,
-#            interval_width_moderate_threshold = interval_width_moderate_threshold,
-#            n_bootstrap = n_bootstrap
-#          )
-#        }, error = function(e) {
-#          cat(paste(msg, "Error in Ridge Regression model:", conditionMessage(e), "\n"))
-#          NULL
-#        })
-#      }
-#
-#      # Helper function for deep learning model
-#      #run_deep_learning <- function() {
-#
-#        # workers <- future::nbrOfWorkers()
-#        # cores   <- parallel::detectCores(logical =TRUE)
-#        # intra   <-  as.integer(max(1L, floor(cores / workers)))
-#        # inter   <- 1L
-#
-#        # Sys.setenv(OMP_NUM_THREADS = intra)
-#        # Sys.setenv(MKL_NUM_THREADS = intra)
-#
-#        ##### Tell what  TF will obey for resource usage
-#        # if (reticulate::py_module_available("tensorflow")) {
-#        #   tf <- reticulate::import("tensorflow", delay_load = TRUE)
-#        #   tf$config$threading$set_intra_op_parallelism_threads(intra)
-#        #   tf$config$threading$set_inter_op_parallelism_threads(inter)
-#        # }
-#     if (GS_model %in% dl_models) {
-#        res_model_output <- tryCatch({
-#          deep_learning_model(
-#            pheno_object = ml_dat_res[["pheno_clean_data"]],
-#            geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#            geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-#            response = response,
-#            gen_name = gen_name,
-#            ####
-#            optimizer_name = optimizer_name,
-#            use_amp        = use_amp,
-#            max_grad_norm  = max_grad_norm,
-#            auto_class_weights = auto_class_weights,
-#            cnn_neurons_per_layer = cnn_neurons_per_layer,
-#            cnn_kernel_size = cnn_kernel_size,
-#            cnn_dense_layers = cnn_dense_layers,
-#            cnn_use_max_pool = cnn_use_max_pool,
-#            cnn_pool_kernel = cnn_pool_kernel,
-#            cnn_pool_stride = cnn_pool_stride,
-#            cnn_pool_padding = cnn_pool_padding,
-#            cnn_learning_rate = cnn_learning_rate,
-#            cnn_separable = cnn_separable,
-#            cnn_dilations = cnn_dilations,
-#            cnn_use_se = cnn_use_se,
-#            cnn_norm_type = cnn_norm_type,
-#            cnn_pool_type = cnn_pool_type,
-#            cnn_use_global_pool = cnn_use_global_pool,
-#            ##### resnet
-#            resnet_neurons_per_block = resnet_neurons_per_block,
-#            resnet_blocks = resnet_blocks,
-#            resnet_learning_rate = resnet_learning_rate,
-#            #### ft_transformer
-#            ft_d_model = ft_d_model,
-#            ft_heads = ft_heads,
-#            ft_layers = ft_layers,
-#            ft_ff_mult = ft_ff_mult,
-#            ft_dropout = ft_dropout,
-#            ft_token_dropout = ft_token_dropout,
-#            ft_use_cls = ft_use_cls,
-#            #### saint
-#            saint_d_model = saint_d_model,
-#            saint_heads = saint_heads,
-#            saint_layers = saint_layers,
-#            saint_ff_mult = saint_ff_mult,
-#            saint_dropout = saint_dropout,
-#            saint_token_dropout = saint_token_dropout,
-#            saint_use_cls = saint_use_cls,
-#            ###### Grouping controls (FT/SAINT and NAM/MoE)
-#            use_grouping = use_grouping,
-#            group_trigger = group_trigger,
-#            group_method = group_method,
-#            init_group_size = init_group_size,
-#            max_tokens = max_tokens,
-#            kmeans_batch = kmeans_batch,
-#            kmeans_iter = kmeans_iter,
-#            #### tabnet
-#            tabnet_steps = tabnet_steps,
-#            tabnet_feature_dim = tabnet_feature_dim,
-#            tabnet_output_dim = tabnet_output_dim,
-#            tabnet_gamma = tabnet_gamma,
-#            tabnet_lambda_sparse = tabnet_lambda_sparse,
-#            #### node
-#            node_trees = node_trees,
-#            node_depth = node_depth,
-#            #### deepfm
-#            deepfm_k = deepfm_k,
-#            deepfm_hidden = deepfm_hidden,
-#            #### dcnv2
-#            dcn_layers = dcn_layers,
-#            dcn_hidden = dcn_hidden,
-#            #### nam
-#            nam_hidden = nam_hidden,
-#            nam_activation = nam_activation,
-#            nam_add_linear = nam_add_linear,
-#            nam_l1 = nam_l1,
-#            ### moe
-#            moe_n_experts = moe_n_experts,
-#            moe_expert_hidden = moe_expert_hidden,
-#            moe_gate_hidden = moe_gate_hidden,
-#            moe_temperature = moe_temperature,
-#            moe_sparse_topk = moe_sparse_topk,
-#            moe_entropy_reg = moe_entropy_reg,
-#            ### gp_dkl/RFF knobs
-#            gp_use_variational = gp_use_variational,
-#            gp_num_inducing = gp_num_inducing,
-#            gp_feature_dim = gp_feature_dim,
-#            gp_kernel = gp_kernel,
-#            gp_ard = gp_ard,
-#            gp_lr_mult = gp_lr_mult,
-#            rff_features = rff_features,
-#            rff_lengthscale = rff_lengthscale,
-#            rff_deep_hidden = rff_deep_hidden,
-#            ##### General dp
-#            model_type = model_type,
-#            epochs = epochs,
-#            batch_size = batch_size,
-#            dropout = dropout,
-#            l2_weight_decay = l2_weight_decay,
-#            l2_regularizer_dp = l2_regularizer_dp,
-#            dropout_rate = dropout_rate,
-#            batch_norm = batch_norm,
-#            validation_split = validation_split,
-#            compile_model = compile_model,
-#            deterministic = deterministic,
-#            random_seed = random_seed,
-#            device = device,
-#            #### mlp and attention
-#            mlp_neurons_per_layer = mlp_neurons_per_layer,
-#            mlp_learning_rate = mlp_learning_rate,
-#            final_attention = final_attention,
-#            attention_across_multiple_layers = attention_across_multiple_layers,
-#            heteroscedastic = heteroscedastic,
-#            #num_hidden_layers = num_hidden_layers,
-#            #neurons_per_layer = neurons_per_layer,
-#            #learning_rate_dp = learning_rate_dp,
-#            #l2_regularizer_dp = l2_regularizer_dp,
-#            #batch_normalization = batch_normalization,
-#            #dropout_rate = dropout_rate,
-#            #epochs = epochs,
-#            #batch_size = batch_size,
-#            #n_blocks = n_blocks,
-#            #n_neurons_per_block = n_neurons_per_block,
-#            #validation_split = validation_split,
-#            early_stop = early_stop,
-#            #kernel_size = kernel_size,
-#            #deep_learning_model = deep_learning_modell,
-#            #attention_on_final_layer = attention_on_final_layer,
-#            #attention_across_multiple_layers = attention_across_multiple_layers,
-#            message = message,
-#            scaling = scaling,
-#            centering = centering,
-#            omic_count = ml_dat_res[["omic_count"]],
-#            para_tunning = if(cross_validation) para_tunning = FALSE else para_tunning,
-#            param_grid = if(cross_validation) dpl_paras_tunning = NULL else dpl_paras_tunning,
-#            CI_width_thresholds = CI_width_thresholds,
-#            high_reliability_thres = high_reliability_thres,
-#            low_reliability_thres = low_reliability_thres,
-#            threshold = threshold,
-#            target = "test_set",
-#            interval_width_low_threshold = interval_width_low_threshold,
-#            interval_width_high_threshold = interval_width_high_threshold,
-#            interval_width_moderate_threshold = interval_width_moderate_threshold,
-#            n_bootstrap = n_bootstrap,
-#            crossval = FALSE
-#          )
-#        }, error = function(e) {
-#          cat(paste(msg, "Error in deep learning model:", conditionMessage(e), "\n"))
-#          NULL
-#        })
-#      #}
-#
-#    } else{
-#      # Main switch statement to run the appropriate model
-#      res_model_output <- switch(GS_model,
-#                                 "Xgboost" = run_xgboost(),
-#                                 "RandomForest" = run_random_forest(),
-#                                 "PartialLeastSquare" = run_pls(),
-#                                 "SupportVectorMachine" = run_svm(),
-#                                 "K-NearestNeighbors" = run_knn(),
-#                                 "Lasso" = run_lasso(),
-#                                 "Ridge_Regression" = run_ridge_regression(),
-#                                 #"deep_learning_model" = run_deep_learning(),
-#                                 {
-#                                   stop(paste(msg, "Select method to calculate geno_omic relationship matrix"), call. = FALSE)
-#                                 })
-#
-# }
-# #if(GS_model == "deep_learning_model") GS_model <- as.character(task_row$model)
-#     ######
-#      # Check the result of the model fitting process
-#      if (is.null(res_model_output)) {
-#        cat(paste(msg, paste(GS_model, "model fitting for failed due to an error.\n")))
-#        res_summary_stat <- NULL
-#      } else {
-#        AI_summary_stat_process <- tryCatch({
-#          res_summary_stat <- summary_statistics_AI(predicted_object = res_model_output[["predicted_values"]],
-#                                                    pheno_object = ml_dat_res[["pheno_clean_data"]],
-#                                                    response = response,
-#                                                    test_set = ml_dat_res[["test_set"]],
-#                                                    geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-#                                                    eval_metrics = eval_metrics,
-#                                                    model_parameters = res_model_output[["model_parameters"]],
-#                                                    GS_model = GS_model)
-#
-#          res_summary_stat  # Return the model object if everything is successful
-#        }, error = function(e) {
-#          # Handle the error, you can print a message or take other actions
-#          cat(paste(msg, "Error:", conditionMessage(e), "\n"))
-#          return(NULL)  # Return NULL or an appropriate value to indicate the failure
-#        })
-#
-#        if(!is.null(AI_summary_stat_process)){
-#          res_summary_stat <- AI_summary_stat_process
-#        }else{
-#          cat(paste(msg,"Error processing the output of machine learning model result.\n"))
-#          res_summary_stat <- NULL
-#        }
-#      }
-#
-#    }
-#    ### End machine learning
-#    list(GS_model = GS_model,res_model_output = res_model_output,
-#         res_summary_stat = res_summary_stat, geno_qc_stat = geno_qc_stat)
-#    #}) ## new with chunk parallel
-#    #list(output =  output)
-#  })
-#
-#  # , future.seed = TRUE)
-#
-#    ### new for chunk parallel processing
-#    # Flatten results
-#    #results <- unlist(results, recursive = FALSE)
-#    ## ends
-#
-#  future::plan("sequential")
-#  if(!is.null(best_models)){
-#    names(results) <- best_models[["trait"]]
-#
-#  } else {
-#    names(results) <- response
-#  }
 
  # -------- TRUE PREDICTION: smart parallel, python-safe, no DP renaming --------
 
@@ -3428,28 +3467,77 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
 
 
  # (Re)canonicalize best_models$model for policy checks & DP routing
- best_models$model <- replace_with_canonical(best_models$model, canonical_names, friendly_names)
+ best_models$model <- gp_canonicalize_supported_model_names(best_models$model)
 
- friendly_name_lookup <- setNames(
-   rep(friendly_names, 2),
-   c(friendly_names, canonical_names)
- )
+ friendly_name_lookup <- gp_model_friendly_lookup()
 
- # Reticulate/Python init (same pattern you used in CV)
+ # Reticulate/Python init is not used for direct CLI ML/DL/GP model paths.
  gp_py_bin <- gp_detect_python()
- init_py   <- function() gp_init_python_once(gp_py_bin)
+ direct_cli_prediction_models <- unique(c(AI_valid_models, gp_valid_models, gp_parallel_r_only_models()))
+ init_py <- function(model = NULL) {
+   if (!is.null(model) && as.character(model) %in% direct_cli_prediction_models) {
+     return(invisible(TRUE))
+   }
+   gp_init_python_once(gp_py_bin)
+ }
 
  # One runner per best-model row (single source of truth)
+ outer_fixed <- fixed
+ # Keep the complete prepared kernel bank in the task-local context.  The
+ # individual canonical matrices below are insufficient for user-supplied
+ # `kernel_list` entries, and parallel/task serialization does not guarantee
+ # that an unreferenced parent-frame object remains available.
+ outer_kernel_bank <- gmatrix_kernel_model_ready_list
  run_one_best <- function(i) {
-   init_py()  # ensure numpy/tf are available in each worker
-
    task_row <- best_models[i, ]
-   response <- as.character(task_row$trait)
-   GS_model <- as.character(task_row$model)   # keep canonical if DP
+  response <- as.character(task_row$trait)
+  GS_model <- as.character(task_row$model)   # keep canonical if DP
+  task_feature_k <- if ("feature_k" %in% names(task_row) && !is.na(task_row$feature_k)) {
+    as.integer(task_row$feature_k)
+  } else {
+    NULL
+  }
+  feature_k <- feature_k %||% task_feature_k
+  init_py(GS_model)
 
-   # per-task deterministic seed (same scheme you had)
-   new_seed <- (123L + i * 10000L) %% .Machine$integer.max
-   set.seed(new_seed)
+   # Carry outer execution settings into the task environment so downstream
+   # helpers receive the same scalar configuration used by model_execute().
+   engine <- engine
+   gen_name <- gen_name
+   pheno_clean <- pheno_clean
+   fixed <- outer_fixed
+   random <- random
+   cova <- cova
+   heter_groups <- heter_groups
+   heter_resid <- heter_resid
+   bayes_kernel_heter_resid <- bayes_kernel_heter_resid
+   var_cov_str <- var_cov_str
+   weights <- weights
+   pworkspace <- pworkspace
+   workspace <- workspace
+   maxit <- maxit
+   inverse <- inverse
+   epsilon <- epsilon
+   message <- message
+   eval_metrics <- eval_metrics
+   system_database <- system_database
+   msg <- msg
+   CI_width_thresholds <- CI_width_thresholds
+   confidence_level <- confidence_level
+   high_reliability_thres <- high_reliability_thres
+   low_reliability_thres <- low_reliability_thres
+   friendly_name_lookup <- friendly_name_lookup
+   gmatrix_kernel_model_ready_list <- outer_kernel_bank
+
+   # Deterministic per-task seed derived from the public random_state.  Keeping
+   # the task offset preserves stable seeds within a multi-model run, while
+   # allowing independent Bayesian chains and reproducible alternative runs.
+   new_seed <- gp_model_task_seed(random_state, i)
+   # Pin the generator: parallel workers run L'Ecuyer-CMRG, under which the
+   # same seed gives a different MCMC chain than in the main process.
+   old_rng_kind_best <- RNGkind("Mersenne-Twister", "Inversion", "Rejection")
+   on.exit(do.call(RNGkind, as.list(old_rng_kind_best)), add = TRUE)
+   gp_set_seed(new_seed)
    options(random_state = new_seed)
 
    # Choose CI/calculation mode (Bayes vs ML) without mutating GS_model label
@@ -3459,7 +3547,7 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
    if (GS_model %in% AI_valid_models) {
      one_per_id <- (length(pheno_clean[["pheno_clean_data"]][, gen_name]) ==
                       length(unique(pheno_clean[["pheno_clean_data"]][, gen_name])))
-     if (!one_per_id) {
+     if (!one_per_id && !isTRUE(met_ml_dl && gp_is_met_ml_dl_model(GS_model))) {
        stop(paste(msg, GS_model, "only works for single location/environment."), call. = FALSE)
      }
    }
@@ -3470,673 +3558,149 @@ best_models_ggplot_mean <- cv_results_processed[["plot_mean_list"]][[metric_for_
 
    res_model_output <- NULL
    res_summary_stat <- NULL
-
-   if (length(pheno_clean[["pheno_clean_data"]][, gen_name]) ==
-       length(unique(pheno_clean[["pheno_clean_data"]][, gen_name]))) {
-
-     if ((GS_model %in% bayes_valid_models && is.null(rand_term_model_bayesian)) ||
-         (is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_valid_models)) ||
-         (!is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_valid_models))) {
-
-       bayes_A_B_C_BRR_mod_process <- tryCatch({
-         bayes_finalize_A_B_C_BL_BRR(
-           fixed = fixed,
-           random = random,
-           GS_model = GS_model,
-           response = response,
-           weights = weights,
-           fixed_term_model_bayesian = fixed_term_model_bayesian,
-           rand_term_model_bayesian  = rand_term_model_bayesian,
-           pheno_data = pheno_clean[["pheno_clean_data"]],
-           geno_data  = if("geno_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["geno_model_ready"]] else NULL,
-           omic1_data = if("omic1_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic1_model_ready"]] else NULL,
-           omic2_data = if("omic2_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic2_model_ready"]] else NULL,
-           omic3_data = if("omic3_model_ready" %in% names(geno_omic_model_ready_list)) geno_omic_model_ready_list[["omic3_model_ready"]] else NULL,
-           gen_name   = gen_name,
-           nIter = nIter, burnIn = burnIn, thin = thin,
-           omics_data_label = omics_data_label,
-           scaling = scaling,
-           CI_width_thresholds = CI_width_thresholds,
-           confidence_level    = confidence_level,
-           high_reliability_thres = high_reliability_thres,
-           low_reliability_thres  = low_reliability_thres,
-           n_components = n_components, threshold = threshold,
-           target = "test_set",
-           interval_width_high_threshold      = interval_width_high_threshold,
-           interval_width_low_threshold       = interval_width_low_threshold,
-           interval_width_moderate_threshold  = interval_width_moderate_threshold
-         )
-       }, error = function(e) { cat("Error:", conditionMessage(e), "\n"); NULL })
-
-       if (!is.null(bayes_A_B_C_BRR_mod_process)) {
-         res_model_output <- bayes_A_B_C_BRR_mod_process
-         bayes_summary_stat_process <- tryCatch({
-           summary_statistics_bayes(
-             mod = res_model_output[["bayes_model"]],
-             eval_metrics  = eval_metrics,
-             model_result  = res_model_output[["bayes_result"]],
-             GS_model      = GS_model,
-             gen_name      = gen_name,
-             CI_width_thresholds = CI_width_thresholds,
-             confidence_level    = confidence_level,
-             high_reliability_thres = high_reliability_thres,
-             low_reliability_thres  = low_reliability_thres,
-             system_database = system_database
-           )
-         }, error = function(e) { cat("Error:", conditionMessage(e), "\n"); NULL })
-
-         if (!is.null(bayes_summary_stat_process)) {
-           res_summary_stat <- bayes_summary_stat_process
-           if ("diagnostic_tst_plot" %in% names(res_summary_stat)) {
-             res_model_output[["diagnostic_plots"]] <- res_summary_stat[["diagnostic_tst_plot"]]
-             res_summary_stat <- res_summary_stat[!names(res_summary_stat) %in% "diagnostic_tst_plot"]
-           }
-         } else {
-           cat(sprintf("Bayesian %s summary statistics failed.\n", GS_model))
-         }
-       } else {
-         cat(sprintf("Bayesian %s model failed.\n", GS_model))
-       }
-     }
-   }
-
-   # -------------------- RKHS / GBLUP_BRR / GBLUP(asreml) --------------------
-   if (is.null(res_model_output) && (
-     (GS_model %in% c("RKHS","GBLUP_BRR","GBLUP") && is.null(rand_term_model_bayesian)) ||
-     (is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_gblup_valid_models)) ||
-     (!is.null(GS_model) && any(rand_term_model_bayesian %in% bayes_gblup_valid_models))
-   )) {
-
-     if (GS_model %in% c("BRR","RKHS","GBLUP_BRR")) {
-       bayes_RKHS_GBLUP_BRR_mod_process <- tryCatch({
-         bayes_finalize_RKHS_GBLUPBRR(
-           fixed = fixed, random = random, GS_model = if (GS_model == "GBLUP_BRR") "BRR" else GS_model,
-           response = response, weights = weights,
-           fixed_term_model_bayesian = fixed_term_model_bayesian, rand_term_model_bayesian = rand_term_model_bayesian,
-           pheno_data = pheno_clean[["pheno_clean_data"]],
-           gmatrix    = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
-           omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
-           omic2_kernel = if("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
-           omic3_kernel = if("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
-           gen_name  = gen_name, nIter = nIter, burnIn = burnIn, thin = thin,
-           heter_groups = heter_groups, omics_kernel_label = omics_kernel_label,
-           CI_width_thresholds = CI_width_thresholds, confidence_level = confidence_level,
-           high_reliability_thres = high_reliability_thres, low_reliability_thres = low_reliability_thres,
-           n_components = n_components, threshold = threshold, target = "test_set",
-           cross_validation = FALSE,
-           interval_width_low_threshold      = interval_width_low_threshold,
-           interval_width_high_threshold     = interval_width_high_threshold,
-           interval_width_moderate_threshold = interval_width_moderate_threshold
-         )
-       }, error = function(e) { cat("Error:", conditionMessage(e), "\n"); NULL })
-
-       if (!is.null(bayes_RKHS_GBLUP_BRR_mod_process)) {
-         res_model_output <- bayes_RKHS_GBLUP_BRR_mod_process
-         bayes_GBLUP_summary_stat_process <- tryCatch({
-           summary_statistics_bayes(
-             mod = res_model_output[["bayes_model"]],
-             eval_metrics  = eval_metrics,
-             model_result  = res_model_output[["bayes_result"]],
-             GS_model      = GS_model,
-             gen_name      = gen_name,
-             CI_width_thresholds = CI_width_thresholds,
-             confidence_level    = confidence_level,
-             high_reliability_thres = high_reliability_thres,
-             low_reliability_thres  = low_reliability_thres,
-             system_database = system_database
-           )
-         }, error = function(e) { cat("Error:", conditionMessage(e), "\n"); NULL })
-
-         if (!is.null(bayes_GBLUP_summary_stat_process)) {
-           res_summary_stat <- bayes_GBLUP_summary_stat_process
-           if ("diagnostic_tst_plot" %in% names(res_summary_stat)) {
-             res_summary_stat <- res_summary_stat[!names(res_summary_stat) %in% "diagnostic_tst_plot"]
-           }
-         } else {
-           cat(sprintf("Bayesian %s summary statistics failed.\n", GS_model))
-         }
-       }
-     } else if (GS_model == "GBLUP" && engine == "asreml") {
-       result_asreml_mod <- tryCatch({
-         asreml_utilis_new(
-           fixed = fixed, random = random, cova = cova, GS_model = GS_model, response = response,
-           pheno_data = pheno_clean[["pheno_clean_data"]],
-           gmatrix = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
-           omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
-           omic2_kernel = if("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
-           omic3_kernel = if("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
-           gen_name = gen_name, heter_groups = heter_groups,
-           heter_resid = heter_resid, var_cov_str = var_cov_str, weights = weights,
-           pworkspace = pworkspace, workspace = workspace, maxit = maxit, inverse = inverse, epsilon = epsilon,
-           cross_validation = FALSE, engine = engine
-         )
-       }, error = function(e) { cat("Error:", conditionMessage(e), "\n"); NULL })
-
-       if (!is.null(result_asreml_mod)) {
-         mod <- result_asreml_mod
-         vc  <- summary(mod$model)$varcomp
-         res_comp_checkk <- tryCatch({
-           VAR_check_Pos <- which(vc$bound == "?" | vc$bound == "S")
-           if (length(VAR_check_Pos) > 0) {
-             unstable_components <- paste("variance component for",
-                                          paste(rownames(vc)[VAR_check_Pos], collapse = " and"),
-                                          "is unstable, refix the model")
-             stop(unstable_components, call. = FALSE)
-           }
-           vc
-         }, error = function(e) { cat("Error:", conditionMessage(e), "\n"); NULL })
-
-         if (!is.null(res_comp_checkk)) {
-           asreml_mod_output_process <- tryCatch({
-             asreml_mod_output_new(
-               mod_asreml = mod,
-               pheno_data = pheno_clean[["pheno_clean_data"]],
-               gmatrix    = if("gmatrix_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] else NULL,
-               omic1_kernel = if("omic1_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] else NULL,
-               omic2_kernel = if("omic2_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] else NULL,
-               omic3_kernel = if("omic3_kernel_model_ready" %in% names(gmatrix_kernel_model_ready_list)) gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] else NULL,
-               heter_groups = heter_groups,
-               gen_name = gen_name, response = response,
-               var_cov_str = var_cov_str, heter_resid = heter_resid,
-               pworkspace = pworkspace, workspace = workspace, maxit = maxit
-             )
-           }, error = function(e) { cat(paste(msg, "Error:", conditionMessage(e), "\n")); NULL })
-
-           if (!is.null(asreml_mod_output_process)) {
-             res_model_output <- asreml_mod_output_process
-             asreml_summary_stat_process <- tryCatch({
-               summary_statistics_asreml(
-                 mod = res_model_output[["Asreml_model"]],
-                 response = response,
-                 pheno_data = pheno_clean[["pheno_clean_data"]],
-                 heter_groups = heter_groups,
-                 GID_names = res_model_output[["Predicted_value"]][gen_name],
-                 predicted_value = if ("Predicted_value" %in% colnames(res_model_output[["Predicted_value"]]))
-                   res_model_output[["Predicted_value"]]["Predicted_value"]
-                 else res_model_output[["Predicted_value"]]["BLUP"],
-                 standard_errors = res_model_output[["Predicted_value"]]["Standard_error"],
-                 prediction_error_var = res_model_output[["Predicted_value"]]["Prediction_error_variance"],
-                 genetic_var = sum(res_model_output[["Variance_components"]]["genetic_variance", "Components"]),
-                 pred_heter_groups = NULL,
-                 variance_components = res_model_output[["Variance_components"]],
-                 eval_metrics = eval_metrics,
-                 gen_name = gen_name,
-                 CI_width_thresholds = CI_width_thresholds,
-                 confidence_level    = confidence_level,
-                 high_reliability_thres = high_reliability_thres,
-                 low_reliability_thres  = low_reliability_thres,
-                 system_database = system_database
-               )
-             }, error = function(e) { cat(paste(msg, "Error:", conditionMessage(e), "\n")); NULL })
-
-             if (!is.null(asreml_summary_stat_process)) {
-               res_summary_stat <- asreml_summary_stat_process
-               if ("diagnostic_tst_plot" %in% names(res_summary_stat)) {
-                 res_model_output[["diagnostic_plots"]] <- res_summary_stat[["diagnostic_tst_plot"]]
-                 res_summary_stat <- res_summary_stat[!names(res_summary_stat) %in% "diagnostic_tst_plot"]
-               }
-             } else {
-               cat(paste(msg, "Error processing summary statistics for asreml result.\n"))
-             }
-           } else {
-             cat(paste(msg, "Error processing the output of asreml result.\n"))
-           }
-         }
-       } else {
-         # keep NULLs
-       }
-     }
-   }
-
-   # -------------------- ML / DP block --------------------
-   if (is.null(res_model_output) && GS_model %in% AI_valid_models) {
-
-     # Convenience helpers
-     run_xgboost <- function() { tryCatch({
-       AI_Xgb(
-         pheno_object = ml_dat_res[["pheno_clean_data"]],
-         response = response,
-         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-         geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-         message = message, gen_name = gen_name, scaling = scaling, centering = centering,
-         omic_count = ml_dat_res[["omic_count"]],
-         AI_cv_nfolds = AI_cv_nfolds, para_tunning = para_tunning, xgb_paras_tunning = xgb_paras_tunning,
-         resample_method_tune = resample_method_tune, number_of_fold_tune = number_of_fold_tune,
-         learning_rate = learning_rate, xgb_gamma = xgb_gamma, xgb_lambda = xgb_lambda, xgb_alpha = xgb_alpha,
-         max_depth = max_depth, subsample = subsample, xgb_booster = xgb_booster, colsample_bytree = colsample_bytree,
-         alpha = xgb_alpha, lambda = xgb_lambda, iteration = iteration, xgb_rate_drop = xgb_rate_drop, xgb_skip_drop = xgb_skip_drop,
-         xgb_objective = xgb_objective, xgb_sample_type = xgb_sample_type, xgb_normalize_type = xgb_normalize_type,
-         early_stop_for_iteration_xgb = early_stop_for_iteration_xgb,
-         N_feature_impo = N_feature_impo,
-         CI_width_thresholds = CI_width_thresholds,
-         high_reliability_thres = high_reliability_thres, low_reliability_thres = low_reliability_thres,
-         n_components = n_components, threshold = threshold, target = "test_set",
-         interval_width_low_threshold = interval_width_low_threshold,
-         interval_width_high_threshold = interval_width_high_threshold,
-         interval_width_moderate_threshold = interval_width_moderate_threshold,
-         n_bootstrap = n_bootstrap
-       )
-     }, error = function(e) { cat(paste(msg, "Error in Xgboost model:", conditionMessage(e), "\n")); NULL }) }
-
-     run_random_forest <- function() { tryCatch({
-       AI_randomForest(
-         pheno_object = ml_dat_res[["pheno_clean_data"]],
-         response = response,
-         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-         geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-         message = message, gen_name = gen_name, scaling = scaling, centering = centering,
-         omic_count = ml_dat_res[["omic_count"]],
-         AI_cv_nfolds = AI_cv_nfolds, para_tunning = para_tunning, rf_paras_tunning = rf_paras_tunning,
-         ntree = ntree, mtry = mtry, maxnodes = maxnodes, importance = importance,
-         CI_width_thresholds = CI_width_thresholds,
-         high_reliability_thres = high_reliability_thres, low_reliability_thres = low_reliability_thres,
-         n_components = n_components, threshold = threshold, target = "test_set",
-         interval_width_low_threshold = interval_width_low_threshold,
-         interval_width_high_threshold = interval_width_high_threshold,
-         interval_width_moderate_threshold = interval_width_moderate_threshold,
-         n_bootstrap = n_bootstrap
-       )
-     }, error = function(e) { cat(paste(msg,"Error in RandomForest model:", conditionMessage(e), "\n")); NULL }) }
-
-     run_pls  <- function() { tryCatch({
-       AI_pls(
-         pheno_object = ml_dat_res[["pheno_clean_data"]], response = response,
-         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-         geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-         message = message, gen_name = gen_name, scaling = scaling, centering = centering,
-         omic_count = ml_dat_res[["omic_count"]],
-         para_tunning = para_tunning, ncomp = ncomp, pls_paras_tunning = pls_paras_tunning,
-         resample_method_tune = resample_method_tune, N_feature_impo = N_feature_impo,
-         CI_width_thresholds = CI_width_thresholds,
-         high_reliability_thres = high_reliability_thres, low_reliability_thres = low_reliability_thres,
-         n_components = n_components, threshold = threshold, target = "test_set",
-         interval_width_low_threshold = interval_width_low_threshold,
-         interval_width_high_threshold = interval_width_high_threshold,
-         interval_width_moderate_threshold = interval_width_moderate_threshold,
-         n_bootstrap = n_bootstrap
-       )
-     }, error = function(e) { cat(paste(msg, "Error in PartialLeastSquare model:", conditionMessage(e), "\n")); NULL }) }
-
-     run_svm  <- function() { tryCatch({
-       AI_svm(
-         pheno_object = ml_dat_res[["pheno_clean_data"]], response = response,
-         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-         geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-         message = message, gen_name = gen_name, scaling = scaling, centering = centering,
-         omic_count = ml_dat_res[["omic_count"]],
-         AI_cv_nfolds = AI_cv_nfolds, para_tunning = para_tunning, svm_paras_tunning = svm_paras_tunning,
-         svm_type = svm_type, svm_kernel = svm_kernel, sigma_value = sigma_value, C_value = C_value,
-         degree_value = degree_value, scale_value = scale_value, offset_value = offset_value, gamma_value = gamma_value,
-         CI_width_thresholds = CI_width_thresholds,
-         high_reliability_thres = high_reliability_thres, low_reliability_thres = low_reliability_thres,
-         n_components = n_components, threshold = threshold, target = "test_set",
-         interval_width_low_threshold = interval_width_low_threshold,
-         interval_width_high_threshold = interval_width_high_threshold,
-         interval_width_moderate_threshold = interval_width_moderate_threshold,
-         n_bootstrap = n_bootstrap
-       )
-     }, error = function(e) { cat(paste(msg, "Error in SupportVectorMachine model:", conditionMessage(e), "\n")); NULL }) }
-
-     run_knn  <- function() { tryCatch({
-       AI_knn(
-         pheno_object = ml_dat_res[["pheno_clean_data"]], response = response,
-         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-         geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-         message = message, gen_name = gen_name, scaling = scaling, centering = centering,
-         omic_count = ml_dat_res[["omic_count"]],
-         AI_cv_nfolds = AI_cv_nfolds, para_tunning = para_tunning, knn_paras_tunning = knn_paras_tunning,
-         k = k,
-         CI_width_thresholds = CI_width_thresholds,
-         high_reliability_thres = high_reliability_thres, low_reliability_thres = low_reliability_thres,
-         n_components = n_components, threshold = threshold, target = "test_set",
-         interval_width_low_threshold = interval_width_low_threshold,
-         interval_width_high_threshold = interval_width_high_threshold,
-         interval_width_moderate_threshold = interval_width_moderate_threshold,
-         n_bootstrap = n_bootstrap
-       )
-     }, error = function(e) { cat(paste(msg, "Error in K-NearestNeighbors model:", conditionMessage(e), "\n")); NULL }) }
-
-     run_lasso <- function() { tryCatch({
-       AI_RidgeRegression_Lasso(
-         pheno_object = ml_dat_res[["pheno_clean_data"]], response = response,
-         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-         geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-         gen_name = gen_name, para_tunning = para_tunning, AI_cv_nfolds = AI_cv_nfolds,
-         lasso_paras_tunning = lasso_paras_tunning, message = message, scaling = scaling, centering = centering,
-         omic_count = ml_dat_res[["omic_count"]], GS_model = GS_model, lambda_rr = lambda_rr,
-         CI_width_thresholds = CI_width_thresholds,
-         high_reliability_thres = high_reliability_thres, low_reliability_thres = low_reliability_thres,
-         n_components = n_components, threshold = threshold, target = "test_set",
-         interval_width_low_threshold = interval_width_low_threshold,
-         interval_width_high_threshold = interval_width_high_threshold,
-         interval_width_moderate_threshold = interval_width_moderate_threshold,
-         n_bootstrap = n_bootstrap
-       )
-     }, error = function(e) { cat(paste(msg, "Error in Lasso model:", conditionMessage(e), "\n")); NULL }) }
-
-     run_ridge <- function() { tryCatch({
-       AI_RidgeRegression_Lasso(
-         pheno_object = ml_dat_res[["pheno_clean_data"]], response = response,
-         geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-         geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-         gen_name = gen_name, para_tunning = para_tunning, AI_cv_nfolds = AI_cv_nfolds,
-         lasso_paras_tunning = rr_paras_tunning, message = message, scaling = scaling, centering = centering,
-         omic_count = ml_dat_res[["omic_count"]], GS_model = GS_model, lambda_rr = lambda_rr,
-         CI_width_thresholds = CI_width_thresholds,
-         high_reliability_thres = high_reliability_thres, low_reliability_thres = low_reliability_thres,
-         n_components = n_components, threshold = threshold, target = "test_set",
-         interval_width_low_threshold = interval_width_low_threshold,
-         interval_width_high_threshold = interval_width_high_threshold,
-         interval_width_moderate_threshold = interval_width_moderate_threshold,
-         n_bootstrap = n_bootstrap
-       )
-     }, error = function(e) { cat(paste(msg, "Error in Ridge Regression model:", conditionMessage(e), "\n")); NULL }) }
-
-     # DP: call your deep model directly; set model_type = GS_model so it trains the right arch
-     if (GS_model %in% canonical_names) {
-       res_model_output <- tryCatch({
-         deep_learning_model(
-           pheno_object = ml_dat_res[["pheno_clean_data"]],
-           geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-           geno_omic_test_object = ml_dat_res[["merged_data_test"]],
-           response = response, gen_name = gen_name,
-           # pass GS_model as the selected architecture:
-           model_type = GS_model,
-           optimizer_name = optimizer_name, use_amp = use_amp, max_grad_norm = max_grad_norm,
-           auto_class_weights = auto_class_weights,
-           cnn_neurons_per_layer = cnn_neurons_per_layer, cnn_kernel_size = cnn_kernel_size,
-           cnn_dense_layers = cnn_dense_layers, cnn_use_max_pool = cnn_use_max_pool,
-           cnn_pool_kernel = cnn_pool_kernel, cnn_pool_stride = cnn_pool_stride, cnn_pool_padding = cnn_pool_padding,
-           cnn_learning_rate = cnn_learning_rate, cnn_separable = cnn_separable, cnn_dilations = cnn_dilations,
-           cnn_use_se = cnn_use_se, cnn_norm_type = cnn_norm_type, cnn_pool_type = cnn_pool_type,
-           cnn_use_global_pool = cnn_use_global_pool,
-           resnet_neurons_per_block = resnet_neurons_per_block, resnet_blocks = resnet_blocks,
-           resnet_learning_rate = resnet_learning_rate,
-           ft_d_model = ft_d_model, ft_heads = ft_heads, ft_layers = ft_layers, ft_ff_mult = ft_ff_mult,
-           ft_dropout = ft_dropout, ft_token_dropout = ft_token_dropout, ft_use_cls = ft_use_cls,
-           saint_d_model = saint_d_model, saint_heads = saint_heads, saint_layers = saint_layers, saint_ff_mult = saint_ff_mult,
-           saint_dropout = saint_dropout, saint_token_dropout = saint_token_dropout, saint_use_cls = saint_use_cls,
-           use_grouping = use_grouping, group_trigger = group_trigger, group_method = group_method,
-           init_group_size = init_group_size, max_tokens = max_tokens, kmeans_batch = kmeans_batch, kmeans_iter = kmeans_iter,
-           tabnet_steps = tabnet_steps, tabnet_feature_dim = tabnet_feature_dim, tabnet_output_dim = tabnet_output_dim,
-           tabnet_gamma = tabnet_gamma, tabnet_lambda_sparse = tabnet_lambda_sparse,
-           node_trees = node_trees, node_depth = node_depth,
-           deepfm_k = deepfm_k, deepfm_hidden = deepfm_hidden,
-           dcn_layers = dcn_layers, dcn_hidden = dcn_hidden,
-           nam_hidden = nam_hidden, nam_activation = nam_activation, nam_add_linear = nam_add_linear, nam_l1 = nam_l1,
-           moe_n_experts = moe_n_experts, moe_expert_hidden = moe_expert_hidden, moe_gate_hidden = moe_gate_hidden,
-           moe_temperature = moe_temperature, moe_sparse_topk = moe_sparse_topk, moe_entropy_reg = moe_entropy_reg,
-           gp_use_variational = gp_use_variational, gp_num_inducing = gp_num_inducing, gp_feature_dim = gp_feature_dim,
-           gp_kernel = gp_kernel, gp_ard = gp_ard, gp_lr_mult = gp_lr_mult,
-           rff_features = rff_features, rff_lengthscale = rff_lengthscale, rff_deep_hidden = rff_deep_hidden,
-           epochs = epochs, batch_size = batch_size, dropout = dropout, l2_weight_decay = l2_weight_decay,
-           l2_regularizer_dp = l2_regularizer_dp, dropout_rate = dropout_rate, batch_norm = batch_norm,
-           validation_split = validation_split, compile_model = compile_model,
-           deterministic = deterministic, random_seed = random_seed, device = device,
-           mlp_neurons_per_layer = mlp_neurons_per_layer, mlp_learning_rate = mlp_learning_rate,
-           final_attention = final_attention, attention_across_multiple_layers = attention_across_multiple_layers,
-           heteroscedastic = heteroscedastic,
-           message = message, scaling = scaling, centering = centering, omic_count = ml_dat_res[["omic_count"]],
-           para_tunning = if (cross_validation) FALSE else para_tunning,
-           param_grid  = if (cross_validation) NULL  else dpl_paras_tunning,
-           CI_width_thresholds = CI_width_thresholds,
-           high_reliability_thres = high_reliability_thres, low_reliability_thres = low_reliability_thres,
-           threshold = threshold, target = "test_set",
-           interval_width_low_threshold = interval_width_low_threshold,
-           interval_width_high_threshold = interval_width_high_threshold,
-           interval_width_moderate_threshold = interval_width_moderate_threshold,
-           n_bootstrap = n_bootstrap, crossval = FALSE
-         )
-       }, error = function(e) { cat(paste(msg, "Error in deep learning model:", conditionMessage(e), "\n")); NULL })
-     } else {
-       res_model_output <- switch(GS_model,
-                                  "Xgboost"            = run_xgboost(),
-                                  "RandomForest"       = run_random_forest(),
-                                  "PartialLeastSquare" = run_pls(),
-                                  "SupportVectorMachine" = run_svm(),
-                                  "K-NearestNeighbors" = run_knn(),
-                                  "Lasso"              = run_lasso(),
-                                  "Ridge_Regression"   = run_ridge(),
-                                  { stop(paste(msg, "Unknown GS_model:", GS_model), call. = FALSE) }
-       )
-     }
-
-     if (is.null(res_model_output)) {
-       cat(paste(msg, GS_model, "model fitting failed.\n"))
-       res_summary_stat <- NULL
-     } else {
-       GS_model_fr <- replace_with_friendly_name(GS_model, friendly_name_lookup)
-       AI_summary_stat_process <- tryCatch({
-         summary_statistics_AI(
-           predicted_object = res_model_output[["predicted_values"]],
-           pheno_object     = ml_dat_res[["pheno_clean_data"]],
-           response         = response,
-           test_set         = ml_dat_res[["test_set"]],
-           geno_omic_object = ml_dat_res[["merged_data"]][["merge_data"]],
-           eval_metrics     = eval_metrics,
-           model_parameters = res_model_output[["model_parameters"]],
-           GS_model         = GS_model_fr
-         )
-       }, error = function(e) { cat(paste(msg, "Error:", conditionMessage(e), "\n")); NULL })
-       if (!is.null(AI_summary_stat_process)) {
-         res_summary_stat <- AI_summary_stat_process
-       } else {
-         cat(paste(msg, "Error processing machine learning model output.\n"))
-       }
-     }
-   }
-
-   GS_model_fr <- replace_with_friendly_name(GS_model, friendly_name_lookup)
-   list(
-     GS_model = GS_model_fr,
-     res_model_output = res_model_output,
-     res_summary_stat = res_summary_stat,
-     geno_qc_stat     = geno_qc_stat
-   )
+   geno_model_ready <- geno_omic_model_ready_list[["geno_model_ready"]] %||% NULL
+   omic1_model_ready <- geno_omic_model_ready_list[["omic1_model_ready"]] %||% NULL
+   omic2_model_ready <- geno_omic_model_ready_list[["omic2_model_ready"]] %||% NULL
+   omic3_model_ready <- geno_omic_model_ready_list[["omic3_model_ready"]] %||% NULL
+   gmatrix_model_ready <- gmatrix_kernel_model_ready_list[["gmatrix_model_ready"]] %||% NULL
+   omic1_kernel_model_ready <- gmatrix_kernel_model_ready_list[["omic1_kernel_model_ready"]] %||% NULL
+   omic2_kernel_model_ready <- gmatrix_kernel_model_ready_list[["omic2_kernel_model_ready"]] %||% NULL
+   omic3_kernel_model_ready <- gmatrix_kernel_model_ready_list[["omic3_kernel_model_ready"]] %||% NULL
+    task_ctx <- gp_merge_task_context(environment(run_one_best), environment())
+      task_result <- gp_run_best_model_task(task_ctx)
+   task_result$trait <- response
+   task_result$response <- response
+   task_result$model <- GS_model
+   task_result$model_public <- gp_public_model_label(GS_model)[1]
+   task_result$model_key <- make.names(task_result$model_public)
+   task_result$is_cv_best <- isTRUE(task_row$is_cv_best)
+   task_result$geno_qc_stat <- geno_qc_stat
+   task_result
  }
 
- log_policy <- function(tag, idx, reason) {
-   if (!length(idx)) return()
-   cat(sprintf("[policy:%s] %d task(s): %s — %s\n",
-               tag, length(idx),
-               paste(best_models$model[idx], collapse = ", "),
-               reason))
- }
+results <- gp_execute_best_model_tasks(
+  best_models = best_models,
+  run_one_best = run_one_best,
+  sequential_models = sequential_models,
+  canonical_names = canonical_names,
+  friendly_names = friendly_names,
+  policy_param_source = as.list(environment()),
+  parallel_mode = parallel_mode,
+  num_cores = num_cores,
+  globals_max_GB = globals_max_GB,
+  verbose = verbose,
+  parallel_backend_prefer_fork = parallel_backend_prefer_fork,
+  pheno_clean = pheno_clean,
+  ml_dat_res = ml_dat_res,
+  gmatrix_kernel_model_ready_list = gmatrix_kernel_model_ready_list,
+  geno_omic_model_ready_list = geno_omic_model_ready_list,
+  response = response,
+  init_py = init_py,
+  worker_memory_gb = worker_memory_gb,
+  memory_budget_gb = memory_budget_gb
+)
+run_profile <- gp_runtime_profile_mark(
+  run_profile,
+  "true_prediction_tasks",
+  detail = paste("tasks", nrow(best_models %||% data.frame()))
+)
 
- # -------- build tasks + user-forced sequential + smart policy + run --------
- if (nrow(best_models) == 0L) {
-   results <- list()
- } else {
-   # user-forced sequential models (param + option), canonicalized
-   `%||%` <- function(a, b) if (is.null(a)) b else a
-   user_seq_opt <- getOption("gp.force.sequential.models", NULL)
-   seq_models <- unique(c(sequential_models %||% character(),
-                          user_seq_opt %||% character()))
-   if (length(seq_models)>0) {
-     seq_models <- replace_with_canonical(seq_models, canonical_names, friendly_names)
+metadata_python_purpose <- gp_python_purpose_for_models(
+  best_models$model %||% GS_model
+)
+metadata_python <- if (metadata_python_purpose %in% c("dl", "gp")) {
+  gp_preferred_python(purpose = metadata_python_purpose) %||% gp_py_bin
+} else {
+  gp_py_bin
+}
+run_metadata <- gp_runtime_metadata(
+  execution_policy = attr(results, "gp_execution_policy"),
+  python_path = metadata_python,
+  preferred_python = gp_preferred_python(purpose = metadata_python_purpose),
+  purpose = metadata_python_purpose,
+  context = "model_execute",
+  extra_fields = c(
+    gp_runtime_profile_metadata_fields(run_profile),
+    list(
+      task_unit = if (isTRUE(cross_validation) && length(GS_model_cv %||% character()) > 0L) "cv_best_model_trait" else "model_trait",
+      task_models = length(unique(best_models$model %||% character())),
+      task_traits = length(unique(best_models$trait %||% character())),
+      cv_best_models_retained = paste(
+        paste(cv_best_models$trait %||% character(), cv_best_models$model %||% character(), sep = ":"),
+        collapse = ","
+      )
+    )
+  )
+)
+
+# keep names aligned with traits
+if (!is.null(best_models) && nrow(best_models) > 0) {
+   if ("task_name" %in% names(best_models)) {
+     names(results) <- best_models[["task_name"]]
    } else {
-     seq_models <- character()
+     names(results) <- make.unique(make.names(paste(best_models[["trait"]], best_models[["model"]], sep = "_")))
    }
-
-   # indices
-   all_idx       <- seq_len(nrow(best_models))
-   idx_seq_user  <- if (length(seq_models)>0) which(best_models$model %in% seq_models) else integer(0)
-   idx_left      <- setdiff(all_idx, idx_seq_user)
-
-   results <- list()
-
-   # (1) user-forced sequential first (hard override)
-   if (length(idx_seq_user)) {
-     res_seq_user <- lapply(idx_seq_user, run_one_best)
-     results <- c(results, res_seq_user)
-   }
-
-   # (2) remaining tasks → smart policy split (internal-parallel vs safe-parallel)
-   if (length(idx_left)) {
-     # keep globals light; adjust if you want a tighter estimate
-     globals_for_size <- list(
-       pheno   = pheno_clean,
-       ml_dat  = ml_dat_res,
-       kernels = gmatrix_kernel_model_ready_list,
-       omics   = geno_omic_model_ready_list
-     )
-
-     # decide policy on the subset only
-     decision_best <- sp_decide_policy(
-       models          = best_models$model[idx_left],
-       model_params_list = replicate(length(idx_left), list(), simplify = FALSE),
-       globals        = globals_for_size,
-       n_tasks        = length(idx_left),
-       user_mode      = parallel_mode %||% "auto",
-       num_cores      = num_cores,
-       globals_max_GB = globals_max_GB %||% 4,
-       verbose        = isTRUE(verbose) %||% TRUE,
-       sys_name       = Sys.info()[["sysname"]],
-       prefer_fork    = isTRUE(parallel_backend_prefer_fork)
-     )
-
-     int_flags <- decision_best$internal_flags
-     rel_seq   <- which(int_flags)        # positions within idx_left
-     rel_par   <- which(!int_flags)
-
-     ###
-     if (isTRUE(verbose) && length(idx_seq_user))
-       message("[policy] user-forced sequential: ",
-               paste(best_models$model[idx_seq_user], collapse=", "))
-     if (isTRUE(verbose) && length(rel_seq))
-       message("[policy] internal-forced sequential: ",
-               paste(best_models$model[idx_left[rel_seq]], collapse=", "))
-
-
-     # (2a) internal-parallel ⇒ sequential (within the leftover set)
-     if (length(rel_seq)) {
-       res_seq2 <- lapply(rel_seq, function(k) run_one_best(idx_left[k]))
-       results <- c(results, res_seq2)
-     }
-
-     # (2b) safe to parallel ⇒ chosen backend
-     if (length(rel_par)) {
-       res_par <- sp_apply(
-         X           = rel_par,                         # indices *within* idx_left
-         FUN         = function(k) run_one_best(idx_left[k]),
-         decision    = decision_best,
-         packages    = c("dplyr"),
-         seed        = TRUE,
-         initializer = init_py                           # ensure numpy/tf are present in workers
-       )
-       results <- c(results, res_par)
-     }
-   }
-
-   # name results by trait to match your current behavior
-   #names(results) <- best_models[["trait"]]
- }
- # -------- build tasks + smart policy + run --------
- # if (nrow(best_models) == 0L) {
- #   results <- list()
- # } else {
- #   # estimate globals size for policy (kept light; adjust if you want)
- #   globals_for_size <- list(
- #     pheno = pheno_clean,
- #     ml_dat = ml_dat_res,
- #     kernels = gmatrix_kernel_model_ready_list,
- #     omics = geno_omic_model_ready_list
- #   )
- #
- #   decision_best <- sp_decide_policy(
- #     models = best_models$model,
- #     model_params_list = replicate(nrow(best_models), list(), simplify = FALSE),
- #     globals = globals_for_size,
- #     n_tasks = nrow(best_models),
- #     user_mode = parallel_mode %||% "auto",
- #     num_cores = num_cores,
- #     globals_max_GB = globals_max_GB %||% 4,
- #     verbose = isTRUE(verbose) %||% TRUE,
- #     sys_name = Sys.info()[["sysname"]],
- #     prefer_fork = isTRUE(parallel_backend_prefer_fork)
- #   )
- #
- #   internal_flags <- decision_best$internal_flags
- #   idx_seq <- which(internal_flags)      # must be sequential (internal parallel etc.)
- #   idx_par <- which(!internal_flags)     # OK to parallelize under chosen backend
- #
- #   results <- list()
- #   if (length(idx_seq)) {
- #     res_seq <- lapply(idx_seq, run_one_best)
- #     results <- c(results, res_seq)
- #   }
- #   if (length(idx_par)) {
- #     res_par <- sp_apply(
- #       X = idx_par,
- #       FUN = run_one_best,
- #       decision = decision_best,
- #       packages = c("dplyr"),
- #       seed = TRUE,
- #       initializer = init_py   # critical so numpy/tf are available in workers
- #     )
- #     results <- c(results, res_par)
- #   }
- # }
-
- # keep names aligned with traits
- if (!is.null(best_models) && nrow(best_models) > 0) {
-   names(results) <- best_models[["trait"]]
  } else {
    names(results) <- response
  }
  # ---------------------------------------------------------------------------
 
+ final_results <- gp_finalize_model_execute_results(
+   results = results,
+   GS_model = GS_model,
+   gen_name = gen_name,
+  heter_groups = heter_groups,
+  pheno_data = pheno_clean[["pheno_clean_data"]],
+  response_family = response_family,
+   best_models_ggplot_rep = best_models_ggplot_rep,
+   best_models_ggplot_mean = best_models_ggplot_mean,
+   cv_results_predicted_vs_observed = cv_results_predicted_vs_observed,
+   geno_qc_stat = geno_qc_stat,
+   cv_results_processed = cv_results_processed,
+   cv_results = cv_results,
+   feature_selected = feature_selected,
+   feature_score_metadata = feature_score_metadata,
+   run_metadata = run_metadata,
+   system_database = system_database,
+   plot_extension = plot_extension,
+   plot_width = plot_width,
+   plot_height = plot_height,
+   plot_units = plot_units,
+   plot_dpi = plot_dpi
+ )
 
-
- # Initialize a list to hold the results if returning as a list when system_database is TRUE
- all_results <- list()
- mainDirt <- getwd()
-
- for (res in seq_along(results)) {
-   tryCatch({
-     processed_result <- results_handling(
-       GS_model = if(GS_model %in% names(results[[res]])) results[[res]][[GS_model]] else NULL,
-       res_model_output = if("res_model_output" %in% names(results[[res]])) results[[res]][["res_model_output"]] else NULL,
-       res_summary_stat = if("res_summary_stat" %in% names(results[[res]])) results[[res]][["res_summary_stat"]] else NULL,
-       res_plot = best_models_ggplot_rep,
-       res_plot_mean = best_models_ggplot_mean,
-       res_plot_result_diagnostic = if(!is.null(cv_results_predicted_vs_observed)) cv_results_predicted_vs_observed$predicted_vs_observed_plots[[res]] else NULL,
-       test_diagonistic_plots = if(!is.null(results[[res]]$res_model_output)) results[[res]]$res_model_output$diagnostic_plots else NULL,
-       res_mod_results_cv_per_trait_model = if(!is.null(cv_results_predicted_vs_observed)) cv_results_predicted_vs_observed$mod_res_per_trait_per_model else NULL,
-       geno_qc_stat = geno_qc_stat,
-       res_plot_result_diagnostic_cv_only = NULL,
-       cv_results_processed = cv_results_processed,
-       cv_results_raw = cv_results,
-       system_database = system_database,
-       plot_filename = if(!is.null(names(results)[res])) names(results)[res] else paste("trait", res, sep = "_"),
-       plot_extension = plot_extension,
-       plot_width = plot_width,
-       plot_height = plot_height,
-       plot_units = plot_units,
-       plot_dpi = plot_dpi
-     )
-
-     # If returning as a list, append the processed result to the all_results list
-     if (isTRUE(system_database)) {
-       all_results[[length(all_results) + 1]] <- processed_result
-       names(all_results)[length(all_results)] <- if(!is.null(names(results)[res])) names(results)[res] else paste("trait", res, sep = "_")
-     }
-   }, error = function(e) {
-     setwd(mainDirt)
-     message(paste("Error processing result", res, ":", e$message))
-   })
+ if (is.null(final_results[["model_results"]]) &&
+     is.list(final_results[["model_results_by_model"]]) &&
+     length(final_results[["model_results_by_model"]]) == 1L) {
+   single_model_block <- final_results[["model_results_by_model"]][[1L]]
+   if (is.list(single_model_block) && length(single_model_block) == 1L) {
+     final_results[["model_results"]] <- single_model_block[[1L]]
+   }
  }
 
+ # Phase 3.16: post-process to add a consistent env correlation +
+ # env covariance pair for every model that produced per-env predictions.
+ # GP / Bayes / ASReml keep their native env covariance; ML/DL get NA
+ # covariance + empirical correlation, so user code that reads
+ # sik$model_results$environment_correlation or
+ # sik$cv_results_processed$environment_correlation works uniformly.
+ final_results <- tryCatch(
+   gp_add_consistent_met_summaries(
+     final_results,
+     ctx = list(heter_groups = heter_groups, gen_name = gen_name,
+                cross_validation = cross_validation,
+                heter_resid = heter_resid,
+                bayes_kernel_heter_resid = bayes_kernel_heter_resid,
+                pheno_data = pheno_data)
+   ),
+   error = function(e) {
+     warning("gp_add_consistent_met_summaries failed (non-fatal): ",
+             conditionMessage(e), call. = FALSE)
+     final_results
+   }
+ )
 
- # Return the list of all results if system_database is TRUE
- if(isTRUE(system_database)) {
-   return(all_results)
- } else {
-   # system_database is TRUE is false,
-   ## implies If results are not being returned as a list,
-   # just return a success message or NULL for job done
-   return(invisible(TRUE))
- }
+ return(final_results)
 
 } ## end of function
 

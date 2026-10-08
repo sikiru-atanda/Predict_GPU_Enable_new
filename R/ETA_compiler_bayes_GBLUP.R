@@ -1,3 +1,134 @@
+#' Matrix square-root design for a GBLUP-via-BRR genetic term
+#'
+#' Internal helper. To fit GBLUP with BGLR's `BRR` model (genetic effect
+#' `u = X beta`, `beta ~ N(0, s2 I)`), the design matrix `X` must satisfy
+#' `X X' = K` (the genomic relationship/kernel), so that
+#' `Cov(u) = s2 * X X' = s2 * K` -- true GBLUP. Passing the relationship matrix
+#' itself as `X` (i.e. `X = K`) instead implies `Cov(u) = s2 * K K' = s2 * K^2`,
+#' a mis-specified covariance that under-fits the genetic signal, inflates the
+#' residual variance and biases heritability downward. This returns the
+#' eigen square-root `X = U D^{1/2}` (positive eigenvalues only), which is the
+#' standard GBLUP-equivalent BRR parameterization and matches the `RKHS` route.
+#'
+#' @param K A symmetric (relationship/kernel) matrix.
+#' @param tol Relative eigenvalue tolerance below which components are dropped.
+#' @return A numeric matrix `X` (n x r, r = number of retained eigenvalues) with
+#'   `X %*% t(X)` approximately equal to `K`. Row names are preserved.
+#' @keywords internal
+#' @noRd
+gp_bayes_brr_design_from_kernel <- function(K, tol = 1e-8) {
+  K <- as.matrix(K)
+  Ksym <- (K + t(K)) / 2
+  ev <- eigen(Ksym, symmetric = TRUE)
+  d <- ev$values
+  keep <- d > max(d) * tol
+  if (!any(keep)) return(K)               # degenerate fallback (should not happen)
+  X <- ev$vectors[, keep, drop = FALSE] * rep(sqrt(d[keep]), each = nrow(ev$vectors))  # column scaling, not a dense diag product
+  rownames(X) <- rownames(K)
+  X
+}
+
+#' Record-level kernel Z K Z' for multi-environment Bayesian terms
+#'
+#' Internal helper. Each phenotype record is matched to its genotype's kernel
+#' row by ID, so `K[idx, idx]` equals `Z K Z'` without forming Z. The former
+#' `model.matrix(~factor(id) - 1)` incidence matrix ordered its columns
+#' alphabetically and dropped genotypes without records: the product failed
+#' ("non-conformable arguments") when the kernel held genotypes with no
+#' phenotype, and silently paired records with the wrong kernel rows when the
+#' kernel was not in alphabetical order.
+#'
+#' @param record_ids Genotype ID of each phenotype record, in record order.
+#' @param kernel Genotype-level kernel with genotype IDs as row names.
+#' @return The records x records kernel (row/column names "1".."n", as the
+#'   former incidence-matrix product had).
+#' @keywords internal
+#' @noRd
+gp_bayes_record_kernel <- function(record_ids, kernel) {
+  kernel <- as.matrix(kernel)
+  kernel_ids <- rownames(kernel)
+  if (is.null(kernel_ids)) {
+    stop("The kernel has no genotype row names; records cannot be matched to it.", call. = FALSE)
+  }
+  idx <- match(as.character(record_ids), kernel_ids)
+  if (anyNA(idx)) {
+    missing <- unique(as.character(record_ids)[is.na(idx)])
+    stop(sprintf("%d genotype(s) with phenotype records are not in the kernel (e.g. %s).",
+                 length(missing), paste(utils::head(missing, 3), collapse = ", ")), call. = FALSE)
+  }
+  out <- kernel[idx, idx, drop = FALSE]
+  n <- length(idx)
+  dimnames(out) <- list(as.character(seq_len(n)), as.character(seq_len(n)))
+  out
+}
+
+#' Eigen-decomposition of a record-level kernel from the genotype kernel
+#'
+#' Internal helper. The record kernel `Z K Z'` (and the genotype-by-group
+#' kernel `(Z K Z') * [same group]`, which is block-diagonal by group) has at
+#' most one non-zero eigenvalue per genotype (per group). With record counts
+#' `C = Z'Z`, its non-zero eigenpairs follow from the genotype-level matrix
+#' `C^1/2 K C^1/2 = Y L Y'`: values `L`, vectors `V = Z C^-1/2 Y` (orthonormal).
+#' This replaces an eigen-decomposition of the records x records matrix
+#' (O(n_records^3); about an hour at 11,270 G2F records) by one of size
+#' genotypes (per group). The eigenpairs are those of the record kernel, so
+#' BGLR fits are unchanged up to eigenvector sign.
+#'
+#' @param record_ids Genotype ID of each phenotype record, in record order.
+#' @param kernel Genotype-level kernel with genotype IDs as row names.
+#' @param groups Optional group (environment) of each record: the kernel is
+#'   restricted to records of the same group.
+#' @param rel_tol Eigenvalues at or below `rel_tol * max` are dropped.
+#' @return `list(vectors, values)`, values in decreasing order.
+#' @keywords internal
+#' @noRd
+gp_bayes_record_eigen <- function(record_ids, kernel, groups = NULL, rel_tol = 1e-12) {
+  kernel <- as.matrix(kernel)
+  ids <- as.character(record_ids)
+  n <- length(ids)
+  gp_bayes_record_kernel(ids[!duplicated(ids)], kernel)  # validates IDs against the kernel
+  groups <- if (is.null(groups)) rep("all", n) else as.character(groups)
+  blocks <- split(seq_len(n), factor(groups, levels = unique(groups)))
+  parts <- lapply(blocks, function(rows) {
+    g <- ids[rows]
+    ug <- unique(g)
+    s <- sqrt(tabulate(match(g, ug), nbins = length(ug)))
+    gi <- match(ug, rownames(kernel))
+    S <- kernel[gi, gi, drop = FALSE] * outer(s, s)
+    e <- eigen((S + t(S)) / 2, symmetric = TRUE)
+    list(rows = rows, g = match(g, ug), s = s, vectors = e$vectors, values = e$values)
+  })
+  top <- max(vapply(parts, function(p) max(p$values), numeric(1)))
+  vecs <- list(); vals <- list()
+  for (p in parts) {
+    keep <- p$values > rel_tol * top
+    if (!any(keep)) next
+    Y <- p$vectors[, keep, drop = FALSE] / p$s
+    V <- matrix(0, n, sum(keep))
+    V[p$rows, ] <- Y[p$g, , drop = FALSE]
+    vecs[[length(vecs) + 1L]] <- V
+    vals[[length(vals) + 1L]] <- p$values[keep]
+  }
+  V <- do.call(cbind, vecs)
+  d <- unlist(vals, use.names = FALSE)
+  ord <- order(d, decreasing = TRUE)
+  list(vectors = V[, ord, drop = FALSE], values = d[ord])
+}
+
+#' BRR design `X = V D^1/2` from an eigen-decomposition
+#'
+#' Internal helper; same retention rule and row names as
+#' `gp_bayes_brr_design_from_kernel()` (eigenvalues above `tol * max`).
+#' @keywords internal
+#' @noRd
+gp_bayes_brr_design_from_eigen <- function(eig, tol = 1e-8) {
+  d <- eig$values
+  keep <- d > max(d) * tol
+  X <- eig$vectors[, keep, drop = FALSE] * rep(sqrt(d[keep]), each = nrow(eig$vectors))
+  rownames(X) <- as.character(seq_len(nrow(X)))
+  X
+}
+
 #' Compile ETA for Bayesian Genomic Prediction Models
 #'
 #' This function compiles the ETA components for Bayesian genomic prediction models,
@@ -15,10 +146,13 @@
 #' @param omic1_kernel A numeric matrix representing an omics-based kernel. Default is NULL.
 #' @param omic2_kernel Same as `omic1_kernel`. Default is NULL.
 #' @param omic3_kernel Same as `omic1_kernel`. Default is NULL.
+#' @param kernel_list Optional named list of additional relationship or kernel matrices.
 #' @param gen_name A character string specifying the column name in `pheno_data` that contains the genotype identifiers.
 #' @param heter_groups A character string specifying the column name in `pheno_data` for heterogeneous groups. Default is NULL.
+#' @param ... Reserved for future extensions; currently ignored.
 #' @return A list containing the compiled ETA components, the modified phenotypic data, and names of ETA elements.
 #' @examples
+#' \dontrun{
 #' # Assuming pheno_data is your phenotypic dataset, gmatrix is the genomic relationship matrix:
 #' result <- ETA_compiler_bayes_GBLUP(fixed = ~ fixed_effect,
 #'                                    random = ~ random_effect,
@@ -26,6 +160,7 @@
 #'                                    pheno_data = pheno_data,
 #'                                    gmatrix = gmatrix,
 #'                                    gen_name = "GenotypeID")
+#' }
 #' @export
 
 ETA_compiler_bayes_GBLUP <- function(
@@ -40,6 +175,7 @@ ETA_compiler_bayes_GBLUP <- function(
     omic1_kernel = NULL,
     omic2_kernel = NULL,
     omic3_kernel = NULL,
+    kernel_list = NULL,
     gen_name = NULL,
     heter_groups = NULL,
     ...
@@ -57,7 +193,19 @@ ETA_compiler_bayes_GBLUP <- function(
 
   ETA <- list()
 
-  msg <- "\n==================================================\n"
+  msg <- ""
+  heter_control <- gp_normalize_single_environment_heter_controls(
+    pheno_data = pheno_data,
+    gen_name = gen_name,
+    heter_groups = heter_groups,
+    heter_resid = FALSE,
+    var_cov_str = NULL
+  )
+  heter_groups <- heter_control$heter_groups
+  fixed <- gp_bayes_normalize_fixed_argument(
+    fixed = fixed,
+    fixed_term_model_bayesian = fixed_term_model_bayesian
+  )
   ### Get the random terms. Both no interaction and interaction terms if present in the random terms
   rand_terms <- random_terms(random = random,
                              pheno_data = pheno_data)
@@ -131,13 +279,22 @@ ETA_compiler_bayes_GBLUP <- function(
     }
 
   }
+
+  if (identical(GS_model, "RKHS") &&
+      is.null(rand_term_model_bayesian) &&
+      length(inter_gen_pos_mod) >= 1 &&
+      length(gen_pos_mod) == 1 &&
+      identical(rand_model[gen_pos_mod], "RKHS")) {
+    rand_model[gen_pos_mod] <- "BRR"
+    rand_model[inter_gen_pos_mod] <- "RKHS"
+  }
   #########
   #### When the genotype are present in more than one environment/location
   if(length(pheno_data[[gen_name]])>length(unique(pheno_data[[gen_name]]))){
     ### incidence matrix for main eff. of the genotypes
     Zg<-stats::model.matrix(~factor(pheno_data[[gen_name]])-1)
 
-    if(!is.null(heter_groups)){
+    if(gp_bayes_has_multiple_residual_groups(pheno_data, heter_groups)){
       ZE <- model.matrix(~factor(pheno_data[[heter_groups]])-1)
       ZEZE <-tcrossprod(ZE)
 
@@ -171,11 +328,15 @@ ETA_compiler_bayes_GBLUP <- function(
 
     } ### End
 
-    datasets <- list(gmatrix, omic1_kernel, omic2_kernel, omic3_kernel)
-    dataset_names <- c("gmatrix", "omic1_kernel", "omic2_kernel", "omic3_kernel")
-    datasets_index <- which(!sapply(datasets, is.null))
-    datasets <-  datasets[datasets_index]
-    dataset_names <- dataset_names[datasets_index]
+    datasets <- gp_collect_kernel_inputs(
+      gmatrix = gmatrix,
+      gkernel = gkernel,
+      omic1_kernel = omic1_kernel,
+      omic2_kernel = omic2_kernel,
+      omic3_kernel = omic3_kernel,
+      kernel_list = kernel_list
+    )
+    dataset_names <- names(datasets)
     ETA_element_name <- character()
 
     for (i in seq_along(datasets)) {
@@ -187,8 +348,11 @@ ETA_compiler_bayes_GBLUP <- function(
                                            model = rand_model,
                                            saveEffects = TRUE)
           } else if((ra == gen_pos_mod) & !is.null(Zg)){
-            K1 <- Zg%*%as.matrix(dataset)%*%t(Zg)
-            ETA[[length(ETA) + 1]] <- list(K= K1,
+            K1 <- gp_bayes_record_kernel(pheno_data[[gen_name]], dataset)
+            # V/d: BGLR skips its records x records eigen-decomposition; K stays
+            # for the variance-component and output steps.
+            eig <- gp_bayes_record_eigen(pheno_data[[gen_name]], dataset)
+            ETA[[length(ETA) + 1]] <- list(K= K1, V = eig$vectors, d = eig$values,
                                            model = rand_model,
                                            saveEffects = TRUE)
           } else {
@@ -196,11 +360,13 @@ ETA_compiler_bayes_GBLUP <- function(
             if((length(inter_gen_pos_mod)!=0 | !is.na(inter_gen_pos_mod))){
               if((ra == inter_gen_pos_mod & !is.null(Zg)) & !is.null(ZEZE)){
 
-                K1 <- Zg%*%as.matrix(dataset)%*%t(Zg)
+                K1 <- gp_bayes_record_kernel(pheno_data[[gen_name]], dataset)
 
                 K2<-K1*ZEZE
+                eig <- gp_bayes_record_eigen(pheno_data[[gen_name]], dataset,
+                                             groups = pheno_data[[heter_groups]])
 
-                ETA[[length(ETA) + 1]] <- list(K= K2,
+                ETA[[length(ETA) + 1]] <- list(K= K2, V = eig$vectors, d = eig$values,
                                                model=rand_model,
                                                saveEffects=TRUE)
 
@@ -213,12 +379,12 @@ ETA_compiler_bayes_GBLUP <- function(
 
           if(rand_model== "BRR"){
             if((ra == gen_pos_mod ) & is.null(Zg)){
-              ETA[[length(ETA) + 1]] <- list(X= as.matrix(dataset),
+              ETA[[length(ETA) + 1]] <- list(X= gp_bayes_brr_design_from_kernel(as.matrix(dataset)),
                                              model = rand_model,
                                              saveEffects = TRUE)
             } else if((ra == gen_pos_mod) & !is.null(Zg)){
-              K1 <- Zg%*%as.matrix(dataset)%*%t(Zg)
-              ETA[[length(ETA) + 1]] <- list(X= K1,
+              eig <- gp_bayes_record_eigen(pheno_data[[gen_name]], dataset)
+              ETA[[length(ETA) + 1]] <- list(X= gp_bayes_brr_design_from_eigen(eig),
                                              model = rand_model,
                                              saveEffects = TRUE)
             } else {
@@ -226,11 +392,10 @@ ETA_compiler_bayes_GBLUP <- function(
               if((length(inter_gen_pos_mod)!=0 | !is.na(inter_gen_pos_mod))){
                 if((ra == inter_gen_pos_mod & !is.null(Zg)) & !is.null(ZEZE)){
 
-                  K1 <- Zg%*%as.matrix(dataset)%*%t(Zg)
+                  eig <- gp_bayes_record_eigen(pheno_data[[gen_name]], dataset,
+                                               groups = pheno_data[[heter_groups]])
 
-                  K2<-K1*ZEZE
-
-                  ETA[[length(ETA) + 1]] <- list(X= K2,
+                  ETA[[length(ETA) + 1]] <- list(X= gp_bayes_brr_design_from_eigen(eig),
                                                  model=rand_model,
                                                  saveEffects=TRUE)
 
@@ -274,7 +439,7 @@ ETA_compiler_bayes_GBLUP <- function(
 #   #rm(ZE, ZEZE, Zg, K1, K2, ETA)
 #   ETA = list()
 #
-#   msg <- "\n==================================================\n"
+#   msg <- ""
 #   ### Get the random terms. Both no interaction and interaction terms if present in the random terms
 #   rand_terms <- random_terms(random = random,
 #                              object = pheno_data)

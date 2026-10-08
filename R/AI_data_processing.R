@@ -1,10 +1,15 @@
 
-#' Title
+#' Merge genomic data with one or more omics data sets
 #'
-#' @param geno_data
-#' @param omic_data  list of omics
+#' Column-binds a genomic-marker matrix with one or more omics matrices into a
+#' single feature matrix, after checking that row names align across blocks.
 #'
-#' @return
+#' @param geno_data Numeric matrix of genomic markers (rows = individuals).
+#'   Can be `NULL` when only omics are supplied.
+#' @param omic_data Named list of omics matrices (each with rows = individuals,
+#'   row names aligned to `geno_data`).
+#'
+#' @return A list with the merged feature matrix and the omics count.
 #' @export
 #'
 #' @examples
@@ -12,7 +17,7 @@
 
 merge_data <- function(geno_data, omic_data) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
   # Check if both geno_data and omic_data are NULL
   if (is.null(geno_data) && length(omic_data) == 0) {
     stop(paste(msg, "Both geno_data and omic_data are NULL."),call. = FALSE)
@@ -94,14 +99,23 @@ merge_data <- function(geno_data, omic_data) {
 #               omic_count = omic_count))
 # }
 
-#' Title
+#' Assemble a classical-ML training data frame
 #'
-#' @param pheno_clean
-#' @param response
-#' @param geno_clean
-#' @param omic_clean
+#' Combines the cleaned phenotype frame with the cleaned genomic and (optional)
+#' omics matrices into a single feature data frame keyed by the genotype-ID
+#' column for downstream classical-ML wrappers.
 #'
-#' @return
+#' @param pheno_clean Cleaned phenotype data frame (output of
+#'   [phenotype_precheck] / [phenotype_to_model]).
+#' @param response Name of the response (trait) column in `pheno_clean`.
+#' @param geno_clean Cleaned genomic-marker matrix (rows = individuals,
+#'   columns = SNPs); row names should match the genotype IDs.
+#' @param gen_name Name of the genotype-ID column in `pheno_clean`.
+#' @param omic_clean Optional cleaned omics matrix to be column-bound onto the
+#'   genomic features.
+#'
+#' @return A list with the merged feature data frame and metadata used by
+#'   the classical-ML wrappers.
 #' @export
 #'
 #' @examples
@@ -113,12 +127,26 @@ ML_data_processing <- function(pheno_clean = NULL,
 
 ) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
+  normalize_feature_ids <- function(x) {
+    if (is.null(x) || is.null(gen_name) || !gen_name %in% colnames(x)) {
+      return(x)
+    }
+    ids <- as.character(x[[gen_name]])
+    x <- x[, setdiff(colnames(x), gen_name), drop = FALSE]
+    rownames(x) <- ids
+    x
+  }
+
+  geno_clean <- normalize_feature_ids(geno_clean)
+  omic_clean <- lapply(omic_clean, normalize_feature_ids)
+
   test_set <- NULL
   # Separate train and test sets
   # pheno_clean <- ML_undefined_test_train(object_pheno = pheno_clean,
   #                                        response = response)
   pheno_data <- pheno_clean[["pheno_clean_data"]]
+  test_set_by_trait <- pheno_clean[["test_set_by_trait"]]
   # Unpack pheno_clean if necessary
   if("test_set"%in%names(pheno_clean)) {
 
@@ -143,24 +171,23 @@ ML_data_processing <- function(pheno_clean = NULL,
     pheno_data <-  pheno_data[!pheno_data[[gen_name]] %in% test_set, ]
 
   } else {
-    # Find the rows with NA in each response column if the user has NA as testing set
+    if (!is.null(test_set_by_trait)) {
+      result <- list(
+        pheno_clean_data = pheno_data,
+        merged_data = merge_data(geno_clean, omic_clean),
+        test_set_by_trait = test_set_by_trait
+      )
+      if (length(result[["merged_data"]]) > 1 && !is.null(result[["merged_data"]][["omic_count"]])) {
+        result[["omic_count"]] <- result[["merged_data"]][["omic_count"]]
+      }
+      return(result)
+    }
+
     na_rows <- lapply(response, function(col) which(is.na(pheno_data[[col]])))
-
-    # Check if all vectors of NA rows are identical across the response, sparse is not allowed
-    if (!all(sapply(na_rows, function(x) identical(x, na_rows[[1]])))) {
-      stop(paste(msg, sprintf("Rows containing NA did not match across the response columns: %s.", paste(response, collapse = ", "))), call. = FALSE)
-    }
-
     if (length(na_rows[[1]]) > 0) {
-
-      test_set <- unique(na_rows[[1]])
-
-      test_set <- as.character(pheno_data[[gen_name]][test_set])
-
+      test_set <- unique(as.character(pheno_data[[gen_name]][na_rows[[1]]]))
       pheno_data <-  pheno_data[!pheno_data[[gen_name]] %in% test_set, ]
-
     }
-
   }
 
   # Merge geno and omic data
@@ -168,8 +195,8 @@ ML_data_processing <- function(pheno_clean = NULL,
 
   # Separate merged data into train and test sets
   if (!is.null(test_set)) {
-    merged_data_test <- merged_data[["merge_data"]][rownames(merged_data[["merge_data"]]) %in% test_set, ]
-    merged_data[["merge_data"]] <- merged_data[["merge_data"]][!rownames(merged_data[["merge_data"]]) %in% test_set, ]
+    merged_data_test <- merged_data[["merge_data"]][rownames(merged_data[["merge_data"]]) %in% test_set, , drop = FALSE]
+    merged_data[["merge_data"]] <- merged_data[["merge_data"]][!rownames(merged_data[["merge_data"]]) %in% test_set, , drop = FALSE]
   }
 
   # Construct result list
@@ -184,6 +211,9 @@ ML_data_processing <- function(pheno_clean = NULL,
   if (!is.null(test_set)) {
     result[["test_set"]] <- test_set
     result[["merged_data_test"]] <- merged_data_test
+  }
+  if (!is.null(test_set_by_trait)) {
+    result[["test_set_by_trait"]] <- test_set_by_trait
   }
 
   return(result)

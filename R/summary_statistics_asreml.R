@@ -1,10 +1,45 @@
 
-#' Title
+#' Assemble accuracy / uncertainty / reliability summary for an ASReml fit
 #'
-#' @param mod
-#' @param ...
+#' Computes the user-facing summary statistics for an ASReml GBLUP fit:
+#' accuracy / RMSE / correlation on the test rows, prediction-error variance,
+#' confidence intervals, and the reliability / uncertainty bands used by the
+#' output assembly.
 #'
-#' @return
+#' @param mod The fitted asreml model object (or `NULL` when only post-fit
+#'   summary quantities are supplied).
+#' @param response Name of the response (trait) column in `pheno_data`.
+#' @param GID_names Vector of genotype IDs aligned with the prediction frame.
+#' @param pheno_data Phenotype data frame (used to recover observed responses).
+#' @param eval_metrics Character vector of metrics to compute (e.g.
+#'   `"accuracy"`).
+#' @param response_family Response distribution family
+#'   (`"gaussian"`, `"binomial"`, `"multinomial"`, `"ordinal"`).
+#' @param heter_groups Optional column name carrying the heterogeneous-group
+#'   (environment) label for MET runs.
+#' @param predicted_value Predicted values (typically from `predict.asreml` or
+#'   the coef fallback path).
+#' @param pred_heter_groups Per-row heterogeneous-group labels aligned with
+#'   `predicted_value`.
+#' @param variance_components Variance-components table or list produced by
+#'   the ASReml output assembly.
+#' @param standard_errors Standard errors of `predicted_value` (per row).
+#' @param prediction_error_var Prediction error variance per row (PEV).
+#' @param genetic_var Genetic variance used as the denominator for
+#'   reliability (per env or overall).
+#' @param gen_name Name of the genotype-ID column in `pheno_data`.
+#' @param CI_width_thresholds Length-2 numeric of quantile thresholds for
+#'   classifying prediction-interval width as Low / Moderate / High.
+#' @param confidence_level Confidence level for the predicted-value interval
+#'   (e.g. `0.95`).
+#' @param high_reliability_thres Lower bound for High-reliability band.
+#' @param low_reliability_thres Upper bound for Low-reliability band.
+#' @param system_database Logical; if `TRUE`, write outputs to the system
+#'   database path.
+#' @param ... Reserved for future extensions; currently ignored.
+#'
+#' @return A list of accuracy / uncertainty / reliability summary tables and
+#'   diagnostics.
 #' @export
 #'
 #' @examples
@@ -13,6 +48,7 @@ summary_statistics_asreml <- function(mod=NULL,
                                       GID_names = NULL,
                                       pheno_data = NULL,
                                       eval_metrics = NULL,
+                                      response_family = "gaussian",
                                       heter_groups = NULL,
                                       predicted_value = NULL,
                                       pred_heter_groups = NULL,
@@ -139,7 +175,8 @@ summary_statistics_asreml <- function(mod=NULL,
         Eval_met[i, ] <- evaluation_metrics(y_observed = as.double(pheno_data[[response]]),
                                             #y_predicted = as.double(predicted_value[["Predicted_value"]]),
                                             y_predicted = as.double(predicted_value),
-                                            eval_metrics = eval_metrics[i])
+                                            eval_metrics = eval_metrics[i],
+                                            response_family = response_family)
 
       }
 

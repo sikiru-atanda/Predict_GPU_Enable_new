@@ -28,7 +28,40 @@ random_terms_fit_new <- function(random = NULL,
                                  gen_name = NULL,
                                  pheno_data= NULL,
                                  ...){
-  msg <- "\n==================================================\n"
+  gp_reject_obsolete_asreml_structure(var_cov_str)
+  msg <- ""
+  heter_control <- gp_normalize_single_environment_heter_controls(
+    pheno_data = pheno_data,
+    gen_name = gen_name,
+    heter_groups = heter_groups,
+    heter_resid = heter_resid,
+    var_cov_str = var_cov_str
+  )
+  heter_groups <- heter_control$heter_groups
+  heter_resid <- heter_control$heter_resid
+  var_cov_str <- heter_control$var_cov_str
+  build_structured_vm_term <- function(i) {
+    vm_term <- paste0("vm(", gen_name, ",", names_in_inv_list[i], ")")
+
+    if (var_cov_str %in% c("us", "corgh", "corh", "corv")) {
+      return(paste0(var_cov_str, "(", heter_groups, "):", vm_term))
+    }
+
+    if (isTRUE(grepl("fa", var_cov_str))) {
+      N_fa <- substr(var_cov_str, 3, 100)
+      vc_prefix <- paste0("fa(", heter_groups, ",", N_fa, ")")
+      return(paste0(vc_prefix, ":", vm_term))
+    }
+
+    if (isTRUE(grepl("rr", var_cov_str))) {
+      N_rr <- substr(var_cov_str, 3, 100)
+      vc_prefix <- paste0("rr(", heter_groups, ",", N_rr, ")")
+      return(paste0(vc_prefix, ":", vm_term))
+    }
+
+    vm_term
+  }
+
   if (!is.null(random)){
     #if (length(all.vars(random))>1) {
     rand_term <- strsplit(as.character(random[2]), split = "[+]")[[1]] # random parts
@@ -114,7 +147,7 @@ random_terms_fit_new <- function(random = NULL,
       NN <-  nlevels(pheno_data[[heter_groups]])
       if (NN >=5 & isFALSE(grepl("fa", var_cov_str))){
 
-        #msg <- "\n==================================================\n"
+        #msg <- ""
 
         warning(paste(msg, "The number of", heter_groups, " is", NN,  "consider using factor analytic model"), immediate. = TRUE, call. =FALSE)
       }
@@ -135,7 +168,7 @@ random_terms_fit_new <- function(random = NULL,
         check_heter_grp_rand <-  NULL
       }
 
-      #if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv"){
+      #if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corh" | var_cov_str=="corv"){
 
       #### When user provide only the Interaction term was provided by the user
       #if(!is.null(inter_gen_pos) & is.null(gen_pos)){
@@ -170,39 +203,8 @@ random_terms_fit_new <- function(random = NULL,
           }
 
           for (i in 1:length(names_in_inv_list)){
-
-            if (var_cov_str %in% c("us", "corgh", "corgv", "corh", "corv")) {
-
-              ### This add the environment to the fixed term when interaction term was only provided
-              ## by the user. That is Env is missing in both fixed and random terms
-              random <-  stats::update(random,
-                                     paste("~ . +", (paste(paste0(var_cov_str, paste0("(",heter_groups,")")),
-                                                           paste(paste(paste0('vm(', gen_name), sep = ',', names_in_inv_list[i]), ")", sep=""),
-                                                           sep = ":"))))
-
-            }else{
-
-              if(isTRUE(grepl("fa", var_cov_str))) {
-                N_fa <-  substr(var_cov_str, 3, 100)
-
-                random <- stats::update(random,
-                                       paste("~ . +", (paste(paste0("fa", paste0("(",paste0(heter_groups, ",", N_fa),")")),
-                                                             paste(paste(paste0('vm(', gen_name), sep = ',', names_in_inv_list[i]), ")", sep=""),
-                                                             sep = ":"))))
-
-
-              }
-
-              if(isTRUE(grepl("rr", var_cov_str))) {
-                N_rr <-  substr(var_cov_str, 3, 100)
-                          random <-  stats::update(random,
-                                      paste("~ . +", (paste(paste0("rr", paste0("(",paste0(heter_groups, ",", N_rr),")")),
-                                                            paste(paste(paste0('vm(', gen_name), sep = ',', names_in_inv_list[i]),")", sep =""),
-                                                            sep = ":"))))
-              }
-
-            }
-
+            random <- stats::update(random,
+                                    paste("~ . +", build_structured_vm_term(i)))
 
           } ### End
 
@@ -213,31 +215,8 @@ random_terms_fit_new <- function(random = NULL,
         if (length(check_heter_grp_rand)==0 & length(check_heter_grp_fixed)==1){
 
           for (i in 1:length(names_in_inv_list)){
-
-            if (var_cov_str %in% c("us", "corgh", "corgv", "corh", "corv")) {
-              random <- stats::update(random,
-                                    paste("~ . +",paste(paste0(var_cov_str, paste0("(",heter_groups,")")),
-                                                        paste(paste(paste0('vm(', gen_name), sep = ',', names_in_inv_list[i]), ")", sep=""), sep = ":")))
-
-            } else{
-
-              if(isTRUE(grepl("fa", var_cov_str))) {
-                N_fa <-  substr(var_cov_str, 3, 100)
-                random <- stats::update(random,
-                                      paste("~ . +",paste(paste0("fa", paste0("(",paste0(heter_groups, ",", N_fa),")")),
-                                                          paste(paste(paste0('vm(', gen_name), sep = ',', names_in_inv_list[i]),")", sep=""), sep = ":")))
-
-              }
-
-              if(isTRUE(grepl("rr", var_cov_str))) {
-                N_rr <-  substr(var_cov_str, 3, 100)
-                random <- stats::update(random,
-                                      paste("~ . +",paste(paste0("rr", paste0("(",paste0(heter_groups, ",", N_rr),")")),
-                                                          paste(paste(paste0('vm(', gen_name), sep = ',', names_in_inv_list[i]), ")", sep=""), sep = ":")))
-
-              }
-
-            }
+            random <- stats::update(random,
+                                    paste("~ . +", build_structured_vm_term(i)))
 
           } ### End
 
@@ -246,27 +225,8 @@ random_terms_fit_new <- function(random = NULL,
         ## If user provide ENV in the random term and missing in the fixed term
         if (length(check_heter_grp_rand)==1 & length(check_heter_grp_fixed)==0){
           for (i in 1:length(names_in_inv_list)){
-            if (var_cov_str %in% c("us", "corgh", "corgv", "corh", "corv")) {
-              random <-  stats::update(random,
-                                    paste("~ . +",paste(paste0(var_cov_str, paste0("(",heter_groups,")")),
-                                                        paste(paste(paste0('vm(', gen_name), sep = ',', names_in_inv_list[i]), ")", sep=""), sep = ":")))
-            } else{
-              if(isTRUE(grepl("fa", var_cov_str))) {
-                N_fa <- substr(var_cov_str, 3, 100)
-                random <- stats::update(random,
-                                      paste("~ . +",paste(paste0("fa",paste0("(",paste0(heter_groups, ",", N_fa),")")),
-                                                          paste(paste(paste0('vm(', gen_name), sep = ',', names_in_inv_list[i]), ")", sep=""), sep = ":")))
-
-              }
-
-              if(isTRUE(grepl("rr", var_cov_str))) {
-                N_rr <-  substr(var_cov_str, 3, 100)
-                random <-  stats::update(random,
-                                      paste("~ . +",paste(paste0("rr",paste0("(",paste0(heter_groups, ",", N_rr),")")),
-                                                          paste(paste(paste0('vm(', gen_name), sep = ',', names_in_inv_list[i]), ")", sep=""), sep = ":")))
-
-              }
-            }
+            random <- stats::update(random,
+                                    paste("~ . +", build_structured_vm_term(i)))
 
           }
         }
@@ -336,6 +296,7 @@ random_terms_fit_new <- function(random = NULL,
       ###############################
       if (!is.null(fixed_term)){
         check_heter_grp_fixed  <-  match(heter_groups, fixed_term)
+        if(anyNA(check_heter_grp_fixed)) {check_heter_grp_fixed <- NULL}
       } else {
         check_heter_grp_fixed <-  NULL
       }
@@ -343,11 +304,12 @@ random_terms_fit_new <- function(random = NULL,
 
       if (!is.null(rand_term)){
         check_heter_grp_rand  <-  match(heter_groups, rand_term)
+        if(anyNA(check_heter_grp_rand)) {check_heter_grp_rand <- NULL}
       } else {
         check_heter_grp_rand <-  NULL
       }
 
-      #if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corgv" | var_cov_str=="corh" | var_cov_str=="corv"){
+      #if(var_cov_str=="us" |var_cov_str=="corgh" | var_cov_str=="corh" | var_cov_str=="corv"){
 
       if(!is.null(inter_gen_pos)){
         if (length(check_heter_grp_rand)==0 & length(check_heter_grp_fixed)==0){

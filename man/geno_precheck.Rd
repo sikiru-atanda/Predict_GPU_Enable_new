@@ -2,7 +2,7 @@
 % Please edit documentation in R/geno_precheckk.R
 \name{geno_precheck}
 \alias{geno_precheck}
-\title{Title}
+\title{Quality Control for Genomic Data}
 \usage{
 geno_precheck(
   object_geno = NULL,
@@ -12,13 +12,61 @@ geno_precheck(
   ind_call_rate_threshold = 0.9,
   snp_call_rate_threshold = 0.9,
   impute = TRUE,
+  imputation_method = "knn",
+  impute_knn_k = 5,
+  ploidy = "auto",
+  ld_prunning_qc = TRUE,
   message = TRUE,
   ...
 )
 }
 \arguments{
-\item{...}{}
+\item{object_geno}{A matrix or data.frame containing genomic data with individuals in rows and SNPs in columns.}
+
+\item{qc_filtering}{Logical, if TRUE, quality control filtering is applied based on the thresholds provided.}
+
+\item{maf_threshold}{Numeric, the threshold for minor allele frequency below which SNPs are removed.}
+
+\item{het_threshold}{Numeric, the threshold for heterozygosity above which SNPs are removed.}
+
+\item{ind_call_rate_threshold}{Numeric, the threshold for individual call rate below which individuals are removed.}
+
+\item{snp_call_rate_threshold}{Numeric, the threshold for SNP call rate below which SNPs are removed.}
+
+\item{impute}{Logical, if TRUE, missing values are imputed. Currently, this parameter is not used in the function but could be implemented for imputation.}
+
+\item{imputation_method}{Imputation method for missing genotype values when
+`impute = TRUE`; one of `"knn"`, `"mean"`, `"median"`, or `"mode"`.}
+
+\item{impute_knn_k}{Integer; number of nearest neighbours used when
+`imputation_method = "knn"`.}
+
+\item{ploidy}{One positive integer or `"auto"`. Polyploid numeric matrices
+must provide explicit ploidy or carry a `ploidy` attribute.}
+
+\item{ld_prunning_qc}{Logical; if `TRUE`, apply LD-based pruning of markers
+after the QC filters.}
+
+\item{message}{Logical, if TRUE, messages about the QC process are displayed.}
+
+\item{...}{Additional arguments affecting the QC process.}
+}
+\value{
+A list containing:
+  - \code{snps_matrix}: The genomic data matrix after applying QC filters.
+  - \code{qc_metrics_and_summary_stat}: A data frame summarizing the QC process, including the number of markers and individuals removed.
 }
 \description{
-Title
+This function applies quality control (QC) filters to genomic data. It checks and adjusts SNP coding, removes monomorphic markers, and filters markers based on minor allele frequency (MAF), heterozygosity, and call rates for both individuals and SNPs.
+}
+\examples{
+\dontrun{
+# Assuming `genomic_data` is a matrix with SNP data
+qc_results <- geno_precheck(object_geno = genomic_data, qc_filtering = TRUE,
+                            maf_threshold = 0.05, het_threshold = 0.2,
+                            ind_call_rate_threshold = 0.9, snp_call_rate_threshold = 0.9)
+qc_genomic_data <- qc_results$snps_matrix
+qc_summary <- qc_results$qc_metrics_and_summary_stat
+}
+
 }

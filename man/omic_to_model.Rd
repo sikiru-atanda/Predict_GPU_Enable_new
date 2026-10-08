@@ -2,19 +2,49 @@
 % Please edit documentation in R/omic_to_model.R
 \name{omic_to_model}
 \alias{omic_to_model}
-\title{Title}
+\title{Prepare omics data for model fitting (pre-check, impute, align train/test)}
 \usage{
 omic_to_model(
   omic_data = NULL,
   train_omic_data = NULL,
   test_omic_data = NULL,
   message = TRUE,
+  impute_omic = FALSE,
+  imputation_method = "knn",
+  impute_knn_k = 5,
+  na_threshold = 0.9,
   ...
 )
 }
 \arguments{
-\item{...}{}
+\item{omic_data}{Single omics matrix for the full set (used when no separate
+train / test split is supplied).}
+
+\item{train_omic_data}{Optional training omics matrix.}
+
+\item{test_omic_data}{Optional test-set omics matrix matching
+`train_omic_data`.}
+
+\item{message}{Logical; if `TRUE`, print summary messages.}
+
+\item{impute_omic}{Logical; if `TRUE`, impute missing values.}
+
+\item{imputation_method}{One of `"knn"`, `"mean"`, `"median"`.}
+
+\item{impute_knn_k}{Integer; number of nearest neighbours when
+`imputation_method = "knn"`.}
+
+\item{na_threshold}{Numeric in `(0, 1]`; columns whose missing-value
+proportion exceeds this are dropped.}
+
+\item{...}{Reserved for future extensions; currently ignored.}
+}
+\value{
+The pre-checked omics matrix or list of (train, test) matrices.
 }
 \description{
-Title
+Wraps [omic_precheck] for the model-fitting workflow: accepts either a single
+omics matrix `omic_data` or pre-split `train_omic_data` / `test_omic_data`,
+applies the missingness threshold, optionally imputes, and returns the
+matrix / matrices ready to be passed to a model.
 }

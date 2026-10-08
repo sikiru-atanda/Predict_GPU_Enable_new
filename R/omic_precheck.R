@@ -1,10 +1,22 @@
 
-#' Title
+#' Pre-check and optionally impute an omics data matrix
 #'
-#' @param object
-#' @param message
+#' Validates an input omics matrix (rows = individuals, columns = features),
+#' drops columns whose missing-value rate exceeds `na_threshold`, and optionally
+#' imputes the remaining missing values via KNN, mean or median.
 #'
-#' @return
+#' @param object A numeric matrix or data frame of omics features
+#'   (rows = individuals, columns = features).
+#' @param message Logical; if `TRUE`, print summary messages about features
+#'   removed and imputation actions.
+#' @param impute Logical; if `TRUE`, impute the remaining missing values.
+#' @param na_threshold Numeric in `(0, 1]`; columns with a missing-value
+#'   proportion greater than this are dropped before imputation.
+#' @param imputation_method One of `"knn"`, `"mean"`, `"median"`.
+#' @param impute_knn_k Integer; number of nearest neighbours used when
+#'   `imputation_method = "knn"`.
+#'
+#' @return The pre-checked (and optionally imputed) omics matrix.
 #' @export
 #'
 #' @examples
@@ -14,7 +26,7 @@ omic_precheck <- function(object = NULL,
                           na_threshold =0.9,
                           imputation_method = "knn", #median, mean
                           impute_knn_k = 5){
-  msg <- "\n==================================================\n"
+  msg <- ""
   if(!is.null(object)){
     if("data.table" %in% class(object)){
       stop(paste(msg,'Omic data must be data.frame or matrix not character.'), call. = FALSE)
@@ -33,12 +45,7 @@ omic_precheck <- function(object = NULL,
       stop(paste(msg, "Column names can't contain NA."), call. = FALSE)
     }
 
-    #if (is.numeric(object)==FALSE) {stop(print(paste(msg,'The data contains non-numeric value')), call. = FALSE)}
-    # Check if all elements in the matrix are numeric
-    all_numeric <- all(apply(object, c(1, 2), is.numeric))
-
-    # Stop execution if any element is not numeric
-    if (!all_numeric) {
+    if (!is.numeric(object)) {
       stop(paste(msg,'The omic data contains non-numeric values', call. = FALSE), call. = FALSE)
     }
     ## Check for Na and remove

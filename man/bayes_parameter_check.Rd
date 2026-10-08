@@ -2,23 +2,43 @@
 % Please edit documentation in R/bayesians_preprocess.R
 \name{bayes_parameter_check}
 \alias{bayes_parameter_check}
-\title{Title}
+\title{Check and Set Default Parameters for Bayesian Model Execution}
 \usage{
 bayes_parameter_check(nIter = NULL, burnIn = NULL, thin = NULL, message = TRUE)
 }
 \arguments{
-\item{nIter}{the number of iteration for MCMC chain}
+\item{nIter}{An optional integer specifying the total number of MCMC iterations to perform.
+Default is set to 200 if not provided.}
 
-\item{burnIn}{the number of burning}
+\item{burnIn}{An optional integer specifying the number of initial MCMC iterations to discard (burn-in).
+Default is set to 50 if not provided.}
 
-\item{thin}{the number of thinning}
+\item{thin}{An optional integer specifying the thinning interval for MCMC sampling.
+Default is set to 1 if not provided.}
 
-\item{message}{}
+\item{message}{A logical indicating whether to print messages about missing parameters or those set below the recommended thresholds.}
+}
+\value{
+A list of class "Bayesian Parameters" with named elements `nIter`, `burnIn`, and `thin`,
+each containing the respective parameter value. The list also has an attribute 'complete_parameters' set to TRUE.
 }
 \description{
-Title
+Validates and assigns default values to the key parameters of a Bayesian model:
+number of iterations (`nIter`), burn-in period (`burnIn`), and thinning interval (`thin`).
+It optionally displays messages for missing parameters or parameters set below recommended thresholds.
+}
+\details{
+This function is particularly useful in preparing Bayesian model parameters, ensuring that they
+meet minimum recommended values for adequate model convergence and accuracy. It helps users identify
+and rectify potentially inadequate parameter settings before model execution.
 }
 \examples{
-Title
+bayes_params <- bayes_parameter_check(
+  nIter = 25000,
+  burnIn = 5000,
+  thin = 5,
+  message = TRUE
+)
+print(bayes_params)
 
 }

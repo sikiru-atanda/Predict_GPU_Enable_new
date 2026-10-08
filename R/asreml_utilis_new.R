@@ -1,3 +1,274 @@
+#' Warn when an ASReml model has not converged after update retries
+#'
+#' Internal helper. The REML fitting paths retry [asreml::update.asreml] a fixed
+#' number of times; if the model still reports `converge == FALSE`, the variance
+#' components, breeding values and prediction error variances it produces are not
+#' trustworthy. This emits a single informative warning in that case. An unknown
+#' convergence state (`NULL`/missing `converge`, e.g. a failed fit returning
+#' `NULL`) is treated as "do not warn" to avoid spurious alarms.
+#'
+#' @param mod A fitted asreml model (or any list with a `converge` element).
+#' @param context Optional short string naming the fitting context; included in
+#'   the warning message to help the user locate the offending model.
+#' @return `mod`, invisibly.
+#' @keywords internal
+#' @noRd
+gp_asreml_warn_if_not_converged <- function(mod, context = NULL) {
+  conv <- tryCatch(mod$converge, error = function(e) NULL)
+  if (is.logical(conv) && length(conv) == 1L && !is.na(conv) && !conv) {
+    where <- if (!is.null(context) && nzchar(context)) paste0(" (", context, ")") else ""
+    warning(sprintf(
+      paste0("ASReml model%s did not converge after update retries; its variance ",
+             "components, breeding values and prediction error variances may be ",
+             "unreliable. Consider revising the model (random/residual structure, ",
+             "variance-covariance structure) or supplying better starting values."),
+      where), call. = FALSE)
+  }
+  invisible(mod)
+}
+
+#' Decide whether an ASReml fit needs another bounded update
+#'
+#' A fit may report `converge = TRUE` while one or more estimable variance
+#' parameters still changed materially on the final iteration. The public
+#' output guard rejects that state, so fitting must refine it before applying
+#' the guard rather than stopping solely on `converge`.
+#'
+#' @param mod A fitted ASReml model.
+#' @param max_percent_change Largest accepted final percent change for an
+#'   estimable, non-boundary variance parameter.
+#' @return A single logical value.
+#' @keywords internal
+#' @noRd
+gp_asreml_fit_requires_refinement <- function(mod, max_percent_change = 1) {
+  if (is.null(mod)) return(FALSE)
+  converge <- tryCatch(mod$converge, error = function(e) NULL)
+  if (is.logical(converge) && length(converge) == 1L &&
+      !is.na(converge) && !converge) {
+    return(TRUE)
+  }
+  ifault <- suppressWarnings(as.integer(
+    tryCatch(mod$ifault, error = function(e) NA_integer_)
+  )[1L])
+  if (is.finite(ifault) && ifault != 0L) return(TRUE)
+
+  percent_change <- suppressWarnings(as.numeric(
+    tryCatch(mod$vparameters.pc, error = function(e) numeric())
+  ))
+  if (!length(percent_change)) return(FALSE)
+  constraint <- as.character(
+    tryCatch(mod$vparameters.con, error = function(e) character())
+  )
+  if (length(constraint) != length(percent_change)) {
+    constraint <- rep(NA_character_, length(percent_change))
+  }
+  estimable <- is.finite(percent_change) & !constraint %in% c("B", "F")
+  any(estimable & abs(percent_change) > max_percent_change)
+}
+
+#' Refine an ASReml fit until both convergence diagnostics are stable
+#'
+#' @param mod A fitted ASReml model.
+#' @param max_updates Maximum number of update attempts.
+#' @param max_percent_change Passed to
+#'   [gp_asreml_fit_requires_refinement()].
+#' @param update_fn Optional update function, used by unit tests; defaults to
+#'   [asreml::update.asreml()].
+#' @return The last fitted model.
+#' @keywords internal
+#' @noRd
+gp_asreml_refine_fit <- function(mod,
+                                 max_updates = 8L,
+                                 max_percent_change = 1,
+                                 update_fn = NULL) {
+  max_updates <- suppressWarnings(as.integer(max_updates)[1L])
+  if (!is.finite(max_updates) || max_updates < 0L) {
+    stop("max_updates must be a non-negative integer.", call. = FALSE)
+  }
+  if (is.null(update_fn)) {
+    update_fn <- function(x) asreml::update.asreml(x)
+  }
+  if (!is.function(update_fn)) {
+    stop("update_fn must be a function.", call. = FALSE)
+  }
+  if (max_updates == 0L) return(mod)
+  for (attempt in seq_len(max_updates)) {
+    if (!gp_asreml_fit_requires_refinement(
+      mod, max_percent_change = max_percent_change
+    )) break
+    mod <- update_fn(mod)
+  }
+  mod
+}
+
+#' Reject an ASReml fit whose model-implied quantities are not trustworthy
+#'
+#' Prediction, PEV, variance, covariance and correlation output must never be
+#' produced from a failed or materially unfinished ASReml optimization. ASReml
+#' can report `converge = TRUE` while still warning that a variance component
+#' changed by more than one percent on the final iteration, so both states are
+#' checked. Boundary parameters are allowed; the reconstructed covariance
+#' matrix is validated separately by the structure-specific extractor.
+#'
+#' @param mod A fitted ASReml model.
+#' @param context Short label included in an error message.
+#' @param max_percent_change Largest accepted final percent change for a fitted
+#'   non-boundary variance parameter.
+#' @return `mod`, invisibly.
+#' @keywords internal
+#' @noRd
+gp_asreml_assert_trustworthy_fit <- function(mod,
+                                             context = "ASReml model",
+                                             max_percent_change = 1) {
+  if (is.null(mod)) {
+    stop(context, " did not return a fitted model.", call. = FALSE)
+  }
+  converge <- tryCatch(mod$converge, error = function(e) NULL)
+  if (!isTRUE(converge)) {
+    stop(
+      context,
+      " did not converge; prediction, PEV and variance-covariance output will not be exported.",
+      call. = FALSE
+    )
+  }
+  ifault <- suppressWarnings(as.integer(tryCatch(mod$ifault, error = function(e) NA_integer_))[1L])
+  if (is.finite(ifault) && ifault != 0L) {
+    stop(
+      context, " has ASReml ifault = ", ifault,
+      "; prediction and variance-covariance output will not be exported.",
+      call. = FALSE
+    )
+  }
+  percent_change <- suppressWarnings(as.numeric(
+    tryCatch(mod$vparameters.pc, error = function(e) numeric())
+  ))
+  constraint <- as.character(
+    tryCatch(mod$vparameters.con, error = function(e) character())
+  )
+  if (length(constraint) != length(percent_change)) {
+    constraint <- rep(NA_character_, length(percent_change))
+  }
+  # B/F parameters are fixed at a boundary or by the model and ASReml reports
+  # no meaningful final update for them. Test only estimable finite updates.
+  estimable <- is.finite(percent_change) & !constraint %in% c("B", "F")
+  excessive_change <- estimable & abs(percent_change) > max_percent_change
+  if (any(excessive_change)) {
+    offending <- names(mod$vparameters.pc)[excessive_change]
+    stop(
+      context, " has variance component(s) changing by more than ",
+      format(max_percent_change, trim = TRUE), "% on the final iteration",
+      if (length(offending)) paste0(": ", paste(offending, collapse = ", ")) else ".",
+      " Output is withheld until the model is stable.",
+      call. = FALSE
+    )
+  }
+  invisible(mod)
+}
+
+#' Delta-method standard error of heritability via vpredict
+#'
+#' Internal helper. Given a fitted ASReml model and the variance-component row
+#' names that form the genetic numerator and the (single) residual term of a
+#' heritability ratio
+#'   h2 = (Vg_1 + ... + Vg_k) / (Vg_1 + ... + Vg_k + Ve),
+#' this returns the delta-method standard error of h2 from
+#' [asreml::vpredict]. `vpredict` indexes components as `V<i>` by their row order
+#' in `summary(model)$varcomp`, so the supplied row names are matched against
+#' that table to build the formula. This is exact only when the numerator and
+#' denominator are sums of raw variance components that each correspond to a
+#' single varcomp row (e.g. compound-symmetry or `corgh` diagonal variances).
+#'
+#' It is deliberately conservative: if `asreml` is unavailable, any requested
+#' component cannot be matched, or `vpredict` errors (e.g. a factor-analytic
+#' structure where the per-environment genetic variance is a non-linear function
+#' of loadings, which this linear-ratio formula does NOT represent), it returns
+#' `NA_real_` rather than a wrong number.
+#'
+#' @param model A fitted asreml model.
+#' @param vg_rownames Character vector of `summary(model)$varcomp` row names whose
+#'   components sum to the genetic variance numerator.
+#' @param ve_rowname Single `summary(model)$varcomp` row name for the residual
+#'   variance of this heritability ratio.
+#' @return The standard error of `h2` as a length-1 numeric, or `NA_real_`.
+#' @keywords internal
+#' @noRd
+gp_asreml_heritability_se <- function(model, vg_rownames, ve_rowname) {
+  out <- tryCatch({
+    if (!requireNamespace("asreml", quietly = TRUE)) return(NA_real_)
+    if (is.null(model) || length(vg_rownames) < 1L || length(ve_rowname) != 1L) return(NA_real_)
+    vc <- summary(model)$varcomp
+    if (is.null(vc) || is.null(rownames(vc))) return(NA_real_)
+    rn <- rownames(vc)
+    ig <- match(vg_rownames, rn)
+    ie <- match(ve_rowname, rn)
+    if (anyNA(ig) || anyNA(ie)) return(NA_real_)
+    num <- paste(sprintf("V%d", ig), collapse = " + ")
+    den <- paste(sprintf("V%d", c(ig, ie)), collapse = " + ")
+    form <- stats::as.formula(sprintf("h2 ~ (%s) / (%s)", num, den))
+    res <- asreml::vpredict(model, form)
+    as.numeric(res$SE[1L])
+  }, error = function(e) NA_real_)
+  if (length(out) != 1L || !is.finite(out)) NA_real_ else out
+}
+
+#' Per-environment heritability SE for env-structured genetic variances
+#'
+#' Internal helper for MET heritability with a variance-covariance structure
+#' whose diagonal entries are genuine per-environment variance-component rows
+#' (e.g. `corgh`, `us`). For environment `env_label` it locates that env's
+#' genetic-variance row(s) (one per omic in `names_in_inv_list`, correlation/
+#' covariance rows excluded) and residual row, then returns the delta-method SE
+#' of h2 from [gp_asreml_heritability_se].
+#'
+#' Crucially it is **self-verifying**: it only returns an SE when the matched
+#' components actually reproduce the point estimate's genetic numerator
+#' (`target_vg`) and residual (`target_ve`). For a factor-analytic structure the
+#' per-env genetic variance is `Lambda Lambda' + psi` (a non-linear function of
+#' several parameters) and matches no single row, so the check fails and the
+#' helper returns `NA_real_` rather than a wrong SE.
+#'
+#' @param model A fitted asreml model.
+#' @param vc The variance-component table (`summary(model)$varcomp`), passed in to
+#'   avoid recomputing it per environment.
+#' @param names_in_inv_list Inverse-relationship object name(s) that appear in the
+#'   genetic variance row names.
+#' @param env_label The environment level whose heritability SE is wanted.
+#' @param target_vg Point-estimate genetic variance numerator for this env.
+#' @param target_ve Point-estimate residual variance for this env.
+#' @param tol Relative tolerance for the self-check.
+#' @return The h2 standard error as a length-1 numeric, or `NA_real_`.
+#' @keywords internal
+#' @noRd
+gp_asreml_h2_se_for_env <- function(model, vc, names_in_inv_list, env_label,
+                                    target_vg, target_ve, tol = 1e-4) {
+  out <- tryCatch({
+    if (is.null(vc) || is.null(rownames(vc))) return(NA_real_)
+    rn <- rownames(vc)
+    is_cov <- grepl("\\.cor$|!cor$|\\.cov$", rn)            # correlation/covariance terms
+    elab <- paste0(gsub("([\\W])", "\\\\\\1", env_label, perl = TRUE))  # escape regex metachars
+    # genetic variance row(s) for this env: match the inverse name AND end in the
+    # env label, excluding correlation/covariance entries.
+    g_rows <- unlist(lapply(names_in_inv_list, function(nm) {
+      hit <- grepl(nm, rn, fixed = TRUE) & grepl(paste0(elab, "$"), rn) & !is_cov
+      rn[hit]
+    }))
+    if (!length(g_rows)) return(NA_real_)
+    # residual row for this env, or the single shared residual if homogeneous.
+    r_hit <- which(grepl(paste0(elab, "!R$"), rn))
+    if (!length(r_hit)) r_hit <- which(grepl("!R$", rn))
+    if (length(r_hit) != 1L) return(NA_real_)
+    e_row <- rn[r_hit]
+    # Self-check: matched components must reproduce the point-estimate terms.
+    # Tolerance is relative to the target (plus a tiny absolute floor) so the
+    # guard stays sensitive even when a variance is near zero -- a factor-analytic
+    # diagonal differs from the matched rows by far more than this.
+    if (abs(sum(vc[g_rows, "component"]) - target_vg) > tol * abs(target_vg) + 1e-8) return(NA_real_)
+    if (abs(vc[e_row, "component"] - target_ve) > tol * abs(target_ve) + 1e-8) return(NA_real_)
+    gp_asreml_heritability_se(model, vg_rownames = g_rows, ve_rowname = e_row)
+  }, error = function(e) NA_real_)
+  if (length(out) != 1L || !is.finite(out)) NA_real_ else out
+}
+
 #' Compute Inverse and Sparse Matrix from a Kernel Matrix
 #'
 #' This function computes the inverse of a given kernel matrix using a regularization
@@ -70,14 +341,10 @@ compute_inverse_and_sparse <- function(kernel = NULL,
       inverse_matrix <- result
     }
 
-    # Create sparse matrix
-    # sparse <- sparse_matrix(grm_kernel_data = inverse_matrix)
-    # attr(sparse, "rowNames") <- rownames(kernel)
-    # attr(sparse, "colNames") <- colnames(kernel)
-    # attr(sparse, "INVERSE") <- TRUE
-    attr(inverse_matrix, "rowNames") <- rownames(kernel)
-    attr(inverse_matrix, "colNames") <- colnames(kernel)
-    attr(inverse_matrix, "INVERSE") <- TRUE
+    sparse <- sparse_matrix(grm_kernel_data = inverse_matrix)
+    attr(sparse, "rowNames") <- rownames(kernel)
+    attr(sparse, "colNames") <- colnames(kernel)
+    attr(sparse, "INVERSE") <- TRUE
   } else {
     sparse <- sparse_matrix(grm_kernel_data = kernel)
     attr(sparse, "rowNames") <- rownames(kernel)
@@ -86,6 +353,52 @@ compute_inverse_and_sparse <- function(kernel = NULL,
   }
 
   return(sparse)
+}
+
+asreml_normalize_formula_arg <- function(x, labels = character()) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+  if (length(labels) && is.character(x) && length(x) == 1L) {
+    x_chr <- toupper(trimws(as.character(x)))
+    if (!nzchar(x_chr) || is.na(x_chr) || x_chr %in% toupper(labels)) {
+      return(NULL)
+    }
+  }
+  x
+}
+
+asreml_rhs_terms <- function(x, labels = character()) {
+  x <- asreml_normalize_formula_arg(x, labels = labels)
+  if (is.null(x)) {
+    return(character())
+  }
+  if (!inherits(x, "formula")) {
+    msg <- ""
+    stop(print(paste(msg, "The fixed/covariate term is not a class of type 'formula'. Example: fixed = ~ X + Y")),
+         call. = FALSE)
+  }
+  terms <- all.vars(x)
+  terms <- unique(trimws(as.character(terms)))
+  terms[nzchar(terms)]
+}
+
+asreml_append_rhs_terms <- function(code, terms) {
+  terms <- unique(trimws(as.character(terms %||% character())))
+  terms <- terms[nzchar(terms)]
+  if (!length(terms)) {
+    return(code)
+  }
+  for (term in terms) {
+    code <- paste(code, term, sep = "+")
+  }
+  code
+}
+
+asreml_clean_fixed_code <- function(code) {
+  code <- gsub("\\+\\s*$", "", code)
+  code <- gsub("\\+\\s*,", ",", code)
+  code
 }
 
 # Function to check if current order of rownames or colnames is the same as unique_GIDs
@@ -116,6 +429,11 @@ compute_inverse_and_sparse <- function(kernel = NULL,
 #' related to different genetic components.
 #' @param gen_name A character string specifying the name of the genetic factor in the model.
 #' @param pheno_data A data frame containing phenotypic data used in the model.
+#' @param kernel_list Optional named list of additional relationship or kernel matrices.
+#' @param weights Optional positive Stage 2 observation precisions, supplied as
+#'   a numeric vector, one-column table, or column name in `pheno_data`. ASReml
+#'   uses an internal data column and `asr_gaussian(dispersion = 1)`, so the
+#'   residual variance for row `i` is exactly `1 / weights[i]`.
 #' @param ... Additional arguments for future use or extensions.
 #'
 #' @return A list containing elements critical for ASReml model specification,
@@ -157,6 +475,7 @@ asreml_utilis_new <- function(
     omic1_kernel = NULL,
     omic2_kernel = NULL,
     omic3_kernel = NULL,
+    kernel_list = NULL,
     inverse = NULL,
     epsilon = TRUE,
     gen_name = NULL,
@@ -172,7 +491,41 @@ asreml_utilis_new <- function(
     ...
 ) {
 
-  msg <- "\n==================================================\n"
+  msg <- ""
+
+  pheno_data <- as.data.frame(pheno_data, stringsAsFactors = FALSE)
+  class(pheno_data) <- "data.frame"
+  if (!is.null(gen_name) && gen_name %in% names(pheno_data)) {
+    pheno_data[[gen_name]] <- as.factor(pheno_data[[gen_name]])
+  }
+  if (!is.null(heter_groups) && heter_groups %in% names(pheno_data)) {
+    pheno_data[[heter_groups]] <- as.factor(pheno_data[[heter_groups]])
+  }
+  stage2_weights <- gp_resolve_stage2_precision_weights(
+    weights = weights,
+    pheno_data = pheno_data,
+    response = response,
+    gen_name = gen_name,
+    context = "ASReml Stage 2 observation weights"
+  )
+  weight_column <- NULL
+  if (isTRUE(stage2_weights$supplied)) {
+    weight_column <- gp_stage2_weight_column()
+    pheno_data[[weight_column]] <- stage2_weights$precision
+  }
+  heter_control <- gp_normalize_single_environment_heter_controls(
+    pheno_data = pheno_data,
+    gen_name = gen_name,
+    heter_groups = heter_groups,
+    heter_resid = heter_resid,
+    var_cov_str = var_cov_str,
+    response = response
+  )
+  heter_groups <- heter_control$heter_groups
+  heter_resid <- heter_control$heter_resid
+  var_cov_str <- heter_control$var_cov_str
+  fixed <- asreml_normalize_formula_arg(fixed, labels = c("FIXED", "fixed_term_model", "NULL"))
+  cova <- asreml_normalize_formula_arg(cova, labels = c("COVA", "covariate", "NULL"))
 
   if(engine %in% rownames(installed.packages())){
     do.call('library', list(engine))
@@ -183,11 +536,15 @@ asreml_utilis_new <- function(
     stop(print(paste(msg,'You need to install asreml-R to use asreml-R')), call. = FALSE)
   }
 
-  datasets <- list(gmatrix, omic1_kernel, omic2_kernel, omic3_kernel)
-  dataset_names <- c("gmatrix", "omic1_kernel", "omic2_kernel", "omic3_kernel")
-  datasets_index <- which(!sapply(datasets, is.null))
-  datasets <-  datasets[datasets_index]
-  dataset_names <- dataset_names[datasets_index]
+  datasets <- gp_collect_kernel_inputs(
+    gmatrix = gmatrix,
+    gkernel = gkernel,
+    omic1_kernel = omic1_kernel,
+    omic2_kernel = omic2_kernel,
+    omic3_kernel = omic3_kernel,
+    kernel_list = kernel_list
+  )
+  dataset_names <- names(datasets)
 
   # Extract unique GIDs from pheno_data to determine the row order
   unique_GIDs <- as.character(unique(pheno_data[[gen_name]]))
@@ -214,7 +571,10 @@ asreml_utilis_new <- function(
     dataset <- datasets[[i]]
 
     if (!is.null(dataset)) {
-      inv_list[[dataset_names[i]]] <- compute_inverse_and_sparse(dataset, inverse)
+      inv_list[[dataset_names[i]]] <- compute_inverse_and_sparse(
+        kernel = dataset,
+        inverse = inverse
+      )
     }
 
 
@@ -245,11 +605,6 @@ asreml_utilis_new <- function(
   }
 
   names_in_inv_list <- names(inv_list)
-  ## Here pworkspace is not included because predict function is not done here
-  # asreml::asreml.options(trace=FALSE,
-  #                        workspace = workspace,
-  #                        pworkspace = pworkspace,
-  #                        maxit = maxit)
 
 
   #### When the gen_name are present in more than one environment/location
@@ -285,30 +640,19 @@ asreml_utilis_new <- function(
   code_asr[1] <- paste0(paste('asreml::asreml(fixed=', 'trait'),  '~1')
   code_asr[2] <- 'random=~'
   code_asr[3] <- 'residual=~'
+  fixed_term <- NULL
+  check_heter_grp_fixed <- NULL
 
   # Adding covariates (fixed)
   if (!is.null(cova)) {
-    cova_term <- strsplit(as.character(cova[2]), split = "[+]")[[1]]
-    if (length(cova_term )>1) {
-      for (c in 1:length(cova_term )) {
-        code_asr[1] <- paste(code_asr[1], cova_term[c], sep='+')
-      }
-    } else {
-      code_asr[1] <- paste(code_asr[1], cova_term, sep='+')
-      #code.asr[1] <- paste(code.asr[1], cova)
-    }
+    cova_term <- asreml_rhs_terms(cova, labels = c("COVA", "covariate", "NULL"))
+    code_asr[1] <- asreml_append_rhs_terms(code_asr[1], cova_term)
   }
 
   # Adding fixed factors
   if (!is.null(fixed)) {
-    fixed_term <- strsplit(as.character(fixed[2]), split = "[+]")[[1]]
-    if (length(all.vars(fixed))>1) {
-      for (v in 1:length(all.vars(fixed))) {
-        code_asr[1] <- paste(code_asr[1], all.vars(fixed)[v], sep='+')
-      }
-    } else {
-      code_asr[1] <- paste(code_asr[1], all.vars(fixed), sep='+')
-    }
+    fixed_term <- asreml_rhs_terms(fixed, labels = c("FIXED", "fixed_term_model", "NULL"))
+    code_asr[1] <- asreml_append_rhs_terms(code_asr[1], fixed_term)
 
   } else{
     if (is.null(fixed)) {
@@ -376,50 +720,37 @@ asreml_utilis_new <- function(
                    gen_pos = gen_pos,
                    inter_gen_pos = inter_gen_pos,
                    rand_term = rand_term,
-                   inv_list = inv_list)
+                   inv_list = inv_list,
+                   stage2_weight_column = weight_column,
+                   stage2_weight_source = stage2_weights$source)
 
 
     return(output)
   }
 
   code_asr_fit[1] <-  gsub("trait", response, code_asr_fit[1])
+  code_asr_fit[1] <- asreml_clean_fixed_code(code_asr_fit[1])
   #} else {
 
   #code.asr[1] <-  gsub(response[trait-1], response[trait], code.asr[1])
   #}
 
 
-  if(is.null(weights)){
-    #code.asr[4] <- 'na.action=list(x="include",y="include"),data=pheno_data)'
-    code_asr_fit[4] <- 'na.action=list(x="include",y="include"),data=pheno_data)'
-  } else {
-    if(!is.null(weights)){
-      #code.asr[4] <- 'na.action=list(x="include",y="include"), weights = weights, family = asr_gaussian(dispersion = 1), data=pheno_data)'
-      code_asr_fit[4] <- 'na.action=list(x="include",y="include"), weights = weights, family = asr_gaussian(dispersion = 1), data=pheno_data)'
-    }
-
-    # if(length(unique(response[trait]))<=10 & is.null(weights)){
-    #   code.asr[4] <- 'na.action=list(x="include",y="include"), family = asr_multinomial(),  data=pheno_data)'
-    # }
-    #
-    # if(length(unique(response[trait]))<=10 & !is.null(weights)){
-    #   code.asr[4] <- 'na.action=list(x="include",y="include"), weights = weights, family = asr_multinomial(dispersion = 1),  data=pheno_data)'
-    # }
-
-    if(length(unique(response[trait]))==2 & !is.null(weights)){
-      #code.asr[4] <- 'na.action=list(x="include",y="include"), weights = weights, family = asr_binomial(dispersion = 1),  data=pheno_data)'
-      code_asr_fit[4] <- 'na.action=list(x="include",y="include"), weights = weights, family = asr_binomial(dispersion = 1),  data=pheno_data)'
-    }
-
-    if(length(unique(response[trait]))==2 & is.null(weights)){
-      #code.asr[4] <- 'na.action=list(x="include",y="include"), family = asr_binomial(),  data=pheno_data)'
-      code_asr_fit[4] <- 'na.action=list(x="include",y="include"), family = asr_binomial(),  data=pheno_data)'
-    }
-
-  }
+  data_cache_id <- asreml_model_data_register(pheno_data)
+  data_expr <- paste0("PredictProR:::asreml_model_data_lookup('", data_cache_id, "')")
+  code_asr_fit[4] <- gp_asreml_weighted_data_clause(
+    data_expr = data_expr,
+    weight_column = weight_column,
+    response_family = "gaussian"
+  )
 
 
-  asreml::asreml.options(trace=FALSE)
+  asreml_apply_options(
+    workspace = workspace,
+    pworkspace = pworkspace,
+    maxit = maxit,
+    engine = engine %||% "asreml"
+  )
   ####
   #code.asr[1] <- paste('mod<-', code.asr[1], sep='')
   code_asr_fit[1] <- paste('mod<-', code_asr_fit[1], sep='')
@@ -427,19 +758,38 @@ asreml_utilis_new <- function(
   if(isTRUE(cross_validation)){
     return(str_mod)
   }
-  ## Calls the current environment for evaluation
-  eval(parse(text=str_mod), envir=environment())
+  ## Calls the current environment for evaluation. ASReml's default
+  ## workspace (1e8 words = 800 MB) is too small for larger MET fits (e.g.
+  ## 10 G2F environments); retry with a 4x larger workspace, at most twice
+  ## and within 60% of available memory, before giving up.
+  fit_env <- environment()
+  ws_words <- gp_asreml_workspace_words(workspace)
+  for (attempt in 0:2) {
+    fit_error <- tryCatch({
+      eval(parse(text = str_mod), envir = fit_env)
+      NULL
+    }, error = function(e) e)
+    if (is.null(fit_error)) break
+    if (attempt == 2L || !grepl("Insufficient workspace", conditionMessage(fit_error), fixed = TRUE)) stop(fit_error)
+    next_words <- gp_asreml_next_workspace_words(ws_words)
+    if (is.null(next_words)) stop(fit_error)
+    message(sprintf("ASReml needed more than %.1f GB of workspace; retrying with %.1f GB (set `workspace` to skip this).",
+                    ws_words * 8 / 1024^3, next_words * 8 / 1024^3))
+    ws_words <- next_words
+    asreml_apply_options(workspace = ws_words, pworkspace = pworkspace, maxit = maxit,
+                         engine = engine %||% "asreml")
+  }
+  mod$call$data <- parse(text = data_expr)[[1]]
   #if (!mod$converge) { eval(parse(text='mod<-asreml::update.asreml(mod)')) }
   # Assuming `mod` is your initial model object
-  for (i in 1:3) {
-    if (!mod$converge) {
-
-      eval(parse(text='mod<-asreml::update.asreml(mod)'))
-      }else {
-      # Exit the loop if model has converged
-      break
-    }
+  mod <- gp_asreml_refine_fit(mod, max_updates = 8L)
+  fit_context <- if (!is.null(heter_groups) && !is.null(var_cov_str)) {
+    paste0("ASReml MET GBLUP (", var_cov_str, ")")
+  } else {
+    "ASReml single-trait GBLUP"
   }
+  gp_asreml_warn_if_not_converged(mod, context = fit_context)
+  gp_asreml_assert_trustworthy_fit(mod, context = fit_context)
 
 
   ###### Process if the model is not stable #######
@@ -485,7 +835,9 @@ asreml_utilis_new <- function(
                  names_in_inv_list = names_in_inv_list ,
                  gen_pos = gen_pos,
                  inter_gen_pos = inter_gen_pos,
-                 rand_term = rand_term)
+                 rand_term = rand_term,
+                 stage2_weight_column = weight_column,
+                 stage2_weight_source = stage2_weights$source)
 
   # names(output) <- c("model",
   #                    "str_mod",

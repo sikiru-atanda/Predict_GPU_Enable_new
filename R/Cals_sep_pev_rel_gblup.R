@@ -19,10 +19,12 @@
 #'   - `sep`: Standard error of the prediction for the GEBVs.
 #'
 #' @examples
+#' \dontrun{
 #' # Assuming geno_object, va, and ve are predefined:
 #' results <- sep_pev_rel_gblup(geno_object = GRM,
 #'                              va = 0.5,
 #'                              ve = 0.5)
+#' }
 #' @export
 #' @importFrom stats solve
 

@@ -2,8 +2,7 @@
 % Please edit documentation in R/geno_to_modell.R
 \name{geno_to_model}
 \alias{geno_to_model}
-\title{Title
-#' Title}
+\title{Prepare Genomic Data for Model Fitting}
 \usage{
 geno_to_model(
   geno_data = NULL,
@@ -15,20 +14,67 @@ geno_to_model(
   ind_call_rate_threshold = 0.9,
   snp_call_rate_threshold = 0.9,
   impute = TRUE,
+  imputation_method = "knn",
+  impute_knn_k = 5,
+  ploidy = "auto",
+  ld_prunning_qc = TRUE,
   map_data = NULL,
   message = TRUE,
   ...
 )
 }
+\arguments{
+\item{geno_data}{A matrix or data.frame containing genomic data for the full dataset. Used if no separate training or testing datasets are provided.}
+
+\item{train_geno_data}{A matrix or data.frame containing genomic data for the training set.}
+
+\item{test_geno_data}{A matrix or data.frame containing genomic data for the testing set.}
+
+\item{qc_filtering}{Logical, if TRUE, quality control filtering is applied.}
+
+\item{maf_threshold}{Numeric, threshold for minor allele frequency below which SNPs are removed.}
+
+\item{het_threshold}{Numeric, threshold for heterozygosity above which SNPs are removed.}
+
+\item{ind_call_rate_threshold}{Numeric, threshold for individual call rate below which individuals are removed.}
+
+\item{snp_call_rate_threshold}{Numeric, threshold for SNP call rate below which SNPs are removed.}
+
+\item{impute}{Logical; if `TRUE`, impute missing genotype dosages after QC.}
+
+\item{imputation_method}{Imputation method for missing genotype values when
+`impute = TRUE`; one of `"knn"`, `"mean"`, `"median"`, or `"mode"`.}
+
+\item{impute_knn_k}{Integer; number of nearest neighbours used when
+`imputation_method = "knn"`.}
+
+\item{ploidy}{One positive integer or `"auto"`. Unannotated polyploid
+numeric matrices require an explicit value; annotated matrices retain the
+same ploidy through QC and train/test assembly.}
+
+\item{ld_prunning_qc}{Logical; if `TRUE`, apply LD-based pruning of markers
+after the QC filters.}
+
+\item{map_data}{A data.frame or matrix containing marker information. Used alongside `geno_data` if provided.}
+
+\item{message}{Logical, if TRUE, messages about the QC and data preparation process are displayed.}
+
+\item{...}{Additional arguments affecting the QC process.}
+}
+\value{
+A list containing:
+  - \code{snps_matrix}: The genomic data matrix after applying QC filters and ensuring compatibility between datasets.
+  - \code{qc_metrics_and_summary_stat}: A data frame summarizing the QC process, including the number of markers and individuals removed.
+}
 \description{
-Overall, this serve as gateway between snp/marker-precheck function and readiness of
-the snp/marker data for model fitting#'
-The objective of this function is to do the following:
-1. Check the output from geno-precheck function for geno_data before declaring it for model fit
-2. If geno_data_train and geno_data_test were present and pass through the pre-check process,
-  These will processed be processed that is:
-   1) It check that column name (maker/snp) for both data match/the same
-   2) Combined the dataset for model fit and prediction.
-   It is assumed here that geno_data is missing/not provided by the user.
-3. The output will be a matrix(geno_data) declared for model fit.
+This function prepares genomic data for model fitting by performing quality control (QC) checks, adjusting SNP coding, and ensuring compatibility between training and testing datasets. It can handle scenarios with only training data, only testing data, or both, and applies QC filters based on parameters such as minor allele frequency (MAF) and heterozygosity thresholds.
+}
+\examples{
+\dontrun{
+# Assuming `genomic_data` is a matrix with SNP data for the full dataset
+result <- geno_to_model(geno_data = genomic_data, qc_filtering = TRUE)
+prepared_genomic_data <- result$snps_matrix
+qc_summary <- result$qc_metrics_and_summary_stat
+}
+
 }

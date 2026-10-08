@@ -1,129 +1,156 @@
 #' @import data.table
 #' @importFrom data.table ., .SD, :=
 
-# Function to dynamically install Java
+beagle_system2 <- function(command, args, stdout = TRUE, stderr = TRUE) {
+  system2(command, args = args, stdout = stdout, stderr = stderr)
+}
+
+# Function to check Java without mutating the user's operating system
 check_and_install_java <- function() {
-  java_check <- system("java -version", intern = TRUE, ignore.stderr = TRUE)
-
-  if (length(java_check) == 0) {
-    message("Java is not installed. Installing Java...")
-
-    install_java <- function() {
-      os_type <- Sys.info()["sysname"]
-
-      if (os_type == "Linux") {
-        message("Installing Java on Linux...")
-        system("sudo apt update", wait = TRUE)
-        system("sudo apt install -y default-jre", wait = TRUE)
-      } else if (os_type == "Darwin") {
-        message("Installing Java on macOS using Homebrew...")
-        system("brew install openjdk@11", wait = TRUE)
-      } else if (os_type == "Windows") {
-        message("Installing Java on Windows using Chocolatey...")
-        system("choco install jdk11", wait = TRUE)
-      } else {
-        stop("Unsupported operating system. Please install Java manually.")
-      }
-
-      system("java -version", wait = TRUE)
-    }
-
-    install_java()
-  } else {
-    message("Java is already installed.")
+  java_bin <- Sys.getenv("PREDICTPRO_JAVA", unset = "")
+  if (nzchar(java_bin) && !file.exists(java_bin)) {
+    java_bin <- unname(Sys.which(java_bin))
   }
+  if (!nzchar(java_bin)) {
+    java_bin <- unname(Sys.which("java"))
+  }
+  if (!nzchar(java_bin) || !file.exists(java_bin)) {
+    stop(
+      "Java was not found. Install Java 8 or newer and make `java` available on PATH, ",
+      "or set PREDICTPRO_JAVA to the Java executable path.",
+      call. = FALSE
+    )
+  }
+
+  java_check <- beagle_system2(
+    java_bin,
+    args = gp_quote_system_args("-version"),
+    stdout = TRUE,
+    stderr = TRUE
+  )
+  status <- attr(java_check, "status")
+  if (!is.null(status) && !identical(as.integer(status), 0L)) {
+    stop("Java was found but `java -version` failed:\n", paste(java_check, collapse = "\n"), call. = FALSE)
+  }
+  invisible(normalizePath(java_bin, winslash = "/", mustWork = TRUE))
+}
+
+predictpror_beagle_cache_dir <- function() {
+  root <- Sys.getenv("PREDICTPRO_BEAGLE_DIR", unset = "")
+  if (!nzchar(root)) {
+    root <- file.path(tools::R_user_dir("PredictProR", which = "cache"), "beagle")
+  }
+  root <- normalizePath(path.expand(root), winslash = "/", mustWork = FALSE)
+  dir.create(root, recursive = TRUE, showWarnings = FALSE)
+  if (!dir.exists(root)) {
+    root <- file.path(tempdir(), "PredictProR", "beagle")
+    dir.create(root, recursive = TRUE, showWarnings = FALSE)
+  }
+  normalizePath(root, winslash = "/", mustWork = TRUE)
+}
+
+validate_beagle_jar <- function(path) {
+  path <- normalizePath(path, winslash = "/", mustWork = TRUE)
+  info <- file.info(path)
+  if (is.na(info$size) || info$size < 4L) {
+    stop("The Beagle jar is empty or truncated: ", path, call. = FALSE)
+  }
+  con <- file(path, open = "rb")
+  on.exit(close(con), add = TRUE)
+  signature <- readBin(con, what = "raw", n = 2L)
+  if (!identical(as.integer(signature), c(0x50L, 0x4bL))) {
+    stop("The Beagle jar does not have a valid ZIP/JAR signature: ", path, call. = FALSE)
+  }
+  path
 }
 
 # Function to download Beagle
-download_beagle <- function(output_dir = getwd(), beagle_version = "5.4") {
-  beagle_url <- "https://faculty.washington.edu/browning/beagle/beagle.06Aug24.a91.jar"
+download_beagle <- function(output_dir = predictpror_beagle_cache_dir(), beagle_version = "29Oct24.c8e") {
+  beagle_jar_env <- Sys.getenv("PREDICTPRO_BEAGLE_JAR", unset = "")
+  if (nzchar(beagle_jar_env) && file.exists(beagle_jar_env)) {
+    return(validate_beagle_jar(beagle_jar_env))
+  }
+
+  beagle_url <- Sys.getenv("PREDICTPRO_BEAGLE_URL", unset = "")
+  if (!nzchar(beagle_url)) {
+    beagle_url <- paste0("https://faculty.washington.edu/browning/beagle/beagle.", beagle_version, ".jar")
+  }
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   beagle_jar_path <- file.path(output_dir, paste0("beagle.", beagle_version, ".jar"))
 
   if (!file.exists(beagle_jar_path)) {
+    temp_jar <- tempfile("beagle-download-", tmpdir = output_dir, fileext = ".jar")
+    on.exit(unlink(temp_jar, force = TRUE), add = TRUE)
     tryCatch({
-      download.file(beagle_url, destfile = beagle_jar_path, mode = "wb")
-      message("Beagle version 06Aug24.a91 downloaded successfully.")
+      utils::download.file(beagle_url, destfile = temp_jar, mode = "wb", quiet = TRUE)
+      validate_beagle_jar(temp_jar)
+      if (!file.rename(temp_jar, beagle_jar_path)) {
+        if (!file.copy(temp_jar, beagle_jar_path, overwrite = FALSE)) {
+          stop("could not move the verified download into the Beagle cache")
+        }
+      }
+      message("Beagle downloaded successfully: ", beagle_jar_path)
     }, error = function(e) {
-      message("Failed to download Beagle: ", e$message)
+      stop("Failed to download Beagle from ", beagle_url, ": ", e$message, call. = FALSE)
     })
   } else {
     message("Beagle is already downloaded.")
   }
 
-  return(beagle_jar_path)
+  validate_beagle_jar(beagle_jar_path)
 }
 
 
 # Function to generate a new filename by inserting 'res' before the file extension
 create_res_output <- function(output_vcf) {
-  # Separate the base name and the extension (assumes .vcf is the extension)
-  file_parts <- strsplit(output_vcf, split = "\\.vcf")[[1]]
-
-  # Combine the base name with '_res' and add the extension back
-  res_output_vcf <- paste0(file_parts[1], "_res.vcf")
-
-  return(res_output_vcf)
+  output_vcf <- sub("\\.gz$", "", output_vcf, ignore.case = TRUE)
+  output_vcf <- sub("\\.vcf$", "", output_vcf, ignore.case = TRUE)
+  paste0(output_vcf, "_res.vcf")
 }
 
 # Function to filter and dynamically remove SNPs with identical REF and ALT or missing values in REF/ALT
 filter_vcf <- function(input_vcf, output_vcf) {
-
-  # Read the VCF metadata (lines starting with '##')
-  # vcf_metadata <- data.table::fread(input_vcf, header = FALSE, sep = "\n", quote = "",
-  #                                   nrows = grep("#CHROM", readLines(input_vcf)) - 1)
-
-  vcf_metadata <- data.table::fread(input_vcf, skip = "#CHROM", header = TRUE)[, 1:9]
-
-
-  # Read the VCF data (starting from the #CHROM line onwards)
-  vcf_data <- data.table::fread(input_vcf, skip = "#CHROM", header = TRUE)
-
-  # Define missing values (e.g., NA, ".", or any other missing indication)
-  missing_values <- c(NA, ".", "")
-
-  # Identify SNPs where either REF == ALT or where REF or ALT is missing
-  #problematic_snps <- vcf_data[REF == ALT | REF %in% missing_values | ALT %in% missing_values]
-  problematic_snps <- vcf_data[
-    vcf_data[["REF"]] == vcf_data[["ALT"]] |
-      vcf_data[["REF"]] %in% missing_values |
-      vcf_data[["ALT"]] %in% missing_values
-  ]
-  # If there are problematic SNPs, filter and write the new VCF
-  if (nrow(problematic_snps) > 0) {
-    # Filter out SNPs where REF == ALT or where REF or ALT is missing
-    filtered_vcf <- vcf_data[REF != ALT & !(REF %in% missing_values) & !(ALT %in% missing_values)]
-
-    # Write the filtered VCF back to file
-    data.table::fwrite(vcf_metadata, output_vcf, col.names = FALSE, quote = FALSE)  # Write metadata
-    data.table::fwrite(filtered_vcf, output_vcf, sep = "\t", append = TRUE, col.names = TRUE, quote = FALSE)  # Write data
-
-    # Print result
-    cat("Filtered VCF file saved as:", output_vcf, "\n")
-    cat("Number of SNPs removed:", nrow(vcf_data) - nrow(filtered_vcf), "\n")
-
-    return(TRUE)
+  res <- sanitize_vcf_for_external_tools(
+    input_vcf = input_vcf,
+    output_vcf = output_vcf,
+    mode = "beagle"
+  )
+  if (isTRUE(res$changed)) {
+    removed <- res$metrics$input_variants - res$metrics$output_variants
+    message("Filtered VCF file saved as: ", res$path)
+    message("Number of variants removed or normalized: ", removed + res$metrics$normalized_fields)
   } else {
-    # No problematic SNPs, so no file is written
-    cat("No problematic SNPs found. No file was written.\n")
-    return(FALSE)
+    message("No problematic VCF rows found. No file was written.")
   }
+  isTRUE(res$changed)
 }
 
 # Function to extrapolate a genetic map if not provided
-generate_genetic_map <- function(vcf_file) {
+generate_genetic_map <- function(vcf_file, output_dir = dirname(normalizePath(vcf_file, winslash = "/", mustWork = TRUE))) {
   message("Generating a simple extrapolated genetic map...")
 
   # Read the VCF file to extract CHROM and POS columns
-  vcf_data <- data.table::fread(vcf_file, select = c("#CHROM", "POS"))
+  vcf_data <- vcf_read_table(vcf_file)
+  chrom_col <- vcf_find_column(vcf_data, c("#CHROM", "CHROM"))
+  pos_col <- vcf_find_column(vcf_data, "POS")
+  if (is.null(chrom_col) || is.null(pos_col)) {
+    stop("VCF must contain CHROM and POS columns to generate a genetic map.", call. = FALSE)
+  }
+  pos <- suppressWarnings(as.numeric(vcf_data[[pos_col]]))
 
   # Generate a placeholder variant ID (e.g., chr:pos)
-  vcf_data[, variant_id := paste0(`#CHROM`, ":", POS)]
+  variant_id <- paste0(vcf_data[[chrom_col]], ":", vcf_data[[pos_col]])
 
   # Generate genetic positions assuming 1 cM per 1 Mb
-  vcf_data <- vcf_data[, .(chromosome = `#CHROM`, variant_id, cM = POS / 1e6, position = POS)]
+  vcf_data <- data.table::data.table(
+    chromosome = vcf_data[[chrom_col]],
+    variant_id = variant_id,
+    cM = pos / 1e6,
+    position = pos
+  )
 
   # Write the extrapolated genetic map to a file without column headers
-  map_file <- file.path(getwd(), "extrapolated_genetic_map.map")
+  map_file <- file.path(output_dir, "extrapolated_genetic_map.map")
 
   # Write the data without headers (Beagle does not expect headers)
   data.table::fwrite(vcf_data, map_file, sep = "\t", col.names = FALSE)
@@ -133,84 +160,15 @@ generate_genetic_map <- function(vcf_file) {
 
 # Function to check and clean CHROM and POS columns in a VCF file
 clean_vcf_chrom_pos <- function(input_vcf, output_vcf) {
-
-  # Read the first 100 lines (or fewer if the file is smaller)
-  vcf_sample <- data.table::fread(input_vcf, skip = "#CHROM", header = TRUE, nrows = 100)
-
-
-  # Extract CHROM and POS columns from the sample
-  chrom_sample <- as.character(vcf_sample$`#CHROM`)
-  pos_sample <- vcf_sample$POS
-
-  # Function to extract numeric part from CHROM
-  clean_chrom <- function(chrom_value) {
-    # Look for 'CHR' and extract the number that follows
-    matches <- regmatches(chrom_value, regexpr("CHR[0-9]+", chrom_value, ignore.case = TRUE))
-
-    if (length(matches) > 0) {
-      # Extract numeric portion after 'CHR'
-      return(as.numeric(gsub("[^0-9]", "", matches)))
-    } else {
-      # If no 'CHR' is found, return the numeric portion from the original value
-      return(as.numeric(gsub("[^0-9]", "", chrom_value)))
-    }
+  res <- sanitize_vcf_for_external_tools(
+    input_vcf = input_vcf,
+    output_vcf = output_vcf,
+    mode = "beagle"
+  )
+  if (isTRUE(res$changed)) {
+    message("Cleaned VCF file saved as: ", res$path)
   }
-
-  # Apply the clean_chrom function to the CHROM sample column
-  cleaned_chrom_sample <- sapply(chrom_sample, clean_chrom)
-
-  # Check if there are any non-numeric values in the CHROM or POS columns in the sample
-  if(length(cleaned_chrom_sample)>0){
-    chrom_issue <- any(is.na(cleaned_chrom_sample))
-    pos_issue <- any(is.na(pos_sample) | !is.numeric(pos_sample))
-
-    if (!chrom_issue && !pos_issue) {
-      #cat("No issues found in the first 100 lines. No file will be written.\n")
-
-    } else {
-      stop("Provide numeric CHROM and POS.", call. = FALSE)
-    }
-  } else {
-    return(FALSE)
-  }
-
-
-  # Read the full VCF metadata (lines starting with '##')
-  # vcf_metadata <- data.table::fread(input_vcf, header = FALSE, sep = "\n", quote = "",
-  #                                   nrows = grep("#CHROM", readLines(input_vcf)) - 1)
-
-  vcf_metadata <- data.table::fread(input_vcf, skip = "#CHROM", header = TRUE)[, 1:9]
-
-  # Read the full VCF data (starting from the #CHROM line onwards)
-  vcf_data <- data.table::fread(input_vcf, skip = "#CHROM", header = TRUE)
-
-  # Extract CHROM and POS columns
-  chrom <- as.character(vcf_data$`#CHROM`)
-  pos <- vcf_data$POS
-
-  # Apply the clean_chrom function to the full CHROM column
-  cleaned_chrom <- sapply(chrom, clean_chrom)
-
-  # Check if CHROM and POS are numeric
-  if (any(is.na(cleaned_chrom))) {
-    stop("Error: CHROM contains non-numeric values. Please provide a valid numeric format for CHROM.")
-  }
-
-  if (!is.numeric(pos) || any(is.na(pos))) {
-    stop("Error: POS contains non-numeric values. Please provide a valid numeric format for POS.")
-  }
-
-  # Replace the original CHROM column with the cleaned numeric version
-  vcf_data$`#CHROM` <- cleaned_chrom
-
-  # Write the cleaned VCF back to file only if there were issues
-  data.table::fwrite(vcf_metadata, output_vcf, col.names = FALSE, quote = FALSE)  # Write metadata
-  data.table::fwrite(vcf_data, output_vcf, sep = "\t", append = TRUE, col.names = TRUE, quote = FALSE)  # Write data
-
-  # Print result
-  cat("Cleaned VCF file saved as:", output_vcf, "\n")
-
-  return(TRUE)
+  isTRUE(res$changed)
 }
 
 # Function to validate reference panel file (VCF or bref3 format)
@@ -218,8 +176,8 @@ validate_ref_file <- function(ref_file) {
   if (!file.exists(ref_file)) {
     stop("Reference panel file does not exist.")
   }
-  ext <- tools::file_ext(ref_file)
-  if (!ext %in% c("vcf", "vcf.gz", "bref3")) {
+  ref_lower <- tolower(ref_file)
+  if (!grepl("\\.(vcf|vcf\\.gz|bref3)$", ref_lower)) {
     stop("Reference panel must be in VCF, gzipped VCF, or bref3 format.")
   }
   message("Reference file validated successfully.")
@@ -259,39 +217,94 @@ validate_map_file <- function(map_file) {
     stop("Map file must have exactly 4 columns: chromosome, variant ID, cM, and position (bp).")
   }
 
-  # Check if the first row contains any non-numeric values (e.g., headers)
-  if (!is.numeric(as.numeric(map_data[[1]]))) {
-    stop("Map file contains a header. Please remove the header and try again.")
-  }
-
-  # Validate that cM column is numeric
-  if (!all(sapply(map_data[[3]], is.numeric))) {
-    stop("The cM column in the map file must contain numeric values.")
+  # cM and bp must be numeric; a header row or text there fails. (Chromosome
+  # names may legitimately be text, e.g. "chr1A", so column 1 is not checked.)
+  numeric_ok <- function(x) all(!is.na(suppressWarnings(as.numeric(as.character(x)))))
+  if (!numeric_ok(map_data[[3]]) || !numeric_ok(map_data[[4]])) {
+    stop(
+      "Map file columns 3 (cM) and 4 (bp position) must be numeric. ",
+      "Remove any header row and check the column order.",
+      call. = FALSE
+    )
   }
 
   message("Map file validated successfully.")
 }
 
+# Beagle needs positions in ascending order within a chromosome; otherwise
+# it fails with an obscure "Window has only one position" error.
+gp_beagle_check_sorted_positions <- function(vcf_file) {
+  pos <- data.table::fread(
+    vcf_file, skip = "#CHROM", header = TRUE, sep = "\t", select = 1:2,
+    colClasses = "character", showProgress = FALSE
+  )
+  if (!nrow(pos)) return(invisible(TRUE))
+  chrom <- as.character(pos[[1L]])
+  bp <- suppressWarnings(as.numeric(pos[[2L]]))
+  same_chrom <- chrom[-1L] == chrom[-length(chrom)]
+  bad <- which(same_chrom & diff(bp) < 0)
+  if (length(bad)) {
+    stop(
+      "VCF positions are not sorted within chromosome '", chrom[bad[1L]], "' (POS ",
+      format(bp[bad[1L]], scientific = FALSE), " is followed by ",
+      format(bp[bad[1L] + 1L], scientific = FALSE), "). ",
+      "Sort the VCF by CHROM and POS (e.g. `bcftools sort`) before Beagle imputation.",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
 # Function to run Beagle for imputation or phasing
 run_beagle <- function(vcf_file, output_prefix, beagle_jar,
-                       map_file = NULL, ref_file = NULL, generate_map = TRUE,
+                       map_file = NULL, ref_file = NULL, generate_map = FALSE,
                        markers_file = NULL, ped_file = NULL,
                        ibd = FALSE, ne = 10000, nthreads = 4,
                        window = 40.0, overlap = 2.0, burnin = 3,
                        iterations = 12, phase_states = 280,
                        impute = TRUE, imp_states = 1600, imp_segment = 6.0,
-                       gp = TRUE, gprobs = FALSE, gt = TRUE
+                       gp = TRUE, gprobs = FALSE, gt = TRUE,
+                       java_bin = NULL, java_memory = "4g",
+                       seed = -99999L, err = NULL, em = TRUE,
+                       chrom = NULL, excludesamples = NULL,
+                       excludemarkers = NULL, imp_step = NULL,
+                       imp_nsteps = NULL, cluster = NULL, ap = FALSE
                        ) {
 
   # Validate inputs
   if (!file.exists(vcf_file)) stop("VCF file does not exist.")
+  if (!file.exists(beagle_jar)) stop("Beagle jar file does not exist.", call. = FALSE)
+  if (!is.null(markers_file) || !is.null(ped_file) || isTRUE(ibd) || isTRUE(gprobs) || !isTRUE(gt)) {
+    stop(
+      "markers_file, ped_file, ibd, gprobs, and gt=FALSE are not Beagle 5.4 arguments. ",
+      "Use excludemarkers/excludesamples or a supported Beagle 5.4 option instead.",
+      call. = FALSE
+    )
+  }
+  java_bin <- java_bin %||% check_and_install_java()
+  vcf_file <- normalizePath(vcf_file, winslash = "/", mustWork = TRUE)
+  beagle_jar <- validate_beagle_jar(beagle_jar)
+  output_dir <- normalizePath(dirname(output_prefix), winslash = "/", mustWork = FALSE)
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  output_dir <- normalizePath(output_dir, winslash = "/", mustWork = TRUE)
+  output_prefix <- output_dir |>
+    file.path(basename(output_prefix))
 
-  vcf_file_use <- create_res_output(vcf_file)
-  res_filter <- filter_vcf(vcf_file, vcf_file_use)
-  if(res_filter==TRUE) vcf_file <- vcf_file_use
-
-  res_chrom_pos <- clean_vcf_chrom_pos(vcf_file, vcf_file_use)
-  if(res_chrom_pos==TRUE) vcf_file <- vcf_file_use
+  sanitized_vcf <- sanitize_vcf_for_external_tools(vcf_file, mode = "beagle")
+  if (!identical(sanitized_vcf$path, vcf_file)) {
+    on.exit(unlink(sanitized_vcf$path), add = TRUE)
+    vcf_file <- sanitized_vcf$path
+  }
+  gp_beagle_check_sorted_positions(vcf_file)
+  if (isTRUE(sanitized_vcf$changed)) {
+    message(
+      "VCF preflight for Beagle kept ",
+      sanitized_vcf$metrics$output_variants,
+      " of ",
+      sanitized_vcf$metrics$input_variants,
+      " variants."
+    )
+  }
 
   # Check if map_file is provided and validate the format
   if (!is.null(map_file)) {
@@ -301,7 +314,7 @@ run_beagle <- function(vcf_file, output_prefix, beagle_jar,
       validate_map_file(map_file)
     }
   } else if (isTRUE(generate_map)) {
-    map_file <- generate_genetic_map(vcf_file)
+    map_file <- generate_genetic_map(vcf_file, output_dir = dirname(output_prefix))
   }
 
   # Validate reference panel file if provided
@@ -319,75 +332,146 @@ run_beagle <- function(vcf_file, output_prefix, beagle_jar,
     validate_ped_file(ped_file)
   }
 
+  beagle_args <- c(
+    paste0("-Xmx", java_memory),
+    "-jar", beagle_jar,
+    paste0("gt=", vcf_file),
+    paste0("out=", output_prefix),
+    paste0("ne=", as.integer(ne)),
+    paste0("nthreads=", as.integer(nthreads)),
+    paste0("window=", format(as.numeric(window), scientific = FALSE)),
+    paste0("overlap=", format(as.numeric(overlap), scientific = FALSE)),
+    paste0("burnin=", as.integer(burnin)),
+    paste0("iterations=", as.integer(iterations)),
+    paste0("phase-states=", as.integer(phase_states)),
+    paste0("seed=", as.integer(seed)),
+    paste0("em=", tolower(as.character(isTRUE(em))))
+  )
 
-  # Construct the Beagle command
-  beagle_cmd <- sprintf("java -Xmx4g -jar %s gt=%s out=%s ne=%d nthreads=%d window=%.1f overlap=%.1f burnin=%d iterations=%d phase-states=%d",
-                        beagle_jar, vcf_file, output_prefix, ne, nthreads, window, overlap, burnin, iterations, phase_states)
+  if (!is.null(err)) beagle_args <- c(beagle_args, paste0("err=", format(as.numeric(err), scientific = TRUE)))
+  if (!is.null(chrom)) beagle_args <- c(beagle_args, paste0("chrom=", as.character(chrom)))
+  if (!is.null(excludesamples)) {
+    validate_markers_file(excludesamples)
+    beagle_args <- c(beagle_args, paste0("excludesamples=", normalizePath(excludesamples, winslash = "/", mustWork = TRUE)))
+  }
+  if (!is.null(excludemarkers)) {
+    validate_markers_file(excludemarkers)
+    beagle_args <- c(beagle_args, paste0("excludemarkers=", normalizePath(excludemarkers, winslash = "/", mustWork = TRUE)))
+  }
 
   # Add optional files
-  if (!is.null(map_file)) beagle_cmd <- sprintf("%s map=%s", beagle_cmd, map_file)
-  if (!is.null(ref_file)) beagle_cmd <- sprintf("%s ref=%s", beagle_cmd, ref_file)
-  if (!is.null(markers_file)) beagle_cmd <- sprintf("%s markers=%s", beagle_cmd, markers_file)
-  if (!is.null(ped_file)) beagle_cmd <- sprintf("%s ped=%s", beagle_cmd, ped_file)
+  if (!is.null(map_file)) beagle_args <- c(beagle_args, paste0("map=", normalizePath(map_file, winslash = "/", mustWork = TRUE)))
+  if (!is.null(ref_file)) beagle_args <- c(beagle_args, paste0("ref=", normalizePath(ref_file, winslash = "/", mustWork = TRUE)))
+  if (!is.null(markers_file)) beagle_args <- c(beagle_args, paste0("markers=", normalizePath(markers_file, winslash = "/", mustWork = TRUE)))
+  if (!is.null(ped_file)) beagle_args <- c(beagle_args, paste0("ped=", normalizePath(ped_file, winslash = "/", mustWork = TRUE)))
 
   # Add imputation-specific flags
   if (impute) {
-    beagle_cmd <- sprintf("%s impute=true imp-states=%d imp-segment=%.1f", beagle_cmd, imp_states, imp_segment)
+    beagle_args <- c(
+      beagle_args,
+      "impute=true",
+      paste0("imp-states=", as.integer(imp_states)),
+      paste0("imp-segment=", format(as.numeric(imp_segment), scientific = FALSE))
+    )
+    if (!is.null(imp_step)) beagle_args <- c(beagle_args, paste0("imp-step=", format(as.numeric(imp_step), scientific = FALSE)))
+    if (!is.null(imp_nsteps)) beagle_args <- c(beagle_args, paste0("imp-nsteps=", as.integer(imp_nsteps)))
+    if (!is.null(cluster)) beagle_args <- c(beagle_args, paste0("cluster=", format(as.numeric(cluster), scientific = FALSE)))
   } else {
-    beagle_cmd <- sprintf("%s impute=false", beagle_cmd)
+    beagle_args <- c(beagle_args, "impute=false")
   }
 
   # Add IBD detection, GP, and GT options
-  #if (ibd) beagle_cmd <- sprintf("%s ibd=true", beagle_cmd)
-  if (gp) beagle_cmd <- sprintf("%s gp=true", beagle_cmd)
-  if (gprobs) beagle_cmd <- sprintf("%s gprobs=true", beagle_cmd)
-  if (!gt) beagle_cmd <- sprintf("%s gt=false", beagle_cmd)
+  #if (ibd) beagle_args <- c(beagle_args, "ibd=true")
+  if (gp) beagle_args <- c(beagle_args, "gp=true")
+  if (ap) beagle_args <- c(beagle_args, "ap=true")
 
 
 
   # Log Beagle execution and capture any potential errors
   log_file <- paste0(output_prefix, "_log.txt")
-  message("Running Beagle...")
-  result <- system(beagle_cmd, intern = TRUE)
+  message("Running Beagle: ", paste(c(shQuote(java_bin), shQuote(beagle_args)), collapse = " "))
+  result <- beagle_system2(
+    java_bin,
+    args = gp_quote_system_args(beagle_args),
+    stdout = TRUE,
+    stderr = TRUE
+  )
+  status <- attr(result, "status")
+  if (is.null(status)) {
+    status <- 0L
+  }
 
   # Write Beagle output log to a file for troubleshooting
   writeLines(result, log_file)
+
+  if (!identical(as.integer(status), 0L)) {
+    log_tail <- utils::tail(result[nzchar(trimws(result))], 6L)
+    stop(
+      "Beagle failed. Last log lines:\n  ", paste(log_tail, collapse = "\n  "),
+      "\nFull log: ", log_file, call. = FALSE
+    )
+  }
 
   # Check if the VCF output file was created
   phased_vcf <- paste0(output_prefix, ".vcf.gz")
   if (file.exists(phased_vcf)) {
     message("Phased VCF file created: ", phased_vcf)
   } else {
-    message("Beagle run completed, but no phased VCF file was found.")
-    message("Check the log file for more details: ", log_file)
+    stop(
+      "Beagle returned status 0 but did not create the expected VCF: ",
+      phased_vcf, ". Check ", log_file, ".",
+      call. = FALSE
+    )
   }
 
-  if (file.exists(vcf_file_use)) {
-  unlink(vcf_file_use)
-
-  }
+  invisible(list(
+    output_vcf = normalizePath(phased_vcf, winslash = "/", mustWork = TRUE),
+    log_file = normalizePath(log_file, winslash = "/", mustWork = TRUE),
+    beagle_log_file = if (file.exists(paste0(output_prefix, ".log"))) {
+      normalizePath(paste0(output_prefix, ".log"), winslash = "/", mustWork = TRUE)
+    } else NULL,
+    status = as.integer(status),
+    command_args = beagle_args,
+    input_preflight = sanitized_vcf$metrics,
+    beagle_jar = beagle_jar,
+    java = normalizePath(java_bin, winslash = "/", mustWork = TRUE)
+  ))
 }
 
 # Function to check Java, download Beagle, and run the appropriate Beagle process
 impute_vcf_with_beagle <- function(vcf_file, output_prefix = "imputed",
                                    map_file = NULL, ref_file = NULL,
                                    markers_file = NULL, ped_file = NULL,
-                                   generate_map = TRUE,
+                                   generate_map = FALSE,
                                    ibd = FALSE, ne = 10000, nthreads = 4,
                                    window = 40.0, overlap = 2.0, burnin = 3,
                                    iterations = 12, phase_states = 280,
                                    impute = TRUE, imp_states = 1600, imp_segment = 6.0,
                                    gp = TRUE, gprobs = FALSE, gt = TRUE,
                                    java_installed = FALSE,
-                                   beagle_version = "06Aug24.a91") {
+                                   beagle_version = "29Oct24.c8e",
+                                   beagle_jar = NULL,
+                                   beagle_dir = NULL,
+                                   java_bin = NULL,
+                                   java_memory = "4g",
+                                   seed = -99999L, err = NULL, em = TRUE,
+                                   chrom = NULL, excludesamples = NULL,
+                                   excludemarkers = NULL, imp_step = NULL,
+                                   imp_nsteps = NULL, cluster = NULL,
+                                   ap = FALSE) {
 
-  # Step 1: Check and install Java if needed
-  if (!java_installed) {
-    check_and_install_java()
+  # Step 1: Check Java if needed
+  if (!isTRUE(java_installed) || is.null(java_bin)) {
+    java_bin <- check_and_install_java()
   }
 
   # Step 2: Download Beagle
-  beagle_jar <- download_beagle(beagle_version = beagle_version)
+  if (is.null(beagle_jar)) {
+    beagle_jar <- download_beagle(
+      output_dir = beagle_dir %||% predictpror_beagle_cache_dir(),
+      beagle_version = beagle_version
+    )
+  }
 
   # Step 3: Run Beagle with customizable parameters
   run_beagle(vcf_file = vcf_file, output_prefix = output_prefix,
@@ -399,7 +483,12 @@ impute_vcf_with_beagle <- function(vcf_file, output_prefix = "imputed",
              overlap = overlap, burnin = burnin,
              iterations = iterations, phase_states = phase_states,
              impute = impute, imp_states = imp_states,
-             imp_segment = imp_segment, gp = gp, gprobs = gprobs, gt = gt)
+             imp_segment = imp_segment, gp = gp, gprobs = gprobs, gt = gt,
+             java_bin = java_bin, java_memory = java_memory,
+             seed = seed, err = err, em = em, chrom = chrom,
+             excludesamples = excludesamples, excludemarkers = excludemarkers,
+             imp_step = imp_step, imp_nsteps = imp_nsteps, cluster = cluster,
+             ap = ap)
 }
 
 # # Example usage: Phasing only (no imputation)

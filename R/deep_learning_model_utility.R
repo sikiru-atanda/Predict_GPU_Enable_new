@@ -1,14 +1,19 @@
-#' Title
+#' Build and train a simple feed-forward MLP for genomic prediction
 #'
-#' @param X_train
-#' @param y_train
-#' @param num_hidden_layers
-#' @param neurons_per_layer
-#' @param learning_rate
-#' @param epochs
-#' @param batch_size
+#' A thin utility that constructs and fits a multi-layer-perceptron regressor
+#' on the supplied training features and response, using the requested depth /
+#' width, learning rate and batch size. Used by the deep-learning wrappers.
 #'
-#' @return
+#' @param X_train Numeric matrix of training features (rows = individuals,
+#'   columns = features).
+#' @param y_train Numeric vector of training responses aligned with `X_train`.
+#' @param num_hidden_layers Integer; number of hidden layers in the MLP.
+#' @param neurons_per_layer Integer; neurons per hidden layer.
+#' @param learning_rate Numeric; optimiser learning rate.
+#' @param epochs Integer; number of training epochs.
+#' @param batch_size Integer; mini-batch size used during training.
+#'
+#' @return The trained model object.
 #' @export
 #' @examples
 deep_learning_model_utility <- function(X_train,

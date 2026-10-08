@@ -2,32 +2,49 @@
 % Please edit documentation in R/phenotype_precheck.R
 \name{phenotype_precheck}
 \alias{phenotype_precheck}
-\title{Title}
+\title{Pre-check phenotype data against the requested model spec}
 \usage{
 phenotype_precheck(
   pheno_data = NULL,
   gen_name = NULL,
   response = NULL,
+  response_family = "gaussian",
   heter_groups = NULL,
+  random = NULL,
+  fixed = NULL,
+  type_pheno = NULL,
   ...
 )
 }
 \arguments{
-\item{...}{}
+\item{pheno_data}{Phenotype data frame.}
+
+\item{gen_name}{Name of the genotype-ID column.}
+
+\item{response}{Name of the response (trait) column, or character vector for
+multi-trait.}
+
+\item{response_family}{Response distribution family
+(`"gaussian"`, `"binomial"`, `"multinomial"`, `"ordinal"`).}
+
+\item{heter_groups}{Optional column carrying the heterogeneous-group label
+(typically environment) for MET runs.}
+
+\item{random}{Optional one-sided formula for random terms (e.g. `~ GID`).}
+
+\item{fixed}{Optional one-sided formula for additional fixed terms.}
+
+\item{type_pheno}{Optional phenotype-type hint
+(e.g. `"continuous"`, `"binary"`).}
+
+\item{...}{Reserved for future extensions; currently ignored.}
+}
+\value{
+The pre-checked phenotype frame plus diagnostic metadata.
 }
 \description{
-This function address the following objectives:
-1. Check if the phenotypic data file contain records
-2. check if the phenotypic data is in data.frame and if not we fit it for the user
-3. Check if the gen_name and response names provided by the user match the column
-   names in the phenotypic data
-4. Check that the gen_name did not has NA as part of the genotypes ID
-5. Check that the response variable is numeric if not convert it to numeric
-7. Check for NA is not test here for response variables because testing set might have NA
-   thus, NA is expected.
-6. If all these checks were fulfilled assign class(pheno_data) <- c("data.frame", "phenotype")
-and define attribute as attr(pheno_data, "cleared") <- "pass"
-}
-\details{
-7. This output will be input for phenotype_to_model function
+Validates a phenotype data frame against the model formula and response
+family before fitting: checks that the genotype column, response, and any
+heterogeneous-group / random / fixed terms are present, infers the panel
+shape (single-env vs MET) and returns the cleaned phenotype frame.
 }

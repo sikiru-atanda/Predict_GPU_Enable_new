@@ -2,23 +2,70 @@
 % Please edit documentation in R/summary_statistics_AI.R
 \name{summary_statistics_AI}
 \alias{summary_statistics_AI}
-\title{Title}
+\title{Summarize Classical ML Prediction Outputs}
 \usage{
 summary_statistics_AI(
-  mod = NULL,
+  predicted_object = NULL,
   pheno_object = NULL,
   response = NULL,
   test_set = NULL,
   geno_omic_object = NULL,
-  eval_metrics = c("Accuracy", "Mean_Squared_Error", "Bias", "Root_Mean_Squared_Error",
-    "Relative_Squared_Error", "Mean_Absolute_Error", "Mean_Absolute_Percent_Error"),
+  model_parameters = NULL,
+  eval_metrics = NULL,
+  response_family = "gaussian",
   GS_model = NULL,
   ...
 )
 }
 \arguments{
-\item{eval_metrics}{}
+\item{predicted_object}{Predicted-values frame from a classical-ML / DL
+wrapper (rows = individuals, with `Predicted_value`, `Standard_error`,
+`PEV`, etc.).}
+
+\item{pheno_object}{Phenotype object carrying the cleaned phenotypes used
+to score the predictions.}
+
+\item{response}{Name of the response (trait) column in `pheno_object`.}
+
+\item{test_set}{Integer / character vector identifying the test-set rows.}
+
+\item{geno_omic_object}{Genomic / omics feature matrix used for the fit
+(passed through for unfamiliarity / OOD scoring).}
+
+\item{model_parameters}{Named list of model hyper-parameters from the
+underlying ML / DL fit, included in the summary report.}
+
+\item{eval_metrics}{Character vector of metrics to compute (e.g.
+`"accuracy"`).}
+
+\item{response_family}{Response distribution family
+(`"gaussian"`, `"binomial"`, `"multinomial"`, `"ordinal"`).}
+
+\item{GS_model}{Model name string (used for labels / routing).}
+
+\item{...}{Reserved for future extensions; currently ignored.}
+}
+\value{
+A list of accuracy / uncertainty / reliability / risk summary
+  tables and diagnostic plots.
 }
 \description{
-Title
+For classical machine-learning and deep-learning Gaussian prediction tables
+in this package, inferential `Standard_error` and `PEV` use held-out
+calibration when available. `Prediction_stability` is the bounded
+marker-adjustment score `max(0, min(1, 1 - SE_i^2 / var(yhat_all)))`, where
+`yhat_all` contains all final prediction rows labeled `Train` or `Test`;
+the ML/DL `Reliability` field is its plotting-compatible, explicitly
+non-genetic alias. `Prediction_confidence` and
+`Prediction_risk_score` are calibrated decision-support summaries derived
+from the calibrated prediction variance scale, not from a Bayesian or
+mixed-model genetic variance decomposition. `Rank_instability_risk` is the
+breeder-facing training-calibrated ranking-risk score. `Prediction_unfamiliarity`
+is a predictor-space novelty score that reflects how far a genotype lies
+from the training feature distribution. It is used as an additional
+unfamiliarity channel for the final Gaussian ML/DL prediction-risk score,
+but it does not overwrite the separate ranking-risk channel.
+`Prediction_risk_basis` indicates whether a row's displayed risk came from
+held-out training OOB behavior (`Train`) or from the deployed calibrated
+final-prediction scorer (`Test`).
 }

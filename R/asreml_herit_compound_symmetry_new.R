@@ -35,9 +35,9 @@ asreml_herit_CSM_new <-  function(
 
 ){
 
-  msg <- "\n==================================================\n"
+  msg <- ""
 
-  vc <- asreml::summary.asreml(model)$varcomp
+  vc <- asreml_varcomp_table(model)
   ENV <- data.frame(model$mf)[, heter_groups]
   heter_grp = levels(ENV)
   n_heter_grp <- nlevels(ENV)
@@ -66,6 +66,17 @@ asreml_herit_CSM_new <-  function(
   }
 
   VarE  <- vc[grep("!R", rownames(vc)), "component"]
+  if (length(VarE) == 1L && n_heter_grp > 1L && !isTRUE(heter_resid)) {
+    VarE <- rep(as.numeric(VarE), n_heter_grp)
+  }
+  if (length(VarE) != length(heter_grp)) {
+    stop(print(paste(
+      msg,
+      "Residual variance components do not match the number of",
+      heter_groups,
+      "levels."
+    )), call. = FALSE)
+  }
   names(VarE) = heter_grp
   varG_per_omics = matrix(NA, nrow = length(names_in_inv_list), ncol = length(heter_grp))
   dimnames(varG_per_omics) <- list(names_in_inv_list, heter_grp)
@@ -82,7 +93,19 @@ asreml_herit_CSM_new <-  function(
   H = matrix(NA, nrow = 1, ncol = length(heter_grp))
   colnames(H) = heter_grp
   Total_varG = matrix(NA, nrow = 1, ncol = length(heter_grp))
-  colnames(Total_varG) = colnames(heter_grp)
+  colnames(Total_varG) = heter_grp
+
+  # Rigor: per-environment heritability also reported with a delta-method SE.
+  # In the compound-symmetry case the genetic numerator and the (per-env)
+  # residual both map directly to variance-component rows, so vpredict gives an
+  # exact h2 SE. We reuse the SAME greps that build the point estimate so the
+  # vpredict formula matches it exactly; gp_asreml_heritability_se() falls back to
+  # NA (never a wrong number) if the components cannot be matched or asreml errors.
+  genetic_rows <- unique(unlist(lapply(names_in_inv_list, function(nm)
+    rownames(vc)[grep(nm, rownames(vc))])))
+  resid_rows <- rownames(vc)[grep("!R", rownames(vc))]
+  H_SE = matrix(NA_real_, nrow = 1, ncol = length(heter_grp))
+  colnames(H_SE) = heter_grp
 
   for (k in 1:ncol(H)) {
     varG = c()
@@ -92,17 +115,15 @@ asreml_herit_CSM_new <-  function(
     }
 
     Total_varG[, k] <- sum(unlist(varG))
-    if(isTRUE(heter_resid) & !is.null(inter_gen_pos)){
-      H[, k] <- sum(unlist(varG))/(sum(unlist(varG))+VarE[k])
-    } else {
-      if((isFALSE(heter_resid) | is.null(heter_resid)) & is.null(inter_gen_pos)){
-        H[, k] <- sum(unlist(varG))/(sum(unlist(varG))+VarE)
-      }
-    }
+    H[, k] <- sum(unlist(varG))/(sum(unlist(varG))+VarE[k])
+    ve_row_k <- if (length(resid_rows) == 1L) resid_rows else resid_rows[k]
+    H_SE[, k] <- gp_asreml_heritability_se(model, vg_rownames = genetic_rows,
+                                           ve_rowname = ve_row_k)
   }
 
 
    return(list(Heritability = H,
+                Heritability_SE = H_SE,
                 Total_genetic_var = Total_varG,
                 varG_per_omics = varG_per_omics,
                 Residual_Var = VarE))

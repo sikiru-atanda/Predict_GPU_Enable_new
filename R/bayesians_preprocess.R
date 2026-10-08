@@ -6,11 +6,11 @@
 #' It optionally displays messages for missing parameters or parameters set below recommended thresholds.
 #'
 #' @param nIter An optional integer specifying the total number of MCMC iterations to perform.
-#' Default is set to 200 if not provided, but a message suggests 26000 as optimal.
+#' Default is set to 200 if not provided.
 #' @param burnIn An optional integer specifying the number of initial MCMC iterations to discard (burn-in).
-#' Default is set to 50 if not provided, but a message suggests 1600 as optimal.
+#' Default is set to 50 if not provided.
 #' @param thin An optional integer specifying the thinning interval for MCMC sampling.
-#' Default is set to 1 if not provided, but a message suggests 10 as optimal.
+#' Default is set to 1 if not provided.
 #' @param message A logical indicating whether to print messages about missing parameters or those set below the recommended thresholds.
 #'
 #' @return A list of class "Bayesian Parameters" with named elements `nIter`, `burnIn`, and `thin`,
@@ -42,17 +42,29 @@ bayes_parameter_check <- function(
 
   msg <- "\n ==================================================\n"
 
+  validate_mcmc_count <- function(x, name, allow_zero = FALSE) {
+    if (length(x) != 1L || is.na(x) || !is.numeric(x) || !is.finite(x)) {
+      stop(paste(msg, name, "must be a single finite numeric value."), call. = FALSE)
+    }
+    min_value <- if (isTRUE(allow_zero)) 0 else 1
+    if (x < min_value || x != floor(x)) {
+      stop(paste(msg, name, "must be an integer", if (allow_zero) ">= 0." else ">= 1."), call. = FALSE)
+    }
+    as.integer(x)
+  }
+
   if(is.null(nIter) ){
     if(isTRUE(message)){
 
-      message(insight::print_color(paste(msg,paste("\n Number of iteration is missing. Default value of 26000 was assigned. \n Check if this appropriate for your data.\n ")), "blue"))
+      message(insight::print_color(paste(msg,paste("\n Number of iteration is missing. Default value of 16000 was assigned. \n Reduce nIter only for quick exploratory runs; this default targets converged posteriors.\n ")), "blue"))
 
     }
-      nIter <- 200 # 26000
+      nIter <- 16000L
 
   } else {
+    nIter <- validate_mcmc_count(nIter, "nIter")
 
-    if(nIter< 16000){
+    if(nIter< 16000 && isTRUE(message)){
     message(paste( insight::print_color("\nWARNINGS\n", "red"),
                    insight::print_color(paste(msg,paste("Number of iteration is provided is less than 16000 which we consider optimal. \n Check if this appropriate for your data.")), "red")))
 
@@ -63,14 +75,15 @@ bayes_parameter_check <- function(
 
     if(isTRUE(message)){
 
-      message(insight::print_color(paste(msg,paste("Number of burn-in is missing. Default value of 1600 was assigned. \n Check if this appropriate for your data.")), "blue"))
+      message(insight::print_color(paste(msg,paste("Number of burn-in is missing. Default value of 2000 was assigned. \n Reduce burnIn only for quick exploratory runs.")), "blue"))
 
     }
-      burnIn <- 50 # 5000
+      burnIn <- 2000L
 
   } else {
+    burnIn <- validate_mcmc_count(burnIn, "burnIn", allow_zero = TRUE)
 
-    if(burnIn< 1600){
+    if(burnIn< 1600 && isTRUE(message)){
     message(paste( insight::print_color("\n WARNINGS\n", "red"),
                    insight::print_color(paste(msg,paste("Number of burn-in provided is less than 1600 which we consider optimal. \n Check if this appropriate for your data.\n ")), "red")))
 
@@ -81,11 +94,18 @@ bayes_parameter_check <- function(
   if(is.null(thin)){
     if(isTRUE(message)){
 
-      message(insight::print_color(paste(msg,paste("\n Number of thining is missing. Default value of 10 was assigned. \n Check if this appropriate for your data.\n ")), "blue"))
+      message(insight::print_color(paste(msg,paste("\n Number of thinning is missing. Default value of 5 was assigned. \n ")), "blue"))
 
     }
-      thin <- 1 # 10
+      thin <- 5L
 
+  } else {
+    thin <- validate_mcmc_count(thin, "thin")
+
+  }
+
+  if (burnIn >= nIter) {
+    stop(paste(msg, "burnIn must be smaller than nIter."), call. = FALSE)
   }
 
   bayes_para = list(nIter = nIter, burnIn = burnIn, thin = thin)
@@ -120,7 +140,10 @@ bayes_parameter_check <- function(
 #' which may involve various validations such as ensuring the presence of the terms in the provided phenotypic data.
 #'
 #' @examples
-#' # Assuming pheno_data is your dataset and you have a formula for fixed effects:
+#' pheno_data <- data.frame(
+#'   Trait1 = factor(c("A", "B", "A")),
+#'   Trait2 = factor(c("low", "high", "low"))
+#' )
 #' fixed_effects_formula <- ~ Trait1 + Trait2
 #' fixed_terms <- fixed_terms(fixed = fixed_effects_formula, pheno_data = pheno_data)
 #' print(fixed_terms)
@@ -224,7 +247,7 @@ random_terms <- function(random = NULL,
 #'
 #' @export
 
-### Check if user provide model for fixed term. Which is typically FIXED
+#' Check if the user provided a fixed-term model. This is typically FIXED.
 fixed_term_model <- function(fixed_term = NULL,
                              fixed_term_model_bayesian = NULL,
                              message = TRUE){
@@ -295,7 +318,7 @@ random_term_model <- function(rand_terms = NULL,
                               gen_name = NULL,
                               rand_terms_model_bayesian = NULL,
                               message = TRUE) {
-  msg <- "\n==================================================\n"
+  msg <- ""
 
   # Check for interaction and non-interaction terms
   rand_terms_no_inter <- rand_terms[!grepl(":", rand_terms)]
@@ -319,14 +342,33 @@ random_term_model <- function(rand_terms = NULL,
 
   # Default valid Bayesian models
   valid_models <- c("BRR", "BayesA", "BayesB", "BayesC", "BL", "RKHS")
+  normalize_bayes_model <- function(x) {
+    if (is.null(x)) {
+      return(NULL)
+    }
+    x[x %in% c("GBLUP_BRR")] <- "BRR"
+    x
+  }
+  GS_model <- normalize_bayes_model(GS_model)
+  rand_terms_model_bayesian <- normalize_bayes_model(rand_terms_model_bayesian)
 
   # Validate and assign models
   assign_models <- function(rand_terms, provided_models, default_model) {
+    if (is.null(default_model) || length(default_model) == 0L || !(default_model[1] %in% valid_models)) {
+      default_model <- "BRR"
+    } else {
+      default_model <- default_model[1]
+    }
     # Validate provided models
     if (!is.null(provided_models)) {
       valid_provided <- provided_models[provided_models %in% valid_models]
+      if (length(valid_provided) == 1) {
+        return(rep(valid_provided, length(rand_terms)))
+      }
       if (length(valid_provided) != length(rand_terms)) {
-        warning(paste(msg, "Provided models do not match the number of random terms. Using defaults."))
+        if (isTRUE(message)) {
+          warning(paste(msg, "Provided models do not match the number of random terms. Using defaults."), call. = FALSE)
+        }
         return(rep(default_model, length(rand_terms)))
       }
       return(valid_provided)
@@ -338,23 +380,28 @@ random_term_model <- function(rand_terms = NULL,
   # Assign models for each term
   #rand_terms_model_bayesian <- assign_models(rand_terms, rand_terms_model_bayesian, "BRR")
   rand_terms_model_bayesian <- assign_models(rand_terms, rand_terms_model_bayesian, GS_model)
+  gs_models <- NULL
   if (!is.null(GS_model)) {
     #GS_model <- assign_models(rand_terms, GS_model, "BRR")
-    GS_model <- assign_models(rand_terms = rand_terms,
-                              provided_models = GS_model,
-                              default_model = GS_model)
-    rand_terms_model_bayesian[gen_pos] <- GS_model[1]
+    gs_models <- assign_models(rand_terms = rand_terms,
+                               provided_models = GS_model,
+                               default_model = GS_model[1])
+    rand_terms_model_bayesian[gen_pos] <- gs_models[gen_pos]
   }
 
   # Handle interaction terms
   if (length(rand_terms_inter) > 0) {
     if (length(inter_gen_terms) > 0) {
       #rand_terms_model_bayesian[match(inter_gen_terms, rand_terms)] <- "RKHS"
-      rand_terms_model_bayesian[match(inter_gen_terms, rand_terms)] <- GS_model
+      if (!is.null(gs_models)) {
+        rand_terms_model_bayesian[match(inter_gen_terms, rand_terms)] <- gs_models[match(inter_gen_terms, rand_terms)]
+      }
     }
     if (length(non_gen_inter_terms) > 0) {
       #rand_terms_model_bayesian[match(non_gen_inter_terms, rand_terms)] <- "BRR"
-      rand_terms_model_bayesian[match(non_gen_inter_terms, rand_terms)] <- GS_model
+      if (!is.null(gs_models)) {
+        rand_terms_model_bayesian[match(non_gen_inter_terms, rand_terms)] <- gs_models[match(non_gen_inter_terms, rand_terms)]
+      }
     }
   }
 
@@ -648,7 +695,7 @@ random_term_model <- function(rand_terms = NULL,
 #                               message = TRUE)
 #   {
 #
-#   msg <- "\n==================================================\n"
+#   msg <- ""
 #   ### Each random term will have a specific model for parameter estimate.
 #   ## It is expected the user will provide model for each random term,
 #   ## In a scenario where the model provided is not equal to the number of random terms

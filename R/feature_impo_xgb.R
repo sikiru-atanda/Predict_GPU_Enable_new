@@ -1,13 +1,20 @@
 ### XGBoost Feature Importance
 
-#' Title
+#' Extract top-ranked XGBoost feature importances
 #'
-#' @param xgb_fit trained model
-#' @param X_train genomic/omics data
-#' @param ...
-#' @param N_feature_impo number of feature/ x variables to extract based on the importance/weight
+#' Returns the top `N_feature_impo` features from a fitted XGBoost model ranked
+#' by importance / gain, used for downstream feature selection.
 #'
-#' @return
+#' @param xgb_fit A trained XGBoost model object.
+#' @param X_train Numeric matrix of genomic / omics features used to train
+#'   `xgb_fit` (column names are the feature labels).
+#' @param N_feature_impo Number of top features to return ranked by importance
+#'   / weight.
+#' @param xgb_booster The XGBoost booster type used (`"gbtree"`, `"gblinear"` or
+#'   `"dart"`); selects the appropriate importance branch.
+#' @param ... Reserved for future extensions; currently ignored.
+#'
+#' @return A data frame of the top features and their importance scores.
 #' @export
 #'
 #' @examples
