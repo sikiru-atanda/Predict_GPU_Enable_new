@@ -54,8 +54,11 @@ used by documentation, preflight checks, and model execution.
    variance.
 5. Multi-trait ASReml data are stacked in observational-unit-major,
    trait-minor order, matching `units:<structure>(Trait)`. The public route
-   accepts `us`, `corgh`, or `diag` trait covariance instead of silently
-   forcing an unstructured model.
+   accepts `us`, `corgh`, `diag`, or a factor-analytic `fa1`, `fa2`, ... genetic
+   covariance (with an unstructured residual) instead of silently forcing an
+   unstructured model. FA genetic variances and covariances are reconstructed
+   from the named loadings and specific variances and checked against ASReml
+   `vpredict()`, which also gives their standard errors.
 
 ## Licensed ASReml reference validation
 

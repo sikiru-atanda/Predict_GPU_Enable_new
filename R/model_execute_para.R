@@ -56,11 +56,11 @@
 #' @param bayes_kernel_heter_resid Optional override for the kernel-Bayes
 #'   (GBLUP_BRR / RKHS) MET routing decision, independent of
 #'   `heter_resid`. `NULL` (default) inherits from `heter_resid`. `TRUE`
-#'   forces the env-as-trait `BGLR::Multitrait` path (heterogeneous σ²_g
-#'   per env + per-env σ²_e) and requires `weights = NULL` because
+#'   forces the env-as-trait `BGLR::Multitrait` path (heterogeneous sigma2_g
+#'   per env + per-env sigma2_e) and requires `weights = NULL` because
 #'   `BGLR::Multitrait` has no observation-weight argument. `FALSE` forces the
 #'   univariate `BGLR::BGLR`
-#'   path with `~GID + GID:Loc` (single σ²_g, single σ²_gxe, single σ²_e
+#'   path with `~GID + GID:Loc` (single sigma2_g, single sigma2_gxe, single sigma2_e
 #'   -- the BGLR-inherent homogeneous case) and is the RKHS mode that accepts
 #'   Stage 2 observation weights. ASReml and GP families keep following
 #'   `heter_resid` regardless.
@@ -136,24 +136,19 @@
 #' learning. `NULL` learns scales only when full variance-component output is
 #' requested.
 #' @param gp_engine Character; which REML engine drives GP variance-component
-#' estimation. `"auto"` (default) picks the fastest available (currently
-#' resolves to `"dense_v"`); `"dense_v"` keeps the dense V-formulation
-#' (Phase 1-2); `"mme"` uses the sparse Mixed Model Equations engine
-#' (Phase 3.4-3.7, fastest at n_geno = 100 for MET but regresses at
-#' n_geno >= 300 on GBLUP because G^-1 is dense -- see Phase 3.14 NEWS);
-#' `"eigen"` (Phase 3.15a, experimental) uses an eigen-projected REML
-#' formulation that beats ASReml at large n on the standalone validation,
-#' but production integration is incomplete (Phase 3.15b NEWS) so
-#' `"eigen"` currently falls back to `"dense_v"`. Requires
-#' `PREDICTPRO_GP_DISABLE_ENV_MAIN=1` for `"mme"` and `"eigen"` on MET.
-#' Honors `PREDICTPRO_GP_ENGINE` env var.
-#' @param gp_exact_fast_cv Optional control for exact-GP cross-validation speed.
-#' `NULL` keeps the backend default, which is exact per-fold refitting unless
-#' explicitly enabled by environment policy. `TRUE` or `"auto"` enables the
-#' guarded shared-hyperparameter block-delete shortcut for eligible single-
-#' environment GP CV; `"force"` skips the self-check and is intended for
-#' benchmarking only. The shortcut is reported as approximate in result
-#' metadata.
+#' estimation. `"auto"` and `"dense_v"` use matched dense REML inference;
+#' GP predictions then use that reported covariance, including heterogeneous
+#' FA residuals. `"mme"` and `"eigen"` warn and fall back to `"dense_v"`
+#' until their inference preserves the same model. This does not add dense
+#' REML work to the operator prediction route. Honors `PREDICTPRO_GP_ENGINE`;
+#' exact-GP inference also honors positive `PREDICTPRO_GP_MAX_ITER`,
+#' `PREDICTPRO_GP_TOL_LOGLIK` and `PREDICTPRO_GP_TOL_THETA` overrides.
+#' `PREDICTPRO_GP_DISABLE_ENV_MAIN` is no longer needed: random terms
+#' absorbed by fixed effects are fixed at zero and reported explicitly.
+#' @param gp_exact_fast_cv Deprecated compatibility control. The shared-full-data
+#' GP CV shortcut was removed in 0.20.221. Enabled values warn and use ordinary
+#' per-fold refitting. FALSE disables the legacy control; NULL reads its
+#' environment setting. Every setting uses the per-fold estimator.
 #' @param gp_force_prediction_se Logical. Joint multi-trait Gaussian-process
 #'   prediction standard errors and trait correlations cost one linear solve per
 #'   genotype-by-environment test cell per trait, so they are capped: past
@@ -225,6 +220,13 @@
 #' GP/KRR path using explicit female GCA, male GCA, and SCA additive kernels.
 #' Use `response = c(...)` for joint cross-trait multi-trait hybrid GP and
 #' `heter_groups` for hybrid multi-environment data.
+#' Hybrid GP `Standard_error` describes the latent total prediction (fixed mean
+#' plus hybrid effects), including fixed-effect uncertainty and excluding future
+#' residual noise; `PEV` is its square. These SEs are conditional on the fitted
+#' kernel, trait covariance, response standardization and selected lambda; they
+#' do not include uncertainty from estimating those quantities. Genetic
+#' reliability and its variance inputs are unavailable because this route does
+#' not estimate a genetic variance scale.
 #' @param hybrid_ml Logical. If `TRUE`, enable the dedicated Gaussian hybrid
 #' machine-learning path using hybrid-level genotype features. Single-environment
 #' CV can use parent-aware scenarios; hybrid MET uses CV0, CV1, or CV2.
@@ -277,7 +279,14 @@
 #'   classical-ML / DL model.
 #' @param var_cov_str User-defined variance-covariance structure. For
 #'   single-environment multi-trait ASReml models, choose \code{"us"},
-#'   \code{"corgh"}, or \code{"diag"}; \code{NULL} defaults to \code{"us"}. For
+#'   \code{"corgh"}, \code{"diag"}, or a factor-analytic genetic structure
+#'   \code{"fa1"}, \code{"fa2"}, ... (rank satisfying the FA parameter-count bound;
+#'   the residual is then unstructured); \code{NULL} selects \code{"us"} for up
+#'   to five traits and \code{"fa2"} from six traits. With many traits FA has far
+#'   fewer genetic parameters than \code{"us"} (six traits: 17 for \code{"fa2"},
+#'   21 for \code{"us"}); in a trait-count study (300 lines, 10\% missing trait
+#'   records) \code{"us"} converged within ten minutes up to four traits and
+#'   \code{"fa2"} up to ten. For
 #'   grouped MT-MET ASReml GBLUP, use a validated factor-analytic structure such
 #'   as \code{"fa1"}, \code{"fa2"}, or \code{"fa3"}; \code{NULL} selects rank up to
 #'   three according to the number of trait-environment groups.
@@ -407,10 +416,14 @@
 #'   Per-model hyper-parameter tuning grids (XGBoost, RandomForest, PLS,
 #'   SVM, KNN, Lasso, Ridge-Regression and deep-learning) used when
 #'   `para_tunning = TRUE`. Each is a named list of vectors / sequences.
-#' @param feature_scoring Logical; enable independent predictor scoring and
+#' @param feature_scoring Logical; enable outcome-based predictor scoring and
 #' dynamic top-k predictor selection after QC/imputation.
 #' @param feature_scoring_model Predictor scoring model. One of
-#' `"Ridge_Regression"`, `"BayesB"`, or `"RandomForest"`.
+#' `"Ridge_Regression"`, `"BayesB"`, or `"RandomForest"`. Joint Gaussian routes
+#' use Multitrait BRR, SpikeSlab or multi-output forest AIR respectively.
+#' Joint rankings summarize standardized marker effects or forest importance,
+#' not additive explained variance, heritability or causal effects; see
+#' `?feature_score_predictors`.
 #' @param feature_k_grid Integer vector of top-k predictor counts to evaluate in
 #' cross-validation. `NULL` uses an automatic capped grid. On standard
 #' single-trait/MET routes the grid always also contains the full predictor
@@ -420,28 +433,45 @@
 #' same CV score as an unbiased final performance estimate is not nested CV.
 #' Specialized hybrid and joint multi-trait routes require one pre-specified k
 #' per run and fail rather than pooling several candidates.
-#' @param feature_k Optional top-k predictor count for final prediction. Scores
-#' and selected sets are calculated separately for every trait. A genuinely
-#' joint multi-trait model uses the union of its trait-specific top-k sets and
-#' records both the individual sets and the union size.
-#' @param feature_scoring_cv Cross-validation scoring policy. `"fixed"` reuses
+#' @param feature_k Optional positive whole top-k count or `"all"`. Separate
+#' trait runs keep their own sets; joint multi-trait routes use one joint ranking
+#' and exactly min(k,p) shared post-QC predictors. All retains p predictors.
+#' Selected joint TP outputs expose `feature_selection_metadata`,
+#' `feature_selected` and actual integer `feature_k`, also used in native saving.
+#' Variance components,
+#' predictions and their reliabilities, and covariance and correlation tables,
+#' from a fit on selected markers carry `Feature_selection_remark` (estimates
+#' conditional on the selection), in the returned tables and in the exported
+#' files. Its wording distinguishes package-scored rankings, a supplied
+#' `feature_score_metadata` ranking, and a supplied `feature_selected` set.
+#' @param feature_scoring_cv Cross-validation scoring policy. Default `'auto'`:
+#' `'fold_internal'` when the package scores the features, `'fixed'` when you
+#' supply `feature_score_metadata`. `"fixed"` reuses
 #' one full-training ranking in every fold; it is intended for final fitting or
 #' externally established rankings and is not leakage-free when the same
 #' responses are used to assess CV performance. `"fold_internal"` recomputes
-#' the ranking using only each outer training fold. `"both"` returns fixed and
+#' the ranking using only each outer training fold. On standard separate-trait
+#' routes it costs one scoring per trait x replication x fold, shared by all models and `feature_k_grid`
+#' values (the k covering every predictor is not rescored). `"both"` returns fixed and
 #' fold-internal tasks separately for standard model routes; their metrics are
 #' never averaged, and fold-internal results drive automatic model selection.
-#' Specialized hybrid/joint routes require choosing one policy per run.
+#' Specialized hybrid/joint routes require choosing one policy per run. Joint
+#' ML masks only the target trait on test lines and retains observed auxiliary
+#' traits; joint ASReml/DL mask every response on test lines before scoring.
+#' Scored joint GP/Bayes CV and grouped MT-MET ASReml CV selection remain
+#' unsupported. The training-record hash is not a trait-cell visibility hash.
 #' @param feature_score_metadata Optional reusable metadata from
-#' `feature_score_predictors()`. Automatic selection rebuilds marker designs and
+#' `feature_score_predictors()`. Joint routes require one complete `"joint"`
+#' ranking with a matching trait set, unique predictors and valid ranks/scores;
+#' generate it with `joint = TRUE`. Automatic selection rebuilds marker designs and
 #' kernels from named raw marker/omics columns. Precomputed kernels cannot be
 #' subset by feature name and therefore fail loudly unless the user supplies an
 #' externally rebuilt kernel matching `feature_selected`.
 #' @param feature_scoring_seed Integer seed for deterministic feature scoring.
 #' @param feature_ridge_lambda Positive ridge penalty used by Gaussian ridge
-#' feature scoring.
+#' single-trait feature scoring; ignored by joint BRR.
 #' @param feature_bayes_nIter,feature_bayes_burnIn,feature_bayes_thin MCMC
-#' controls used by Gaussian BayesB feature scoring.
+#' controls for Gaussian BayesB and joint BRR/SpikeSlab feature scoring.
 #' @param rf_n_jobs Internal Python RandomForest jobs. Keep at `1` when
 #' PredictProR is already parallelizing over CV/model tasks.
 #'
@@ -469,7 +499,7 @@
 #'   `geno_data` (a GRM will be auto-built via `gmatrix_method = "Yang"` if
 #'   no kernel is supplied), `omic1_data`/`omic2_data`/`omic3_data`, a
 #'   precomputed `gmatrix`/`gkernel`/`omic*_kernel`, or a `kernel_list` of
-#'   additional N×N PSD kernels keyed by `gen_name`. Each kernel is eigen-
+#'   additional N x N PSD kernels keyed by `gen_name`. Each kernel is eigen-
 #'   decomposed per-kernel and the top components (controlled by
 #'   `met_kernel_var_explained` / `met_kernel_min_ev` / `met_kernel_max_pcs`)
 #'   are concatenated into the feature matrix the ML/DL model consumes. These
@@ -597,6 +627,9 @@
 #' @param ft_d_model,ft_heads,ft_layers,ft_ff_mult,ft_dropout,ft_token_dropout,ft_use_cls
 #'   FT-Transformer hyper-parameters (model dimension, attention heads,
 #'   transformer layers, feed-forward multiplier, dropouts, CLS token).
+#' @param ft_learning_rate Learning rate of TabTransformer (FT-Transformer).
+#'   Default 3e-4: the 1e-3 used by the other deep-learning models trained it
+#'   less stably and less accurately on panels of up to a few hundred lines.
 #' @param saint_d_model,saint_heads,saint_layers,saint_ff_mult,saint_dropout,saint_token_dropout,saint_use_cls
 #'   SAINT hyper-parameters (same layout as the FT-Transformer set).
 #' @param use_grouping,group_trigger,group_method,init_group_size,max_tokens,kmeans_batch,kmeans_iter
@@ -604,7 +637,14 @@
 #'   models (trigger, method, group size, max tokens, mini-batch K-means
 #'   parameters).
 #' @param tabnet_steps,tabnet_feature_dim,tabnet_output_dim,tabnet_gamma,tabnet_lambda_sparse
-#'   TabNet hyper-parameters.
+#'   TabNet hyper-parameters: decision steps (default 3), attention width
+#'   (`tabnet_feature_dim`, 8), decision width (`tabnet_output_dim`, 8),
+#'   feature-reuse relaxation `tabnet_gamma` (1.3) and the weight of the mask
+#'   entropy penalty (1e-3), the reference TabNet defaults. TabNet uses dense
+#'   (softmax) feature attention.
+#' @param tabnet_learning_rate Learning rate of TabNet. Default 2e-2, the
+#'   reference TabNet rate: at the 1e-3 used by the other deep-learning models
+#'   it was undertrained within 20-100 epochs.
 #' @param node_trees,node_depth NODE (Neural Oblivious Decision Ensembles)
 #'   tree count and depth.
 #' @param deepfm_k,deepfm_hidden DeepFM embedding dimension and dense hidden
@@ -620,9 +660,29 @@
 #'   `"saint"`, `"tabnet"`, `"node"`, `"deepfm"`, `"dcn"`, `"nam"`, `"moe"`,
 #'   `"gp"`, ...).
 #' @param epochs,batch_size DL training duration and mini-batch size.
+#'   `epochs = "auto"` (default) sizes training to the data: enough epochs
+#'   for about 200 optimizer steps, kept within 20-100 epochs. With the
+#'   default batch of 64 and 20% validation split that is 100 epochs for
+#'   100 lines, 50 for 250, 29 for 500 and 20 for 1000 lines or more (each
+#'   epoch of a larger panel already has more steps). A smaller `batch_size`
+#'   gives more steps per epoch and so fewer epochs. The rule is applied to
+#'   every fit on its own training set (e.g. each cross-validation fold). A
+#'   positive whole number fixes the epochs. In both cases the epoch with the
+#'   lowest validation loss is kept.
 #' @param dropout,l2_weight_decay,l2_regularizer_dp,dropout_rate,batch_norm,validation_split,compile_model,deterministic,random_seed,device
 #'   Generic DL controls (regularisation, validation split, model compile,
-#'   determinism, random seed, target device).
+#'   determinism, random seed, target device). `device = NULL` (default)
+#'   trains every DL model on a CUDA GPU when PyTorch sees one, else Apple MPS,
+#'   else the CPU; `"cuda"` (or `"gpu"`), `"cuda:<index>"`, `"mps"` or
+#'   `"cpu"` names one. A fit that cannot use its GPU (no CUDA GPU for
+#'   `"cuda"`, a CUDA error such as out of memory) continues on the CPU: the
+#'   run then ends with a warning, and `Run_metadata` records the devices the
+#'   fits used (`dl_device`, `dl_device_notes`). Without a GPU,
+#'   TabAttention and TabTransformer are very slow (they attend over all pairs
+#'   of markers; more than 15 minutes per call on 400 markers on a 16-thread
+#'   CPU, about 1 minute on a laptop GPU), while the other DL models are as
+#'   fast or faster on a CPU on small panels. See
+#'   `system.file("predictdl-gpu-runtime-notes.md", package = "PredictProR")`.
 #' @param dl_n_seeds Optional number of DL training seeds to fit within every
 #'   bootstrap sample for single-trait true prediction. The default is one,
 #'   preserving the historical computational cost.
@@ -701,7 +761,14 @@
 #'   determines the statistically valid route: Gaussian-Process-GBLUP uses
 #'   REML, FA-GBLUP uses factor-analytic REML (or MoM for multi-environment
 #'   data), and Scalable-GBLUP uses operator/MoM.
-#' @param gp_fa_rank FA rank for GP_FA / FA-GBLUP.
+#' @param gp_fa_rank Number of factors (FA rank) for GP_FA / FA-GBLUP; the
+#'   equivalent of ASReml's `"fa1"`, `"fa2"`. Across environments it can be at
+#'   most the parameter-count bound (2 groups: no FA; 3-4: 1; 5: 2;
+#'   6: 3; 8: 4; 10: 6). The same bound applies across traits, including
+#'   the MT-MET MoM route. A rank with more free FA parameters than covariance
+#'   entries stops before fitting. Equality is saturated (FA3 at six traits),
+#'   not a guarantee of identification or convergence on a dataset.
+#'   The rank used is reported in `model_parameters`.
 #' @param gp_prediction_output Which GP prediction summary to return.
 #' @param gp_factor_cache Optional cached factor object reused across GP
 #'   fits.
@@ -747,16 +814,22 @@
 #'   `omic3_data`; a nested trait/source list in either orientation; or a data
 #'   frame containing `predictor` plus optional `trait`, `source_block`, and
 #'   logical `selected` columns. Sets are applied separately to each trait;
-#'   genuinely joint multi-trait fits use their union. In a source-keyed set,
+#'   joint multi-trait fits require one shared set or identical sets for all traits
+#'   (ignoring order while preserving source identity). Differing or missing trait
+#'   sets stop before fitting. Explicit provenance has NA scores and ranks because
+#'   no scoring was done. In a source-keyed set,
 #'   an omitted source is excluded. Named raw matrices allow PredictProR to
 #'   rebuild marker designs and kernels. With a user-supplied precomputed
 #'   kernel, the package cannot inspect the originating columns and assumes the
 #'   kernel was externally rebuilt from this exact set.
 #' @param feature_scoring_seed Random seed for the feature-scoring pipeline.
 #' @param feature_ridge_lambda Ridge penalty used by the feature-scoring
-#'   ridge engine.
+#'   single-trait ridge engine; ignored by joint BRR, which estimates shrinkage.
 #' @param feature_bayes_nIter,feature_bayes_burnIn,feature_bayes_thin BGLR
-#'   MCMC controls used by the Bayesian feature-scoring engine.
+#'   MCMC controls for BayesB and joint BRR/SpikeSlab scoring. Defaults do not
+#'   certify convergence or stable cut-off ranks; compare seeds and diagnose
+#'   mixing. Longer chains may help, but thinning does not establish independence.
+#'   See `?feature_score_predictors`.
 #' @param globals_max_GB Maximum exported-globals size (GB) used by the
 #'   parallel-policy scorer.
 #' @param worker_memory_gb Optional memory (GiB) one parallel worker needs on
@@ -770,14 +843,21 @@
 #' @param memory_budget_gb Optional total memory (GiB) all parallel workers may
 #'   use. `NULL` (default) uses `GP_PAR_MEMORY_BUDGET_GB` if set, otherwise
 #'   `GP_PAR_MEMORY_FRACTION` (default 0.7) of the currently available memory.
-#' @param parallel_mode Backend selection. One of `"auto"` (default;
-#'   score-based — the engine picks among mirai / future / base_parallel /
-#'   foreach / sequential based on object size, fanout, OS, GPU
-#'   availability, and per-model gates), or one of `"mirai"`, `"future"`,
+#' @param parallel_mode Backend selection. One of `"auto"` (default: the
+#'   engine decides whether the tasks run sequentially or in parallel, from
+#'   the expected work against worker start-up, object size, OS and
+#'   per-model gates; in parallel it uses `"base_parallel"`, the fastest
+#'   backend measured on Windows and Linux, or `"mirai"` when GPU models run
+#'   on several GPUs, one worker per GPU), or one of `"mirai"`, `"future"`,
 #'   `"base_parallel"`, `"foreach"`, `"sequential"` to force a backend.
 #'   The chosen backend and the contributing reason codes are recorded
 #'   in `policy_decision_reason` in the exported `Run_metadata.csv`;
 #'   decode them with \code{\link{gp_policy_decision_reason_glossary}}.
+#'   When cross-validation is followed by the refit of the best models
+#'   (`cv_evaluation_only = FALSE`), `policy_*` describe the refit
+#'   (`policy_stage = "best_model_refit"`) and `cv_policy_backend`,
+#'   `cv_policy_workers`, `cv_policy_decision_reason`, ... the
+#'   cross-validation.
 #'   Tuning is via the env vars / options enumerated by
 #'   \code{\link{gp_parallel_policy_knobs}} and described in
 #'   `inst/parallel-policy-knobs.md`.
@@ -795,10 +875,24 @@
 #'   includes `Predicted_value`, `Standard_error`, `PEV`,
 #'   `lower_bound`/`upper_bound`, and `Reliability`, plus model-specific
 #'   variance metadata.
+#'   GP REML results may additionally contain `covariance_parameters`,
+#'   `correlation_parameters`, and `inference_summary` with parameter SEs and
+#'   availability/conditioning status. `Run_metadata` includes the
+#'   `gp_krr_lambda*` fields describing the selected penalty, selection method,
+#'   training selection size and grid-edge status where available.
+#'   Fixed-scale GP routes without an estimated genetic variance report
+#'   unavailable reliability with a reason; their SEs are conditional on the
+#'   fixed covariance. CV0 SEs exclude the new environment's unobserved
+#'   deviation and describe only uncertainty in the transferable component.
 #'
-#'   For genetic mixed models, inspect `Reliability_basis`: the reference
-#'   variance is an estimated genetic variance and PEV has breeding-value
-#'   semantics. ML/DL models do not estimate that decomposition, so
+#'   `PEV` is `Standard_error^2`, the prediction-error variance of the reported
+#'   value (including the estimated fixed effects, such as the overall and
+#'   environment means). For genetic mixed models (ASReml, GP), `Reliability`
+#'   is genetic: `1 - Reliability_variance_input / Reliability_reference_variance`,
+#'   where `Reliability_variance_input` is the genetic prediction-error variance
+#'   `Var(ghat - g)` and `Reliability_reference_variance` the line's prior
+#'   genetic variance `sigma2_g * K_ii` (summed over kernels; per environment for
+#'   multi-environment models); `Reliability_basis` records it. ML/DL models do not estimate that decomposition, so
 #'   `Genetic_variance` remains unavailable. Their plotting-compatible
 #'   `Reliability` field equals `Prediction_stability` and is calculated as
 #'   `max(0, min(1, 1 - U_i / V_yhat))`, where `V_yhat` is the fitted-value
@@ -1031,6 +1125,7 @@ model_execute <- function(
     ft_dropout = 0.1,
     ft_token_dropout = 0.0,
     ft_use_cls = TRUE,
+    ft_learning_rate = 3e-4,
     #### saint
     saint_d_model = 128L,
     saint_heads = 8L,
@@ -1048,11 +1143,12 @@ model_execute <- function(
     kmeans_batch    = 4096,
     kmeans_iter     = 100,
     #### tabnet
-    tabnet_steps = 5L,
-    tabnet_feature_dim = 64L,
-    tabnet_output_dim = 64L,
-    tabnet_gamma = 1.5,
-    tabnet_lambda_sparse = 1e-4,
+    tabnet_steps = 3L,
+    tabnet_feature_dim = 8L,
+    tabnet_output_dim = 8L,
+    tabnet_gamma = 1.3,
+    tabnet_lambda_sparse = 1e-3,
+    tabnet_learning_rate = 2e-2,
     #### node
     node_trees = 8L,
     node_depth = 3L,
@@ -1086,7 +1182,7 @@ model_execute <- function(
     rff_deep_hidden    = c(128),
     ##### General dp
     model_type = "resnet",
-    epochs = 10,
+    epochs = "auto",
     batch_size = 64 ,
     dropout = 0.2,
     l2_weight_decay = 1e-4,
@@ -1259,7 +1355,7 @@ model_execute <- function(
     feature_scoring_model = "Ridge_Regression",
     feature_k_grid = NULL,
     feature_k = NULL,
-    feature_scoring_cv = "fixed",
+    feature_scoring_cv = "auto",
     feature_score_metadata = NULL,
     feature_scoring_seed = NULL,
     feature_ridge_lambda = 1,
@@ -1283,9 +1379,59 @@ model_execute <- function(
     assign("warned", character(), envir = PredictProR_runtime_cache)
     gp_reject_obsolete_asreml_structure(var_cov_str)
     msg <- ""
-    on.exit(future::plan("sequential"), add = TRUE)
+    # the single-trait ASReml inverses leave the global environment when the run ends
+    close_asreml_globals <- gp_asreml_globals_scope()
+    on.exit(close_asreml_globals(), add = TRUE)
+    # The ML seeds below the routes (uncertainty folds, the folds Lasso picks
+    # its penalty on, bootstraps) come from getOption("random_state")
+    # (gp_ml_random_state()): this run's while it runs, the caller's after.
+    # The refit sets its task's seed there; left in the session, it changed
+    # later runs that do not (hybrid ML, the CV), which also ignored their
+    # own random_state. Workers do not have this option: the refit's task
+    # and the CV's task set it there themselves.
+    old_random_state_option <- options(random_state = random_state)
+    on.exit(options(old_random_state_option), add = TRUE)
+    # one tie-at-cut-off warning per run (gp_feature_top_k_rows()), one per unevaluable fixed
+    # term, and memoised fold rankings: all from this run only, and none left in the session
+    gp_feature_reset_run_state()
+    on.exit(gp_feature_reset_run_state(), add = TRUE)
+    # "auto": fold-internal for package scores, fixed for a supplied ranking (spec B6); resolved
+    # before any route runs so no route sees "auto"
+    feature_ranking_supplied <- !is.null(feature_score_metadata)
+    feature_scoring_cv <- gp_feature_resolve_cv_policy(feature_scoring_cv,
+                                                       ranking_supplied = feature_ranking_supplied)
+    # marked where it is received, so every route (the parent-kernel hybrid route runs before
+    # scoring) records it and words the selection remark for a supplied ranking
+    if (isTRUE(feature_ranking_supplied) && is.data.frame(feature_score_metadata) &&
+        nrow(feature_score_metadata)) {
+      feature_score_metadata[["ranking_source"]] <- "user"
+    }
+    # Joint models use one set/ranking: validate before preprocessing or parent recursion.
+    joint_feature_run <- any(vapply(
+      list(multi_trait, multi_trait_bayes, multi_trait_gp, multi_trait_asreml,
+           multi_trait_ml, multi_trait_dl), isTRUE, logical(1L)
+    ))
+    joint_feature_requested <- isTRUE(feature_scoring) || !is.null(feature_selected) ||
+      !is.null(feature_score_metadata) || !is.null(feature_k) || !is.null(feature_k_grid)
+    if (isTRUE(joint_feature_run) && isTRUE(joint_feature_requested) &&
+        any(grepl("+", as.character(response), fixed = TRUE))) {
+      stop("Joint feature labels reserve '+'; rename response columns containing '+'.", call. = FALSE)
+    }
+    shared_explicit_run <- joint_feature_run || (isTRUE(hybrid_gp) && length(response) > 1L)
+    if (isTRUE(hybrid_gp) && length(response) > 1L && !is.null(feature_score_metadata)) {
+      stop("Multi-response parent-kernel hybrid prediction requires a shared feature_selected set; feature_score_metadata is not supported for this route.", call. = FALSE)
+    }
+    if (isTRUE(shared_explicit_run) && !is.null(feature_selected)) {
+      feature_selected <- gp_feature_joint_selected(feature_selected, response)
+    }
+    if (isTRUE(joint_feature_run) && !is.null(feature_score_metadata)) {
+      gp_feature_check_joint_ranking(feature_score_metadata, response)
+    }
+
     parallel_mode <- match.arg(parallel_mode)
     dl_internal_calibration <- gp_dl_calibration_enabled(dl_internal_calibration)
+    # deep-learning device: NULL (a CUDA GPU, else Apple MPS, else the CPU) or a named one
+    device <- gp_dl_device_arg(device)
     for (mem_arg in c("worker_memory_gb", "memory_budget_gb")) {
       mem_val <- get(mem_arg)
       if (!is.null(mem_val) &&
@@ -1546,6 +1692,19 @@ model_execute <- function(
       ploidy = if (is.numeric(ploidy)) ploidy else
         attr(geno_data, "ploidy") %||% geno_data_process[["ploidy"]]
     )
+    # deep-learning epochs: "auto" or a positive whole number
+    epochs <- gp_dl_epochs_arg(epochs)
+    # FA-GBLUP across environments: the number of factors must be identifiable
+    if (!isTRUE(multi_trait_gp)) {
+      gp_validate_fa_rank_for_environments(
+        models = list(GS_model, GS_model_cv),
+        gp_fa_rank = gp_fa_rank,
+        pheno_data = pheno_data,
+        heter_groups = heter_groups
+      )
+    } else if (any(gp_canonicalize_supported_model_names(c(GS_model,GS_model_cv)) %in% "GP_FA")) {
+      gp_validate_fa_rank(gp_fa_rank,length(response),"traits")
+    }
 
     if(isTRUE(cross_validation) && !is.null(GS_model)) GS_model <- NULL
     if (!is.null(eval_metrics)) {
@@ -1624,12 +1783,7 @@ model_execute <- function(
       !isTRUE(hybrid_gp) &&
       !isTRUE(hybrid_ml) &&
       !isTRUE(hybrid_dl) &&
-      !isTRUE(met_ml_dl) &&
-      !isTRUE(feature_scoring) &&
-      is.null(feature_score_metadata) &&
-      is.null(feature_k_grid) &&
-      is.null(feature_k) &&
-      is.null(feature_selected)
+      !isTRUE(met_ml_dl)
     if (isTRUE(gp_return_se) || isTRUE(gp_full_vc)) {
       gp_output_level <- gp_bridge_output_level(
         return_se = gp_return_se,
@@ -1647,6 +1801,7 @@ model_execute <- function(
       gp_requested_models <- unique(stats::na.omit(c(GS_model, GS_model_cv)))
       gp_requested_models <- gp_canonicalize_supported_model_names(gp_requested_models)
       if (length(intersect(gp_requested_models, gp_valid_models)) > 0L &&
+          identical(tolower(as.character(gp_varcomp_mode)[1L]), "reml") &&
           identical(gp_output_level, "predict_only")) {
         gp_output_level <- "full_vc"
         gp_return_se <- TRUE
@@ -1723,7 +1878,7 @@ model_execute <- function(
         if (is.null(runtime_status) || !isTRUE(runtime_status$python_configured)) {
           setup_instructions <- paste(
             "No configured Python runtime was found for deep-learning models.\n",
-            "Set PREDICTPRO_DL_PYTHON to a Python interpreter with the required DL packages.\n",
+            "Set PREDICTPRO_DL_PYTHON to a Python interpreter (>= 3.10); PredictProR installs the deep-learning packages into it.\n",
             "You can also run PredictProR::setup_predictdl_env(prefer_gpu = TRUE, cuda = 'auto') as a one-time provisioning helper."
           )
           stop(paste(msg, setup_instructions), call. = FALSE)
@@ -2220,6 +2375,7 @@ model_execute <- function(
         include_accelerator = FALSE,
         context = "model_execute_gp_fast",
         extra_fields = c(
+          gp_regularization_metadata(fit_public),
           list(
             mode = "gp_fast",
             task_unit = "genotype_level",
@@ -2684,6 +2840,18 @@ model_execute <- function(
         }
       }
 
+      # An FA(k) structure over the environments must be identifiable (Ledermann bound): fa1
+      # over 2 environments, or fa2 over 3, has more parameters than the full covariance and
+      # gives a flat likelihood. The grouped multi-trait route checks its trait-environment groups.
+      uses_asreml_gblup <- any(c(GS_model, if (isTRUE(cross_validation)) GS_model_cv) %in% "GBLUP")
+      if (uses_asreml_gblup && !isTRUE(multi_trait_asreml) && length(var_cov_str) == 1L &&
+          grepl("^fa[1-9][0-9]*$", var_cov_str) && length(heter_groups) == 1L &&
+          heter_groups %in% names(pheno_data)) {
+        env_levels <- unique(as.character(pheno_data[[heter_groups]]))
+        gp_asreml_check_fa_rank(as.integer(sub("^fa", "", var_cov_str)),
+                                sum(!is.na(env_levels) & nzchar(env_levels)), "environments")
+      }
+
       # Check for required inputs for multi-environment relationship/kernel models
       # Check if condition1 is true
       # Define the error message
@@ -2918,38 +3086,6 @@ if (length(datasets_index_kernel) != 0) {
   }
 }
 
-} else if (!isTRUE(hybrid_asreml) && !isTRUE(hybrid_bayes) && !isTRUE(hybrid_gp)){
-
-  if (length(datasets_index) != 0) {
-
-    if(length(rownames(datasets_geno_omic[[1]])) > length(unique(pheno_data[[gen_name]]))){
-      # Keep geno/omic-only individuals so pheno_geno_match() can infer them
-      # as testing IDs.
-      # prediction from seeing genomic/omic-only test candidates.
-    }
-  }
- ########
-  if (length(datasets_index_kernel) != 0) {
-
-    if(length(rownames(datasets_gmatrix_omic_kernel[[1]])) > length(unique(pheno_data[[gen_name]]))){
-      if("gmatrix"%in%names(datasets_gmatrix_omic_kernel)){
-        gmatrix <- gmatrix[rownames(gmatrix)%in%unique(pheno_data[[gen_name]]), colnames(gmatrix)%in%unique(pheno_data[[gen_name]])]
-      }
-      ##
-      if("omic1_kernel"%in%names(datasets_gmatrix_omic_kernel)){
-        omic1_kernel <- omic1_kernel[rownames(omic1_kernel)%in%unique(pheno_data[[gen_name]]), ]
-      }
-      ##
-      if("omic2_kernel"%in%names(datasets_gmatrix_omic_kernel)){
-        omic2_kernel <- omic2_kernel[rownames(omic2_kernel)%in%unique(pheno_data[[gen_name]]), ]
-      }
-      ###
-      if("omic3_kernel"%in%names(datasets_gmatrix_omic_kernel)){
-        omic3_kernel <- omic3_kernel[rownames(omic3_kernel)%in%unique(pheno_data[[gen_name]]), ]
-      }
-    }
-  }
-
 }
 
 # Multi-environment true prediction: predict every line in every environment
@@ -3081,9 +3217,25 @@ if (isTRUE(met_predict_all_environments) && !isTRUE(cross_validation) &&
 user_defined_model <- gp_shared_preprocess_requested_models(as.list(environment()))
 run_profile <- gp_runtime_profile_new("model_execute")
 
+# Python backends: install the packages the requested models need, here in the
+# main session and before any route can start parallel workers (they inherit
+# the interpreters and skip the check; see gp_parallel_runtime_env()).
+gp_python_prepare_runtimes(models = c(GS_model, GS_model_cv), gp_backend = gp_backend,
+                           hybrid_gp = hybrid_gp)
+# Deep-learning device reports of this run and its workers (the device each
+# fit trained on, any fallback to the CPU): Run_metadata records them, and a
+# fallback ends the run with one warning.
+dl_device_log <- gp_dl_device_log_start()
+on.exit(gp_dl_device_log_finish(dl_device_log), add = TRUE)
+
+# The selection remark's kind for the specialised routes, which export through results_handling()
+# (spec B5): their files and returned tables carry the same remark. The parent-kernel hybrid
+# route selects with feature_k, or a one-value feature_k_grid.
+feature_selection_kind <- gp_feature_selection_kind(feature_score_metadata,
+                                                    feature_k %||% feature_k_grid, feature_selected)
 pre_input_route <- gp_route_pre_input_specialized_models(as.list(environment()))
 if (!is.null(pre_input_route)) {
-  return(pre_input_route)
+  return(gp_feature_add_selection_remark(pre_input_route, feature_selection_kind))
 }
 if (sum(isTRUE(multi_trait_asreml), isTRUE(multi_trait_gp), isTRUE(multi_trait_bayes), isTRUE(multi_trait_ml), isTRUE(multi_trait_dl), isTRUE(hybrid_asreml), isTRUE(hybrid_bayes), isTRUE(hybrid_gp), isTRUE(hybrid_ml), isTRUE(hybrid_dl)) > 1L) {
   stop("multi_trait_asreml, multi_trait_gp, multi_trait_bayes, multi_trait_ml, multi_trait_dl, hybrid_asreml, hybrid_bayes, hybrid_gp, hybrid_ml, and hybrid_dl are separate paths; enable only one at a time.", call. = FALSE)
@@ -3159,6 +3311,7 @@ if (!is.null(test_set)) {
   pheno_clean[["test_set"]] <- test_set
 }
 ml_dat_res <- model_input_objects[["ml_dat_res"]]
+feature_selected <- model_input_objects[["feature_selected_resolved"]] %||% feature_selected
 if (!is.null(feature_selected) && !is.null(ml_dat_res)) {
   ml_dat_res <- gp_feature_apply_explicit_to_ml_dat_res(
     ml_dat_res = ml_dat_res,
@@ -3177,16 +3330,11 @@ feature_scoring_active <- isTRUE(feature_scoring) ||
   !is.null(feature_k)
 feature_score_metadata <- feature_score_metadata %||% NULL
 feature_k_cv_summary <- NULL
-feature_source_map <- NULL
-if (isTRUE(feature_scoring_active) && !is.null(ml_dat_res) && !is.null(ml_dat_res[["merged_data"]][["merge_data"]])) {
-  feature_scoring_model <- match.arg(
-    as.character(feature_scoring_model %||% "Ridge_Regression"),
-    choices = c("Ridge_Regression", "BayesB", "RandomForest")
-  )
-  feature_scoring_seed <- as.integer(feature_scoring_seed %||% random_state %||% random_seed %||% 123L)
-  feature_matrix_for_scoring <- ml_dat_res[["merged_data"]][["merge_data"]]
+feature_source_map <- model_input_objects[["feature_selected_source_map"]] %||% NULL
+if ((isTRUE(feature_scoring_active) || !is.null(feature_source_map)) &&
+    !is.null(ml_dat_res[["merged_data"]][["merge_data"]])) {
   feature_source_map <- gp_feature_source_map_from_inputs(
-    predictor_data = feature_matrix_for_scoring,
+    predictor_data = ml_dat_res[["merged_data"]][["merge_data"]],
     source_matrices = list(
       geno_data = geno_omic_model_ready_list[["geno_model_ready"]] %||% NULL,
       omic1_data = geno_omic_model_ready_list[["omic1_model_ready"]] %||% NULL,
@@ -3194,6 +3342,19 @@ if (isTRUE(feature_scoring_active) && !is.null(ml_dat_res) && !is.null(ml_dat_re
       omic3_data = geno_omic_model_ready_list[["omic3_model_ready"]] %||% NULL
     )
   )
+}
+if (isTRUE(feature_scoring_active) && !is.null(ml_dat_res) && !is.null(ml_dat_res[["merged_data"]][["merge_data"]])) {
+  feature_scoring_model <- match.arg(
+    as.character(feature_scoring_model %||% "Ridge_Regression"),
+    choices = c("Ridge_Regression", "BayesB", "RandomForest")
+  )
+  feature_scoring_seed <- as.integer(feature_scoring_seed %||% random_state %||% random_seed %||% 123L)
+  feature_matrix_for_scoring <- ml_dat_res[["merged_data"]][["merge_data"]]
+  specialized_feature_route <- any(vapply(
+    list(hybrid_asreml, hybrid_bayes, hybrid_gp, hybrid_ml, hybrid_dl,
+         multi_trait_asreml, multi_trait_gp, multi_trait_bayes, multi_trait_ml, multi_trait_dl),
+    isTRUE, logical(1)
+  ))
   if (is.null(feature_score_metadata)) {
     feature_score_metadata <- feature_score_predictors(
       predictor_data = feature_matrix_for_scoring,
@@ -3216,15 +3377,14 @@ if (isTRUE(feature_scoring_active) && !is.null(ml_dat_res) && !is.null(ml_dat_re
         "final_refit"
       } else {
         "fixed"
-      }
+      },
+      fixed = if (isTRUE(specialized_feature_route)) NULL else fixed,
+      heter_groups = heter_groups,
+      joint = any(vapply(list(multi_trait_bayes, multi_trait_gp, multi_trait_asreml,
+                             multi_trait_ml, multi_trait_dl), isTRUE, logical(1L)))
     )
   }
   if (isTRUE(cross_validation)) {
-    specialized_feature_route <- any(vapply(
-      list(hybrid_asreml, hybrid_bayes, hybrid_gp, hybrid_ml, hybrid_dl,
-           multi_trait_asreml, multi_trait_gp, multi_trait_bayes, multi_trait_ml, multi_trait_dl),
-      isTRUE, logical(1)
-    ))
     feature_k_grid <- gp_feature_k_grid(
       feature_k_grid,
       ncol(feature_matrix_for_scoring),
@@ -3320,13 +3480,14 @@ if (isTRUE(feature_scoring_active) && !is.null(ml_dat_res) && !is.null(ml_dat_re
 
 if(docker_nd_usage) sys_name <- "Windows"
 
+feature_selection_kind <- gp_feature_selection_kind(feature_score_metadata, feature_k, feature_selected)
 if(isTRUE(cross_validation)){
   cv_special_route <- gp_route_cross_validation_specialized_models(as.list(environment()))
   if (!is.null(cv_special_route)) {
     if (is.list(cv_special_route) && !is.null(hybrid_parent_qc_summary)) {
       cv_special_route$hybrid_parent_qc <- hybrid_parent_qc_summary
     }
-    return(cv_special_route)
+    return(gp_feature_add_selection_remark(cv_special_route, feature_selection_kind))
   }
   cv_pipeline <- tryCatch(
     gp_try_cv_frontdoor_fast_lane(as.list(environment())),
@@ -3409,7 +3570,8 @@ if(isTRUE(cross_validation)){
                                       plot_units = plot_units,
                                       plot_dpi = plot_dpi,
                                       feature_selected = feature_selected,
-                                      feature_score_metadata = feature_score_metadata)
+                                      feature_score_metadata = feature_score_metadata,
+                                      feature_selection_kind = feature_selection_kind)
    cv_only_result$cv_results_predicted_vs_observed <- cv_results_predicted_vs_observed
    return(cv_only_result)
 
@@ -3420,15 +3582,15 @@ if(isTRUE(cross_validation)){
    return(NULL)
  }
 
-future::plan("sequential")
 ###############################################################
 
+ feature_selection_kind <- gp_feature_selection_kind(feature_score_metadata, feature_k, feature_selected)
  true_prediction_route <- gp_route_true_prediction_specialized_models(as.list(environment()))
  if (!is.null(true_prediction_route)) {
    if (is.list(true_prediction_route) && !is.null(hybrid_parent_qc_summary)) {
      true_prediction_route$hybrid_parent_qc <- hybrid_parent_qc_summary
    }
-   return(true_prediction_route)
+   return(gp_feature_add_selection_remark(true_prediction_route, feature_selection_kind))
  }
  cv_best_models <- best_models
  if(is.null(best_models)){
@@ -3472,22 +3634,33 @@ future::plan("sequential")
  friendly_name_lookup <- gp_model_friendly_lookup()
 
  # Reticulate/Python init is not used for direct CLI ML/DL/GP model paths.
- gp_py_bin <- gp_detect_python()
+ # The interpreter is looked for only when a task embeds Python: finding it
+ # starts every Python on the machine (13.8 s for 13 on a Windows test
+ # machine), and R-only runs never need it.
+ gp_py_bin <- NULL
+ gp_py_bin_resolved <- FALSE
+ resolve_py_bin <- function() {
+   if (!gp_py_bin_resolved) {
+     gp_py_bin <<- gp_detect_python()
+     gp_py_bin_resolved <<- TRUE
+   }
+   gp_py_bin
+ }
  direct_cli_prediction_models <- unique(c(AI_valid_models, gp_valid_models, gp_parallel_r_only_models()))
  init_py <- function(model = NULL) {
    if (!is.null(model) && as.character(model) %in% direct_cli_prediction_models) {
      return(invisible(TRUE))
    }
-   gp_init_python_once(gp_py_bin)
+   gp_init_python_once(resolve_py_bin())
  }
 
  # One runner per best-model row (single source of truth)
  outer_fixed <- fixed
- # Keep the complete prepared kernel bank in the task-local context.  The
- # individual canonical matrices below are insufficient for user-supplied
- # `kernel_list` entries, and parallel/task serialization does not guarantee
- # that an unreferenced parent-frame object remains available.
- outer_kernel_bank <- gmatrix_kernel_model_ready_list
+ # The task reads the complete prepared kernel bank (the canonical matrices
+ # below miss user-supplied `kernel_list` entries) as
+ # gmatrix_kernel_model_ready_list. A parallel refit gets it through the copy
+ # gp_execute_best_model_tasks() makes of this frame, which keeps every name
+ # the task reads. An alias of it was sent as well, the bank twice.
  run_one_best <- function(i) {
    task_row <- best_models[i, ]
   response <- as.character(task_row$trait)
@@ -3527,7 +3700,7 @@ future::plan("sequential")
    high_reliability_thres <- high_reliability_thres
    low_reliability_thres <- low_reliability_thres
    friendly_name_lookup <- friendly_name_lookup
-   gmatrix_kernel_model_ready_list <- outer_kernel_bank
+   gmatrix_kernel_model_ready_list <- gmatrix_kernel_model_ready_list
 
    # Deterministic per-task seed derived from the public random_state.  Keeping
    # the task offset preserves stable seeds within a multi-model run, while
@@ -3597,7 +3770,8 @@ results <- gp_execute_best_model_tasks(
   response = response,
   init_py = init_py,
   worker_memory_gb = worker_memory_gb,
-  memory_budget_gb = memory_budget_gb
+  memory_budget_gb = memory_budget_gb,
+  resolve_python = resolve_py_bin
 )
 run_profile <- gp_runtime_profile_mark(
   run_profile,
@@ -3608,18 +3782,21 @@ run_profile <- gp_runtime_profile_mark(
 metadata_python_purpose <- gp_python_purpose_for_models(
   best_models$model %||% GS_model
 )
+# what is already known (no Python is started to describe it)
+known_py_bin <- gp_py_bin %||% gp_known_python()
 metadata_python <- if (metadata_python_purpose %in% c("dl", "gp")) {
-  gp_preferred_python(purpose = metadata_python_purpose) %||% gp_py_bin
+  gp_known_preferred_python(metadata_python_purpose) %||% known_py_bin
 } else {
-  gp_py_bin
+  known_py_bin
 }
 run_metadata <- gp_runtime_metadata(
   execution_policy = attr(results, "gp_execution_policy"),
   python_path = metadata_python,
-  preferred_python = gp_preferred_python(purpose = metadata_python_purpose),
+  preferred_python = gp_known_preferred_python(metadata_python_purpose),
   purpose = metadata_python_purpose,
   context = "model_execute",
   extra_fields = c(
+    gp_regularization_metadata(results),
     gp_runtime_profile_metadata_fields(run_profile),
     list(
       task_unit = if (isTRUE(cross_validation) && length(GS_model_cv %||% character()) > 0L) "cv_best_model_trait" else "model_trait",
@@ -3632,6 +3809,11 @@ run_metadata <- gp_runtime_metadata(
     )
   )
 )
+# policy_* above describe the refit of the best models; the CV's backend,
+# workers and decision go in as cv_* rows
+if (isTRUE(cross_validation)) {
+  run_metadata <- gp_runtime_metadata_add_cv_stage(run_metadata, cv_run_metadata)
+}
 
 # keep names aligned with traits
 if (!is.null(best_models) && nrow(best_models) > 0) {
@@ -3645,6 +3827,11 @@ if (!is.null(best_models) && nrow(best_models) > 0) {
  }
  # ---------------------------------------------------------------------------
 
+ # per trait, the k its best model used; the same kinds mark the returned tables at the end
+ feature_selection_kinds <- gp_feature_trait_selection_kinds(
+   best_models[["trait"]] %||% response, best_models, feature_score_metadata, feature_k,
+   feature_selected
+ )
  final_results <- gp_finalize_model_execute_results(
    results = results,
    GS_model = GS_model,
@@ -3666,7 +3853,8 @@ if (!is.null(best_models) && nrow(best_models) > 0) {
    plot_width = plot_width,
    plot_height = plot_height,
    plot_units = plot_units,
-   plot_dpi = plot_dpi
+   plot_dpi = plot_dpi,
+   feature_selection_kinds = feature_selection_kinds
  )
 
  if (is.null(final_results[["model_results"]]) &&
@@ -3698,6 +3886,14 @@ if (!is.null(best_models) && nrow(best_models) > 0) {
              conditionMessage(e), call. = FALSE)
      final_results
    }
+ )
+
+ final_results <- gp_feature_apply_final_selection_remarks(
+   final_results,
+   best_models = best_models,
+   feature_score_metadata = feature_score_metadata,
+   feature_k = feature_k,
+   feature_selected = feature_selected
  )
 
  return(final_results)

@@ -33,6 +33,39 @@ test_that("worker memory resolves user value, then env var, then measurement, th
   )
 })
 
+# The function the memory check sends to its worker was a namespace closure:
+# reading it loaded PredictProR from the worker's default libraries before the
+# function set the session's, so the check measured another install (0.20.152
+# from the user library on the Windows test machine) or, with none there,
+# failed and fell back to 0.75 GB.
+test_that("the memory check's worker loads this session's PredictProR, not another install", {
+  skip_on_cran()
+  skip_if_not_installed("callr")
+  skip_if_not_installed("ps")
+  own_lib <- PredictProR:::gp_predictpror_loaded_lib()
+  skip_if(is.null(own_lib), "PredictProR not loaded from an installed library")
+  others <- setdiff(normalizePath(.libPaths(), winslash = "/", mustWork = FALSE), own_lib)
+  res <- callr::r(
+    function(task, libs) task(libs, character()),
+    args = list(PredictProR:::gp_parallel_worker_memory_task, unique(c(own_lib, .libPaths()))),
+    libpath = others
+  )
+  expect_identical(res$lib, own_lib)
+  expect_gt(res$mem, 0)
+})
+
+# ps::ps_memory_info() has `mem_private` only on Windows; on Linux and macOS
+# `info[["mem_private"]]` failed ("subscript out of bounds") before falling
+# back to `rss`, so the check never measured there and the policy always used
+# the 0.75 GB default (0.20.174-0.20.203).
+test_that("the memory check's worker reports its memory on every OS", {
+  skip_if_not_installed("ps")
+  withr::local_libpaths(.libPaths())
+  res <- PredictProR:::gp_parallel_worker_memory_task(.libPaths(), character())
+  expect_true(is.numeric(res$mem) && length(res$mem) == 1L)
+  expect_gt(res$mem, 0)
+})
+
 test_that("worker memory and memory budget cap the number of workers", {
   withr::local_envvar(GP_PAR_PAYLOAD_MULTIPLIER = "1")
   expect_identical(PredictProR:::gp_parallel_memory_worker_cap(0.5, 8, worker_overhead_gb = 1.5), 4L)

@@ -118,7 +118,7 @@ test_that("trait prediction test summary is distinct from CV holdout size", {
   expect_true(annotated[[1]]$cv_info$n_test_is_cv_holdout)
 })
 
-test_that("GP true prediction values include PEV-based reliability metadata", {
+test_that("GP true prediction keeps total PEV and genetic reliability metadata", {
   pheno <- data.frame(
     GID = c("g1", "g2", "g3", "g4"),
     Yield = c(1, NA, 3, 5),
@@ -131,6 +131,8 @@ test_that("GP true prediction values include PEV-based reliability metadata", {
     Prediction_Var_observed = c(0.09, 0.16, 0.1225, 0.09),
     Prediction_SE_latent = c(0.10, 0.20, 0.15, 0.10),
     Prediction_Var_latent = c(0.01, 0.04, 0.0225, 0.01),
+    Reliability_variance_input = c(0.008, 0.03, 0.02, 0.008),
+    Reliability_reference_variance = c(2, 2.2, 1.8, 2.1),
     stringsAsFactors = FALSE
   )
   gp_result <- list(
@@ -163,10 +165,10 @@ test_that("GP true prediction values include PEV-based reliability metadata", {
   ) %in% names(out)))
   expect_equal(out$Standard_error, predictions$Prediction_SE_latent)
   expect_equal(out$PEV, predictions$Prediction_Var_latent)
-  expect_equal(out$Genetic_variance, rep(2, 4))
-  expect_equal(out$Reliability_reference_variance, rep(2, 4))
-  expect_equal(out$Reliability[2], 1 - 0.04 / 2)
-  expect_identical(out$Reliability_basis, rep("reml_genetic_variance", 4))
+  expect_equal(out$Genetic_variance, predictions$Reliability_reference_variance)
+  expect_equal(out$Reliability_reference_variance, predictions$Reliability_reference_variance)
+  expect_equal(out$Reliability[2], 1 - 0.03 / 2.2)
+  expect_identical(out$Reliability_basis, rep("genetic_prior_variance", 4))
   expect_identical(
     out$Uncertainty_remarks,
     rep("model_based_prediction_interval", 4)
@@ -204,11 +206,11 @@ test_that("GP reliability is NA (no phenotypic fallback) when REML genetic varia
   expect_true(all(is.na(out$Reliability)))
   expect_identical(
     out$Reliability_basis,
-    rep("reml_genetic_variance_not_estimable", nrow(out))
+    rep("genetic_prior_variance_not_estimable", nrow(out))
   )
   expect_identical(
     out$Reliability_remarks,
-    rep("sigma2_g not estimable", nrow(out))
+    rep("genetic PEV or row prior unavailable", nrow(out))
   )
 
   train_y <- pheno$Yield[!is.na(pheno$Yield) & pheno$GID != "g2"]
@@ -296,6 +298,9 @@ test_that("GP final prediction after CV requests uncertainty output", {
   expect_identical(seen$test_set, "g2")
   expect_identical(seen$test_set_source, "inferred_missing_response")
   expect_true("predicted_values" %in% names(out$res_model_output))
+  ctx$gp_varcomp_mode <- "mom"
+  gp_run_best_model_task(ctx)
+  expect_identical(seen$gp_output_level, "predict_only")
 })
 
 test_that("model prediction outputs expose a consistent predicted_values table", {

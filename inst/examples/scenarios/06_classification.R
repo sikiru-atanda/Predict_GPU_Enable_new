@@ -102,7 +102,7 @@ for (cfg in cls_models) {
       thin = 5L,
 
       # Deep-learning controls
-      epochs = 100L,                 # attention models (TabNet, TabAttention) need ~100
+      epochs = "auto",                 # default: sized to the data (about 200 optimizer steps)
       batch_size = 16L,
       deterministic = TRUE,
       random_seed = 20260903L,
@@ -259,7 +259,7 @@ for (cfg in met_cls_models) {
       thin = 5L,
 
       # Deep-learning controls
-      epochs = 100L,
+      epochs = "auto",
       batch_size = 16L,
       deterministic = TRUE,
       random_seed = 20260903L,

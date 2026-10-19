@@ -100,6 +100,52 @@ gp_reject_polyploid_unsupported_models <- function(models, ploidy) {
   invisible(TRUE)
 }
 
+# Largest number of factors k an FA model can identify for n groups: the FA
+# parameters n(k + 1) - k(k - 1)/2 may not exceed the n(n + 1)/2 of a full
+# covariance matrix (Ledermann bound). This necessary parameter-count bound
+# does not guarantee identification for particular data or at a boundary.
+gp_fa_max_identifiable_rank <- function(n) {
+  n <- as.integer(n)[1L]
+  if (is.na(n) || n < 1L) return(0L)
+  max(0L, as.integer(floor((2 * n + 1 - sqrt(8 * n + 1)) / 2 + 1e-9)))
+}
+
+gp_validate_fa_rank <- function(rank, n, groups, argument = "gp_fa_rank") {
+  k <- suppressWarnings(as.numeric(rank))
+  if (length(k)!=1L || !is.finite(k) || k<1 || k!=floor(k)) {
+    stop("FA-GBLUP requires `",argument,"` to be a positive integer.",call.=FALSE)
+  }
+  k_max <- gp_fa_max_identifiable_rank(n)
+  if (k>k_max) {
+    count <- n*(k+1)-k*(k-1)/2; entries <- n*(n+1)/2
+    alternative <- if(k_max==0L) {
+      "Use an unstructured covariance where supported (Gaussian-Process-GBLUP for multiple traits; ASReml us for environments), or a non-FA GP model."
+    } else paste0("Use ",argument," = ",k_max,if(k_max>1L) " or less" else "",", or unstructured covariance where supported.")
+    stop("FA-GBLUP with ",n," ",groups," supports ",argument," up to ",k_max,
+         " (rank ",k," has ",count," parameters for ",entries," covariance entries and cannot be identified). ",
+         alternative,call.=FALSE)
+  }
+  invisible(TRUE)
+}
+
+gp_validate_fa_rank_for_environments <- function(models, gp_fa_rank, pheno_data, heter_groups) {
+  models <- unique(as.character(stats::na.omit(unlist(models, use.names = FALSE))))
+  canonical <- tryCatch(gp_canonicalize_supported_model_names(models), error = function(e) models)
+  if (!any(canonical %in% "GP_FA" | models %in% "FA-GBLUP")) return(invisible(TRUE))
+  k <- suppressWarnings(as.numeric(gp_fa_rank %||% 1L))
+  if (length(k)!=1L || !is.finite(k) || k<1L || k!=floor(k)) {
+    stop("FA-GBLUP requires `gp_fa_rank` to be a positive integer.", call. = FALSE)
+  }
+  if (is.null(heter_groups) || !is.data.frame(pheno_data) || !heter_groups[1L] %in% names(pheno_data)) {
+    return(invisible(TRUE))
+  }
+  envs <- unique(as.character(pheno_data[[heter_groups[1L]]]))
+  n_env <- length(envs[!is.na(envs) & nzchar(envs)])
+  if (n_env < 2L) return(invisible(TRUE))
+  gp_validate_fa_rank(k,n_env,"environments")
+  invisible(TRUE)
+}
+
 gp_lowrank_friendly_models <- function() {
   c("Kernel-GBLUP", "Gaussian-Process-GBLUP", "FA-GBLUP", "Scalable-GBLUP")
 }
@@ -526,19 +572,36 @@ gp_is_met_ml_dl_model <- function(model) {
 
 PredictProR_asreml_data_registry <- new.env(parent = emptyenv())
 
+# An ASReml fit's call reads its data as asreml_model_data_lookup(key), and
+# update() and predict() evaluate that call again, so the data stays here
+# while the model is used: a CV fold's until the fold is predicted
+# (asreml_mod_cv()), anything else registered during a model_execute() run
+# until the run ends (gp_asreml_globals_scope()). The key is the process id
+# and a count (a random part drew from the caller's random-number stream);
+# the process id keeps a forked worker's keys apart from its parent's, and a
+# key still in the store is skipped, in case the count was cleared.
 asreml_model_data_register <- function(pheno_data) {
-  key <- paste0(
-    "predictpror_asreml_data_",
-    format(Sys.time(), "%Y%m%d%H%M%OS6"),
-    "_",
-    sprintf("%06d", sample.int(999999L, 1L))
-  )
+  count <- get0("asreml_data_count", envir = PredictProR_runtime_cache, inherits = FALSE, ifnotfound = 0L)
+  repeat {
+    count <- count + 1L
+    key <- sprintf("predictpror_asreml_data_%d_%d", Sys.getpid(), count)
+    if (!exists(key, envir = PredictProR_asreml_data_registry, inherits = FALSE)) break
+  }
+  assign("asreml_data_count", count, envir = PredictProR_runtime_cache)
   assign(key, pheno_data, envir = PredictProR_asreml_data_registry)
+  record <- get0("asreml_run_globals", envir = PredictProR_runtime_cache, inherits = FALSE)
+  if (!is.null(record)) record$data_keys <- c(record$data_keys, key)
   key
 }
 
 asreml_model_data_lookup <- function(key) {
   get(key, envir = PredictProR_asreml_data_registry, inherits = FALSE)
+}
+
+asreml_model_data_release <- function(keys) {
+  keys <- keys[vapply(keys, exists, logical(1), envir = PredictProR_asreml_data_registry, inherits = FALSE)]
+  if (length(keys)) rm(list = keys, envir = PredictProR_asreml_data_registry)
+  invisible(NULL)
 }
 
 resolve_model_name <- function(x, name_lookup) {
@@ -626,6 +689,28 @@ gp_detect_python <- function() {
   NULL
 }
 
+# The interpreter gp_detect_python() would return, if it is known without
+# starting any Python: set by environment variable, or chosen earlier in this
+# session. gp_detect_python() otherwise starts every candidate on the machine
+# (13 interpreters, 13.8 s on a Windows test machine), which run metadata and
+# R-only runs must not pay for.
+gp_known_python <- function() {
+  for (var in c("PREDICTPRO_GP_PYTHON", "RETICULATE_PYTHON")) {
+    py <- Sys.getenv(var, unset = "")
+    if (nzchar(py) && file.exists(py)) {
+      return(py)
+    }
+  }
+  gp_known_preferred_python("general")
+}
+
+# gp_preferred_python(purpose) when it has already been decided this session.
+gp_known_preferred_python <- function(purpose = c("general", "ml", "dl", "gp")) {
+  purpose <- match.arg(purpose)
+  cached <- get0(paste0("preferred_python::", purpose), envir = PredictProR_runtime_cache, inherits = FALSE)
+  if (!is.null(cached) && nzchar(cached) && file.exists(cached)) cached else NULL
+}
+
 gp_virtualenv_python_path <- function(root, env_name, os_type = .Platform$OS.type) {
   if (is.null(root) || !nzchar(root) || is.null(env_name) || !nzchar(env_name)) {
     return(NULL)
@@ -650,7 +735,7 @@ gp_virtualenv_python_candidates <- function(root, env_names = NULL, os_type = .P
   exe_rel <- gp_python_executable_relpath(os_type)
   py <- file.path(env_dirs, exe_rel)
   py <- py[file.exists(py)]
-  normalizePath(py, winslash = "/", mustWork = FALSE)
+  gp_python_path(py, mustWork = FALSE)
 }
 
 gp_local_virtualenv_python_candidates <- function(env_dir = ".venv-gp",
@@ -668,10 +753,52 @@ gp_local_virtualenv_python_candidates <- function(env_dir = ".venv-gp",
     )
   }
   candidates <- candidates[file.exists(candidates)]
-  normalizePath(unique(candidates), winslash = "/", mustWork = FALSE)
+  gp_python_path(unique(candidates), mustWork = FALSE)
 }
 
+# Found once per session; the conda listing behind it is kept on disk
+# (gp_conda_list_cached()).
 gp_conda_python_candidates <- function(env_names) {
+  cache_key <- paste0("conda_candidates::", paste(sort(unique(env_names)), collapse = ","))
+  cached <- get0(cache_key, envir = PredictProR_runtime_cache, inherits = FALSE)
+  if (!is.null(cached)) {
+    return(cached[file.exists(cached)])
+  }
+  found <- gp_conda_python_search(env_names)
+  assign(cache_key, found, envir = PredictProR_runtime_cache)
+  found
+}
+
+# reticulate::conda_list() runs conda (2-3 s). Its result is kept until conda
+# registers or removes an environment (environments.txt, the envs folders),
+# for at most 7 days.
+gp_conda_list_cached <- function() {
+  extra <- list(conda = Sys.getenv("RETICULATE_CONDA", unset = ""),
+                conda_option = as.character(getOption("reticulate.conda_binary", "")))
+  envs <- gp_python_discovery_cache_get("conda_list", extra)
+  if (is.data.frame(envs)) {
+    return(envs)
+  }
+  envs <- tryCatch(reticulate::conda_list(), error = function(e) NULL)
+  if (is.data.frame(envs)) {
+    py_col <- intersect(c("python", "python_path"), names(envs))
+    roots <- if (length(py_col)) gp_conda_envs_roots(envs[[py_col[[1L]]]]) else character()
+    gp_python_discovery_cache_set("conda_list", envs, paths = c(gp_conda_registry_files(), roots),
+                                  extra = extra, max_age_days = 7)
+  }
+  envs
+}
+
+# The "envs" folders holding these environments' interpreters.
+gp_conda_envs_roots <- function(python_paths) {
+  py <- as.character(python_paths)
+  py <- py[!is.na(py) & nzchar(py)]
+  prefix <- if (identical(gp_platform_family(), "windows")) dirname(py) else dirname(dirname(py))
+  roots <- unique(dirname(prefix))
+  roots[basename(roots) == "envs"]
+}
+
+gp_conda_python_search <- function(env_names) {
   fallback_paths <- character()
   home <- normalizePath(path.expand("~"), winslash = "/", mustWork = FALSE)
   if (.Platform$OS.type == "windows") {
@@ -696,13 +823,13 @@ gp_conda_python_candidates <- function(env_names) {
 
   if (!requireNamespace("reticulate", quietly = TRUE)) {
     existing <- fallback_paths[file.exists(fallback_paths)]
-    return(normalizePath(existing, winslash = "/", mustWork = FALSE))
+    return(gp_python_path(existing, mustWork = FALSE))
   }
 
-  envs <- tryCatch(reticulate::conda_list(), error = function(e) NULL)
+  envs <- gp_conda_list_cached()
   if (is.null(envs) || !nrow(envs)) {
     existing <- fallback_paths[file.exists(fallback_paths)]
-    return(normalizePath(existing, winslash = "/", mustWork = FALSE))
+    return(gp_python_path(existing, mustWork = FALSE))
   }
 
   name_col <- intersect(c("name", "envname"), names(envs))
@@ -723,7 +850,7 @@ gp_conda_python_candidates <- function(env_names) {
   }
 
   existing <- unique(c(py[file.exists(py)], fallback_paths[file.exists(fallback_paths)]))
-  normalizePath(existing, winslash = "/", mustWork = FALSE)
+  gp_python_path(existing, mustWork = FALSE)
 }
 
 gp_python_candidates <- function() {
@@ -732,7 +859,7 @@ gp_python_candidates <- function() {
   if (!nzchar(workon_home)) {
     workon_home <- file.path(home, ".virtualenvs")
   }
-  env_names <- c("predictgp", "predictdl", "r-torchgwas")
+  env_names <- c("predictgp", "predictdl")
   env_paths <- vapply(
     env_names,
     function(env_name) gp_virtualenv_python_path(workon_home, env_name),
@@ -767,19 +894,19 @@ gp_python_path_bonus <- function(py_bin, purpose = c("general", "ml", "dl", "gp"
   if (is.null(py_bin) || !nzchar(py_bin)) {
     return(0)
   }
-  py_norm <- tolower(normalizePath(py_bin, winslash = "/", mustWork = FALSE))
+  py_norm <- tolower(gp_python_path(py_bin, mustWork = FALSE))
 
   if (identical(purpose, "gp")) {
     if (grepl("/\\.venv-gp/", py_norm, fixed = FALSE) || grepl("/predictgp/", py_norm, fixed = FALSE)) {
       return(50)
     }
-    if (grepl("/r-torchgwas/", py_norm, fixed = FALSE) || grepl("/predictdl/", py_norm, fixed = FALSE)) {
+    if (grepl("/predictdl/", py_norm, fixed = FALSE)) {
       return(-10)
     }
   }
 
   if (identical(purpose, "dl")) {
-    if (grepl("/r-torchgwas/", py_norm, fixed = FALSE) || grepl("/predictdl/", py_norm, fixed = FALSE)) {
+    if (grepl("/predictdl/", py_norm, fixed = FALSE)) {
       return(30)
     }
   }
@@ -794,17 +921,28 @@ gp_python_path_bonus <- function(py_bin, purpose = c("general", "ml", "dl", "gp"
   0
 }
 
+gp_python_probe_key <- function(py_bin, modules) {
+  paste0("python_probe::", gp_python_path(py_bin, mustWork = FALSE), "::", paste(sort(modules), collapse = ","))
+}
+
+# A gp_python_probe() result already in this session's cache, or NULL; starts
+# no Python.
+gp_python_probe_cached <- function(py_bin, modules) {
+  if (is.null(py_bin) || !nzchar(py_bin)) {
+    return(NULL)
+  }
+  get0(gp_python_probe_key(py_bin, modules), envir = PredictProR_runtime_cache, inherits = FALSE)
+}
+
 gp_python_probe <- function(py_bin,
                             modules = c("numpy", "sklearn", "xgboost", "lightgbm", "catboost", "torch")) {
   if (is.null(py_bin) || !nzchar(py_bin) || !file.exists(py_bin)) {
     return(NULL)
   }
   # Each probe starts a Python process (and importing torch takes seconds),
-  # so results are cached per interpreter and module set for the session.
-  cache_key <- paste0(
-    "python_probe::", normalizePath(py_bin, winslash = "/", mustWork = FALSE),
-    "::", paste(sort(modules), collapse = ",")
-  )
+  # so results are cached per interpreter and module set for the session, and
+  # on disk until the interpreter or one of its site-packages folders changes.
+  cache_key <- gp_python_probe_key(py_bin, modules)
   if (exists(cache_key, envir = PredictProR_runtime_cache, inherits = FALSE)) {
     return(get(cache_key, envir = PredictProR_runtime_cache, inherits = FALSE))
   }
@@ -827,15 +965,53 @@ gp_python_probe <- function(py_bin,
       paste0("mods = [", py_modules, "]"),
       "out = {m: bool(u.find_spec(m)) for m in mods}",
       torch_lines,
+      # the folders installs go to: pip and conda add or rename an entry there,
+      # which changes the folder's modification time
+      "import os, sys, site",
+      "def _sp(p): return os.path.basename(os.path.normpath(p)).lower() in ('site-packages', 'dist-packages')",
+      "dirs = [p for p in sys.path if p and _sp(p)]",
+      "try:",
+      "    dirs += [p for p in site.getsitepackages() if _sp(p)]",
+      "except Exception:",
+      "    pass",
+      "try:",
+      "    dirs.append(site.getusersitepackages())",
+      "except Exception:",
+      "    pass",
+      "out['_site_dirs'] = sorted(set(os.path.abspath(p).replace(os.sep, '/') for p in dirs))",
       "print(json.dumps(out))"
     ),
     collapse = "\n"
   )
+  # a torch probe also depends on the NVIDIA driver being there
+  extra <- list(code = py_code, nvidia_smi = if ("torch" %in% modules) nzchar(Sys.which("nvidia-smi")))
+  probe <- gp_python_discovery_cache_get(cache_key, extra)
+  if (is.null(probe)) {
+    out <- gp_python_probe_run(py_bin, py_code)
+    probe <- if (length(out)) tryCatch(jsonlite::fromJSON(out[[1]]), error = function(e) NULL)
+    if (is.null(probe)) {
+      # not started again this session; kept off the disk, so an interpreter
+      # repaired later is seen by the next session
+      assign(cache_key, NULL, envir = PredictProR_runtime_cache)
+      return(NULL)
+    }
+    site_dirs <- as.character(unlist(probe[["_site_dirs"]]))
+    probe[["_site_dirs"]] <- NULL
+    gp_python_discovery_cache_set(cache_key, probe,
+                                  paths = c(gp_python_path(py_bin, mustWork = FALSE), site_dirs),
+                                  extra = extra, max_age_days = 30)
+  }
+  assign(cache_key, probe, envir = PredictProR_runtime_cache)
+  probe
+}
+
+# Run the probe script in `py_bin`; its stdout lines, or character() when the
+# interpreter does not run.
+gp_python_probe_run <- function(py_bin, py_code) {
   script <- tempfile(fileext = ".py")
   writeLines(py_code, script, useBytes = TRUE)
   on.exit(unlink(script), add = TRUE)
-
-  out <- tryCatch(
+  tryCatch(
     suppressWarnings(system2(
       py_bin,
       gp_quote_system_args(script),
@@ -844,15 +1020,104 @@ gp_python_probe <- function(py_bin,
     )),
     error = function(e) character()
   )
-  if (!length(out)) {
+}
+
+# Interpreter probes and the conda environment list, kept between sessions in
+# tools::R_user_dir("PredictProR", "cache"). An entry records the modification
+# time and size of the files it depends on (the interpreter, its site-packages
+# folders; conda's registry and envs folders) and is used only while they are
+# unchanged and it is younger than its maximum age. The installers check
+# packages themselves (predictpror_deps.py), so an entry can only steer which
+# interpreter is chosen. The parallel workers' measured memory is kept here
+# too (gp_parallel_measure_worker_gb()). PREDICTPRO_PROBE_CACHE=false turns
+# it off.
+gp_python_discovery_cache_file <- function() {
+  file.path(tools::R_user_dir("PredictProR", which = "cache"), "python-discovery.rds")
+}
+
+gp_python_discovery_cache_enabled <- function() {
+  value <- tolower(trimws(Sys.getenv("PREDICTPRO_PROBE_CACHE", unset = "")))
+  !value %in% c("0", "false", "no", "off")
+}
+
+gp_path_state <- function(paths) {
+  info <- file.info(as.character(paths), extra_cols = FALSE)
+  ifelse(is.na(info$mtime), "missing", sprintf("%.6f/%.0f", as.numeric(info$mtime), info$size))
+}
+
+gp_python_discovery_entry_current <- function(entry) {
+  is.list(entry) && inherits(entry$saved, "POSIXct") && is.numeric(entry$max_age_days) &&
+    as.numeric(difftime(Sys.time(), entry$saved, units = "days")) <= entry$max_age_days &&
+    identical(gp_path_state(entry$paths), entry$state)
+}
+
+gp_python_discovery_cache_read <- function() {
+  file <- gp_python_discovery_cache_file()
+  if (!file.exists(file)) {
+    return(list())
+  }
+  entries <- tryCatch(readRDS(file), error = function(e) NULL, warning = function(w) NULL)
+  if (is.list(entries)) entries else list()
+}
+
+# Written to a temporary file and renamed, so a reader never sees half a file;
+# when two sessions write at once, one of them wins.
+gp_python_discovery_cache_write <- function(entries) {
+  file <- gp_python_discovery_cache_file()
+  dir.create(dirname(file), recursive = TRUE, showWarnings = FALSE)
+  tmp <- tempfile("python-discovery-", tmpdir = dirname(file), fileext = ".tmp")
+  ok <- tryCatch({
+    saveRDS(entries, tmp)
+    file.rename(tmp, file)
+  }, error = function(e) FALSE, warning = function(w) FALSE)
+  if (!isTRUE(ok)) {
+    unlink(tmp)
+  }
+  invisible(isTRUE(ok))
+}
+
+gp_python_discovery_cache_get <- function(key, extra) {
+  if (!gp_python_discovery_cache_enabled()) {
     return(NULL)
   }
-
-  probe <- tryCatch(jsonlite::fromJSON(out[[1]]), error = function(e) NULL)
-  if (!is.null(probe)) {
-    assign(cache_key, probe, envir = PredictProR_runtime_cache)
+  entry <- gp_python_discovery_cache_read()[[key]]
+  if (!gp_python_discovery_entry_current(entry) || !identical(entry$extra, extra)) {
+    return(NULL)
   }
-  probe
+  entry$value
+}
+
+gp_python_discovery_cache_set <- function(key, value, paths, extra, max_age_days) {
+  if (!gp_python_discovery_cache_enabled()) {
+    return(invisible(FALSE))
+  }
+  entries <- gp_python_discovery_cache_read()
+  # entries past their age or for changed (or removed) interpreters go
+  entries <- entries[vapply(entries, gp_python_discovery_entry_current, logical(1))]
+  entries[[key]] <- list(value = value, paths = paths, state = gp_path_state(paths), extra = extra,
+                         saved = Sys.time(), max_age_days = max_age_days)
+  gp_python_discovery_cache_write(entries)
+}
+
+gp_python_discovery_cache_drop <- function(prefix) {
+  if (!gp_python_discovery_cache_enabled()) {
+    return(invisible(FALSE))
+  }
+  entries <- gp_python_discovery_cache_read()
+  hit <- startsWith(names(entries) %||% character(), prefix)
+  if (!any(hit)) {
+    return(invisible(FALSE))
+  }
+  gp_python_discovery_cache_write(entries[!hit])
+}
+
+# conda records every environment it creates here (conda >= 4.4); on Windows
+# in the user profile, which is not R's home.
+gp_conda_registry_files <- function() {
+  homes <- c(if (identical(gp_platform_family(), "windows")) Sys.getenv("USERPROFILE", unset = ""),
+             path.expand("~"))
+  homes <- unique(gp_python_path(homes[nzchar(homes)], mustWork = FALSE))
+  file.path(homes, ".conda", "environments.txt")
 }
 
 gp_python_module_score <- function(py_bin,
@@ -915,7 +1180,7 @@ gp_preferred_python <- function(purpose = c("general", "ml", "dl", "gp")) {
   if (!length(existing)) {
     return(NULL)
   }
-  existing <- unique(normalizePath(existing, winslash = "/", mustWork = TRUE))
+  existing <- unique(gp_python_path(existing, mustWork = TRUE))
   scores <- vapply(existing, gp_python_module_score, numeric(1), purpose = purpose) +
     vapply(existing, gp_python_path_bonus, numeric(1), purpose = purpose)
   best_idx <- order(scores, decreasing = TRUE, na.last = TRUE)
@@ -933,7 +1198,7 @@ gp_configure_python_runtime <- function(force = FALSE, purpose = c("general", "m
 
   current <- Sys.getenv("RETICULATE_PYTHON", unset = "")
   if (!force && nzchar(current)) {
-    return(invisible(normalizePath(current, winslash = "/", mustWork = FALSE)))
+    return(invisible(gp_python_path(current, mustWork = FALSE)))
   }
 
   Sys.setenv(RETICULATE_PYTHON = preferred)
@@ -947,14 +1212,20 @@ gp_configure_torch_runtime_env <- function() {
   invisible(Sys.getenv("CUBLAS_WORKSPACE_CONFIG", unset = ""))
 }
 
+# discover = FALSE (run metadata): describe only interpreters already known
+# (gp_known_python()) and torch probes already made; start no Python.
 gp_python_runtime_status <- function(initialize = FALSE,
                                      python_path = NULL,
                                      preferred_python = NULL,
                                      purpose = c("general", "ml", "dl", "gp"),
-                                     include_accelerator = TRUE) {
+                                     include_accelerator = TRUE,
+                                     discover = TRUE) {
   purpose <- match.arg(purpose)
   reticulate_available <- requireNamespace("reticulate", quietly = TRUE)
-  preferred_python <- preferred_python %||% tryCatch(gp_preferred_python(purpose = purpose), error = function(e) NULL)
+  preferred_python <- preferred_python %||% tryCatch(
+    if (isTRUE(discover)) gp_preferred_python(purpose = purpose) else gp_known_preferred_python(purpose),
+    error = function(e) NULL
+  )
   purpose_python <- switch(
     purpose,
     dl = {
@@ -997,7 +1268,10 @@ gp_python_runtime_status <- function(initialize = FALSE,
     active_python <- Sys.getenv("RETICULATE_PYTHON", unset = "")
   }
   if (!nzchar(active_python)) {
-    active_python <- tryCatch(gp_detect_python(), error = function(e) NULL) %||% ""
+    active_python <- tryCatch(
+      if (isTRUE(discover)) gp_detect_python() else gp_known_python(),
+      error = function(e) NULL
+    ) %||% ""
   }
   if (!nzchar(active_python)) {
     active_python <- preferred_python %||% ""
@@ -1015,7 +1289,7 @@ gp_python_runtime_status <- function(initialize = FALSE,
   if (!initialize && !out$reticulate_initialized) {
     if (isTRUE(include_accelerator)) {
       probe <- tryCatch(
-        gp_python_probe(active_python, modules = "torch"),
+        if (isTRUE(discover)) gp_python_probe(active_python, modules = "torch") else gp_python_probe_cached(active_python, "torch"),
         error = function(e) NULL
       )
       if (!is.null(probe)) {
@@ -1108,12 +1382,14 @@ gp_runtime_metadata <- function(execution_policy = NULL,
     as.character(val)
   }
 
+  # describes what is known without starting any Python (gp_known_python())
   runtime <- gp_python_runtime_status(
     initialize = FALSE,
     python_path = python_path,
     preferred_python = preferred_python,
     purpose = purpose,
-    include_accelerator = include_accelerator
+    include_accelerator = include_accelerator,
+    discover = FALSE
   )
 
   kv <- list(
@@ -1130,6 +1406,16 @@ gp_runtime_metadata <- function(execution_policy = NULL,
     runtime_num_gpus = runtime$num_gpus %||% 0L,
     runtime_gpu_name = runtime$gpu_name %||% NA_character_
   )
+  # the interpreter each Python model family of this run ran in (as a
+  # subprocess); the fields above describe the embedded reticulate session
+  used <- gp_python_runtimes_used()
+  for (used_purpose in names(used)) {
+    kv[[paste0("python_", used_purpose)]] <- used[[used_purpose]]
+  }
+  # the devices the run's deep-learning fits trained on, and any fallback to
+  # the CPU (main session and workers; see gp_dl_device_report_record())
+  dl_device <- gp_dl_device_metadata_fields()
+  kv[names(dl_device)] <- dl_device
 
   if (!is.null(execution_policy)) {
     kv$policy_backend <- execution_policy$backend %||% NA_character_
@@ -1160,6 +1446,44 @@ gp_runtime_metadata <- function(execution_policy = NULL,
     value = vapply(kv, scalarize_metadata_value, character(1)),
     stringsAsFactors = FALSE
   )
+}
+
+# Fields that describe the whole session (Python, GPU, deep-learning devices
+# over all fits); a CV stage's table repeats them.
+gp_runtime_metadata_session_key <- function(key) {
+  key %in% c("preferred_python", "active_python", "torch_available", "cuda_available",
+             "policy_hidden_threads", "policy_blas_threads_env", "dl_device", "dl_device_notes") |
+    grepl("^(reticulate_|python_|runtime_)", key)
+}
+
+# A run that cross-validates and then refits the best models makes two
+# parallel decisions. The refit's stays in policy_* (policy_stage names it);
+# the CV's, with the CV's other fields, follows as cv_* rows (cv_policy_backend,
+# cv_policy_workers, cv_policy_decision_reason, ...), so Run_metadata.csv shows
+# what the cross-validation ran on, not only the refit.
+gp_runtime_metadata_add_cv_stage <- function(run_metadata, cv_run_metadata, stage = "best_model_refit") {
+  if (!is.data.frame(run_metadata) || !is.data.frame(cv_run_metadata) || !nrow(cv_run_metadata)) {
+    return(run_metadata)
+  }
+  cv <- cv_run_metadata[!gp_runtime_metadata_session_key(cv_run_metadata$key), c("key", "value"), drop = FALSE]
+  cv$key <- ifelse(startsWith(cv$key, "cv_"), cv$key, paste0("cv_", cv$key))
+  cv <- cv[!cv$key %in% run_metadata$key & !duplicated(cv$key), , drop = FALSE]
+  policy_rows <- which(startsWith(run_metadata$key, "policy_"))
+  if (!length(policy_rows)) {
+    out <- rbind(run_metadata, cv)
+  } else {
+    stage_row <- data.frame(key = "policy_stage", value = stage, stringsAsFactors = FALSE)
+    rows <- seq_len(nrow(run_metadata))
+    out <- rbind(
+      run_metadata[rows < min(policy_rows), , drop = FALSE],
+      stage_row,
+      run_metadata[rows >= min(policy_rows) & rows <= max(policy_rows), , drop = FALSE],
+      cv,
+      run_metadata[rows > max(policy_rows), , drop = FALSE]
+    )
+  }
+  rownames(out) <- NULL
+  out
 }
 
 gp_runtime_profile_new <- function(context = "model_execute") {
@@ -1235,8 +1559,8 @@ gp_init_python_once <- function(py_bin) {
 
   if (!reticulate::py_available(initialize = FALSE)) {
     current <- Sys.getenv("RETICULATE_PYTHON", unset = "")
-    target <- normalizePath(py_bin, winslash = "/", mustWork = FALSE)
-    if (!nzchar(current) || !identical(normalizePath(current, winslash = "/", mustWork = FALSE), target)) {
+    target <- gp_python_path(py_bin, mustWork = FALSE)
+    if (!nzchar(current) || !identical(gp_python_path(current, mustWork = FALSE), target)) {
       Sys.setenv(RETICULATE_PYTHON = target)
     }
     reticulate::use_python(py_bin, required = TRUE)
@@ -1246,7 +1570,7 @@ gp_init_python_once <- function(py_bin) {
 
   conf <- reticulate::py_config()
   same <- tryCatch(
-    identical(normalizePath(conf$python, winslash = "/"), normalizePath(py_bin, winslash = "/")),
+    identical(gp_python_path(conf$python), gp_python_path(py_bin)),
     error = function(e) FALSE
   )
   if (!same) {
@@ -3676,17 +4000,6 @@ gp_multiclass_prediction_output <- function(ids,
   out <- cbind(out, prob_df)
   names(out)[1] <- gen_name
   out
-}
-
-compose_initializers <- function(...) {
-  inits <- list(...)
-  function() {
-    for (f in inits) {
-      if (is.function(f)) {
-        try(f(), silent = TRUE)
-      }
-    }
-  }
 }
 
 normalize_cv_token <- function(x) {

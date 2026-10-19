@@ -1,29 +1,26 @@
 from __future__ import annotations
 
 import importlib
+import os
 import subprocess
 import sys
 import warnings
 from typing import Any, Dict, Optional, Sequence
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import predictpror_deps as _deps
+
+_deps.ensure_groups(["numpy"])
+
 import numpy as np
 
 
-def _run(cmd: Sequence[str]):
-    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False, text=True)
-
-
-def _pip_install(pkgs: Sequence[str]):
-    cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--quiet", "--no-cache-dir", *pkgs]
-    return _run(cmd)
-
-
 def _lazy_import(name: str, pip_name: Optional[str] = None):
-    try:
-        return importlib.import_module(name)
-    except Exception:
-        _pip_install([pip_name or name])
-        return importlib.import_module(name)
+    # installs the package that provides `name` (e.g. scikit-learn for
+    # sklearn.ensemble) when it is missing; pip_name is kept for callers
+    return _deps.ensure_module(name)
 
 
 def setup_deps(prefer_gpu: bool = True):
@@ -120,10 +117,25 @@ def _svm_gamma_from_params(params: Dict[str, Any]):
     return None
 
 
+def _ridge_default_alphas(n_features: Optional[int] = None) -> np.ndarray:
+    """RidgeCV's default penalty grid: 1e-6 to max(1e6, 100 p), about 8 values per decade.
+
+    On standardized predictors the penalty RR-BLUP implies is p (1 - h2) / h2: p at h2 = 0.5 and
+    99 p at h2 = 0.01. The grid used to stop at 1e3, so on marker panels of a few thousand
+    columns the chosen penalty sat at that cap and predictions were under-shrunk (RMSE +2.9% at
+    p = 10,000, h2 = 0.3; NEWS 0.20.220). The low end keeps near-OLS fits for few predictors.
+    """
+    upper = 6.0
+    if n_features:
+        upper = max(upper, float(np.log10(100.0 * float(n_features))))
+    return np.logspace(-6.0, upper, int(np.ceil((upper + 6.0) * 8)) + 1)
+
+
 def _build_estimator(model: str,
                      task: str,
                      params: Dict[str, Any],
-                     n_classes: Optional[int] = None):
+                     n_classes: Optional[int] = None,
+                     n_features: Optional[int] = None):
     model = model.lower()
     random_state = params.get("random_state", 42)
 
@@ -278,7 +290,7 @@ def _build_estimator(model: str,
             return sklearn_linear.Ridge(alpha=float(alpha), random_state=random_state)
         alphas = params.get("ridge_alphas")
         if alphas is None:
-            alphas = np.logspace(-6, 3, 60)
+            alphas = _ridge_default_alphas(n_features)
         return sklearn_linear.RidgeCV(alphas=np.asarray(alphas, dtype=float))
 
     if model == "lasso":
@@ -440,7 +452,8 @@ def fit_predict(model: str,
         y_fit = np.asarray([encode_lookup[str(val)] for val in y_train], dtype=int)
         n_classes = len(fit_levels)
 
-    estimator = _build_estimator(model=model, task=task, params=params, n_classes=n_classes)
+    estimator = _build_estimator(model=model, task=task, params=params, n_classes=n_classes,
+                                 n_features=X_train.shape[1])
     if model.strip().lower() == "svm" and not isinstance(estimator, dict):
         estimator = _maybe_precompute_svm(estimator, X_train.shape[0])
     if isinstance(estimator, dict) and estimator.get("kind") == "pls_auto":
@@ -509,6 +522,48 @@ def fit_predict(model: str,
     }
 
 
+def _air_importance(model: str, task: str, X_train, y_train, params: Dict[str, Any],
+                    n_classes: Optional[int]):
+    """Actual impurity reduction (Nembrini, Konig & Wright 2018, Bioinformatics 34:3711).
+
+    Each ranked predictor gets a shadow copy; all shadow columns use one shared
+    permutation of the rows (as ranger), so the shadows keep the predictors' correlation (LD)
+    while losing any link to the trait. One forest is grown on
+    [X, shadows] and a predictor's score is its impurity decrease minus its shadow's, summed over
+    trees without per-tree normalization (ranger's importance = "impurity_corrected"). The last
+    params["air_unranked"] columns are covariates: no shadow and no score. The number of split
+    candidates is scaled with the augmented width so each real predictor keeps the chance of
+    being considered that it had without shadows.
+    """
+    if model.lower() != "randomforest":
+        raise ValueError("AIR importance is implemented for randomforest only")
+    X = np.asarray(X_train, dtype=float)
+    n, p_all = X.shape
+    n_unranked = int(params.get("air_unranked", 0) or 0)
+    p_rank = p_all - n_unranked
+    if p_rank < 1:
+        raise ValueError("AIR importance needs at least one ranked predictor")
+    rng = np.random.default_rng(int(params.get("random_state", 42)))
+    perm = rng.permutation(n)
+    shadow = X[perm, :p_rank]
+    X_aug = np.hstack([X, shadow])
+    p_aug = X_aug.shape[1]
+    if params.get("mtry") is not None:
+        m = int(params["mtry"])
+    elif task == "gaussian":
+        m = max(1, int(p_all / 3.0))
+    else:
+        m = max(1, int(np.sqrt(p_all)))
+    fit_params = dict(params)
+    fit_params["mtry"] = int(min(p_aug, max(1, round(m * p_aug / p_all))))
+    estimator = _build_estimator(model=model, task=task, params=fit_params, n_classes=n_classes)
+    estimator.fit(X_aug, y_train)
+    total = np.zeros(p_aug)
+    for tree in estimator.estimators_:
+        total += tree.tree_.compute_feature_importances(normalize=False)
+    return total[:p_rank] - total[p_all:]
+
+
 def feature_importance(model: str,
                        X_train: Any,
                        y_train: Any,
@@ -521,12 +576,16 @@ def feature_importance(model: str,
     y_train = _as_target(y_train, task)
     class_levels = [str(x) for x in (class_levels or np.unique(y_train).tolist())] if task != "gaussian" else None
     n_classes = len(class_levels) if task != "gaussian" else None
+    if str(params.get("importance", "")).lower() == "air":
+        importance = _air_importance(model, task, X_train, y_train, params, n_classes)
+        return {"importance": np.asarray(importance, dtype=float).tolist()}
 
     estimator = _build_estimator(
         model=model,
         task=task,
         params=params,
         n_classes=n_classes,
+        n_features=X_train.shape[1],
     )
     if isinstance(estimator, dict):
         raise ValueError(f"Feature importance is not available for auto estimator: {model}")

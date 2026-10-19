@@ -25,13 +25,16 @@ and a short effect summary. The list is the authoritative reference
 used by `inst/parallel-policy-knobs.md`.
 }
 \details{
-The policy is **score-based**: each parallel backend (`sequential`,
-`future`, `mirai`, `base_parallel`, `foreach`) gets a numeric score
-built from object size, task fanout, OS, GPU availability, and
-workload shape; the highest-scoring eligible backend wins. The
-scoring weights, sequential-gate thresholds, mori share thresholds,
-and mirai daemon timing are all tunable through the knobs in this
-table.
+In `parallel_mode = "auto"` the policy decides whether to run in
+parallel and, if so, uses `base_parallel` (the fastest parallel
+backend measured on Windows and Linux), or `mirai` when GPU models run
+on several GPUs (one worker per GPU). Cross-validation and the
+best-model refit decide sequential versus parallel with a cost model
+(expected work against worker start-up); otherwise `sequential` and
+that backend are scored with the weights below. `future`, `mirai` and
+`foreach` stay available through `parallel_mode`. The scoring weights,
+sequential-gate thresholds, mori share thresholds, the mirai queue cap
+and the GPU ids are all tunable through the knobs in this table.
 
 Companion helper: \code{\link{gp_policy_decision_reason_glossary}}.
 }

@@ -1480,6 +1480,9 @@ gp_vc_gp_estimation_method <- function(x) {
   if (grepl("krr_gcv_variance_ratio", mode, fixed = TRUE)) {
     return("KRR_GCV_variance_ratio")
   }
+  if (grepl("krr_profiled_variance_ratio", mode, fixed = TRUE)) {
+    return("KRR_profiled_variance_ratio")
+  }
   "backend_reported"
 }
 
@@ -1575,6 +1578,11 @@ gp_vc_boundary_status <- function(df, zero_tol = sqrt(.Machine$double.eps)) {
   inferred <- !nzchar(status) & is.finite(estimate) &
     abs(estimate) <= as.numeric(zero_tol)[1L] & !is.finite(se)
   status[inferred] <- "bound_at_zero"
+  if ("identifiability_reason" %in% names(df)) {
+    absorbed <- !is.na(df$identifiability_reason) &
+      df$identifiability_reason == "absorbed by fixed effects"
+    status[absorbed] <- "absorbed_by_fixed_effects"
+  }
   status
 }
 
@@ -1725,7 +1733,7 @@ gp_format_gp_multi_env_variance_components <- function(x, heter_groups = NULL) {
       genetic_kernel_rows <- boundary_rows &
         grepl("^vm\\(.*\\)!var$", as.character(out[["Component"]]))
       keep_value <- boundary_rows & !residual_not_estimable &
-        (row_status == "bound_at_zero" | genetic_kernel_rows)
+        (row_status %in% c("bound_at_zero", "absorbed_by_fixed_effects") | genetic_kernel_rows)
       out[["Standard_error"]][boundary_rows] <- NA_real_
       out[["Components"]][boundary_rows & !keep_value] <- NA_real_
     }
@@ -1868,6 +1876,22 @@ gp_format_gp_single_env_variance_components <- function(x, heter_groups = NULL) 
     return(gp_empty_variance_components())
   }
 
+  # Individual aliased kernel SEs are unavailable even when their sum is
+  # estimable. Use the backend's covariance of that sum, including cross terms,
+  # rather than requiring every individual component SE to be finite.
+  g_r_cov <- gp_vc_extract_genetic_residual_covariance(x)
+  if (!is.null(g_r_cov) && !isTRUE(genetic_at_zero)) {
+    supplied <- suppressWarnings(as.numeric(unlist(
+      g_r_cov[c("sigma2_g", "sigma2_e", "var_g", "var_e")], use.names = FALSE)))
+    target <- c(genetic[["estimate"]], residual[["estimate"]])
+    matched <- length(supplied) == 4L && all(is.finite(supplied)) &&
+      all(is.finite(target)) && all(supplied[3:4] >= 0) &&
+      isTRUE(all.equal(supplied[1:2], unname(target), tolerance = 1e-8))
+    if (matched) {
+      genetic[["se"]] <- sqrt(supplied[3])
+      residual[["se"]] <- sqrt(supplied[4])
+    }
+  }
   total <- genetic[["estimate"]] + residual[["estimate"]]
   h2 <- if (is.finite(total) && total > 0) genetic[["estimate"]] / total else NA_real_
   h2_se <- NA_real_

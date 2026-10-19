@@ -37,6 +37,26 @@ make_gp_public_smoke_data <- function(n = 10L, p = 14L, seed = 20260501L) {
   list(pheno = pheno, K = K, gids = gids, envs = envs, env_similarity = env_similarity)
 }
 
+make_gp_identified_fa_smoke_data <- function() {
+  # Four environments give FA1 eight parameters for ten covariance entries.
+  # Fixed seed, independent kernels and positive specific variances; no seed search.
+  set.seed(20260813L)
+  n <- 48L; gids <- paste0("g",seq_len(n)); envs <- paste0("E",1:4)
+  kernel <- function() {
+    Z <- matrix(rnorm(n*16L),n,16L)
+    K <- tcrossprod(Z)/16L + diag(.2,n)
+    K <- K/mean(diag(K)); dimnames(K) <- list(gids,gids); K
+  }
+  K <- kernel(); K2 <- kernel()
+  C <- tcrossprod(c(.8,1.1,-.7,1.3))+diag(c(.4,.5,.3,.6))
+  genetic <- t(chol(.6*K+.4*K2)) %*% matrix(rnorm(n*4L),n,4L) %*% chol(C)
+  y <- sweep(genetic,2,c(-.2,.35,.7,-.4),"+") +
+    sweep(matrix(rnorm(n*4L),n,4L),2,sqrt(c(.3,.4,.5,.6)),"*")
+  ph <- expand.grid(GID=gids,Env=envs,KEEP.OUT.ATTRS=FALSE,stringsAsFactors=FALSE)
+  ph$Trait1 <- as.vector(y)
+  list(pheno=ph,K=K,K2=K2,gids=gids,envs=envs)
+}
+
 expect_gp_se_variance <- function(predictions, se_col, var_col) {
   predictions <- as.data.frame(predictions, stringsAsFactors = FALSE)
   expect_true(all(c(se_col, var_col) %in% names(predictions)))
@@ -102,6 +122,13 @@ expect_gp_correlation_matrix <- function(x, n_traits) {
   expect_equal(unname(diag(x)), rep(1, n_traits), tolerance = 1e-8)
   expect_true(max(abs(x), na.rm = TRUE) <= 1 + 1e-8)
   expect_equal(unname(x), unname(t(x)), tolerance = 1e-8)
+}
+
+expect_gp_published_correlation <- function(x, n_traits, status, inference) {
+  # A runtime smoke fit must finish. Withholding is tested separately with
+  # an explicit one-iteration budget, never accepted as a passing smoke fit.
+  expect_true(status %in% c("promoted", "promoted_boundary"))
+  expect_gp_correlation_matrix(x, n_traits)
 }
 
 test_gp_python <- function() {
@@ -256,9 +283,8 @@ test_that("multi-kernel FA covariance, variance, and correlation outputs agree",
   gp_python <- test_gp_python()
   Sys.setenv(PREDICTPRO_GP_PYTHON = gp_python)
 
-  dat <- make_gp_public_smoke_data(n = 12L, p = 16L, seed = 20260813L)
-  second_kernel <- 0.55 * dat$K + 0.45 * diag(nrow(dat$K))
-  dimnames(second_kernel) <- dimnames(dat$K)
+  dat <- make_gp_identified_fa_smoke_data()
+  second_kernel <- dat$K2
   pheno <- dat$pheno[, c("GID", "Env", "Trait1")]
   pheno$Trait1[pheno$GID %in% tail(dat$gids, 3L)] <- NA_real_
 
@@ -304,6 +330,8 @@ test_that("multi-kernel FA covariance, variance, and correlation outputs agree",
   expect_identical(names(result$covariance_components), PredictProR:::gp_covariance_component_columns())
   expect_identical(names(result$correlation_components), PredictProR:::gp_covariance_component_columns())
 
+  expect_true(isTRUE(raw$summary$converged))
+  expect_lte(raw$summary$n_ai_iter,30L)
   vc <- result$variance_components
   env_vg <- vc[match(paste0("genetic_variance_", dat$envs), vc$Component), "Components"]
   cov_diag <- diag(total_cov)[match(dat$envs, as.character(interaction$levels))]
@@ -403,8 +431,10 @@ test_that("model_execute routes multi-trait MET GP through direct public wrapper
     "Genetic_correlation_traits",
     "Genetic_correlation_trait_environment"
   ) %in% names(out$model_results)))
-  expect_gp_correlation_matrix(out$model_results$Genetic_correlation_traits, 2L)
-  expect_gp_correlation_matrix(out$model_results$Genetic_correlation_trait_environment, 2L)
+  expect_gp_published_correlation(out$model_results$Genetic_correlation_traits, 2L,
+    out$model_results$variance_component_status, out$model_results$inference_summary)
+  expect_gp_published_correlation(out$model_results$Genetic_correlation_trait_environment, 2L,
+    out$model_results$variance_component_status, out$model_results$inference_summary)
   expect_true(any(out$model_results$model_parameters$stat == "bridge_command" &
     out$model_results$model_parameters$summary == "fit-multi-trait-met-spec"))
   expect_true(PredictProR::validate_prediction_output(out)$valid)
@@ -542,8 +572,10 @@ test_that("public GP R wrappers cover four scenarios with SE and correlations", 
   expect_gp_multitrait_uncertainty_contract(mt_multi_env$predictions)
   expect_gp_direct_policy(mt_multi_env, "fit-multi-trait-met-spec")
   expect_true(all(c("genetic_correlation", "gxe_correlation") %in% names(mt_multi_env$result)))
-  expect_gp_correlation_matrix(mt_multi_env$result$genetic_correlation, 2L)
-  expect_gp_correlation_matrix(mt_multi_env$result$gxe_correlation, 2L)
+  expect_gp_published_correlation(mt_multi_env$result$genetic_correlation, 2L,
+    mt_multi_env$result$variance_component_status, mt_multi_env$result$inference_summary)
+  expect_gp_published_correlation(mt_multi_env$result$gxe_correlation, 2L,
+    mt_multi_env$result$variance_component_status, mt_multi_env$result$inference_summary)
 
   K2 <- 0.65 * dat$K + 0.35 * diag(nrow(dat$K))
   dimnames(K2) <- dimnames(dat$K)
@@ -763,7 +795,7 @@ test_that("package GP CV batch route uses Python shared context cache", {
   expect_true(as.integer(info$cv_preprocessed_context_tensor_cache_entries) > 0L)
 })
 
-test_that("package GP exact CV fast path is R-controlled and visibly approximate", {
+test_that("retired GP exact fast CV falls back to independent fold fits", {
   gp_python <- test_gp_python()
   old_env <- Sys.getenv(
     c("PREDICTPRO_GP_PYTHON", "PREDICTPRO_GP_BATCH_CV", "PREDICTPRO_GP_FAST_CV", "PREDICTPRO_GP_EXACT_FAST_CV"),
@@ -824,15 +856,10 @@ test_that("package GP exact CV fast path is R-controlled and visibly approximate
   expect_true(isTRUE(info$package_cv_batch))
   expect_identical(info$bridge_command, "fit-predict-cv-spec")
   expect_identical(info$gp_exact_fast_cv, "force")
-  expect_identical(info$cv_fast_path, "gp_exact_shared_noise_block_delete")
-  expect_true(isTRUE(info$cv_fast_path_approximate))
-  expect_false(isTRUE(info$cv_fast_path_exact_refit))
-  expect_identical(info$cv_fast_path_solver, "krr_block_delete")
-  expect_true(is.finite(as.numeric(info$cv_fast_path_likelihood_noise_variance)))
-  expect_equal(
-    as.numeric(info$cv_fast_path_likelihood_noise_std),
-    as.numeric(info$cv_fast_path_likelihood_noise_variance)
-  )
+  expect_identical(info$cv_fast_path, "not_used")
+  expect_identical(info$cv_fast_path_skip_reason, "gp_exact_fast_cv_removed")
+  expect_false(isTRUE(info$cv_fast_path_approximate))
+
 })
 
 test_that("batch KRR candidate fast path matches the single-candidate fit", {
@@ -962,8 +989,11 @@ test_that("joint multi-trait Scalable-GBLUP without PEV says so (not the ML/DL w
   no_rel <- !is.finite(pv$Reliability)
   if (any(no_rel)) {
     expect_false(any(grepl("ML/DL", pv$Reliability_basis[no_rel], fixed = TRUE)))
-    expect_true(all(grepl("genetic model returned no prediction error variance",
-                          pv$Reliability_basis[no_rel], fixed = TRUE)))
+    expect_true(all(grepl("^genetic_(plus_gxe_)?prior_variance", pv$Reliability_basis[no_rel])))
+    expect_true(all(nzchar(pv$Reliability_remarks[no_rel])))
+    expect_true(all(!is.finite(pv$Reliability_variance_input[no_rel]) |
+      !is.finite(pv$Reliability_reference_variance[no_rel]) |
+      pv$Reliability_reference_variance[no_rel] <= 0))
   } else {
     succeed()
   }

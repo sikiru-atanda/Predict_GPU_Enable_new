@@ -1,7 +1,7 @@
 Package: PredictProR
 Type: Package
 Title: Genomic and Multi-Omics Prediction Workflows
-Version: 0.20.188
+Version: 0.20.223
 Author: Sikiru Atanda
 Maintainer: PredictProR maintainer <sikiru.atanda@ndsu.edu>
 Description: Genomic and multi-omics prediction for diploid and polyploid
@@ -27,7 +27,6 @@ Enhances:
 Imports: 
     BGLR,
     boot,
-    caret,
     corpcor,
     data.table,
     doParallel,
@@ -47,7 +46,6 @@ Imports:
     MASS,
     Matrix,
     methods,
-    mgcv,
     mirai (>= 2.7.0),
     parallel,
     purrr,
@@ -62,7 +60,9 @@ Imports:
     xgboost
 SystemRequirements: Python (>= 3.10), Java (>= 8; optional, for Beagle 5.4)
 RoxygenNote: 7.3.3
-Suggests: 
+Suggests:
+    callr,
+    caret,
     codetools,
     httpuv,
     mori (>= 0.2.0),

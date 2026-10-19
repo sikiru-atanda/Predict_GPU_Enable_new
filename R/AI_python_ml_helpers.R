@@ -1,10 +1,13 @@
+# The package's own copy first (load_all() points system.file() at the source tree), as for the
+# other bridge scripts. Looking in the working directory first ran any inst/python/ or python/
+# ml_bridge.py found in the user's folder instead of the installed one.
 gp_ml_bridge_script_path <- function() {
-  candidates <- c("inst/python/ml_bridge.py", "python/ml_bridge.py", "../inst/python/ml_bridge.py")
-  hit <- candidates[file.exists(candidates)]
-  if (length(hit)) {
-    return(normalizePath(hit[1], winslash = "/", mustWork = TRUE))
-  }
   pyfile <- system.file("python/ml_bridge.py", package = "PredictProR")
+  if (!nzchar(pyfile)) {
+    candidates <- c("inst/python/ml_bridge.py", "python/ml_bridge.py", "../inst/python/ml_bridge.py")
+    hit <- candidates[file.exists(candidates)]
+    if (length(hit)) pyfile <- hit[1]
+  }
   if (nzchar(pyfile)) {
     pyfile <- normalizePath(pyfile, winslash = "/", mustWork = TRUE)
   }
@@ -18,7 +21,7 @@ PredictProR_ml_bridge_env <- new.env(parent = emptyenv())
 
 gp_ml_bridge_module_key <- function(python_bin, bridge_path) {
   paste(
-    normalizePath(python_bin, winslash = "/", mustWork = FALSE),
+    gp_python_path(python_bin, mustWork = FALSE),
     normalizePath(bridge_path, winslash = "/", mustWork = FALSE),
     sep = "::"
   )
@@ -54,6 +57,7 @@ gp_detect_ml_python <- function() {
   cache_key <- paste(
     "ml_python", Sys.getenv("PREDICTPRO_ML_PYTHON", unset = ""),
     Sys.getenv("PREDICTPRO_PYTHON_ML", unset = ""), Sys.getenv("PREDICTPRO_PYTHON", unset = ""),
+    gp_python_auto_install_enabled(),
     sep = "::"
   )
   if (exists(cache_key, envir = PredictProR_runtime_cache, inherits = FALSE)) {
@@ -73,12 +77,12 @@ gp_detect_ml_python_uncached <- function() {
     explicit <- Sys.getenv("PREDICTPRO_PYTHON_ML", unset = "")
   }
   if (nzchar(explicit) && file.exists(explicit)) {
-    return(normalizePath(explicit, winslash = "/", mustWork = TRUE))
+    return(gp_python_path(explicit, mustWork = TRUE))
   }
 
   generic <- Sys.getenv("PREDICTPRO_PYTHON", unset = "")
   if (nzchar(generic) && file.exists(generic)) {
-    generic <- normalizePath(generic, winslash = "/", mustWork = TRUE)
+    generic <- gp_python_path(generic, mustWork = TRUE)
     generic_probe <- tryCatch(
       gp_python_probe(generic, modules = c("numpy", "sklearn")),
       error = function(e) NULL
@@ -97,18 +101,28 @@ gp_detect_ml_python_uncached <- function() {
       error = function(e) NULL
     )
     if (isTRUE(preferred_probe[["numpy"]]) && isTRUE(preferred_probe[["sklearn"]])) {
-      return(normalizePath(preferred, winslash = "/", mustWork = TRUE))
+      return(gp_python_path(preferred, mustWork = TRUE))
     }
   }
 
   if (nzchar(generic) && file.exists(generic)) {
     return(generic)
   }
+  # No interpreter has them yet: PredictProR installs numpy/pandas/scikit-learn
+  # into the auto-found one (gp_python_ready), unless installing is turned off.
+  if (gp_python_auto_install_enabled() && !is.null(preferred) && nzchar(preferred) &&
+      file.exists(preferred)) {
+    return(gp_python_path(preferred, mustWork = TRUE))
+  }
   NULL
 }
 
 gp_ml_run_cli <- function(command, args, python_bin = NULL) {
   python_bin <- python_bin %||% gp_detect_ml_python()
+  if (!identical(command, "setup-deps")) {
+    # installs numpy/pandas/scikit-learn if missing (free once verified)
+    python_bin <- gp_python_ready("ml", python_bin)
+  }
   if (is.null(python_bin) || !nzchar(python_bin)) {
     stop(
       "No configured Python runtime was found for Python ML models.\n",
@@ -140,12 +154,15 @@ gp_ml_write_matrix_csv <- function(x, path) {
 }
 
 gp_ml_write_vector_csv <- function(x, path) {
+  if (is.matrix(x) && ncol(x) > 1L) {
+    stop("A multi-output matrix target requires the matrix CSV writer.", call. = FALSE)
+  }
   gp_bridge_csv_write(data.frame(value = x, stringsAsFactors = FALSE), path, quote = TRUE)
   invisible(path)
 }
 
 gp_ml_write_json <- function(x, path) {
-  writeLines(jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", pretty = TRUE), path, useBytes = TRUE)
+  writeLines(jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", pretty = TRUE, digits = NA), path, useBytes = TRUE)
   invisible(path)
 }
 
@@ -645,7 +662,12 @@ gp_ml_feature_importance_cli <- function(model_type,
   params_json <- file.path(out_dir, "params.json")
   levels_json <- file.path(run_dir, "class_levels.json")
   gp_ml_write_matrix_csv(unname(as.matrix(X_train)), x_train_csv)
-  gp_ml_write_vector_csv(gp_py_ml_prepare_target(y_train, fam), y_train_csv)
+  target <- gp_py_ml_prepare_target(y_train, fam)
+  if (is.matrix(target)) {
+    gp_ml_write_matrix_csv(unname(target), y_train_csv)
+  } else {
+    gp_ml_write_vector_csv(target, y_train_csv)
+  }
   gp_ml_write_json(params, params_json)
   if (!is.null(class_levels)) {
     gp_ml_write_json(as.character(class_levels), levels_json)
@@ -730,6 +752,11 @@ gp_py_ml_class_levels <- function(y, response_family = "gaussian") {
 gp_py_ml_prepare_target <- function(y, response_family = "gaussian") {
   fam <- gp_resolve_response_family(response_family, y = y)
   if (identical(fam, "gaussian")) {
+    if (is.matrix(y) && ncol(y) > 1L) {
+      out <- y
+      storage.mode(out) <- "double"
+      return(out)
+    }
     return(as.numeric(y))
   }
   as.character(y)

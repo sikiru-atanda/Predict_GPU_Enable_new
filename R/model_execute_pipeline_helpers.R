@@ -1130,6 +1130,7 @@ gp_standardize_public_model_result <- function(res_model_output,
     "kernel_variance_components", "Genetic_covariance_by_kernel",
     "genetic_covariance_by_kernel_long", "kernel_combination",
     "variance_component_status", "fa_parameters",
+    "covariance_parameters", "correlation_parameters", "inference_summary",
     "asreml_convergence_trace", "model_notes",
     "Residual_variance_by_environment",
     "Residual_variance_by_observation",
@@ -1155,10 +1156,34 @@ gp_standardize_public_model_result <- function(res_model_output,
       public[[nm]] <- res_model_output[[nm]]
     }
   }
+  selection_meta <- res_model_output[["feature_selection_metadata"]]
+  if (is.data.frame(selection_meta) && nrow(selection_meta) &&
+      "scoring_scope" %in% names(selection_meta) &&
+      all(!is.na(selection_meta$scoring_scope) & selection_meta$scoring_scope == "joint")) {
+    for (nm in c("feature_selected", "feature_k")) {
+      if (!is.null(res_model_output[[nm]])) public[[nm]] <- res_model_output[[nm]]
+    }
+  }
   if (!is.null(total_pred)) {
     public[["across_environment_predicted_values"]] <- total_pred
   }
   public <- gp_attach_correlation_matrices(public, res_model_output)
+  if (is.null(public$covariance_parameters) && is.list(res_model_output$gp_result)) {
+    raw <- gp_result_as_data_frame(res_model_output$gp_result$varcomp)
+    if (is.data.frame(raw) && nrow(raw)) public$covariance_parameters <- raw
+  }
+  if (is.null(public$inference_summary)) {
+    summary <- if (is.list(res_model_output$gp_result)) res_model_output$gp_result$summary else NULL
+    if (is.null(summary)) summary <- gp_find_named_object(res_model_output, "summary")
+    if (is.list(summary) && !is.null(summary$inference_status)) {
+      keep <- intersect(names(summary), c("inference_status", "inference_available",
+        "covariance_parameter_conditioning", "absorbed_components"))
+      public$inference_summary <- summary[keep]
+      if (is.list(summary$fa_derived)) {
+        public$inference_summary$derived_se_method <- summary$fa_derived$inference_basis
+      }
+    }
+  }
   matrix_se_names <- c(
     "Genetic_covariance_traits_SE", "Genetic_correlation_traits_SE",
     "Residual_covariance_traits_SE", "Residual_correlation_traits_SE",
@@ -1733,7 +1758,9 @@ gp_prepare_model_input_objects <- function(ctx) {
     geno_omic_model_ready_list = geno_omic_model_ready_list,
     gmatrix_kernel_model_ready_list = gmatrix_kernel_model_ready_list,
     test_set = test_set,
-    ml_dat_res = ml_dat_res
+    ml_dat_res = ml_dat_res,
+    feature_selected_resolved = ctx$feature_selected_resolved,
+    feature_selected_source_map = ctx$feature_selected_source_map
   )
 }
 
@@ -2566,7 +2593,7 @@ gp_try_cv_frontdoor_fast_lane <- function(ctx) {
     }
   }
 
-  metadata_python <- tryCatch(gp_detect_python(), error = function(e) NULL)
+  metadata_python <- gp_known_python()
   cv_run_metadata <- gp_runtime_metadata(
     execution_policy = attr(cv_results, "gp_execution_policy"),
     python_path = metadata_python,
@@ -2756,6 +2783,7 @@ gp_run_cross_validation_pipeline <- function(ctx) {
       ft_ff_mult = ctx$ft_ff_mult,
       ft_dropout = ctx$ft_dropout,
       ft_token_dropout = ctx$ft_token_dropout,
+      ft_learning_rate = ctx$ft_learning_rate,
       ft_use_cls = ctx$ft_use_cls,
       saint_d_model = ctx$saint_d_model,
       saint_heads = ctx$saint_heads,
@@ -2776,6 +2804,7 @@ gp_run_cross_validation_pipeline <- function(ctx) {
       tabnet_output_dim = ctx$tabnet_output_dim,
       tabnet_gamma = ctx$tabnet_gamma,
       tabnet_lambda_sparse = ctx$tabnet_lambda_sparse,
+      tabnet_learning_rate = ctx$tabnet_learning_rate,
       node_trees = ctx$node_trees,
       node_depth = ctx$node_depth,
       deepfm_k = ctx$deepfm_k,
@@ -2863,18 +2892,24 @@ gp_run_cross_validation_pipeline <- function(ctx) {
   )
 
   if (length(cv_results) == 0) {
-    warning(
-      paste(
-        ctx$msg,
-        paste(
-          "Error in cross-validation.",
-          "No result for cross-validation.",
-          "Check the model and the data to ensure the data is correct and the model(s) is well specified."
-        )
+    # Nothing to report: stop with the cause (e.g. ASReml refused by the
+    # licence server in every fold) instead of returning NULL with a warning.
+    dropped <- attr(cv_results, "dropped_tasks")
+    causes <- dropped$fold_errors %||% list()
+    cause_text <- if (length(causes)) {
+      paste0(" Every fold failed: ", paste(names(causes), unlist(causes), sep = ": ", collapse = "; "), ".")
+    } else if (length(dropped$nonfinite_metric)) {
+      paste0(" Every requested metric was non-finite for: ", paste(dropped$nonfinite_metric, collapse = "; "), ".")
+    } else {
+      ""
+    }
+    stop(
+      paste0(
+        ctx$msg, "Cross-validation produced no result.", cause_text,
+        " Check the model and the data to ensure the data is correct and the model(s) is well specified."
       ),
       call. = FALSE
     )
-    return(NULL)
   }
 
   cv_results <- gp_attach_trait_prediction_test_info_to_cv_results(
@@ -2973,7 +3008,7 @@ gp_run_cross_validation_pipeline <- function(ctx) {
     }
   }
 
-  metadata_python <- tryCatch(gp_detect_python(), error = function(e) NULL)
+  metadata_python <- gp_known_python()
   cv_run_metadata <- gp_runtime_metadata(
     execution_policy = attr(cv_results, "gp_execution_policy"),
     python_path = metadata_python,
@@ -3449,7 +3484,8 @@ gp_execute_best_model_tasks <- function(best_models,
                                         response,
                                         init_py,
                                         worker_memory_gb = NULL,
-                                        memory_budget_gb = NULL) {
+                                        memory_budget_gb = NULL,
+                                        resolve_python = NULL) {
   `%||%` <- function(a, b) if (is.null(a)) b else a
 
   if (nrow(best_models) == 0L) {
@@ -3481,6 +3517,14 @@ gp_execute_best_model_tasks <- function(best_models,
     gp_parallel_r_only_models()
   ))
   needs_initializer <- any(!tolower(as.character(best_models$model)) %in% tolower(direct_cli_models))
+  # find the interpreter here, once, so workers receive it with init_py
+  # instead of each looking for it
+  if (isTRUE(needs_initializer) && is.function(resolve_python)) resolve_python()
+  # Only what the task reads goes to workers, copied after the look-up above
+  # so the copy holds the interpreter it found.
+  trimmed <- gp_trim_closure_frame(list(run = run_one_best, init = init_py), gp_best_model_task_fields())
+  run_one_best <- trimmed$run
+  init_py <- trimmed$init
 
   results <- gp_execute_partitioned_tasks(
     model_ids = best_models$model,
@@ -3575,6 +3619,66 @@ gp_merge_task_context <- function(parent_env, local_env) {
   )
 }
 
+# The fields gp_run_best_model_task() reads from its context. It reads them
+# only as ctx$name or ctx[["name"]] (test-refit-task-payload.R keeps it so).
+gp_best_model_task_fields <- function() {
+  fields <- character()
+  walk <- function(e) {
+    if (!is.call(e)) return(invisible())
+    if ((identical(e[[1L]], as.name("$")) || identical(e[[1L]], as.name("[["))) &&
+        identical(e[[2L]], as.name("ctx")) && length(e) == 3L) {
+      fields <<- c(fields, as.character(e[[3L]]))
+    }
+    for (x in as.list(e)) if (!missing(x)) walk(x)
+  }
+  walk(body(gp_run_best_model_task))
+  unique(fields)
+}
+
+# A closure made inside model_execute() takes that whole frame to every
+# worker: 528 objects and 83.5 MB for a 3-trait refit, of which the task reads
+# 15.4 MB. The policy could not measure that frame (its empty `...` cannot be
+# read) and sized the refit by its data alone; it can measure the copy. The
+# functions in `funs` made in the first one's frame get a shared copy of it
+# holding only the names they, the closures they use and `fields` (read from
+# the frame as a list) refer to. Those closures move to the copy, so what they
+# keep with `<<-` stays with them.
+gp_trim_closure_frame <- function(funs, fields = character()) {
+  src <- if (is.function(funs[[1L]])) environment(funs[[1L]])
+  if (!is.environment(src) || isNamespace(src) || identical(src, globalenv()) ||
+      identical(src, baseenv()) || identical(src, emptyenv())) {
+    return(funs)
+  }
+  from_src <- function(f) is.function(f) && identical(environment(f), src)
+  avail <- ls(src, all.names = TRUE)
+  keep <- intersect(fields, avail)
+  # `ctx$name` for a name not in the frame partially matches the ones it starts
+  absent <- setdiff(fields, avail)
+  if (length(absent)) {
+    keep <- c(keep, avail[vapply(avail, function(a) any(startsWith(a, absent)), logical(1L))])
+  }
+  keep <- unique(keep)
+  queue <- c(Filter(from_src, funs), Filter(from_src, mget(keep, envir = src)))
+  while (length(queue)) {
+    f <- queue[[1L]]
+    queue <- queue[-1L]
+    used <- c(all.names(body(f)), all.names(as.call(c(as.name("list"), formals(f)))))
+    new <- setdiff(intersect(used, avail), keep)
+    keep <- c(keep, new)
+    queue <- c(queue, Filter(from_src, mget(new, envir = src)))
+  }
+  env <- new.env(parent = parent.env(src))
+  vals <- mget(keep, envir = src)
+  for (i in seq_along(vals)) {
+    if (from_src(vals[[i]])) environment(vals[[i]]) <- env
+  }
+  list2env(vals, envir = env)
+  lapply(funs, function(f) {
+    if (from_src(f)) environment(f) <- env
+    f
+  })
+}
+
 gp_guard_asreml_cv0_fixed_environment <- function(cross_validation = FALSE,
                                                   cross_validation_meth = NULL,
                                                   GS_model_cv = NULL,
@@ -3621,6 +3725,7 @@ gp_guard_asreml_cv0_fixed_environment <- function(cross_validation = FALSE,
 }
 
 gp_run_best_model_task <- function(ctx) {
+  model_errors <- character()   # why fits failed; reported when no model produced a result
   response <- ctx$response
   GS_model <- ctx$GS_model
   trait_pheno_res <- gp_prepare_pheno_for_trait(
@@ -3799,6 +3904,7 @@ gp_run_best_model_task <- function(ctx) {
       (isTRUE(ctx$cross_validation) && !isTRUE(ctx$cv_evaluation_only))
     requested_gp_output_level <- ctx$gp_output_level %||% "predict_only"
     gp_final_output_level <- if (isTRUE(gp_true_prediction_run) &&
+                                 identical(tolower(ctx$gp_varcomp_mode %||% "reml"), "reml") &&
                                  identical(requested_gp_output_level, "predict_only")) {
       "full_vc"
     } else {
@@ -3850,6 +3956,7 @@ gp_run_best_model_task <- function(ctx) {
       )
     }, error = function(e) {
       cat("Error:", conditionMessage(e), "\n")
+      model_errors <<- c(model_errors, conditionMessage(e))
       NULL
     })
 
@@ -3874,6 +3981,7 @@ gp_run_best_model_task <- function(ctx) {
         )
       }, error = function(e) {
         cat("Error:", conditionMessage(e), "\n")
+        model_errors <<- c(model_errors, conditionMessage(e))
         NULL
       })
     }
@@ -3918,6 +4026,7 @@ gp_run_best_model_task <- function(ctx) {
         )
       }, error = function(e) {
         cat("Error:", conditionMessage(e), "\n")
+        model_errors <<- c(model_errors, conditionMessage(e))
         NULL
       })
 
@@ -3941,6 +4050,7 @@ gp_run_best_model_task <- function(ctx) {
           )
         }, error = function(e) {
           cat("Error:", conditionMessage(e), "\n")
+          model_errors <<- c(model_errors, conditionMessage(e))
           NULL
         })
 
@@ -4008,6 +4118,7 @@ gp_run_best_model_task <- function(ctx) {
         )
       }, error = function(e) {
         cat("Error:", conditionMessage(e), "\n")
+        model_errors <<- c(model_errors, conditionMessage(e))
         NULL
       })
 
@@ -4031,6 +4142,7 @@ gp_run_best_model_task <- function(ctx) {
           )
         }, error = function(e) {
           cat("Error:", conditionMessage(e), "\n")
+          model_errors <<- c(model_errors, conditionMessage(e))
           NULL
         })
 
@@ -4362,6 +4474,7 @@ gp_run_best_model_task <- function(ctx) {
             ft_ff_mult = ctx$ft_ff_mult,
             ft_dropout = ctx$ft_dropout,
             ft_token_dropout = ctx$ft_token_dropout,
+            ft_learning_rate = ctx$ft_learning_rate,
             ft_use_cls = ctx$ft_use_cls,
             dropout = ctx$dropout,
             l2_weight_decay = ctx$l2_weight_decay,
@@ -4449,6 +4562,7 @@ gp_run_best_model_task <- function(ctx) {
             tabnet_output_dim = ctx$tabnet_output_dim,
             tabnet_gamma = ctx$tabnet_gamma,
             tabnet_lambda_sparse = ctx$tabnet_lambda_sparse,
+            tabnet_learning_rate = ctx$tabnet_learning_rate,
             dropout = ctx$dropout,
             l2_weight_decay = ctx$l2_weight_decay,
             optimizer_name = ctx$optimizer_name,
@@ -4465,6 +4579,7 @@ gp_run_best_model_task <- function(ctx) {
         )
       }, error = function(e) {
         cat(paste(ctx$msg, "Error in", GS_model, "MET model:", conditionMessage(e), "\n"))
+        model_errors <<- c(model_errors, conditionMessage(e))
         NULL
       })
     }
@@ -4518,6 +4633,7 @@ gp_run_best_model_task <- function(ctx) {
       )
     }, error = function(e) {
       cat(paste(ctx$msg, "Error in Xgboost model:", conditionMessage(e), "\n"))
+      model_errors <<- c(model_errors, conditionMessage(e))
       NULL
     })
 
@@ -4555,6 +4671,7 @@ gp_run_best_model_task <- function(ctx) {
       )
     }, error = function(e) {
       cat(paste(ctx$msg, "Error in RandomForest model:", conditionMessage(e), "\n"))
+      model_errors <<- c(model_errors, conditionMessage(e))
       NULL
     })
 
@@ -4582,6 +4699,7 @@ gp_run_best_model_task <- function(ctx) {
       )
     }, error = function(e) {
       cat(paste(ctx$msg, "Error in CatBoost model:", conditionMessage(e), "\n"))
+      model_errors <<- c(model_errors, conditionMessage(e))
       NULL
     })
 
@@ -4613,6 +4731,7 @@ gp_run_best_model_task <- function(ctx) {
       )
     }, error = function(e) {
       cat(paste(ctx$msg, "Error in LightGBM model:", conditionMessage(e), "\n"))
+      model_errors <<- c(model_errors, conditionMessage(e))
       NULL
     })
 
@@ -4646,6 +4765,7 @@ gp_run_best_model_task <- function(ctx) {
       )
     }, error = function(e) {
       cat(paste(ctx$msg, "Error in PartialLeastSquare model:", conditionMessage(e), "\n"))
+      model_errors <<- c(model_errors, conditionMessage(e))
       NULL
     })
 
@@ -4685,6 +4805,7 @@ gp_run_best_model_task <- function(ctx) {
       )
     }, error = function(e) {
       cat(paste(ctx$msg, "Error in SupportVectorMachine model:", conditionMessage(e), "\n"))
+      model_errors <<- c(model_errors, conditionMessage(e))
       NULL
     })
 
@@ -4717,6 +4838,7 @@ gp_run_best_model_task <- function(ctx) {
       )
     }, error = function(e) {
       cat(paste(ctx$msg, "Error in K-NearestNeighbors model:", conditionMessage(e), "\n"))
+      model_errors <<- c(model_errors, conditionMessage(e))
       NULL
     })
 
@@ -4749,6 +4871,7 @@ gp_run_best_model_task <- function(ctx) {
       )
     }, error = function(e) {
       cat(paste(ctx$msg, "Error in Lasso model:", conditionMessage(e), "\n"))
+      model_errors <<- c(model_errors, conditionMessage(e))
       NULL
     })
 
@@ -4781,6 +4904,7 @@ gp_run_best_model_task <- function(ctx) {
       )
     }, error = function(e) {
       cat(paste(ctx$msg, "Error in Ridge Regression model:", conditionMessage(e), "\n"))
+      model_errors <<- c(model_errors, conditionMessage(e))
       NULL
     })
 
@@ -4860,6 +4984,7 @@ gp_run_best_model_task <- function(ctx) {
               ft_ff_mult = ctx$ft_ff_mult,
               ft_dropout = ctx$ft_dropout,
               ft_token_dropout = ctx$ft_token_dropout,
+              ft_learning_rate = ctx$ft_learning_rate,
               ft_use_cls = ctx$ft_use_cls,
               dropout = ctx$dropout,
               l2_weight_decay = ctx$l2_weight_decay,
@@ -4947,6 +5072,7 @@ gp_run_best_model_task <- function(ctx) {
               tabnet_output_dim = ctx$tabnet_output_dim,
               tabnet_gamma = ctx$tabnet_gamma,
               tabnet_lambda_sparse = ctx$tabnet_lambda_sparse,
+              tabnet_learning_rate = ctx$tabnet_learning_rate,
               dropout = ctx$dropout,
               l2_weight_decay = ctx$l2_weight_decay,
               optimizer_name = ctx$optimizer_name,
@@ -5040,6 +5166,7 @@ gp_run_best_model_task <- function(ctx) {
             ft_ff_mult = ctx$ft_ff_mult,
             ft_dropout = ctx$ft_dropout,
             ft_token_dropout = ctx$ft_token_dropout,
+            ft_learning_rate = ctx$ft_learning_rate,
             ft_use_cls = ctx$ft_use_cls,
             saint_d_model = ctx$saint_d_model,
             saint_heads = ctx$saint_heads,
@@ -5060,6 +5187,7 @@ gp_run_best_model_task <- function(ctx) {
             tabnet_output_dim = ctx$tabnet_output_dim,
             tabnet_gamma = ctx$tabnet_gamma,
             tabnet_lambda_sparse = ctx$tabnet_lambda_sparse,
+            tabnet_learning_rate = ctx$tabnet_learning_rate,
             node_trees = ctx$node_trees,
             node_depth = ctx$node_depth,
             deepfm_k = ctx$deepfm_k,
@@ -5126,6 +5254,7 @@ gp_run_best_model_task <- function(ctx) {
         }
       }, error = function(e) {
         cat(paste(ctx$msg, "Error in deep learning model:", conditionMessage(e), "\n"))
+        model_errors <<- c(model_errors, conditionMessage(e))
         NULL
       })
     } else if (is.null(res_model_output)) {
@@ -5252,6 +5381,7 @@ gp_run_best_model_task <- function(ctx) {
         }
       }, error = function(e) {
         cat(paste(ctx$msg, "Error:", conditionMessage(e), "\n"))
+        model_errors <<- c(model_errors, conditionMessage(e))
         NULL
       })
       if (!is.null(AI_summary_stat_process)) {
@@ -5347,7 +5477,8 @@ gp_run_best_model_task <- function(ctx) {
   list(
     GS_model = GS_model_fr,
     res_model_output = connectivity_outputs[["res_model_output"]],
-    res_summary_stat = connectivity_outputs[["res_summary_stat"]]
+    res_summary_stat = connectivity_outputs[["res_summary_stat"]],
+    model_error = paste(unique(model_errors), collapse = "\n")
   )
 }
 
@@ -5371,7 +5502,21 @@ gp_finalize_model_execute_results <- function(results,
                                               plot_width,
                                               plot_height,
                                               plot_units,
-                                              plot_dpi) {
+                                              plot_dpi,
+                                              feature_selection_kinds = NULL) {
+  # Every requested model failed (for example a Python backend that could not
+  # be set up): stop with the causes instead of returning an empty result.
+  if (length(results)) {
+    produced <- vapply(results, function(r) is.list(r) && !is.null(r[["res_model_output"]]), logical(1))
+    if (!any(produced)) {
+      causes <- vapply(results, function(r) {
+        label <- as.character((if (is.list(r)) r[["GS_model"]]) %||% GS_model)[1L]
+        err <- if (is.list(r)) as.character(r[["model_error"]] %||% "")[1L] else ""
+        paste0(label, ": ", if (nzchar(err)) err else "no result (see the messages above)")
+      }, character(1))
+      stop("No model produced a result.\n", paste(unique(causes), collapse = "\n"), call. = FALSE)
+    }
+  }
   all_results <- list()
   mainDirt <- getwd()
 
@@ -5505,7 +5650,14 @@ gp_finalize_model_execute_results <- function(results,
         plot_width = plot_width,
         plot_height = plot_height,
         plot_units = plot_units,
-        plot_dpi = plot_dpi
+        plot_dpi = plot_dpi,
+        # this trait's selection kind (gp_feature_trait_selection_kinds()): its files carry the
+        # same remark as the tables model_execute() returns
+        feature_selection_kind = if (trait_name %in% names(feature_selection_kinds)) {
+          feature_selection_kinds[[trait_name]]
+        } else {
+          NULL
+        }
       )
 
       if (!is.null(model_label) && length(model_label) == 1L && !is.na(model_label) && nzchar(model_label)) {

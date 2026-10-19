@@ -6,6 +6,7 @@ extern SEXP predictpror_kernel_spd_repair(SEXP, SEXP, SEXP);
 extern SEXP predictpror_kernel_duplicate_pairs(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP predictpror_ld_prune_graph(SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP predictpror_kernel_dense(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP predictpror_median_positive_distance(SEXP);
 extern SEXP predictpror_grm_dense(SEXP, SEXP, SEXP, SEXP);
 extern SEXP predictpror_geno_qc_metrics(SEXP, SEXP);
 extern SEXP predictpror_geno_impute_summary(SEXP, SEXP);
@@ -16,6 +17,7 @@ static const R_CallMethodDef CallEntries[] = {
   {"predictpror_kernel_duplicate_pairs", (DL_FUNC) &predictpror_kernel_duplicate_pairs, 6},
   {"predictpror_ld_prune_graph", (DL_FUNC) &predictpror_ld_prune_graph, 5},
   {"predictpror_kernel_dense", (DL_FUNC) &predictpror_kernel_dense, 8},
+  {"predictpror_median_positive_distance", (DL_FUNC) &predictpror_median_positive_distance, 1},
   {"predictpror_grm_dense", (DL_FUNC) &predictpror_grm_dense, 4},
   {"predictpror_geno_qc_metrics", (DL_FUNC) &predictpror_geno_qc_metrics, 2},
   {"predictpror_geno_impute_summary", (DL_FUNC) &predictpror_geno_impute_summary, 2},

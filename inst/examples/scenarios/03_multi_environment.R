@@ -7,7 +7,7 @@
 # (Train_Test_Label: Train / Test / Unobserved).
 #   Bayesian MET   : GBLUP_BRR, RKHS with random = ~GID + GID:Env
 #   ASReml MET     : GBLUP, var_cov_str = "us","corgh","corh","corv","fa1".."fa4","rr1".."rr4"
-#   GP MET         : Kernel-GBLUP, Gaussian-Process-GBLUP, FA-GBLUP
+#   GP MET         : Kernel-GBLUP, Gaussian-Process-GBLUP, FA-GBLUP (gp_fa_rank = factors)
 #   ML/DL MET      : met_ml_dl = TRUE with RandomForest, Xgboost, CatBoost, LightGBM,
 #                    DenseNeuralNet, TabTransformer, ...
 #   MET CV         : "CV0" (new environment), "CV1" (new lines), "CV2" (missing cells)
@@ -121,7 +121,7 @@ for (cfg in met_models) {
       gp_fa_rank = 1L,
 
       # Deep-learning controls
-      epochs = 100L,                 # attention models (TabNet, TabAttention) need ~100
+      epochs = "auto",                 # default: sized to the data (about 200 optimizer steps)
       batch_size = 16L,
       deterministic = TRUE,
       random_seed = 20260903L,
@@ -142,6 +142,61 @@ for (cfg in met_models) {
   log_result(label, res, model_runtime)
 }
 
+# ---- 1b. FA-GBLUP with more factors ------------------------------------------------
+# gp_fa_rank sets the number of factors (the ASReml equivalent is "fa1", "fa2").
+# Identifiable maximum by number of environments: 3-4 -> 1, 5 -> 2, 6 -> 3,
+# 8 -> 4, 10 -> 6; a larger value stops with a message. Choose it by CV.
+met5 <- sim_met(n = 60, p = 300, envs = paste0("E", 1:5), seed = 15)
+label <- "MET TP: FA-GBLUP, 2 factors (5 environments)"
+if (!is.null(need <- missing_software(needs_for_model("FA-GBLUP")))) log_skip(label, need) else {
+  model_runtime <- system.time({
+    res <- try(PredictProR::model_execute(
+      # Input data
+      pheno_data = met5$pheno,
+      geno_data = met5$geno,
+
+      # Trait and genotype identifiers
+      gen_name = "GID",
+      response = response,
+      response_family = "gaussian",
+
+      # Multi-environment mode
+      heter_groups = "Env",
+
+      # Mixed-model formulas
+      fixed = ~Env,
+      random = ~GID + GID:Env,
+
+      # Candidate model and number of factors
+      GS_model = "FA-GBLUP",
+      gp_fa_rank = 2L,
+
+      # Relationship construction
+      gmatrix_method = "VanRaden",
+
+      # Genotype QC and preprocessing
+      qc_filtering = TRUE,
+      impute = TRUE,
+      imputation_method = "knn",
+      ld_prunning_qc = TRUE,
+      ld_pruning = FALSE,
+
+      # No cross-validation
+      cross_validation = FALSE,
+
+      # GP controls
+      gp_backend = "auto",
+      gp_full_vc = TRUE,           # loadings and specific variances per environment
+
+      # Output
+      system_database = TRUE,
+      message = FALSE,
+      verbose = FALSE
+    ), silent = TRUE)
+  })
+  log_result(label, res, model_runtime)
+}
+
 # ---- 2. ASReml MET: genotype x environment variance-covariance structures --------
 # Unstructured-type models ("us", "corgh") estimate one genetic correlation per
 # pair of environments and need enough lines; this data set has 120.
@@ -149,9 +204,11 @@ dat120 <- sim_met(n = 120, p = 300, unbalanced = TRUE, seed = 12)
 pheno120 <- dat120$pheno
 Geno120 <- dat120$geno
 
-# Structures that fit with 3 environments. fa3 / fa4 / rr3 / rr4 need more
-# environments than factors (e.g. fa3 needs 4+); corv = common correlation.
-for (vcs in c("us", "corgh", "corh", "corv", "fa1", "fa2", "rr1", "rr2")) {
+# Structures identifiable with 3 environments; corv = common correlation. A rank-k
+# factor-analytic structure needs n(k + 1) - k(k - 1)/2 <= n(n + 1)/2 for n environments
+# (fa1: 3+, fa2: 5+, fa3: 6+); fa2 over 3 environments has a flat likelihood and is refused.
+# Reduced rank has no specific variances (rr2 over 3 environments: 5 parameters <= 6).
+for (vcs in c("us", "corgh", "corh", "corv", "fa1", "rr1", "rr2")) {
   label <- paste("MET TP: GBLUP (ASReml)", vcs)
   if (!has_asreml()) { log_skip(label, "asreml"); next }
 

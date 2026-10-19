@@ -205,6 +205,9 @@ gp_multitrait_add_reliability_reference_variance <- function(pred,
   } else {
     rep(NA_real_, nrow(out))
   }
+  genetic_prior_rows <- grepl("^genetic_(plus_gxe_)?prior_variance",
+    as.character(out$Reliability_basis %||% rep("", nrow(out))))
+  supplied_row_prior <- ref
   # For model-based multi-trait results, the labelled variance-component table
   # is authoritative.  Earlier generic formatting may have recycled the first
   # trait's variance across all rows; replace such provisional values with the
@@ -234,6 +237,9 @@ gp_multitrait_add_reliability_reference_variance <- function(pred,
   }
 
   out[["Reliability_reference_variance"]] <- ref
+  # A row prior includes K_ii and GxE. A trait-level VC or empirical variance
+  # must never replace it, including when the engine reports it unavailable.
+  out[["Reliability_reference_variance"]][genetic_prior_rows] <- supplied_row_prior[genetic_prior_rows]
   out
 }
 
@@ -450,6 +456,7 @@ gp_multitrait_across_environment_prediction <- function(pred,
       rep(NA_character_, length(idx))
     }
     predictive_basis <- any(gp_contract_predictive_stability_basis(basis_vals), na.rm = TRUE)
+    genetic_basis <- any(grepl("^genetic_(plus_gxe_)?prior_variance", basis_vals))
 
     pred_mean <- mean(pred_vals, na.rm = TRUE)
     if (!is.finite(pred_mean)) pred_mean <- NA_real_
@@ -462,6 +469,9 @@ gp_multitrait_across_environment_prediction <- function(pred,
       NA_real_
     }
     se <- if (is.finite(pev)) sqrt(pmax(pev, 0)) else NA_real_
+    # Cross-environment prediction-error covariances are required for this
+    # target; marginal PEVs alone do not give its SE or genetic reliability.
+    if (genetic_basis) { pev <- NA_real_; se <- NA_real_ }
     ref <- mean(ref_vals[is.finite(ref_vals) & ref_vals > 0], na.rm = TRUE)
     if (!is.finite(ref) || ref <= 0) {
       ref <- NA_real_
@@ -476,7 +486,9 @@ gp_multitrait_across_environment_prediction <- function(pred,
     }
     stability <- gp_ml_gaussian_stability(rel_variance, ref)
     predictive_precision <- gp_ml_predictive_reliability(pev, ref)
-    rel <- if (predictive_basis) {
+    rel <- if (genetic_basis) {
+      NA_real_
+    } else if (predictive_basis) {
       predictive_precision$reliability
     } else if (is.finite(pev) && is.finite(ref) && ref > 0 &&
                exists("gp_met_empirical_reliability", mode = "function")) {
@@ -511,15 +523,19 @@ gp_multitrait_across_environment_prediction <- function(pred,
         NA_character_
       },
       Prediction_stability_reference_variance = if (predictive_basis) ref else NA_real_,
-      Reliability_variance_input = if (predictive_basis) predictive_precision$variance_input else pev,
-      Reliability_reference_variance = if (predictive_basis) predictive_precision$reference_variance else ref,
+      Reliability_variance_input = if (genetic_basis) NA_real_ else if (predictive_basis) predictive_precision$variance_input else pev,
+      Reliability_reference_variance = if (genetic_basis) NA_real_ else if (predictive_basis) predictive_precision$reference_variance else ref,
       Reliability = rel,
-      Reliability_remarks = if (predictive_basis) {
+      Reliability_remarks = if (genetic_basis) {
+        "cross-environment genetic prediction-error covariance unavailable"
+      } else if (predictive_basis) {
         predictive_precision$remarks
       } else {
         gp_contract_reliability_remarks(rel)
       },
-      Reliability_basis = if (predictive_basis) {
+      Reliability_basis = if (genetic_basis) {
+        "genetic_plus_gxe_prior_variance_unavailable_for_aggregate"
+      } else if (predictive_basis) {
         predictive_precision$basis
       } else {
         NA_character_

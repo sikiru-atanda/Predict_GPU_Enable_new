@@ -54,7 +54,7 @@ with your own data:
 |---|---|
 | `01_single_env_true_prediction.R` | One environment, one trait, predict untested lines - one call looped over every compatible model (see below). This call lists **every model setting** (tuning grids, XGBoost, random forest, LightGBM, Bayesian, GP and deep-learning controls) at the package defaults, so you can see what exists |
 | `02_single_env_cross_validation.R` | One call looped over K-Folds, stratified, repeated and hold-out CV; one call comparing all installed one-environment models, then refitting the best |
-| `03_multi_environment.R` | Unbalanced multi-environment trials: Bayesian (incl. environment-specific variances), GP, ML and DL; ASReml looped over us / corgh / corh / corv / fa1 / fa2 / rr1 / rr2; CV0 / CV1 / CV2 and repeated versions; ASReml CV |
+| `03_multi_environment.R` | Unbalanced multi-environment trials: Bayesian (incl. environment-specific variances), GP, ML and DL; ASReml looped over us / corgh / corh / corv / fa1 / rr1 / rr2 on three environments; a separate GP FA2 call uses five environments; CV0 / CV1 / CV2 and repeated versions; ASReml CV |
 | `04_multi_trait.R` | Separate fits and joint Bayesian / ASReml (us, corgh, diag) / GP / ML / DL; multi-trait CV; automatic model choice; multi-trait multi-environment (Bayesian, GP, ASReml fa1) |
 | `05_hybrid.R` | Hybrids: Bayesian GCA + SCA, ASReml, GP, ML and DL; known-parent, one-new-parent and both-new-parent CV |
 | `06_classification.R` | Binary, ordinal and multiclass traits with every compatible model; classification CV; multi-environment binary, multiclass and ordinal traits |
@@ -87,6 +87,18 @@ Only models that fit and work well in a scenario are used in its script.
 
 ASReml GBLUP, Lasso, Ridge_Regression, PartialLeastSquare and the Gaussian
 process models are for Gaussian (continuous) traits only.
+
+For the FA models in the multi-environment, multi-trait and combined rows,
+rank 1 needs **3+ groups**, rank 2 needs **5+**, and rank 3 needs **6+**.
+Count the groups in the covariance being modeled: environments for single-trait
+MET FA, traits for joint GP multi-trait FA (including multi-trait MET), and
+environments for the grouped ASReml multi-trait MET FA structure. The bound is
+`n(k + 1) - k(k - 1)/2 <= n(n + 1)/2` for `n` groups and rank `k`.
+FA1 at three groups and FA3 at six are saturated; meeting the count bound
+does not guarantee identification or convergence on a particular dataset.
+Scenario 04 keeps the two-trait calls for other models and uses four simulated
+traits (Yield, Protein, Height, Maturity) for its two FA-GBLUP calls only.
+
 ## Input format in brief
 
 * **Phenotypes** (`pheno_data`): a data frame with a line ID column (`gen_name`)
@@ -102,16 +114,24 @@ process models are for Gaussian (continuous) traits only.
 ## Optional software
 
 Calls that need optional software are **skipped** (not failed) when it is
-missing: **ASReml-R** (licensed) for `engine = "asreml"`; **Python** for classical
-ML (`PREDICTPRO_PYTHON`), Gaussian process (`PREDICTPRO_GP_PYTHON`) and deep
-learning (`PREDICTPRO_DL_PYTHON`) - `setup_predictgp_env()` and
-`setup_predictdl_env()` can create them; **Java 8+** for Beagle.
+missing: **ASReml-R** (licensed) for `engine = "asreml"`; **Python** (3.10 or
+newer) for classical ML (`PREDICTPRO_PYTHON`), Gaussian process
+(`PREDICTPRO_GP_PYTHON`) and deep learning (`PREDICTPRO_DL_PYTHON`) - PredictProR
+installs the Python packages these models need on first use, and
+`setup_predictgp_env()` and `setup_predictdl_env()` can create dedicated
+environments; **Java 8+** for Beagle.
 
 ## Notes
 
 * QC, imputation and LD pruning are switched on as in real use. The examples
-  use short MCMC chains and few trees (marked in the scripts); deep-learning models use 100 epochs because the attention models need that many to learn so
-  they finish quickly; use the suggested values for real analyses.
+  use short MCMC chains and few trees (marked in the scripts) so they finish
+  quickly; use the suggested values for real analyses. Deep-learning models
+  use the default `epochs = "auto"` (sized to the data).
+* Deep learning uses a GPU when there is one. Without a GPU, the 17
+  TabAttention and TabTransformer calls are very slow (scenario 01: more than
+  15 minutes each on a 16-thread CPU, about 1 minute on a laptop GPU), so the
+  full suite can take hours; the other deep-learning models are as fast or
+  faster on a CPU. Timings: `inst/predictdl-gpu-runtime-notes.md`.
 * Results stay in memory (`system_database = TRUE`). Set it to `FALSE` to also
   write a results folder; choose its location with
   `options(PredictProR.output_dir = "...")`.

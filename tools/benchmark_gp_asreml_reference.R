@@ -53,6 +53,14 @@ pkgload::load_all(root, quiet = TRUE)
 n_genotypes <- as.integer(parse_option("n-genotypes", "36"))
 n_holdout <- as.integer(parse_option("n-holdout", "6"))
 seed <- as.integer(parse_option("seed", "20260813"))
+gp_iterations <- as.integer(parse_option("gp-iters", "600"))
+mt_iterations <- as.integer(parse_option("mt-iters", "100"))
+met_iterations <- as.integer(parse_option("met-iters", "150"))
+reuse_gp_dir <- parse_option("reuse-gp-results", "")
+prediction_output <- match.arg(parse_option("prediction-output", "test_only"), c("test_only", "all"))
+if (prediction_output == "all" && nzchar(reuse_gp_dir)) {
+  stop("All-row uncertainty audits require fresh fits; cached GP reuse is disabled.")
+}
 out_dir <- parse_option(
   "out-dir",
   file.path("tmp", "gp_asreml_reference_benchmark", format(Sys.time(), "%Y%m%d_%H%M%S"))
@@ -67,6 +75,8 @@ if (!is.finite(n_holdout) || n_holdout < 3L || n_holdout >= n_genotypes / 2) {
 }
 
 scenarios <- PredictProR:::gp_asreml_benchmark_scenarios()
+# Matched FA REML predicts with the fitted environment-specific residuals.
+# Retain the registry's covariance-parity classification for this route.
 if (!identical(scenario_filter, "all")) {
   unknown <- setdiff(scenario_filter, scenarios$scenario)
   if (length(unknown)) {
@@ -95,6 +105,8 @@ Sys.setenv(
   PREDICTPRO_GP_EXECUTION = "direct",
   PREDICTPRO_GP_RETICULATE_FALLBACK = "false",
   PREDICTPRO_GP_WORKER = "false",
+  PREDICTPRO_GP_DEVICE = "cpu",
+  CUDA_VISIBLE_DEVICES = "-1",
   OMP_NUM_THREADS = "1",
   MKL_NUM_THREADS = "1",
   OPENBLAS_NUM_THREADS = "1"
@@ -155,6 +167,19 @@ attach_truth <- function(predictions, truth) {
 
 standardize_predictions <- function(data, scenario, engine, family, truth,
                                     default_env, default_trait) {
+  # Compare uncertainty for the full latent mean X beta + u, the target of
+  # ASReml classify predictions. Genetic PEV and future-observation variance
+  # are different targets. Native outputs are retained in native_call_*.rds.
+  if ("Prediction_Var_latent" %in% names(data)) {
+    data$PEV <- data$Prediction_Var_latent
+    data$Standard_error <- sqrt(data$Prediction_Var_latent)
+    data$Prediction_Var_observed <- NULL
+  } else if (identical(engine, "PredictProR_GP")) {
+    # Do not compare ambiguously labelled uncertainty across engines.
+    data$Standard_error <- NA_real_
+    data$PEV <- NA_real_
+    data$Prediction_Var_observed <- NULL
+  }
   out <- PredictProR:::gp_asreml_benchmark_standardize_predictions(
     data = data,
     scenario = scenario,
@@ -165,6 +190,9 @@ standardize_predictions <- function(data, scenario, engine, family, truth,
     default_trait = default_trait
   )
   out <- attach_truth(out, truth)
+  if (prediction_output == "all") {
+    out$Train_Test_Label <- ifelse(as.character(out$GID) %in% base$holdout, "Test", "Train")
+  }
   validation <- PredictProR:::gp_validate_asreml_benchmark_predictions(out)
   if (!isTRUE(validation$valid)) {
     stop(paste(validation$errors, collapse = " "), call. = FALSE)
@@ -173,10 +201,34 @@ standardize_predictions <- function(data, scenario, engine, family, truth,
 }
 
 elapsed_call <- function(code) {
-  started <- proc.time()[["elapsed"]]
-  value <- force(code)
-  list(value = value, elapsed_seconds = proc.time()[["elapsed"]] - started)
+  frame <- parent.frame()
+  if (exists("masked", frame, inherits = FALSE) && exists("truth", frame, inherits = FALSE)) {
+    scenario_name <- get("scenario", frame)
+    fixture_path <- file.path(out_dir, paste0("fixture_", scenario_name, ".rds"))
+    if (!file.exists(fixture_path)) saveRDS(list(
+      masked = get("masked", frame), truth = get("truth", frame), base = base
+    ), fixture_path)
+  }
+  is_gp_call <- grepl("^PredictProR::gp_(single|multi)_trait", deparse(substitute(code))[[1L]])
+  reused <- nzchar(reuse_gp_dir) && is_gp_call
+  if (reused) {
+    scenario_index <- match(get("scenario", frame), PredictProR:::gp_asreml_benchmark_scenarios()$scenario)
+    cached <- readRDS(file.path(reuse_gp_dir, paste0("native_call_", 2L * scenario_index - 1L, ".rds")))
+    value <- cached$value; elapsed <- cached$elapsed_seconds
+  } else {
+    started <- proc.time()[["elapsed"]]
+    value <- force(code)
+    elapsed <- proc.time()[["elapsed"]] - started
+  }
+  # Save native diagnostics, not an inferred success flag from returned predictions.
+  call_id <- length(timed_calls) + 1L
+  timed_calls[[call_id]] <<- list(value = value, elapsed_seconds = elapsed,
+    reused_saved_gp_fit = reused, source_directory = if (reused) reuse_gp_dir else NULL)
+  saveRDS(timed_calls[[call_id]], file.path(out_dir, paste0("native_call_", call_id, ".rds")))
+  list(value = value, elapsed_seconds = elapsed)
 }
+timed_calls <- list()
+asreml_extra_seconds <- 0
 
 asreml_varcomp <- function(model) {
   out <- as.data.frame(
@@ -257,32 +309,53 @@ asreml_ifault <- function(model) {
 }
 
 update_asreml <- function(model, context) {
-  assert_asreml_converged(model, context)
+  started <- proc.time()[["elapsed"]]
+  model <- PredictProR:::gp_asreml_refine_fit(model, max_updates = 8L)
+  asreml_extra_seconds <<- asreml_extra_seconds + proc.time()[["elapsed"]] - started
+  PredictProR:::gp_asreml_assert_trustworthy_fit(model, context)
   model
 }
 
 asreml_pvals <- function(model, classify) {
-  pred <- asreml::predict.asreml(model, classify = classify, sed = FALSE)
+  started <- proc.time()[["elapsed"]]
+  pred <- asreml::predict.asreml(model, classify = classify, sed = FALSE,
+    fixgammas = TRUE, scale = model$sigma2 %||% 1)
+  asreml_extra_seconds <<- asreml_extra_seconds + proc.time()[["elapsed"]] - started
   out <- as.data.frame(pred$pvals, stringsAsFactors = FALSE)
   if (!nrow(out)) stop("ASReml returned an empty prediction table.", call. = FALSE)
+  if (prediction_output == "all") {
+    saveRDS(model, file.path(out_dir, paste0("asreml_final_", scenario, ".rds")))
+    vc <- as.data.frame(asreml::summary.asreml(model, param = "sigma")$varcomp)
+    vc$parameter <- rownames(vc)
+    utils::write.csv(vc, file.path(out_dir, paste0("asreml_varcomp_", scenario, ".csv")), row.names = FALSE)
+  }
   out
 }
 
 assign_inverse <- function(kernel, stem) {
+  started <- proc.time()[["elapsed"]]
   name <- paste0(stem, "_", Sys.getpid(), "_", sample.int(1e7, 1L))
   assign(
     name,
     PredictProR::compute_inverse_and_sparse(kernel, epsilon = 1e-6, inverse = TRUE),
     envir = .GlobalEnv
   )
+  asreml_extra_seconds <<- asreml_extra_seconds + proc.time()[["elapsed"]] - started
   name
 }
 
 covariance_rows <- function(scenario, engine, component, estimate, truth) {
   estimate <- as.matrix(estimate)
   truth <- as.matrix(truth)
-  diagnostics <- PredictProR:::gp_asreml_benchmark_covariance_diagnostics(estimate, truth)
-  if (!isTRUE(diagnostics$positive_semidefinite) || diagnostics$symmetry_error > 1e-7) {
+  available <- all(is.finite(estimate))
+  diagnostics <- if (available) {
+    PredictProR:::gp_asreml_benchmark_covariance_diagnostics(estimate, truth)
+  } else {
+    data.frame(symmetry_error = NA_real_, min_eigenvalue = NA_real_,
+      positive_semidefinite = NA, relative_frobenius_truth_error = NA_real_)
+  }
+  diagnostics$covariance_available <- available
+  if (available && (!isTRUE(diagnostics$positive_semidefinite) || diagnostics$symmetry_error > 1e-7)) {
     stop(engine, " returned an invalid covariance for ", scenario, "/", component, ".", call. = FALSE)
   }
   cells <- expand.grid(
@@ -302,6 +375,9 @@ covariance_rows <- function(scenario, engine, component, estimate, truth) {
   diagnostics$dataset <- paste0("synthetic_", scenario, "_seed_", seed)
   diagnostics$engine <- engine
   diagnostics$component <- component
+  diagnostics$estimate_role <- if (engine == "PredictProR_GP" && startsWith(scenario, "single_trait")) {
+    "AI_reporting_pass_not_necessarily_prediction_covariance"
+  } else "prediction_covariance_if_available"
   diagnostics <- diagnostics[c("scenario", "dataset", "engine", "component", setdiff(names(diagnostics), c("scenario", "dataset", "engine", "component")))]
   list(cells = cells, diagnostics = diagnostics)
 }
@@ -368,10 +444,11 @@ run_single_trait_single_environment <- function() {
     model_name = "GP",
     gp_backend = "torch",
     gp_output_level = "full_vc",
+    gp_prediction_output = prediction_output,
     gp_return_se = TRUE,
     gp_full_vc = TRUE,
     gp_varcomp_mode = "reml",
-    gp_iters = 60L,
+    gp_iters = gp_iterations,
     mean_adjustment = "none",
     prediction_blend = "none",
     gp_uncertainty_calibration = "none",
@@ -390,7 +467,7 @@ run_single_trait_single_environment <- function() {
   asr_timed <- elapsed_call(do.call(asreml::asreml, list(
     fixed = Yield ~ 1,
     random = stats::as.formula(paste0("~ vm(GID,", inv_name, ")")),
-    residual = ~ units,
+    residual = ~ idv(units),
     data = transform(masked, GID = factor(GID, levels = base$gids)),
     na.action = list(x = "include", y = "include"),
     maxit = 100L,
@@ -400,7 +477,7 @@ run_single_trait_single_environment <- function() {
   )))
   asr_model <- update_asreml(asr_timed$value, scenario)
   asr_raw <- asreml_pvals(asr_model, "GID")
-  asr_raw <- asr_raw[as.character(asr_raw$GID) %in% base$holdout, , drop = FALSE]
+  if (prediction_output == "test_only") asr_raw <- asr_raw[as.character(asr_raw$GID) %in% base$holdout, , drop = FALSE]
   asr_pred <- standardize_predictions(
     asr_raw, scenario, "ASReml_R", "GBLUP_REML", truth, "E1", "Yield"
   )
@@ -408,7 +485,7 @@ run_single_trait_single_environment <- function() {
   gp_g <- matrix(gp_varcomp_scalar(gp_out, TRUE), 1L, dimnames = list("Yield", "Yield"))
   gp_e <- matrix(gp_varcomp_scalar(gp_out, FALSE), 1L, dimnames = list("Yield", "Yield"))
   asr_g <- matrix(asreml_scalar_component(asr_model, inv_name), 1L, dimnames = list("Yield", "Yield"))
-  asr_e <- matrix(asreml_scalar_component(asr_model, "!R", fixed = FALSE), 1L, dimnames = list("Yield", "Yield"))
+  asr_e <- matrix(asreml_scalar_component(asr_model, "units!units"), 1L, dimnames = list("Yield", "Yield"))
 
   list(
     predictions = rbind(gp_pred, asr_pred),
@@ -471,11 +548,12 @@ run_single_trait_met <- function(multi_kernel = FALSE) {
     model_name = "GP_FA",
     gp_backend = "torch",
     gp_output_level = "full_vc",
+    gp_prediction_output = prediction_output,
     gp_return_se = TRUE,
     gp_full_vc = TRUE,
     gp_varcomp_mode = "reml",
     gp_fa_rank = 1L,
-    gp_iters = 80L,
+    gp_iters = gp_iterations,
     gp_learn_scales = TRUE,
     w_g = if (isTRUE(multi_kernel)) c(0.70, 0.30) else 1,
     w_ge = if (isTRUE(multi_kernel)) c(0.70, 0.30) else 1,
@@ -513,7 +591,7 @@ run_single_trait_met <- function(multi_kernel = FALSE) {
   on.exit(PredictProR::remove_from_global(asr_fit$names_in_inv_list), add = TRUE)
   asr_model <- update_asreml(asr_fit$model, scenario)
   asr_raw <- asreml_pvals(asr_model, "Env:GID")
-  asr_raw <- asr_raw[as.character(asr_raw$GID) %in% base$holdout, , drop = FALSE]
+  if (prediction_output == "test_only") asr_raw <- asr_raw[as.character(asr_raw$GID) %in% base$holdout, , drop = FALSE]
   asr_pred <- standardize_predictions(
     asr_raw, scenario, "ASReml_R", "FA1_GBLUP_REML", truth, NA_character_, "Yield"
   )
@@ -580,8 +658,9 @@ run_multi_trait_single_environment <- function() {
     prediction_blend = "none",
     gp_uncertainty_calibration = "none",
     return_se = TRUE,
+    prediction_output = prediction_output,
     return_trait_correlations = TRUE,
-    max_iter = 45L,
+    max_iter = mt_iterations,
     tol_loglik = 1e-5,
     seed = seed,
     python_bin = gp_python
@@ -591,23 +670,21 @@ run_multi_trait_single_environment <- function() {
     gp_out$predictions, scenario, "PredictProR_GP", "MT_GP_US_REML", truth, "E1", NA_character_
   )
 
-  asr_timed <- elapsed_call(PredictProR:::gp_multitrait_asreml_gaussian_model(
-    pheno_object = masked,
-    response = base$traits,
-    gen_name = "GID",
-    gmatrix = base$k1,
-    inverse = TRUE,
-    engine = "asreml",
-    workspace = 1e8,
-    maxit = 100L,
-    ai_sing = TRUE,
-    trait_covariance = "us"
-  ))
-  asr_out <- asr_timed$value
-  asr_model <- asr_out$Asreml_model
-  assert_asreml_converged(asr_model, scenario)
-  asr_raw <- asr_out$predicted_values
-  asr_raw <- asr_raw[asr_raw$Train_Test_Label == "Test", , drop = FALSE]
+  inv_name <- assign_inverse(base$k1, "ppr_bench_mt_inv")
+  on.exit(PredictProR::remove_from_global(inv_name), add = TRUE)
+  long <- do.call(rbind, lapply(base$traits, function(trait) data.frame(
+    GID = factor(masked$GID, levels = base$gids), Trait = factor(trait, levels = base$traits),
+    Observed_value = masked[[trait]])))
+  long <- long[order(long$GID, long$Trait), , drop = FALSE]
+  asr_timed <- elapsed_call(do.call(asreml::asreml, list(
+    fixed = Observed_value ~ Trait,
+    random = stats::as.formula(paste0("~ us(Trait):vm(GID,", inv_name, ")")),
+    residual = ~ units:us(Trait), data = long, asmv = "Trait",
+    na.action = list(x = "include", y = "include"), maxit = 150L,
+    workspace = 1e8, trace = FALSE, ai.sing = TRUE)))
+  asr_model <- update_asreml(asr_timed$value, scenario)
+  asr_raw <- asreml_pvals(asr_model, "Trait:GID")
+  if (prediction_output == "test_only") asr_raw <- asr_raw[as.character(asr_raw$GID) %in% base$holdout, , drop = FALSE]
   asr_pred <- standardize_predictions(
     asr_raw, scenario, "ASReml_R", "MT_US_GBLUP_REML", truth, "E1", NA_character_
   )
@@ -615,8 +692,8 @@ run_multi_trait_single_environment <- function() {
   gp_g <- as.matrix(gp_out$result$genetic_covariance)
   gp_e <- as.matrix(gp_out$result$residual_covariance)
   dimnames(gp_g) <- dimnames(gp_e) <- list(base$traits, base$traits)
-  asr_g <- as.matrix(asr_out$Genetic_covariance_traits)
-  asr_e <- as.matrix(asr_out$Residual_covariance_traits)
+  asr_g <- asreml_us_covariance(asr_model, base$traits, function(labels) grepl(inv_name, labels, fixed = TRUE))
+  asr_e <- asreml_us_covariance(asr_model, base$traits, function(labels) grepl("units", labels, fixed = TRUE))
 
   list(
     predictions = rbind(gp_pred, asr_pred),
@@ -685,11 +762,12 @@ run_multi_trait_multi_environment <- function() {
     prediction_blend = "none",
     gp_uncertainty_calibration = "none",
     return_se = TRUE,
+    prediction_output = prediction_output,
     return_trait_correlations = TRUE,
     trait_structure = "unstructured",
     gxe_trait_structure = "unstructured",
     dense_reml_max_train = 3000L,
-    reml_max_iter = 30L,
+    reml_max_iter = met_iterations,
     reml_tol = 1e-5,
     seed = seed,
     python_bin = gp_python
@@ -703,8 +781,7 @@ run_multi_trait_multi_environment <- function() {
   kge <- kronecker(base$k1, diag(length(base$envs)))
   dimnames(kge) <- list(keys, keys)
   inv_g <- assign_inverse(base$k1, "ppr_bench_mtmet_g_inv")
-  inv_ge <- assign_inverse(kge, "ppr_bench_mtmet_ge_inv")
-  on.exit(PredictProR::remove_from_global(c(inv_g, inv_ge)), add = TRUE)
+  on.exit(PredictProR::remove_from_global(inv_g), add = TRUE)
 
   long <- do.call(rbind, lapply(base$traits, function(trait) {
     data.frame(
@@ -725,7 +802,7 @@ run_multi_trait_multi_environment <- function() {
   asr_timed <- elapsed_call(do.call(asreml::asreml, list(
     fixed = Observed_value ~ Trait:Env,
     random = stats::as.formula(paste0(
-      "~ corgh(Trait):vm(GID,", inv_g, ") + corgh(Trait):vm(GIDEnv,", inv_ge, ")"
+      "~ corgh(Trait):vm(GID,", inv_g, ") + corgh(Trait):id(Env):vm(GID,", inv_g, ")"
     )),
     residual = ~ units:corgh(Trait),
     data = long,
@@ -738,7 +815,7 @@ run_multi_trait_multi_environment <- function() {
   )))
   asr_model <- update_asreml(asr_timed$value, scenario)
   asr_raw <- asreml_pvals(asr_model, "Trait:Env:GID")
-  asr_raw <- asr_raw[as.character(asr_raw$GID) %in% base$holdout, , drop = FALSE]
+  if (prediction_output == "test_only") asr_raw <- asr_raw[as.character(asr_raw$GID) %in% base$holdout, , drop = FALSE]
   asr_pred <- standardize_predictions(
     asr_raw, scenario, "ASReml_R", "MT_MET_US_GBLUP_REML", truth, NA_character_, NA_character_
   )
@@ -747,8 +824,8 @@ run_multi_trait_multi_environment <- function() {
   gp_ge <- as.matrix(gp_out$result$gxe_covariance)
   gp_e <- as.matrix(gp_out$result$residual_covariance)
   dimnames(gp_g) <- dimnames(gp_ge) <- dimnames(gp_e) <- list(base$traits, base$traits)
-  asr_g <- asreml_corgh_covariance(asr_model, base$traits, function(labels) grepl(inv_g, labels, fixed = TRUE))
-  asr_ge <- asreml_corgh_covariance(asr_model, base$traits, function(labels) grepl(inv_ge, labels, fixed = TRUE))
+  asr_g <- asreml_corgh_covariance(asr_model, base$traits, function(labels) grepl(inv_g, labels, fixed = TRUE) & !grepl("Env", labels, fixed = TRUE))
+  asr_ge <- asreml_corgh_covariance(asr_model, base$traits, function(labels) grepl(inv_g, labels, fixed = TRUE) & grepl("Env", labels, fixed = TRUE))
   asr_e <- asreml_corgh_covariance(asr_model, base$traits, function(labels) grepl("units", labels, ignore.case = TRUE))
 
   list(
@@ -780,11 +857,43 @@ runner <- list(
 )
 
 results <- list()
+failures <- list()
 for (scenario in scenarios$scenario) {
   cat("RUNNING ", scenario, "\n", sep = "")
-  results[[scenario]] <- runner[[scenario]]()
+  asreml_extra_seconds <- 0
+  call_start <- length(timed_calls)
+  attempted <- tryCatch(runner[[scenario]](), error = function(e) e)
+  if (inherits(attempted, "error")) {
+    failures[[scenario]] <- conditionMessage(attempted)
+    saveRDS(failures, file.path(out_dir, "failures.rds"))
+    cat("FAILED ", scenario, ": ", conditionMessage(attempted), "\n", sep = "")
+    next
+  }
+  results[[scenario]] <- attempted
+  one <- results[[scenario]]
+  raw_gp <- timed_calls[[call_start + 1L]]$value
+  diagnostics <- raw_gp$result$diagnostics %||% raw_gp$result$fit %||% raw_gp$result$summary %||%
+    raw_gp$diagnostics %||% raw_gp$fit %||% list()
+  gp_converged <- diagnostics$prediction_reml_converged %||% diagnostics$reml_converged %||%
+    diagnostics$converged %||% raw_gp$result$summary$converged %||% NA
+  one$convergence$converged[one$convergence$engine == "PredictProR_GP"] <- as.logical(gp_converged)[1L]
+  one$timings$elapsed_seconds[one$timings$engine == "ASReml_R"] <-
+    one$timings$elapsed_seconds[one$timings$engine == "ASReml_R"] + asreml_extra_seconds
+  one$timings$timing_scope <- "public_fit_plus_prediction_including_refinement"
+  one$diagnostics <- diagnostics
+  one$convergence$diagnostic_source <- c("native_prediction_covariance", "ASReml_fit")
+  results[[scenario]] <- one
+  fixture_path <- file.path(out_dir, paste0("fixture_", scenario, ".rds"))
+  if (file.exists(fixture_path)) {
+    fixture <- readRDS(fixture_path)
+    jsonlite::write_json(list(fixture = fixture, predictions = one$predictions,
+      covariance = do.call(rbind, lapply(one$covariance, `[[`, "cells"))),
+      file.path(out_dir, paste0("reference_", scenario, ".json")),
+      auto_unbox = TRUE, digits = 16, na = "null", matrix = "rowmajor")
+  }
   saveRDS(results, file.path(out_dir, "checkpoint.rds"))
 }
+if (!length(results)) stop("No scenario completed; see failures.rds.")
 
 predictions <- do.call(rbind, lapply(results, `[[`, "predictions"))
 rownames(predictions) <- NULL
@@ -839,6 +948,14 @@ metadata <- list(
   n_genotypes = n_genotypes,
   n_holdout = n_holdout,
   seed = seed,
+  prediction_output = prediction_output,
+  gp_iterations = gp_iterations,
+  mt_iterations = mt_iterations,
+  met_iterations = met_iterations,
+  reused_gp_results_from = reuse_gp_dir,
+  failures = failures,
+  source_md5 = tools::md5sum(c("tools/benchmark_gp_asreml_reference.R", "R/lowrank_gp_backend.R",
+    list.files("inst/python/gaussian_process", pattern = "\\.py$", full.names = TRUE))),
   sequential = TRUE,
   gp_worker_reuse = FALSE,
   scenario_contract = scenarios,
@@ -864,7 +981,9 @@ report <- c(
   "- Execution: sequential; GP worker reuse disabled",
   "- Interpretation: correctness/reference run, not production throughput ranking",
   "",
-  "All requested fits converged, prediction contracts validated, and reported covariance matrices passed symmetry and positive-semidefinite checks.",
+  paste0("GP convergence flags (TRUE/FALSE/unknown): ", paste(convergence$converged[convergence$engine == "PredictProR_GP"], collapse = ", "), ". Nonconverged or unknown fits are not certified REML endpoints."),
+  paste0("Completed scenarios: ", length(results), "; failed scenarios: ", length(failures), ". See failures.rds if present."),
+  "Completed prediction contracts validated and reported covariance matrices passed symmetry and positive-semidefinite checks.",
   "Overall prediction metrics are in accuracy_metrics.csv.",
   "Environment, trait, and environment-by-trait prediction metrics are in the corresponding accuracy_by_*.csv files and the combined accuracy_metrics_stratified.csv file.",
   "See engine_prediction_parity.csv, timings.csv, and covariance_diagnostics.csv for the remaining numeric results.",
@@ -872,7 +991,7 @@ report <- c(
 )
 writeLines(report, file.path(out_dir, "benchmark_report.md"), useBytes = TRUE)
 
-cat("BENCHMARK_OK\n")
+cat(if (length(failures)) "BENCHMARK_PARTIAL\n" else "BENCHMARK_OK\n")
 cat("OUT_DIR ", out_dir, "\n", sep = "")
 print(accuracy, row.names = FALSE)
 print(accuracy_by_environment, row.names = FALSE)

@@ -530,7 +530,8 @@ def gls_beta_from_V(y: 'torch.Tensor', X: 'torch.Tensor', V_op: 'DenseLinearOper
     Xt_Vinv_X = X.transpose(-1, -2) @ Vinv_X
     Xt_Vinv_y = X.transpose(-1, -2) @ Vinv_y
 
-    Xt_Vinv_X = Xt_Vinv_X + jitter * torch.eye(p, device=X.device, dtype=X.dtype)
+    # Fixed effects are unpenalized. Adding a ridge here changes predictions
+    # when the same covariate is expressed in different units.
     L = torch.linalg.cholesky(Xt_Vinv_X)
     return torch.cholesky_solve(Xt_Vinv_y.unsqueeze(-1), L).squeeze(-1)
 
@@ -544,7 +545,6 @@ def reml_loglik_from_V(y: 'torch.Tensor', X: 'torch.Tensor', V_op: 'DenseLinearO
     beta = gls_beta_from_V(y, X, V_op, jitter=jitter)
     Vinv_X = V_op.solve(X)
     Xt_Vinv_X = X.transpose(-1, -2) @ Vinv_X
-    Xt_Vinv_X = Xt_Vinv_X + jitter * torch.eye(p, device=X.device, dtype=X.dtype)
     r = y - X @ beta
     Vinv_r = V_op.solve(r)
 
@@ -689,12 +689,12 @@ def compute_AI_Matrix_SEs(
 ) -> Tuple['torch.Tensor', 'torch.Tensor']:
     """Compute ASReml-style Average Information (AI) matrix and asymptotic SEs.
 
-    AI_ij = 0.5 * [ y^T P D_i P D_j P y + tr(P D_i P D_j) ]
+    AI_ij = 0.5 * y^T P D_i P D_j P y
     where P = V^{-1} - V^{-1}X (X'V^{-1}X)^{-1} X'V^{-1}.
 
     DV_times_list: list of callables, each returning (dV_i) @ v for a vector v.
-    Uses a shared-probe Hutchinson estimator for the trace term so probe draws and
-    P(D_i(P z_k)) products are reused across all (i, j) pairs.
+    The linear-covariance AI requires no trace probes. Probe/seed arguments are
+    retained for compatibility; this calculation does not modify RNG state.
     """
     if not bool(compute_ai_se):
         q = len(DV_times_list)
@@ -705,7 +705,6 @@ def compute_AI_Matrix_SEs(
     hutch_samples = int(ai_hutch_samples if ai_hutch_samples is not None else hutch_samples)
     jitter = float(ai_jitter if ai_jitter is not None else jitter)
 
-    torch.manual_seed(seed)
     device, dtype = y.device, y.dtype
     n = y.numel()
     p = X.shape[1]
@@ -713,7 +712,6 @@ def compute_AI_Matrix_SEs(
 
     Vinv_X = V_op.solve(X)
     XtVinvX = X.T @ Vinv_X
-    XtVinvX = XtVinvX + jitter * torch.eye(p, device=device, dtype=dtype)
     L = torch.linalg.cholesky(XtVinvX)
 
     def P_times(v: 'torch.Tensor') -> 'torch.Tensor':
@@ -734,25 +732,10 @@ def compute_AI_Matrix_SEs(
 
     AI = torch.zeros((q, q), device=device, dtype=dtype)
 
-    # Shared Rademacher probes and cached P(D_i(P z_k)) products.
-    probes = []
-    PD_cache = [[None for _ in range(hutch_samples)] for _ in range(q)]
-    for k in range(int(hutch_samples)):
-        z = (torch.randint(0, 2, (n,), device=device, dtype=torch.int64) * 2 - 1).to(dtype)
-        probes.append(z)
-        Pz = P_times(z)
-        for i, Di_times in enumerate(DV_times_list):
-            PD_cache[i][k] = P_times(Di_times(Pz))
-
     for i in range(q):
         for j in range(i, q):
             data_part = (w[i] * u[j]).sum()
-            tr_acc = torch.zeros((), device=device, dtype=dtype)
-            for k in range(int(hutch_samples)):
-                tr_acc = tr_acc + (probes[k] * DV_times_list[j](PD_cache[i][k])).sum()
-            trace_part = tr_acc / float(hutch_samples)
-
-            AI_ij = 0.5 * (data_part + trace_part)
+            AI_ij = 0.5 * data_part
             AI[i, j] = AI_ij
             AI[j, i] = AI_ij
 
@@ -807,18 +790,20 @@ def compute_score_and_AI_operator(
     Score:
       s_i = 1/2 [ -tr(P D_i) + y' P D_i P y ]
     AI:
-      AI_ij = 1/2 [ tr(P D_i P D_j) + (P y)' D_i P D_j (P y) ]
+      AI_ij = 1/2 (P y)' D_i P D_j (P y)
     """
-    torch.manual_seed(seed)
     device=y.device
     dtype=y.dtype
+    generator = torch.Generator(device=device).manual_seed(int(seed))
+    if int(hutch_samples) <= 0:
+        raise ValueError('hutch_samples must be positive for REML score estimation')
     n=y.numel()
     p=X.shape[1]
     q=len(DV_times_list)
 
     Vinv_X = V_solve(X)
     XtVinvX = X.T @ Vinv_X
-    L = torch.linalg.cholesky(XtVinvX + jitter*torch.eye(p, device=device, dtype=dtype))
+    L = torch.linalg.cholesky(XtVinvX)
 
     def P_times(v):
         Vinv_v = V_solve(v)
@@ -837,30 +822,13 @@ def compute_score_and_AI_operator(
     # tr(P D_i) via Hutchinson: E[z' P D_i z]
     tr_PDi = torch.zeros((q,), device=device, dtype=dtype)
     for _ in range(int(hutch_samples)):
-        z = (torch.randint(0,2,(n,), device=device)*2-1).to(dtype)
+        z = (torch.randint(0,2,(n,), device=device,generator=generator)*2-1).to(dtype)
         Dz = [Di(z) for Di in DV_times_list]
         for i in range(q):
             tr_PDi[i] += (z * P_times(Dz[i])).sum()
     tr_PDi = tr_PDi / float(hutch_samples)
 
     score = 0.5 * (-tr_PDi + PyDiPy)
-
-    # AI trace term tr(P D_i P D_j) via Hutchinson:
-    tr_PDiPDj = torch.zeros((q,q), device=device, dtype=dtype)
-    for _ in range(int(hutch_samples)):
-        z = (torch.randint(0,2,(n,), device=device)*2-1).to(dtype)
-        Pz = P_times(z)
-        Dz = [Di(z) for Di in DV_times_list]
-        # t_i = P D_i P z
-        t = []
-        for i in range(q):
-            t.append(P_times(DV_times_list[i](Pz)))
-        for i in range(q):
-            for j in range(i,q):
-                tr_PDiPDj[i,j] += (t[i] * Dz[j]).sum()
-                if i!=j:
-                    tr_PDiPDj[j,i] += (t[j] * Dz[i]).sum()
-    tr_PDiPDj = tr_PDiPDj / float(hutch_samples)
 
     # data part: (P y)' D_i P D_j (P y) = (D_i Py)' P (D_j Py)
     DiPy = [DV_times_list[i](Py) for i in range(q)]
@@ -869,7 +837,7 @@ def compute_score_and_AI_operator(
     for i in range(q):
         for j in range(i,q):
             data_part = (DiPy[i] * PDiPy[j]).sum()
-            AI_ij = 0.5 * (tr_PDiPDj[i,j] + data_part)
+            AI_ij = 0.5 * data_part
             AI[i,j]=AI_ij
             AI[j,i]=AI_ij
     return score, AI
@@ -1505,6 +1473,8 @@ def _build_reporting_bundle(
     n_rep: Optional[float] = None,
     interaction_terms_meta: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
+    from mt_gp_reporting import covariance_to_correlation
+
     kernel_names = [str(k) for k in kernel_names]
     w_g = np.asarray(w_g, dtype=float).reshape(-1)
     w_ge = np.asarray(w_ge, dtype=float).reshape(-1)
@@ -1544,12 +1514,7 @@ def _build_reporting_bundle(
         )
         for term in interaction_terms:
             cov = np.asarray(term["cov_matrix"], dtype=float)
-            d = np.sqrt(np.clip(np.diag(cov), 0.0, None))
-            denom = np.outer(d, d)
-            corr = np.zeros_like(cov, dtype=float)
-            mask = denom > 0
-            corr[mask] = cov[mask] / denom[mask]
-            np.fill_diagonal(corr, 1.0)
+            corr = covariance_to_correlation(cov)
             fitted_terms.append(
                 FittedRandomTerm(
                     spec=RandomTermSpec(
@@ -1588,7 +1553,20 @@ def _build_reporting_bundle(
             backend="dense",
             method="framework_adapter",
         )
-        return _mod_build_reporting_bundle(fitted_model, n_rep=n_rep)
+        report = _mod_build_reporting_bundle(fitted_model, n_rep=n_rep)
+        # A zero fitted term has undefined correlations, even if its underlying
+        # covariance shape has a positive diagonal. Use the scaled covariance.
+        for payload in report.get("interaction_correlation_summary", {}).values():
+            def labelled_corr(value):
+                result = covariance_to_correlation(value)
+                return (pd.DataFrame(result, index=value.index, columns=value.columns)
+                        if isinstance(value, pd.DataFrame) else result)
+            if "cov_total" in payload:
+                payload["cor_total"] = labelled_corr(payload["cov_total"])
+            if "cov_by_kernel" in payload:
+                payload["cor_by_kernel"] = {
+                    k: labelled_corr(v) for k, v in payload["cov_by_kernel"].items()}
+        return report
 
     # Fallback to in-file implementation style
     rows = []
@@ -1626,19 +1604,14 @@ def _build_reporting_bundle(
         term_df["interaction_variance_total"] = total_var
         interaction_variance_summary[tname] = term_df
 
-        total_corr = np.zeros_like(total_cov)
-        d = np.sqrt(np.clip(np.diag(total_cov), 0.0, None))
-        denom = np.outer(d, d)
-        mask = denom > 0
-        total_corr[mask] = total_cov[mask] / denom[mask]
-        np.fill_diagonal(total_corr, 1.0)
+        total_corr = covariance_to_correlation(total_cov)
         interaction_correlation_summary[tname] = {
             "term": tname,
             "levels": list(tlevels),
             "cov_total": pd.DataFrame(total_cov, index=tlevels, columns=tlevels),
             "cor_total": pd.DataFrame(total_corr, index=tlevels, columns=tlevels),
             "cov_by_kernel": {k: pd.DataFrame(by_kernel_cov[k], index=tlevels, columns=tlevels) for k in kernel_names},
-            "cor_by_kernel": {k: pd.DataFrame(np.where(np.outer(np.sqrt(np.clip(np.diag(by_kernel_cov[k]),0,None)), np.sqrt(np.clip(np.diag(by_kernel_cov[k]),0,None)))>0, by_kernel_cov[k]/np.outer(np.sqrt(np.clip(np.diag(by_kernel_cov[k]),0,None)), np.sqrt(np.clip(np.diag(by_kernel_cov[k]),0,None))), 0.0), index=tlevels, columns=tlevels) for k in kernel_names},
+            "cor_by_kernel": {k: pd.DataFrame(covariance_to_correlation(by_kernel_cov[k]), index=tlevels, columns=tlevels) for k in kernel_names},
         }
         if first_env_df is None:
             first_env_df = term_df
@@ -1801,6 +1774,9 @@ def _sync_reporting_bundle_with_reml(
     components = varcomp["component"].astype(str)
     estimates = pd.to_numeric(varcomp["estimate"], errors="coerce").to_numpy(dtype=float)
     residual = np.full(len(levels), np.nan, dtype=float)
+    common_residual = np.where(components.str.endswith('_common!R').to_numpy())[0]
+    if common_residual.size:
+        residual[:] = estimates[common_residual[0]]
     for i, level in enumerate(levels):
         suffix = f"_{level}!R"
         hits = np.where(components.str.endswith(suffix).to_numpy())[0]
@@ -1874,13 +1850,16 @@ def _attach_prediction_se_columns(
     observed_se: Optional[Sequence[float]] = None,
 ) -> pd.DataFrame:
     if _MODULAR_LAYERS_AVAILABLE and _mod_attach_prediction_se_columns is not None:
-        return _mod_attach_prediction_se_columns(
+        out = _mod_attach_prediction_se_columns(
             predictions_df,
             latent_var=latent_var,
             observed_var=observed_var,
             latent_se=latent_se,
             observed_se=observed_se,
         )
+        if 'Prediction_SE_latent' in out:
+            out['PEV'] = out['Prediction_SE_latent'] ** 2
+        return out
     out = predictions_df.copy()
     n = len(out)
     def _vec(x):
@@ -1904,6 +1883,7 @@ def _attach_prediction_se_columns(
             observed_se = np.sqrt(np.clip(observed_var, 0.0, None))
     if latent_se is not None:
         out["Prediction_SE_latent"] = latent_se
+        out['PEV'] = latent_se ** 2
     if observed_se is not None:
         out["Prediction_SE_observed"] = observed_se
     return out
@@ -2316,7 +2296,11 @@ def _build_X_from_df(df: pd.DataFrame, fixed_effects: Optional[Sequence[str]]) -
         if col not in df.columns:
             raise KeyError(f"Fixed-effect column '{col}' not in pheno_df.")
         v = df[col]
+        if v.isna().any():
+            raise ValueError(f'Fixed-effect column {col!r} has missing values; supply values or remove this fixed effect.')
         if pd.api.types.is_numeric_dtype(v):
+            from gp_fixed_effects import warn_integer_slope
+            warn_integer_slope(v, col)
             mats.append(np.asarray(v, dtype=float).reshape(-1,1)); cols.append(col)
         else:
             d = pd.get_dummies(v.astype(str), drop_first=True, dtype=float)
@@ -2641,6 +2625,10 @@ def _operator_backend_point_predictions(
     lanczos_iters: int = 80,
     lanczos_seed: int = 0,
     lanczos_theta_floor: float = 1e-8,
+    lam: float = 1.0,
+    lam_select: str = "fixed",
+    krr_lams: Optional[Sequence[float]] = None,
+    operator_gcv_max_rows: int = 512,
 ) -> Dict[str, Any]:
     """
     Point-prediction-only path using the low-rank operator backend.
@@ -2666,6 +2654,9 @@ def _operator_backend_point_predictions(
     train_idx = np.asarray(train_idx, dtype=np.int64)
     test_idx = np.asarray(test_idx, dtype=np.int64)
 
+    if str(prediction_output).lower() == 'all':
+        test_idx = np.arange(len(y), dtype=np.int64)
+
     # Standardize on TRAIN only (to match other code paths)
     stdr = _PerObsEnvStandardizer(mode=standardize)
     stdr.fit(y, ei, train_idx)
@@ -2684,7 +2675,9 @@ def _operator_backend_point_predictions(
         scale2_obs = np.where(np.isfinite(scale2_obs) & (scale2_obs > 0), scale2_obs, 1.0)
         r_diag_obs = sig_obs_orig / scale2_obs
     elif resid_diag_env is None:
-        r_diag_obs = 1.0
+        if not np.isfinite(lam) or float(lam) <= 0:
+            raise ValueError("Operator regularization lambda must be finite and positive.")
+        r_diag_obs = float(lam)
         sigma2_env_orig = np.full((int(ei.max()) + 1,), np.nan, dtype=float)
     else:
         sig_orig = np.asarray(resid_diag_env, dtype=float).reshape(-1)
@@ -2722,6 +2715,22 @@ def _operator_backend_point_predictions(
             raise ValueError(f"env_similarity must be (n_env,n_env) with n_env={k_env}; got {S.shape}")
         Sigma_e = S
         S_e = S
+
+    selection = {"method": "fixed", "selected_lambda": float(lam), "variance_estimation": False}
+    if str(lam_select).lower() not in ("fixed", "gcv"):
+        raise ValueError("Operator lam_select must be 'fixed' or 'gcv'.")
+    if resid_diag_obs is not None or resid_diag_env is not None:
+        selection = {"method": "supplied_residual_covariance", "variance_estimation": False}
+    elif str(lam_select).lower() == "gcv":
+        if random_terms:
+            raise ValueError("Operator GCV with additional random_terms is not supported; use fixed lambda.")
+        from gp_regularization import select_operator_lambda
+        r_diag_obs, selection = select_operator_lambda(
+            cache, gi, ei, y_std, X, train_idx, w_g, w_ge, w_e, Sigma_e, S_e,
+            np.logspace(-4, 4, 17) if krr_lams is None or (isinstance(krr_lams, str) and krr_lams.lower() == "none") else krr_lams,
+            max_rows=operator_gcv_max_rows, seed=seed)
+        if selection.get('selected_at_grid_edge'):
+            warnings.warn('Operator GCV selected an edge of krr_lams; consider a wider lambda grid.', RuntimeWarning)
 
     # Torch tensors
     dev = device
@@ -2807,13 +2816,20 @@ def _operator_backend_point_predictions(
         # SEs come back on standardized scale; convert to observed via stdr.inv_var
         se_std_obs = np.asarray(out["prediction_se_observed"], dtype=float)
         se_std_lat = np.asarray(out["prediction_se_latent"], dtype=float)
-        var_std_obs = se_std_obs ** 2
-        var_std_lat = se_std_lat ** 2
+        profiled = resid_diag_obs is None and resid_diag_env is None
+        scale = max(float(out['profile_variance_scale']), 0.) if profiled else 1.
+        selection['variance_estimation'] = profiled
+        selection['kernel_variance_scale'] = scale if profiled else None
+        var_std_obs = scale * se_std_obs ** 2
+        var_std_lat = scale * se_std_lat ** 2
         var_obs_obs = stdr.inv_var(var_std_obs, ei[test_idx])
         var_obs_lat = stdr.inv_var(var_std_lat, ei[test_idx])
         predictions["SE"] = np.sqrt(np.maximum(var_obs_obs, 0.0)).astype(float)
         predictions["SE_latent"] = np.sqrt(np.maximum(var_obs_lat, 0.0)).astype(float)
-        predictions["PEV"] = np.maximum(var_obs_lat, 0.0).astype(float)
+        predictions["Reliability_variance_input"] = stdr.inv_var(scale * np.asarray(out['prediction_pev']), ei[test_idx])
+        predictions['Reliability_reference_variance'] = stdr.inv_var(scale * np.asarray(out['genetic_prior_variance']), ei[test_idx]) if profiled else np.nan
+        predictions['Reliability_missing_reason'] = '' if profiled else 'genetic variance not estimated on this route'
+        predictions['Reliability_basis'] = ('genetic_plus_gxe_prior_variance' if np.any(w_ge) else 'genetic_prior_variance')
         predictions = _attach_prediction_se_columns(
             predictions,
             latent_var=np.maximum(var_obs_lat, 0.0),
@@ -2828,6 +2844,7 @@ def _operator_backend_point_predictions(
         "sigma2_resid_overall": _safe_nanmean_or_nan(sigma2_env_orig),
         "diagnostics": {
             "method": "operator_backend",
+            "regularization": selection,
             "prediction_output": str(prediction_output),
             "device": dev,
             "dtype": str(dtype_t),
@@ -2882,6 +2899,34 @@ if GPTY_AVAILABLE:
         Kst = model.covar_module(pred_x, train_x)
         adjusted_X = Xss - (Kst @ Vinv_X)
         return torch.clamp((adjusted_X @ Var_beta * adjusted_X).sum(dim=1), min=0.0)
+
+    def _attach_genetic_pev(predictions, model, train_x, pred_x, V_op, Var_beta, stdr):
+        """Genetic BLUP PEV, distinct from variance of X beta + u."""
+        with torch.no_grad():
+            kernel = model.covar_module
+            C = kernel(pred_x, train_x).to_dense()
+            prior = kernel(pred_x, pred_x, diag=True).clone()
+            we = kernel.get_effective_scales()[-1]
+            if float(we) != 0.:
+                ep, et = pred_x[:, 1].long(), train_x[:, 1].long()
+                S = ((ep[:, None] == et[None, :]).to(C.dtype) if kernel.S_e is None
+                     else kernel.S_e[ep[:, None], et[None, :]])
+                Sd = torch.ones_like(prior) if kernel.S_e is None else kernel.S_e.diag()[ep]
+                C = C - we*S
+                prior = prior - we*Sd
+            Xtr = model.mean_module.X_all.index_select(0, train_x[:, 2].long())
+            Q = C @ V_op.solve(Xtr)
+            pev = prior - (C * V_op.solve(C.T).T).sum(1) + ((Q@Var_beta)*Q).sum(1)
+            env = _to_numpy(pred_x[:, 1].long())
+            predictions['Reliability_variance_input'] = stdr.inv_var(_to_numpy(torch.clamp(pev, min=0.)), env)
+            predictions['Reliability_reference_variance'] = stdr.inv_var(_to_numpy(prior), env)
+            has_gxe = hasattr(kernel, 'fa_env') or (hasattr(kernel, 'w_ge_fix') and bool(torch.any(kernel.w_ge_fix != 0)))
+            has_gxe = has_gxe or any(bool(torch.any(m != 0)) for m in getattr(kernel, 'ge_mats', []))
+            predictions['Reliability_basis'] = 'genetic_plus_gxe_prior_variance' if has_gxe else 'genetic_prior_variance'
+            if not getattr(kernel, 'learn_scales', False) and not hasattr(kernel, 'fa_env'):
+                predictions['Reliability_reference_variance'] = np.nan
+                predictions['Reliability_missing_reason'] = 'genetic variance not estimated on this route'
+        return predictions
 
     def _prediction_noise_diag_std(likelihood, pred_x: "torch.Tensor", ei_t: "torch.Tensor",
                                    resid_diag_env: Optional[np.ndarray],
@@ -2945,7 +2990,7 @@ if GPTY_AVAILABLE:
                 we  = torch.nn.functional.softplus(self.w_e_unconstrained)
             else:
                 wg, wge, we = self.w_g_fix, self.w_ge_fix, self.w_e_fix
-            return wg, wge, we
+            return wg * (self.w_g_fix != 0), wge * (self.w_ge_fix != 0), we * (self.w_e_fix != 0)
 
         def get_effective_scales(self) -> Tuple["torch.Tensor","torch.Tensor","torch.Tensor"]:
             wg, wge, we = self._effective_scales()
@@ -3180,10 +3225,10 @@ if GPTY_AVAILABLE:
             def __init__(self, num_envs: int, rank: int, init_cov: Optional["torch.Tensor"]=None, dtype=None, device=None):
                 super().__init__()
                 dtype = dtype or _default_dtype; device = device or _default_device
-                # Clamp rank to num_envs to prevent over-parameterized FA (FA(n_env)
-                # is unstructured; rank > n_env is non-identifiable). Previously
-                # only the init_cov branch clamped, causing shape mismatch between
-                # self.rank and the loadings matrix in the random-init branch.
+                # This low-level covariance builder bounds matrix dimensions;
+                # public fitting routes separately enforce the stricter FA
+                # parameter-count bound. A full loading matrix plus uniquenesses
+                # is a redundant representation, not an identified US model.
                 self.num_envs = int(num_envs)
                 self.rank = min(int(rank), int(num_envs))
                 if init_cov is not None:
@@ -3196,11 +3241,21 @@ if GPTY_AVAILABLE:
                     g = torch.Generator(device=device); g.manual_seed(12345)
                     L0 = torch.randn(self.num_envs, self.rank, generator=g, dtype=dtype, device=device) * 0.1
                     d0 = torch.full((self.num_envs,), 0.05, dtype=dtype, device=device)
-                self.L = torch.nn.Parameter(L0.to(device=device, dtype=dtype))
+                # Rotate the leading block to lower triangular without changing
+                # L L'. Remove the r(r-1)/2 rotational degrees of freedom.
+                rotation, _ = torch.linalg.qr(L0[:self.rank].mT)
+                L0 = L0 @ rotation
+                mask = torch.tril(torch.ones(self.num_envs, self.rank, dtype=dtype, device=device))
+                self.register_buffer('loading_mask', mask)
+                self.L = torch.nn.Parameter(L0.to(device=device, dtype=dtype) * mask)
                 self.d_unconstrained = torch.nn.Parameter(d0.to(device=device, dtype=dtype).log())
             def cov(self) -> "torch.Tensor":
-                D = torch.nn.functional.softplus(self.d_unconstrained) + 1e-8
-                return self.L @ self.L.mT + torch.diag(D)
+                # Genetic covariance may be semidefinite at an FA boundary.
+                # Numerical stabilization belongs to V, not to a hidden
+                # uniqueness that disagrees with the reported parameter.
+                D = torch.nn.functional.softplus(self.d_unconstrained)
+                L = self.L * self.loading_mask
+                return L @ L.mT + torch.diag(D)
             def submatrix(self, idx1: "torch.Tensor", idx2: "torch.Tensor") -> "torch.Tensor":
                 C = self.cov()
                 return C.index_select(0, idx1.long()).index_select(1, idx2.long())
@@ -3222,6 +3277,15 @@ if GPTY_AVAILABLE:
 
                 wf_fix = torch.as_tensor(w_g, dtype=G_list[0].dtype, device=G_list[0].device).reshape(-1)
                 we_fix = torch.as_tensor(float(w_e), dtype=G_list[0].dtype, device=G_list[0].device)
+                # Move the initial common weight into C without changing the
+                # starting covariance; subsequent weights are mixture weights.
+                total = wf_fix.sum()
+                if float(total) > 0:
+                    with torch.no_grad():
+                        self.fa_env.L.mul_(total.sqrt())
+                        d = torch.nn.functional.softplus(self.fa_env.d_unconstrained)*total
+                        self.fa_env.d_unconstrained.copy_(
+                            torch.where(d > 20., d, torch.log(torch.expm1(d))))
                 self.register_buffer("w_fa_fix", wf_fix)
                 self.register_buffer("w_e_fix", we_fix)
 
@@ -3238,7 +3302,11 @@ if GPTY_AVAILABLE:
                     we  = torch.nn.functional.softplus(self.w_e_unconstrained)
                 else:
                     wfa, we = self.w_fa_fix, self.w_e_fix
-                return wfa, we
+                # The FA covariance owns the overall amplitude. Kernel weights
+                # describe a mixture only, removing the w_fa * C scale alias.
+                wfa = wfa * (self.w_fa_fix != 0)
+                wfa = wfa / wfa.sum().clamp_min(torch.finfo(wfa.dtype).tiny)
+                return wfa, we * (self.w_e_fix != 0)
 
             def get_effective_scales(self) -> Tuple["torch.Tensor","torch.Tensor"]:
                 wfa, we = self._effective_scales()
@@ -3305,7 +3373,7 @@ if GPTY_AVAILABLE:
                 we = torch.nn.functional.softplus(self.w_e_unconstrained)
             else:
                 wg, we = self.w_g_fix, self.w_e_fix
-            return wg, we
+            return wg * (self.w_g_fix != 0), we * (self.w_e_fix != 0)
         def get_effective_scales(self):
             wg, we = self._effective_scales()
             return wg.detach(), we.detach()
@@ -3522,7 +3590,11 @@ def multikernel_krr_posterior_with_se(
         default_w_ge=wge_vec,
     )
     ge_mats_t = {k: _t(v, device=device, dtype=dtype_t) for k, v in ge_cov_by_kernel.items()}
-    Se_t = None if env_cov_module is not None else Se_t
+    # KRR uses a fixed environment covariance throughout fitting/prediction.
+    # Resolve it once so cross-covariances and prior diagonals agree, including
+    # the independent-environment default and structured covariance modules.
+    Se_t = (env_cov_module.cov() if env_cov_module is not None else
+            (Se_t if Se_t is not None else torch.eye(num_envs, dtype=dtype_t, device=device)))
 
     def build_K_block(idx1: "torch.Tensor", idx2: "torch.Tensor") -> "torch.Tensor":
         gi1, ei1 = gi_t.index_select(0, idx1), ei_t.index_select(0, idx1)
@@ -3548,11 +3620,19 @@ def multikernel_krr_posterior_with_se(
 
     # Lambda selection
     lam_eff = float(lam)
-    if isinstance(krr_lams, (list, tuple, np.ndarray)) and lam_select.lower() != "fixed":
+    selection = dict(method='fixed', selected_lambda=lam_eff, n_selection=0,
+                     selected_at_grid_edge=False, variance_estimation=False)
+    if resid_diag_obs is None and resid_diag_env is None and isinstance(krr_lams, (list, tuple, np.ndarray)) and lam_select.lower() != "fixed":
         lam_grid = np.asarray(krr_lams, dtype=float)
         lam_grid = lam_grid[np.isfinite(lam_grid) & (lam_grid > 0)]
         if lam_grid.size > 0:
             lam_eff = _select_lambda_gcv(Ktt.clone(), ytt.clone(), Xtt.clone(), ei_t, lam_grid, device, dtype_t)
+            edge = bool(lam_eff == lam_grid.min() or lam_eff == lam_grid.max())
+            selection = dict(method='training_gcv' if len(t_idx) <= 2048 else 'training_stochastic_trace_gcv',
+                             selected_lambda=lam_eff, n_selection=len(t_idx), selected_at_grid_edge=edge,
+                             variance_estimation=False)
+            if edge:
+                warnings.warn('KRR GCV selected an edge of krr_lams; consider a wider lambda grid.', RuntimeWarning)
 
     # Residual diag on standardized scale from observation-level or
     # environment-level input.  Preserve whether it was supplied: Stage 2
@@ -3572,93 +3652,54 @@ def multikernel_krr_posterior_with_se(
         resid_diag_obs_std = resid_diag_obs / scale2_obs
         resid_diag_env = _env_mean_from_obs_diag(resid_diag_obs, ei, int(ei_t.max().item()) + 1)
 
-    # Residual diag per env (standardized) if not provided
-    if resid_diag_env is None and resid_diag_obs_std is None:
-        Vtt_tmp = 0.5*(Ktt + Ktt.mT); Vtt_tmp.diagonal().add_(float(lam_eff))
-        Vinv_y = _cholesky_solve(Vtt_tmp, ytt)
-        Vinv_X = _cholesky_solve(Vtt_tmp, Xtt)
-        Xt_Vinv_X = Xtt.mT @ Vinv_X
-        Var_beta_tmp = _spd_inverse(Xt_Vinv_X)
-        beta_tmp = Var_beta_tmp @ (Xtt.mT @ Vinv_y)
-        yhat_tr = (Xtt @ beta_tmp) + Ktt @ _cholesky_solve(Vtt_tmp, (ytt - Xtt @ beta_tmp))
-        resid = (ytt - yhat_tr).reshape(-1)
-
-        def H_times(z):
-            zt = z.index_select(0, t)
-            Sx_zt = Xtt @ (Var_beta_tmp @ (Xtt.mT @ _cholesky_solve(Vtt_tmp, zt)))
-            Hz_t = Sx_zt + Ktt @ _cholesky_solve(Vtt_tmp, (zt - Sx_zt))
-            out = torch.zeros_like(z)
-            out.index_copy_(0, t, Hz_t)
-            return out
-
-        hat_diag = _estimate_diag_Hutch(H_times, n=gi_t.numel(), probes=int(hutch_samples), device=device, dtype=dtype_t, seed=seed)
-
-        n_env = int(ei_t.max().item()) + 1
-        sig2 = np.full(n_env, np.nan, dtype=float)
-        for e in range(n_env):
-            idx_all = torch.where(ei_t == e)[0]
-            idx = torch.tensor(np.intersect1d(_to_numpy(idx_all), _to_numpy(t)), device=device, dtype=torch.int64)
-            n_e = int(idx.numel())
-            if n_e == 0:
-                continue
-            r_e = resid.index_select(0, torch.where(ei_t.index_select(0, t) == e)[0])
-            tr_He = float(torch.clamp(hat_diag.index_select(0, idx).sum(), min=0.0, max=float(max(n_e-1,0))).item())
-            denom = max(1.0, n_e - tr_He)
-            if env_resid_robust.lower() == "mad":
-                s2 = _robust_env_var(r_e)
-                if np.isnan(s2):
-                    s2 = float(torch.clamp((r_e.pow(2).sum()/denom), min=1e-12).item())
-            else:
-                s2 = float(torch.clamp((r_e.pow(2).sum()/denom), min=1e-12).item())
-            sig2[e] = s2
-
-        if np.isfinite(sig2).any() and env_resid_shrink_tau > 0:
-            m = float(np.nanmean(sig2))
-            sig2 = (1.0 - float(env_resid_shrink_tau))*sig2 + float(env_resid_shrink_tau)*m
-        if np.isnan(sig2).any():
-            r2 = resid.pow(2)
-            mask = torch.isfinite(resid)
-            global_s2 = r2[mask].mean().item() if mask.any() else 1.0
-            sig2 = np.where(np.isfinite(sig2), sig2, global_s2)
-        resid_diag_env = sig2
-
+    # KRR uses a variance ratio, in every environment. Profile the common
+    # multiplier from y'P_lambda y/(n-p); do not add a second fitted residual
+    # to lambda or substitute the phenotypic variance for genetic variance.
+    use_krr_variance_ratio = not resid_diag_env_supplied and not resid_diag_obs_supplied
     n_env = int(ei_t.max().item()) + 1
-    use_krr_variance_ratio = (
-        (not resid_diag_env_supplied)
-        and (not resid_diag_obs_supplied)
-        and n_env == 1
-        and np.isfinite(lam_eff)
-        and lam_eff > 0
-    )
     if use_krr_variance_ratio:
-        # In single-environment KRR, lambda is sigma_e^2 / sigma_g^2.
-        # Estimate the response scale once, then use K + lambda I for the
-        # mean and scale posterior covariance by sigma_g^2.  The former path
-        # used K + (estimated residual + lambda)I, double-counting noise and
-        # disconnecting the final fit from the lambda selected by GCV.
-        sigma2_e_std = float(np.asarray(resid_diag_env, dtype=float)[0])
-        sigma2_g_std = max(sigma2_e_std / float(lam_eff), 1e-12)
-        kernel_variance_scale = sigma2_g_std
-        prediction_resid_env_std = np.asarray(
-            [float(lam_eff) * sigma2_g_std], dtype=float
-        )
-        diag_add = torch.full(
-            (t.numel(),), float(lam_eff), dtype=dtype_t, device=device
-        )
-        variance_component_method = "krr_gcv_variance_ratio"
-    elif resid_diag_obs_std is None:
-        kernel_variance_scale = 1.0
-        prediction_resid_env_std = np.asarray(resid_diag_env, dtype=float)
-        variance_component_method = "krr_fixed_scale"
-        sigma2_env_t = _t(np.asarray(resid_diag_env, dtype=float), device=device, dtype=dtype_t)
-        diag_add = sigma2_env_t.index_select(0, ei_t.index_select(0, t)) + float(lam_eff)
+        Vratio = 0.5*(Ktt + Ktt.mT)
+        Vratio.diagonal().add_(float(lam_eff))
+        Vy = _cholesky_solve(Vratio, ytt)
+        VX = _cholesky_solve(Vratio, Xtt)
+        cb = _spd_inverse(Xtt.mT @ VX)
+        r = ytt - Xtt @ (cb @ (Xtt.mT @ Vy))
+        kernel_variance_scale = max(float((r @ _cholesky_solve(Vratio, r)).item()) /
+                                    max(1, int(t.numel())-int(Xtt.shape[1])), 1e-12)
+        prediction_resid_env_std = np.full(n_env, float(lam_eff)*kernel_variance_scale)
+        resid_diag_env = prediction_resid_env_std.copy()
+        diag_add = torch.full((t.numel(),), float(lam_eff), dtype=dtype_t, device=device)
+        variance_component_method = "krr_profiled_variance_ratio"
     else:
+        # Hold supplied response-scale residuals fixed and estimate the kernel
+        # amplitude by scalar REML, including the exact zero boundary.
         kernel_variance_scale = 1.0
-        prediction_resid_env_std = np.asarray(resid_diag_env, dtype=float)
-        variance_component_method = "fixed_observation_precision"
-        sigma2_env_t = _t(np.asarray(resid_diag_env, dtype=float), device=device, dtype=dtype_t)
-        resid_diag_obs_std_t = _t(np.asarray(resid_diag_obs_std, dtype=float), device=device, dtype=dtype_t)
-        diag_add = resid_diag_obs_std_t.index_select(0, t) + float(lam_eff)
+        variance_component_method = "krr_fixed_residual_reml"
+        if resid_diag_obs_std is not None:
+            prediction_resid_env_std = _env_mean_from_obs_diag(resid_diag_obs_std, ei, n_env)
+            diag_add = _t(resid_diag_obs_std, device=device, dtype=dtype_t).index_select(0, t)
+        else:
+            scale2_env = stdr.inv_var(np.ones(n_env), np.arange(n_env))
+            prediction_resid_env_std = np.asarray(resid_diag_env, dtype=float) / scale2_env
+            diag_add = _t(prediction_resid_env_std, device=device, dtype=dtype_t).index_select(0, ei_t.index_select(0,t))
+
+    fitted_kernel_scale = float(kernel_variance_scale)
+    if not use_krr_variance_ratio:
+        from gp_fixed_residual_reml import fit_fixed_residual_scale
+        fitted_kernel_scale = fit_fixed_residual_scale(
+            _to_numpy(Ktt), _to_numpy(diag_add), _to_numpy(ytt), _to_numpy(Xtt))
+        # Absorb scale in every block, allowing zero genetic variance exactly.
+        # The uncertainty multiplier remains one: V now has absolute units.
+        Ktt = Ktt * fitted_kernel_scale
+        wg_t = wg_t * fitted_kernel_scale
+        wge_t = wge_t * fitted_kernel_scale
+        wg_vec = wg_vec * fitted_kernel_scale
+        wge_vec = wge_vec * fitted_kernel_scale
+        we *= fitted_kernel_scale
+        selection = dict(method='unused_fixed_residual_reml', selected_lambda=None,
+                         n_selection=0, selected_at_grid_edge=False, variance_estimation=True)
+        lam_eff = None
+        resid_diag_env = prediction_resid_env_std.copy()
 
     prediction_resid_env_t = _t(
         prediction_resid_env_std, device=device, dtype=dtype_t
@@ -3693,6 +3734,76 @@ def multikernel_krr_posterior_with_se(
 
     gi_s = gi_t.index_select(0, s_t); ei_s = ei_t.index_select(0, s_t)
     mean_obs = _t(stdr.inv_mean(_to_numpy(mean_lat_std), _to_numpy(ei_s)), device=device, dtype=dtype_t)
+
+    def krr_prediction_variances(prior_total):
+        # Universal kriging and genetic BLUP have different mean corrections:
+        # B = X* - Ctotal V^-1 X, Q = Cgenetic V^-1 X.
+        Cg = Kts.clone()
+        prior_g = prior_total.clone()
+        if we != 0.:
+            et = ei_t.index_select(0, t)
+            Se = ((et[:, None] == ei_s[None, :]).to(dtype_t) if Se_t is None
+                  else Se_t[et[:, None], ei_s[None, :]])
+            Cg -= float(we) * Se
+            prior_g -= float(we) * (torch.ones_like(prior_g) if Se_t is None else Se_t.diag()[ei_s])
+        Vix = _cholesky_solve(Vtt, Xtt)
+        B = X_t.index_select(0, s_t) - Kts.mT @ Vix
+        Q = Cg.mT @ Vix
+        latent = prior_total - (Kts * _cholesky_solve(Vtt, Kts)).sum(0) + ((B @ Var_beta) * B).sum(1)
+        genetic = prior_g - (Cg * _cholesky_solve(Vtt, Cg)).sum(0) + ((Q @ Var_beta) * Q).sum(1)
+        scale = float(kernel_variance_scale)
+        return scale * torch.clamp(latent, min=0.), scale * torch.clamp(genetic, min=0.), scale * prior_g
+
+    def attach_krr_genetic(predictions, genetic, prior):
+        predictions['Reliability_variance_input'] = stdr.inv_var(_to_numpy(genetic), _to_numpy(ei_s))
+        predictions['Reliability_reference_variance'] = stdr.inv_var(_to_numpy(prior), _to_numpy(ei_s))
+        predictions['Reliability_basis'] = ('genetic_plus_gxe_prior_variance' if bool(torch.any(wge_t != 0))
+                                          else 'genetic_prior_variance')
+
+
+    def component_pev(cross_covariance, prior):
+        q = cross_covariance.mT @ Vinv_X
+        conditional = prior - (cross_covariance * _cholesky_solve(Vtt, cross_covariance)).sum(0)
+        return float(kernel_variance_scale) * torch.clamp(
+            conditional + ((q @ Var_beta) * q).sum(1), min=0.)
+
+    # Summaries (original scale)
+    n_env = int(ei_t.max().item()) + 1
+    env_names = env_levels if env_levels is not None else [str(i) for i in range(n_env)]
+    sigma2_env_orig = stdr.inv_var(np.asarray(resid_diag_env, dtype=float), np.arange(n_env))
+    S_rep = _to_numpy(Se_t if Se_t is not None else (env_cov_module.cov() if env_cov_module is not None else torch.eye(n_env, dtype=dtype_t, device=device)))
+    report_bundle = _build_reporting_bundle(
+        kernel_names=[f"G{i+1}" for i in range(nK)],
+        w_g=np.asarray(wg_vec, dtype=float) * float(kernel_variance_scale),
+        w_ge=np.asarray(wge_vec, dtype=float) * float(kernel_variance_scale),
+        level_names=env_names,
+        interaction_term_name="G:Env",
+        interaction_cov=S_rep,
+        env_main_scale=float(we) * float(kernel_variance_scale),
+        env_main_cov=S_rep,
+        residual_env=sigma2_env_orig,
+        interaction_terms_meta=interaction_terms_meta,
+    )
+    report_bundle = _rescale_reporting_bundle_to_response_scale(report_bundle, stdr, env_names)
+    per_env = report_bundle["env_variance_summary"].rename(columns={"level_index":"env_index","level":"Env"})
+    var_components = report_bundle["var_components_summary"].copy()
+
+    total_genetic_rows = var_components[
+        (var_components["component_type"] == "genetic_main")
+        & (var_components["kernel"] == "total")
+    ]
+    genetic_estimate = (
+        float(total_genetic_rows["estimate"].iloc[0])
+        if len(total_genetic_rows) else float("nan")
+    )
+    residual_estimate = _safe_nanmean_or_nan(sigma2_env_orig)
+    krr_varcomp = pd.DataFrame({
+        "component": ["vm(GID,KRR_kernel)!var", "Residual!R"],
+        "estimate": [genetic_estimate, residual_estimate],
+        "std.error": [np.nan, np.nan],
+        "z.ratio": [np.nan, np.nan],
+        "bound": ["B" if fitted_kernel_scale == 0. else "P", "P" if use_krr_variance_ratio else "F"],
+    })
 
     # ----------- Build predictions (FAST path for test_only) -----------
     # SAFE naming
@@ -3746,20 +3857,10 @@ def multikernel_krr_posterior_with_se(
                 Se_diag_s2 = (Se_t.diagonal()[ei_s] if Se_t is not None else torch.ones_like(Kss_diag_s))
                 Kss_diag_s.add_(we * Se_diag_s2)
 
-            Vinv_Kts_s = _cholesky_solve(Vtt, Kts)
-            proj_s = (Kts * Vinv_Kts_s).sum(dim=0)
-            var_lat_std_s = float(kernel_variance_scale) * torch.clamp(
-                Kss_diag_s - proj_s, min=0.0
-            )
-
-            Xss_s = X_t.index_select(0, s_t)
-            XB_s = Xss_s @ Var_beta
-            var_beta_diag_s = (XB_s * Xss_s).sum(dim=1)
-            var_obs_std_s = (
-                var_lat_std_s
-                + float(kernel_variance_scale) * var_beta_diag_s
-                + prediction_resid_env_t.index_select(0, ei_s)
-            )
+            var_lat_std_s, genetic_pev_s, genetic_prior_s = krr_prediction_variances(Kss_diag_s)
+            var_obs_std_s = var_lat_std_s + (
+                prediction_resid_env_t.index_select(0, ei_s) if resid_diag_obs_std is None else
+                _t(resid_diag_obs_std, device=device, dtype=dtype_t).index_select(0,s_t))
 
             # Per-component posterior variances on test rows.
             def _block_g(idx1, idx2):
@@ -3789,16 +3890,13 @@ def multikernel_krr_posterior_with_se(
             Kts_g_s  = _block_g(t, s_t)
             Kts_ge_s = _block_ge(t, s_t)
             Kts_e_s  = _block_e(t, s_t)
-            Vinv_Kts_g_s  = _cholesky_solve(Vtt, Kts_g_s)
-            Vinv_Kts_ge_s = _cholesky_solve(Vtt, Kts_ge_s)
-            Vinv_Kts_e_s  = _cholesky_solve(Vtt, Kts_e_s)
             Kss_g_s  = _block_g(s_t, s_t).diagonal()
             Kss_ge_s = _block_ge(s_t, s_t).diagonal()
             Kss_e_s  = _block_e(s_t, s_t).diagonal()
 
-            var_g_std_s  = float(kernel_variance_scale) * torch.clamp(Kss_g_s  - (Kts_g_s  * Vinv_Kts_g_s ).sum(dim=0) - (Kts_g_s  * Vinv_Kts_ge_s).sum(dim=0) - (Kts_g_s  * Vinv_Kts_e_s ).sum(dim=0), min=0.0)
-            var_ge_std_s = float(kernel_variance_scale) * torch.clamp(Kss_ge_s - (Kts_ge_s * Vinv_Kts_g_s ).sum(dim=0) - (Kts_ge_s * Vinv_Kts_ge_s).sum(dim=0) - (Kts_ge_s * Vinv_Kts_e_s ).sum(dim=0), min=0.0)
-            var_e_std_s  = float(kernel_variance_scale) * torch.clamp(Kss_e_s  - (Kts_e_s  * Vinv_Kts_g_s ).sum(dim=0) - (Kts_e_s  * Vinv_Kts_ge_s).sum(dim=0) - (Kts_e_s  * Vinv_Kts_e_s ).sum(dim=0), min=0.0)
+            var_g_std_s = component_pev(Kts_g_s, Kss_g_s)
+            var_ge_std_s = component_pev(Kts_ge_s, Kss_ge_s)
+            var_e_std_s = component_pev(Kts_e_s, Kss_e_s)
 
             var_lat_s = stdr.inv_var(_to_numpy(var_lat_std_s), _to_numpy(ei_s))
             var_obs_s = stdr.inv_var(_to_numpy(var_obs_std_s), _to_numpy(ei_s))
@@ -3816,6 +3914,7 @@ def multikernel_krr_posterior_with_se(
                 latent_var=np.maximum(var_lat_s, 0.0),
                 observed_var=np.maximum(var_obs_s, 0.0),
             )
+            attach_krr_genetic(predictions, genetic_pev_s, genetic_prior_s)
 
         # Minimal return object (keep beta info; skip heavy variance outputs)
         return {
@@ -3832,16 +3931,21 @@ def multikernel_krr_posterior_with_se(
                     )
                 )
             ),
-            "var_components": varcomp_df,
+            "var_components": var_components,
+            "varcomp": krr_varcomp,
+            "var_components_summary": report_bundle["var_components_summary"],
+            "env_variance_summary": report_bundle["env_variance_summary"],
+            "residual_summary": report_bundle["residual_summary"],
+            "heritability_summary": report_bundle["heritability_summary"],
             "sigma2_resid_env": stdr.inv_var(np.asarray(prediction_resid_env_std, dtype=float),
                                               np.arange(int(ei_t.max().item())+1)),
             "sigma2_resid_overall": float(np.nanmean(stdr.inv_var(np.asarray(prediction_resid_env_std, dtype=float),
                                                                    np.arange(int(ei_t.max().item())+1)))),
             "variance_component_method": variance_component_method,
-            "diagnostics": {"method":"krr_exact", "device": device, "dtype": str(dtype_t),
-                             "lam_eff": float(lam_eff), "lam_select": str(lam_select),
+            "diagnostics": {"method":"krr_exact", "engine_used": "dense_v", "device": device, "dtype": str(dtype_t),
+                             "lam_eff": lam_eff, "lam_select": str(lam_select), "regularization": selection,
                             "variance_component_method": variance_component_method,
-                            "sigma2_g_standardized": float(kernel_variance_scale),
+                            "sigma2_g_standardized": fitted_kernel_scale,
                             "sigma2_e_standardized": float(np.nanmean(prediction_resid_env_std)),
                              "reml_normalize": reml_normalize},
             "result": {
@@ -3869,20 +3973,10 @@ def multikernel_krr_posterior_with_se(
         Se_diag_s = (Se_t.diagonal()[ei_s] if Se_t is not None else torch.ones_like(Kss_diag))
         Kss_diag.add_(we * Se_diag_s)
 
-    Vinv_Kts = _cholesky_solve(Vtt, Kts)
-    proj = (Kts * Vinv_Kts).sum(dim=0)
-    var_lat_std = float(kernel_variance_scale) * torch.clamp(
-        Kss_diag - proj, min=0.0
-    )
-
-    Xss = X_t.index_select(0, s_t)
-    XB = Xss @ Var_beta
-    var_beta_diag = (XB * Xss).sum(dim=1)
-    var_obs_std = (
-        var_lat_std
-        + float(kernel_variance_scale) * var_beta_diag
-        + prediction_resid_env_t.index_select(0, ei_t.index_select(0, s_t))
-    )
+    var_lat_std, genetic_pev, genetic_prior = krr_prediction_variances(Kss_diag)
+    var_obs_std = var_lat_std + (
+        prediction_resid_env_t.index_select(0, ei_t.index_select(0,s_t)) if resid_diag_obs_std is None else
+        _t(resid_diag_obs_std, device=device, dtype=dtype_t).index_select(0,s_t))
 
     # Components
     def build_K_block_g(idx1, idx2):
@@ -3913,17 +4007,14 @@ def multikernel_krr_posterior_with_se(
     Kts_ge = build_K_block_ge(t, s_t)
     Kts_e  = build_K_block_e(t, s_t)
 
-    Vinv_Kts_g  = _cholesky_solve(Vtt, Kts_g)
-    Vinv_Kts_ge = _cholesky_solve(Vtt, Kts_ge)
-    Vinv_Kts_e  = _cholesky_solve(Vtt, Kts_e)
 
     Kss_g  = build_K_block_g(s_t, s_t).diagonal()
     Kss_ge = build_K_block_ge(s_t, s_t).diagonal()
     Kss_e  = build_K_block_e(s_t, s_t).diagonal()
 
-    var_g_std  = float(kernel_variance_scale) * torch.clamp(Kss_g  - (Kts_g  * Vinv_Kts_g ).sum(dim=0) - (Kts_g  * Vinv_Kts_ge).sum(dim=0) - (Kts_g  * Vinv_Kts_e ).sum(dim=0), min=0.0)
-    var_ge_std = float(kernel_variance_scale) * torch.clamp(Kss_ge - (Kts_ge * Vinv_Kts_g ).sum(dim=0) - (Kts_ge * Vinv_Kts_ge).sum(dim=0) - (Kts_ge * Vinv_Kts_e ).sum(dim=0), min=0.0)
-    var_e_std  = float(kernel_variance_scale) * torch.clamp(Kss_e  - (Kts_e  * Vinv_Kts_g ).sum(dim=0) - (Kts_e  * Vinv_Kts_ge).sum(dim=0) - (Kts_e  * Vinv_Kts_e ).sum(dim=0), min=0.0)
+    var_g_std = component_pev(Kts_g, Kss_g)
+    var_ge_std = component_pev(Kts_ge, Kss_ge)
+    var_e_std = component_pev(Kts_e, Kss_e)
 
     var_lat  = _t(stdr.inv_var(_to_numpy(torch.clamp(var_lat_std, 0)),  _to_numpy(ei_s)), device=device, dtype=dtype_t)
     var_obs  = _t(stdr.inv_var(_to_numpy(torch.clamp(var_obs_std, 0)),  _to_numpy(ei_s)), device=device, dtype=dtype_t)
@@ -3973,27 +4064,7 @@ def multikernel_krr_posterior_with_se(
         latent_var=var_lat_all,
         observed_var=var_obs_all,
     )
-
-    # Summaries (original scale)
-    n_env = int(ei_t.max().item()) + 1
-    env_names = env_levels if env_levels is not None else [str(i) for i in range(n_env)]
-    sigma2_env_orig = stdr.inv_var(np.asarray(resid_diag_env, dtype=float), np.arange(n_env))
-    S_rep = _to_numpy(Se_t if Se_t is not None else (env_cov_module.cov() if env_cov_module is not None else torch.eye(n_env, dtype=dtype_t, device=device)))
-    report_bundle = _build_reporting_bundle(
-        kernel_names=[f"G{i+1}" for i in range(nK)],
-        w_g=np.asarray(wg_vec, dtype=float) * float(kernel_variance_scale),
-        w_ge=np.asarray(wge_vec, dtype=float) * float(kernel_variance_scale),
-        level_names=env_names,
-        interaction_term_name="G:Env",
-        interaction_cov=S_rep,
-        env_main_scale=float(we) * float(kernel_variance_scale),
-        env_main_cov=S_rep,
-        residual_env=sigma2_env_orig,
-        interaction_terms_meta=interaction_terms_meta,
-    )
-    report_bundle = _rescale_reporting_bundle_to_response_scale(report_bundle, stdr, env_names)
-    per_env = report_bundle["env_variance_summary"].rename(columns={"level_index":"env_index","level":"Env"})
-    var_components = report_bundle["var_components_summary"].copy()
+    attach_krr_genetic(predictions, genetic_pev, genetic_prior)
 
     preds = predictions["Prediction"].to_numpy()
     se_obs = predictions["SE_observed"].to_numpy()
@@ -4001,23 +4072,6 @@ def multikernel_krr_posterior_with_se(
     yhat_mean = float(np.nanmean(preds)) if preds.size else float('nan')
     se_obs_mean = float(np.nanmean(se_obs)) if se_obs.size else float('nan')
     se_lat_mean = float(np.nanmean(se_lat)) if se_lat.size else float('nan')
-
-    total_genetic_rows = var_components[
-        (var_components["component_type"] == "genetic_main")
-        & (var_components["kernel"] == "total")
-    ]
-    genetic_estimate = (
-        float(total_genetic_rows["estimate"].iloc[0])
-        if len(total_genetic_rows) else float("nan")
-    )
-    residual_estimate = _safe_nanmean_or_nan(sigma2_env_orig)
-    krr_varcomp = pd.DataFrame({
-        "component": ["vm(GID,KRR_kernel)!var", "Residual!R"],
-        "estimate": [genetic_estimate, residual_estimate],
-        "std.error": [np.nan, np.nan],
-        "z.ratio": [np.nan, np.nan],
-        "bound": ["P", "P"],
-    })
 
     return {
         "beta": _to_numpy(beta),
@@ -4045,10 +4099,10 @@ def multikernel_krr_posterior_with_se(
         "sigma2_resid_env": np.asarray(sigma2_env_orig, dtype=float),
         "sigma2_resid_overall": _safe_nanmean_or_nan(sigma2_env_orig),
         "variance_component_method": variance_component_method,
-        "diagnostics": {"method":"krr_exact", "device": device, "dtype": str(dtype_t),
-                        "lam_eff": float(lam_eff), "lam_select": str(lam_select),
+        "diagnostics": {"method":"krr_exact", "engine_used": "dense_v", "device": device, "dtype": str(dtype_t),
+                        "lam_eff": lam_eff, "lam_select": str(lam_select), "regularization": selection,
                         "variance_component_method": variance_component_method,
-                        "sigma2_g_standardized": float(kernel_variance_scale),
+                        "sigma2_g_standardized": fitted_kernel_scale,
                         "sigma2_e_standardized": float(np.nanmean(prediction_resid_env_std)),
                         "reml_normalize": reml_normalize},
         "result": {
@@ -4063,6 +4117,87 @@ def multikernel_krr_posterior_with_se(
     }
 
 # ------------------------------ GP exact (GPyTorch) ---------------------------
+def _fit_profiled_reml_adam(model, likelihood, train_x, train_y, iters, lr, tol_grad=1e-4):
+    """Fit/assess prediction covariance with a bounded Adam/L-BFGS schedule.
+
+    The gradient tolerance is on the optimizer's parameterization. Exhausting
+    the iteration budget is reported as non-convergence, not success. For
+    deterministic Cholesky objectives, use Adam for initialization and a
+    strong-Wolfe L-BFGS finish. Stochastic large-system objectives retain Adam.
+    The historical function name is kept for internal callers.
+    """
+    params = [p for p in model.parameters() if p.requires_grad]
+    budget = max(0, int(iters))
+    deterministic = train_y.numel() <= gpytorch.settings.max_cholesky_size.value()
+    warmup = min(50, budget // 3) if deterministic and budget >= 30 else budget
+    best_loss = float('inf')
+    best_params = None
+    evaluations = 0
+    steps = 0
+
+    def evaluate():
+        nonlocal best_loss, best_params, evaluations
+        model.zero_grad(set_to_none=True)
+        output = model(train_x)
+        noise = likelihood.noise
+        if not isinstance(likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood):
+            noise = noise.expand(train_y.shape[0])
+        V = output.lazy_covariance_matrix + DiagLinearOperator(noise)
+        X = model.mean_module.X_all.index_select(0, train_x[:, 2].long())
+        loss = -reml_loglik_from_V(train_y, X, V, jitter=1e-6)
+        if not bool(torch.isfinite(loss)):
+            raise RuntimeError('GP prediction REML objective is non-finite')
+        if loss.requires_grad:
+            loss.backward()
+        gradients = [p.grad for p in model.parameters() if p.grad is not None]
+        if any(not bool(torch.isfinite(g).all()) for g in gradients):
+            raise RuntimeError('GP prediction REML gradient is non-finite')
+        grad_max = max((float(g.abs().max()) for g in gradients), default=0.)
+        evaluations += 1
+        value = float(loss.detach())
+        if value < best_loss:
+            best_loss = value
+            best_params = [p.detach().clone() for p in params]
+        return loss, grad_max
+
+    loss, grad_max = evaluate()
+    if budget and grad_max > tol_grad:
+        optimizer = torch.optim.Adam(params, lr=lr)
+        for _ in range(warmup):
+            optimizer.step()
+            steps += 1
+            loss, grad_max = evaluate()
+            if grad_max <= tol_grad:
+                break
+        if grad_max > tol_grad and steps < budget:
+            # Start from the best finite warm-up point; Adam is not monotone.
+            with torch.no_grad():
+                for p, saved in zip(params, best_params):
+                    p.copy_(saved)
+            remaining = budget - steps
+            optimizer = torch.optim.LBFGS(params, max_iter=remaining,
+                max_eval=3 * remaining, tolerance_grad=tol_grad,
+                tolerance_change=0.0, line_search_fn='strong_wolfe')
+            optimizer.step(lambda: evaluate()[0])
+            steps += int(optimizer.state.get(params[0], {}).get('n_iter', 0))
+            loss, grad_max = evaluate()
+    # Only deterministic objective values are comparable across evaluations.
+    # A large stochastic fit retains Adam's final iterate, not the iterate
+    # with the luckiest trace-probe noise.
+    if deterministic and float(loss.detach()) > best_loss:
+        with torch.no_grad():
+            for p, saved in zip(params, best_params):
+                p.copy_(saved)
+        loss, grad_max = evaluate()
+    return dict(prediction_reml_converged=grad_max <= tol_grad,
+                prediction_reml_grad_max_abs=grad_max,
+                prediction_reml_neg_loglik=float(loss.detach()),
+                prediction_reml_grad_tolerance=float(tol_grad),
+                prediction_optimizer_steps=steps,
+                prediction_optimizer_evaluations=evaluations,
+                prediction_optimizer='adam_then_lbfgs' if warmup < budget else 'adam')
+
+
 def gp_exact_with_X(
     geno_kernels: Dict[str, np.ndarray],
     gi: np.ndarray, ei: np.ndarray, y: np.ndarray,
@@ -4070,7 +4205,7 @@ def gp_exact_with_X(
     w_g: np.ndarray, w_ge: np.ndarray, w_e: float,
     X: np.ndarray, S_e: Optional[np.ndarray] = None,
     device: Optional[str] = None, dtype: Optional[Union[str, 'torch.dtype']] = None,
-    iters: int = 300, lr: float = 0.03, use_fixed_noise: bool = True,
+    iters: int = 300, lr: float = 0.03, use_fixed_noise: Optional[bool] = None,
     resid_diag_env: Optional[np.ndarray] = None,
     resid_diag_obs: Optional[np.ndarray] = None,
     geno_id_list: Optional[List[str]] = None,
@@ -4101,8 +4236,11 @@ def gp_exact_with_X(
     precomputed_context: Optional[Dict[str, Any]] = None,
     theta0_warm: Optional[np.ndarray] = None,
     gp_engine: str = "auto",
+    dense_cholesky_max_size: int = 2048,
 ) -> Dict[str, Any]:
     assert TORCH_AVAILABLE and GPTY_AVAILABLE, "gpytorch/torch required"
+    if use_fixed_noise is None:
+        use_fixed_noise = resid_diag_obs is not None or resid_diag_env is not None
     set_deterministic(12345)
     device = device or _default_device
     dtype_t = _resolve_torch_dtype(dtype)
@@ -4111,9 +4249,13 @@ def gp_exact_with_X(
         compute_ai_se = False
         return_se = False
 
-    with _DefaultDTypeContext(dtype_t), gpytorch.settings.max_preconditioner_size(20), gpytorch.settings.cg_tolerance(1e-5):
+    with _DefaultDTypeContext(dtype_t), gpytorch.settings.max_preconditioner_size(20), gpytorch.settings.cg_tolerance(1e-5), gpytorch.settings.max_cholesky_size(int(dense_cholesky_max_size)):
         gi = np.asarray(gi, dtype=np.int64); ei = np.asarray(ei, dtype=np.int64); y = np.asarray(y, dtype=float)
         t_idx = np.asarray(train_idx, dtype=np.int64)
+        from gp_fixed_effects import full_rank_design
+        rank_train_mask = np.zeros(len(y), dtype=bool)
+        rank_train_mask[t_idx] = True
+        X = full_rank_design(X, rank_train_mask)
         s_idx_default = np.asarray(test_idx if (test_idx is not None and len(test_idx)>0) else train_idx, dtype=np.int64)
         row_idx = np.arange(gi.size, dtype=np.int64)
 
@@ -4124,6 +4266,7 @@ def gp_exact_with_X(
         cache_key = None
         cached = None
         if isinstance(cache, dict):
+            import hashlib
             cache_key = (
                 "gp_exact_with_X",
                 str(device),
@@ -4132,7 +4275,7 @@ def gp_exact_with_X(
                 tuple(str(k) for k in geno_kernels.keys()),
                 tuple(_cache_array_token(geno_kernels[k]) for k in geno_kernels.keys()),
                 _cache_array_token(S_e),
-                _cache_array_token(X),
+                (tuple(X.shape), str(X.dtype), hashlib.sha256(np.ascontiguousarray(X).tobytes()).digest()),
                 int(gi.size),
                 int(ei.size),
             )
@@ -4208,24 +4351,23 @@ def gp_exact_with_X(
                 scale2_obs = stdr.inv_var(np.ones(gi.size, dtype=float), ei)
                 scale2_obs = np.where(np.isfinite(scale2_obs) & (scale2_obs > 0), scale2_obs, 1.0)
                 resid_diag_obs_std = resid_diag_obs / scale2_obs
-                resid_diag_env = _env_mean_from_obs_diag(resid_diag_obs, ei, int(ei_t.max().item()) + 1)
+                # Environment summaries are for reporting/fallback only. Derive
+                # them from training weights on the same scale as the fit.
+                resid_diag_env = _env_mean_from_obs_diag(resid_diag_obs_std[t_idx], np.asarray(ei)[t_idx], int(ei_t.max().item()) + 1)
                 env_noise = _t(resid_diag_obs_std, device=device, dtype=dtype_t).index_select(0, t)
                 likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=env_noise, learn_additional_noise=False)
             elif resid_diag_env is None:
-                krr = multikernel_krr_posterior_with_se(
-                    [geno_kernels[k] for k in geno_kernels.keys()], gi, ei, y,
-                    t_idx, np.array([], dtype=np.int64),
-                    w_g=wg_vec, w_ge=wge_vec, w_e=float(w_e), S_e=S_e, lam=1e-3, X=X,
-                    device=device, dtype=str(dtype_t).replace("torch.",""),
-                    env_levels=env_index_to_name, obs_names=geno_id_list,
-                    hutch_samples=32, seed=12345, prediction_output="test_only",
-                    standardize=standardize, reml_normalize=reml_normalize
-                )
-                sig2_orig = np.asarray(krr["sigma2_resid_env"], dtype=float)
-                sd2 = (stdr.env_stds_**2) if standardize.lower() == "per_env" else np.full_like(sig2_orig, stdr.global_std_**2, dtype=float)
-                resid_diag_env = sig2_orig / sd2
-            env_noise = _t(resid_diag_env, device=device, dtype=dtype_t).index_select(0, ei_t.index_select(0, t))
-            likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=env_noise, learn_additional_noise=False)
+                raise ValueError('Fixed-noise GP requires supplied residual variances; '
+                                 'provide resid_diag_obs/resid_diag_env or enable noise learning')
+            else:
+                # All public residual inputs are absolute response-scale variances.
+                resid_diag_env = np.asarray(resid_diag_env, dtype=float).reshape(-1)
+                if resid_diag_env.size != int(ei_t.max().item())+1 or np.any(~np.isfinite(resid_diag_env)) or np.any(resid_diag_env <= 0):
+                    raise ValueError('resid_diag_env must contain one finite positive variance per environment')
+                resid_diag_env = resid_diag_env / stdr.inv_var(np.ones(resid_diag_env.size), np.arange(resid_diag_env.size))
+            if resid_diag_obs is None:
+                env_noise = _t(resid_diag_env, device=device, dtype=dtype_t).index_select(0, ei_t.index_select(0, t))
+                likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=env_noise, learn_additional_noise=False)
         else:
             likelihood = gpytorch.likelihoods.GaussianLikelihood()
 
@@ -4249,33 +4391,9 @@ def gp_exact_with_X(
         model = ExactGPWithX(train_x, train_y, likelihood, kernel, X_all).to(device)
 
         model.train(); likelihood.train()
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-        for _ in range(int(iters)):
-            optimizer.zero_grad()
-            output = model(train_x)
-            K_op = output.lazy_covariance_matrix
-            # Build residual operator R
-            if isinstance(likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood):
-                noise_diag = likelihood.noise
-                R_op = DiagLinearOperator(noise_diag)
-            else:
-                R_op = DiagLinearOperator(likelihood.noise.expand(train_y.shape[0]))
-            V_op = K_op + R_op
-            # Design matrix for current training rows
-            Xtt = model.mean_module.X_all.index_select(0, train_x[:, 2].long())
-            ll_reml = reml_loglik_from_V(train_y, Xtt, V_op, jitter=1e-6)
-            loss = -ll_reml
-            # With fixed observation noise and fixed kernel scales, the
-            # profiled REML objective has no trainable covariance parameter.
-            # DesignLinearMean.beta is deliberately profiled out here and is
-            # installed by _assign_reml_beta_to_design_mean_ before
-            # prediction. Calling backward() on this constant objective raises
-            # "does not require grad" in PyTorch, so there is no Adam step to
-            # perform in this valid fixed-parameter configuration.
-            if not loss.requires_grad:
-                break
-            loss.backward()
-            optimizer.step()
+        prediction_fit = _fit_profiled_reml_adam(model, likelihood, train_x, train_y, iters, lr)
+        prediction_fit['prediction_dense_cholesky_max_size'] = int(dense_cholesky_max_size)
+        Xtt = model.mean_module.X_all.index_select(0, train_x[:, 2].long())
 
         
         # AI/Newton refinement is opt-in for the prediction model. The public
@@ -4341,12 +4459,59 @@ def gp_exact_with_X(
                                    max_steps=int(ai_steps), jitter=ai_jitter, verbose=False)
                 # refresh model cache after updates
                 out = model(train_x)
+                final_fit = _fit_profiled_reml_adam(model, likelihood, train_x, train_y, 0, lr)
+                final_fit["prediction_optimizer_steps"] = prediction_fit["prediction_optimizer_steps"]
+                prediction_fit = final_fit
+        # --- AI-REML variance-component SEs (ASReml-style) ---
+        varcomp_ai = pd.DataFrame([])
+        varcomp_asreml_df = None
+        varcomp_summary = None
+        varcomp_ai_matrix = None
+        env_names = env_index_to_name if env_index_to_name is not None else [str(i) for i in range(int(ei_t.max().item())+1)]
+        if bool(compute_ai_se):
+            try:
+                from ai_reml import build_gp_exact_ai_varcomp
+                _env_sc = stdr.get_env_scales(env_names)
+                _nedf = int(train_y.numel() - Xtt.shape[1])
+                _build_kwargs = dict(
+                    geno_kernel_names=list(geno_kernels.keys()),
+                    env_labels=env_names,
+                    env_col_name="Env",
+                    hutch_samples=int(ai_hutch_samples),
+                    jitter=float(ai_jitter),
+                    env_scales=_env_sc,
+                    nedf=_nedf,
+                    max_iter=int(ai_max_iter),
+                    tol_loglik=float(ai_tol_loglik),
+                    tol_theta=float(ai_tol_theta),
+                    refine_kernel_scales=bool(getattr(kernel, "learn_scales", False)),
+                    theta0_warm=theta0_warm,
+                )
+                if (gp_engine or 'auto').lower() not in ('auto', 'dense_v'):
+                    warnings.warn('Matched GP inference currently uses dense_v; the requested reporting engine cannot preserve this covariance contract.')
+                varcomp_asreml_df, varcomp_summary, varcomp_ai_matrix = build_gp_exact_ai_varcomp(
+                    model, likelihood, train_x, train_y, **_build_kwargs)
+
+            except Exception as e:
+                warnings.warn(f"ASReml-schema varcomp build failed (gp_exact): {e}")
+                varcomp_summary = {"converged": False, "inference_available": False, "inference_status": "unavailable_failed", "inference_error": str(e)}
+
+        if isinstance(varcomp_summary, dict) and 'theta' in varcomp_summary:
+            if not varcomp_summary.get('converged', False):
+                warnings.warn('Predictions use a non-converged REML fit; covariance inference is unavailable.', RuntimeWarning)
+            prediction_fit['initial_prediction_reml_converged'] = prediction_fit.get('prediction_reml_converged')
+            prediction_fit['initial_prediction_reml_grad_max_abs'] = prediction_fit.pop('prediction_reml_grad_max_abs', None)
+            prediction_fit['prediction_reml_converged'] = bool(varcomp_summary['converged'])
+            prediction_fit['prediction_reml_neg_loglik'] = -float(varcomp_summary['loglik'])
+            prediction_fit['prediction_covariance_source'] = 'reported_reml_fit'
+            prediction_fit['inference_available'] = bool(varcomp_summary.get('inference_available', False))
+            prediction_fit['inference_status'] = varcomp_summary.get('inference_status', 'unavailable')
         with torch.no_grad():
             _assign_reml_beta_to_design_mean_(model, likelihood, train_x, train_y, jitter=1e-6)
         model.eval(); likelihood.eval()
         with torch.no_grad():
-            pred_lat = model(test_x); pred_obs = likelihood(pred_lat)
-            mean_obs_std = pred_obs.mean
+            pred_lat = model(test_x)
+            mean_obs_std = pred_lat.mean
 
         # ---------- FAST return for test_only ----------
         if prediction_output == "test_only":
@@ -4395,75 +4560,8 @@ def gp_exact_with_X(
                 lat_var = stdr.inv_var(pred_lat_var_std, _to_numpy(ei_sel)) if pred_lat_var_std is not None else None
                 obs_var = stdr.inv_var(pred_obs_var_std, _to_numpy(ei_sel)) if pred_obs_var_std is not None else None
                 predictions = _attach_prediction_se_columns(predictions, latent_var=lat_var, observed_var=obs_var)
+                predictions = _attach_genetic_pev(predictions, model, train_x, test_x, V_lin, Var_beta, stdr)
 
-            # --- AI-REML variance-component SEs (ASReml-style) ---
-            varcomp_ai = pd.DataFrame([])
-            varcomp_asreml_df = None
-            varcomp_summary = None
-            varcomp_ai_matrix = None
-            env_names = env_index_to_name if env_index_to_name is not None else [str(i) for i in range(int(ei_t.max().item())+1)]
-            if bool(compute_ai_se):
-                try:
-                    varcomp_ai = _ai_varcomp_table_gp_exact(
-                        model, likelihood, train_x, train_y,
-                        hutch_samples=int(ai_hutch_samples),
-                        jitter=float(ai_jitter),
-                    )
-                except Exception as e:
-                    warnings.warn(f"AI-SE computation failed (gp_exact): {e}")
-                try:
-                    from ai_reml import build_gp_exact_ai_varcomp
-                    _env_sc = stdr.get_env_scales(env_names)
-                    _nedf = int(train_y.numel() - Xtt.shape[1])
-                    _build_kwargs = dict(
-                        geno_kernel_names=list(geno_kernels.keys()),
-                        env_labels=env_names,
-                        env_col_name="Env",
-                        hutch_samples=int(ai_hutch_samples),
-                        jitter=float(ai_jitter),
-                        env_scales=_env_sc,
-                        nedf=_nedf,
-                        max_iter=int(ai_max_iter),
-                        tol_loglik=float(ai_tol_loglik),
-                        tol_theta=float(ai_tol_theta),
-                        refine_kernel_scales=bool(getattr(kernel, "learn_scales", False)),
-                        theta0_warm=theta0_warm,
-                    )
-                    _engine = (gp_engine or "auto").lower()
-                    if _engine == "auto":
-                        _engine = "dense_v"
-                    if _engine == "eigen":
-                        try:
-                            from mme_eigen import build_gp_exact_ai_varcomp_mme_eigen
-                            varcomp_asreml_df, varcomp_summary, varcomp_ai_matrix = build_gp_exact_ai_varcomp_mme_eigen(
-                                model, likelihood, train_x, train_y, **_build_kwargs,
-                            )
-                        except NotImplementedError as _err:
-                            warnings.warn(
-                                f"gp_engine='eigen' not supported for this fit ({_err}); "
-                                "falling back to dense V engine.",
-                                stacklevel=2,
-                            )
-                            _engine = "dense_v"
-                    if _engine == "mme":
-                        try:
-                            from ai_reml import build_gp_exact_ai_varcomp_mme
-                            varcomp_asreml_df, varcomp_summary, varcomp_ai_matrix = build_gp_exact_ai_varcomp_mme(
-                                model, likelihood, train_x, train_y, **_build_kwargs,
-                            )
-                        except NotImplementedError as _err:
-                            warnings.warn(
-                                f"gp_engine='mme' not supported for this fit ({_err}); "
-                                "falling back to dense V engine.",
-                                stacklevel=2,
-                            )
-                            _engine = "dense_v"
-                    if _engine == "dense_v":
-                        varcomp_asreml_df, varcomp_summary, varcomp_ai_matrix = build_gp_exact_ai_varcomp(
-                            model, likelihood, train_x, train_y, **_build_kwargs,
-                        )
-                except Exception as e:
-                    warnings.warn(f"ASReml-schema varcomp build failed (gp_exact): {e}")
             sigma2_env_orig = (stdr.inv_var(np.asarray(resid_diag_env), np.arange(int(ei_t.max().item())+1)) if use_fixed_noise and resid_diag_env is not None else np.full(len(env_names), np.nan, dtype=float))
             wg_report, wge_report, we_report = _effective_gp_exact_reporting_scales(
                 model.covar_module, wg_vec, wge_vec, float(w_e)
@@ -4502,7 +4600,7 @@ def gp_exact_with_X(
                 "heritability_summary": report_bundle["heritability_summary"],
                 "sigma2_resid_env": sigma2_resid_report,
                 "sigma2_resid_overall": _safe_nanmean_or_nan(sigma2_resid_report),
-                "diagnostics": {"method":"gp_exact", "iters": int(iters), "device": device,
+                "diagnostics": {"method":"gp_exact", "iters": int(iters), "device": device, **prediction_fit,
                                 "use_fixed_noise": bool(use_fixed_noise),
                                 "likelihood_noise": (
                                     float(likelihood.noise.detach().cpu().reshape(-1)[0].item())
@@ -4523,7 +4621,7 @@ def gp_exact_with_X(
         with torch.no_grad():
             K_lin = model.covar_module(train_x, train_x)
             if isinstance(likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood):
-                noise_diag = _t(resid_diag_env, device=device, dtype=dtype_t).index_select(0, ei_t.index_select(0, t))
+                noise_diag = likelihood.noise
             else:
                 noise_diag = torch.full((train_x.shape[0],), float(likelihood.noise.item()), dtype=dtype_t, device=device)
             V_lin = K_lin + DiagLinearOperator(noise_diag)
@@ -4539,8 +4637,7 @@ def gp_exact_with_X(
         # Simple variance decomposition for full output (as before) ...
         pred_x = x_all if prediction_output == "all" else x_all.index_select(0, s_default_t)
         pred_lat = model(pred_x)
-        pred_obs = likelihood(pred_lat)
-        mean_obs_std = pred_obs.mean
+        mean_obs_std = pred_lat.mean
         # (Full variance code omitted for brevity since the fast path is the user's target;
         #  keep your previous full-variance implementation here if needed.)
 
@@ -4561,68 +4658,11 @@ def gp_exact_with_X(
             lat_var = stdr.inv_var(_to_numpy(lat_var_std_t), _to_numpy(ei_sel))
             obs_var = stdr.inv_var(_to_numpy(torch.clamp(lat_var_std_t + noise_pred_std, min=0.0)), _to_numpy(ei_sel))
             predictions = _attach_prediction_se_columns(predictions, latent_var=lat_var, observed_var=obs_var)
-        env_names = env_index_to_name if env_index_to_name is not None else [str(i) for i in range(int(ei_t.max().item())+1)]
-        sigma2_env_orig = (stdr.inv_var(np.asarray(resid_diag_env), np.arange(int(ei_t.max().item())+1)) if use_fixed_noise and resid_diag_env is not None else np.full(len(env_names), np.nan, dtype=float))
-        varcomp_asreml_df = None
-        varcomp_summary = None
-        varcomp_ai_matrix = None
+            predictions = _attach_genetic_pev(predictions, model, train_x, pred_x, V_lin, Var_beta, stdr)
         varcomp_error = None
-        if bool(compute_ai_se):
-            try:
-                from ai_reml import build_gp_exact_ai_varcomp
-                _env_sc = stdr.get_env_scales(env_names)
-                _nedf = int(train_y.numel() - Xtt.shape[1])
-                _build_kwargs = dict(
-                    geno_kernel_names=list(geno_kernels.keys()),
-                    env_labels=env_names,
-                    env_col_name="Env",
-                    hutch_samples=int(ai_hutch_samples),
-                    jitter=float(ai_jitter),
-                    env_scales=_env_sc,
-                    nedf=_nedf,
-                    max_iter=int(ai_max_iter),
-                    tol_loglik=float(ai_tol_loglik),
-                    tol_theta=float(ai_tol_theta),
-                    refine_kernel_scales=bool(getattr(kernel, "learn_scales", False)),
-                    theta0_warm=theta0_warm,
-                )
-                _engine = (gp_engine or "auto").lower()
-                if _engine == "auto":
-                    _engine = "dense_v"
-                if _engine == "eigen":
-                    try:
-                        from mme_eigen import build_gp_exact_ai_varcomp_mme_eigen
-                        varcomp_asreml_df, varcomp_summary, varcomp_ai_matrix = build_gp_exact_ai_varcomp_mme_eigen(
-                            model, likelihood, train_x, train_y, **_build_kwargs,
-                        )
-                    except NotImplementedError as _err:
-                        warnings.warn(
-                            f"gp_engine='eigen' not supported for this fit ({_err}); "
-                            "falling back to dense V engine.",
-                            stacklevel=2,
-                        )
-                        _engine = "dense_v"
-                if _engine == "mme":
-                    try:
-                        from ai_reml import build_gp_exact_ai_varcomp_mme
-                        varcomp_asreml_df, varcomp_summary, varcomp_ai_matrix = build_gp_exact_ai_varcomp_mme(
-                            model, likelihood, train_x, train_y, **_build_kwargs,
-                        )
-                    except NotImplementedError as _err:
-                        warnings.warn(
-                            f"gp_engine='mme' not supported for this fit ({_err}); "
-                            "falling back to dense V engine.",
-                            stacklevel=2,
-                        )
-                        _engine = "dense_v"
-                if _engine == "dense_v":
-                    varcomp_asreml_df, varcomp_summary, varcomp_ai_matrix = build_gp_exact_ai_varcomp(
-                        model, likelihood, train_x, train_y, **_build_kwargs,
-                    )
-            except Exception as e:
-                varcomp_error = f"{type(e).__name__}: {e}"
-                warnings.warn(f"ASReml-schema varcomp build failed (gp_exact, all): {e}")
-
+        sigma2_env_std = (np.asarray(resid_diag_env) if use_fixed_noise and resid_diag_env is not None
+                          else np.full(len(env_names), float(likelihood.noise.mean().item())))
+        sigma2_env_orig = stdr.inv_var(sigma2_env_std, np.arange(len(env_names)))
         wg_report, wge_report, we_report = _effective_gp_exact_reporting_scales(
             model.covar_module, wg_vec, wge_vec, float(w_e)
         )
@@ -4660,7 +4700,7 @@ def gp_exact_with_X(
             "heritability_summary": report_bundle["heritability_summary"],
             "sigma2_resid_env": sigma2_resid_report,
             "sigma2_resid_overall": _safe_nanmean_or_nan(sigma2_resid_report),
-            "diagnostics": {"method":"gp_exact", "iters": int(iters), "device": device,
+            "diagnostics": {"method":"gp_exact", "iters": int(iters), "device": device, **prediction_fit,
                             "use_fixed_noise": bool(use_fixed_noise),
                             "likelihood_noise": (
                                 float(likelihood.noise.detach().cpu().reshape(-1)[0].item())
@@ -4685,7 +4725,7 @@ def gp_icm_fa_with_X(
     w_g: np.ndarray, w_ge: np.ndarray, w_e: float,
     X: np.ndarray, S_e: Optional[np.ndarray] = None,
     device: Optional[str] = None, dtype: Optional[Union[str, 'torch.dtype']] = None,
-    iters: int = 300, lr: float = 0.03, use_fixed_noise: bool = True,
+    iters: int = 300, lr: float = 0.03, use_fixed_noise: Optional[bool] = None,
     resid_diag_env: Optional[np.ndarray] = None,
     resid_diag_obs: Optional[np.ndarray] = None,
     geno_id_list: Optional[List[str]] = None,
@@ -4718,7 +4758,11 @@ def gp_icm_fa_with_X(
     theta0_warm: Optional[np.ndarray] = None,
     gp_engine: str = "auto",
 ) -> Dict[str, Any]:
+    from fa_rank import validate_fa_rank
+    fa_rank = validate_fa_rank(fa_rank, len(np.unique(ei)), 'fa_rank')
     assert TORCH_AVAILABLE and GPTY_AVAILABLE, "gpytorch/torch required"
+    if use_fixed_noise is None:
+        use_fixed_noise = resid_diag_obs is not None or resid_diag_env is not None
     set_deterministic(12345)
     device = device or _default_device
     dtype_t = _resolve_torch_dtype(dtype)
@@ -4730,6 +4774,10 @@ def gp_icm_fa_with_X(
     with _DefaultDTypeContext(dtype_t), gpytorch.settings.max_preconditioner_size(20), gpytorch.settings.cg_tolerance(1e-5):
         gi = np.asarray(gi, dtype=np.int64); ei = np.asarray(ei, dtype=np.int64); y = np.asarray(y, dtype=float)
         t_idx = np.asarray(train_idx, dtype=np.int64)
+        from gp_fixed_effects import full_rank_design
+        rank_train_mask = np.zeros(len(y), dtype=bool)
+        rank_train_mask[t_idx] = True
+        X = full_rank_design(X, rank_train_mask)
         s_idx_default = np.asarray(test_idx if (test_idx is not None and len(test_idx)>0) else train_idx, dtype=np.int64)
         row_idx = np.arange(gi.size, dtype=np.int64)
 
@@ -4785,24 +4833,21 @@ def gp_icm_fa_with_X(
                 scale2_obs = stdr.inv_var(np.ones(gi.size, dtype=float), ei)
                 scale2_obs = np.where(np.isfinite(scale2_obs) & (scale2_obs > 0), scale2_obs, 1.0)
                 resid_diag_obs_std = resid_diag_obs / scale2_obs
-                resid_diag_env = _env_mean_from_obs_diag(resid_diag_obs, ei, int(ei_t.max().item()) + 1)
+                resid_diag_env = _env_mean_from_obs_diag(resid_diag_obs_std[t_idx], np.asarray(ei)[t_idx], int(ei_t.max().item()) + 1)
                 env_noise = _t(resid_diag_obs_std, device=device, dtype=dtype_t).index_select(0, t)
                 likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=env_noise, learn_additional_noise=False)
             elif resid_diag_env is None:
-                krr = multikernel_krr_posterior_with_se(
-                    [geno_kernels[k] for k in geno_kernels.keys()], gi, ei, y,
-                    t_idx, np.array([], dtype=np.int64),
-                    w_g=wg_vec, w_ge=np.zeros_like(wg_vec), w_e=float(w_e), S_e=S_e, lam=1e-3, X=X,
-                    device=device, dtype=str(dtype_t).replace("torch.",""),
-                    env_levels=env_index_to_name, obs_names=geno_id_list,
-                    hutch_samples=32, seed=12345, prediction_output="test_only",
-                    standardize=standardize, reml_normalize=reml_normalize
-                )
-                sig2_orig = np.asarray(krr["sigma2_resid_env"], dtype=float)
-                sd2 = (stdr.env_stds_**2) if standardize.lower() == "per_env" else np.full_like(sig2_orig, stdr.global_std_**2, dtype=float)
-                resid_diag_env = sig2_orig / sd2
-            env_noise = _t(resid_diag_env, device=device, dtype=dtype_t).index_select(0, ei_t.index_select(0, t))
-            likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=env_noise, learn_additional_noise=False)
+                raise ValueError('Fixed-noise GP requires supplied residual variances; '
+                                 'provide resid_diag_obs/resid_diag_env or enable noise learning')
+            else:
+                # All public residual inputs are absolute response-scale variances.
+                resid_diag_env = np.asarray(resid_diag_env, dtype=float).reshape(-1)
+                if resid_diag_env.size != int(ei_t.max().item())+1 or np.any(~np.isfinite(resid_diag_env)) or np.any(resid_diag_env <= 0):
+                    raise ValueError('resid_diag_env must contain one finite positive variance per environment')
+                resid_diag_env = resid_diag_env / stdr.inv_var(np.ones(resid_diag_env.size), np.arange(resid_diag_env.size))
+            if resid_diag_obs is None:
+                env_noise = _t(resid_diag_env, device=device, dtype=dtype_t).index_select(0, ei_t.index_select(0, t))
+                likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=env_noise, learn_additional_noise=False)
         else:
             likelihood = gpytorch.likelihoods.GaussianLikelihood()
 
@@ -4822,29 +4867,8 @@ def gp_icm_fa_with_X(
         model = ExactGPFAWithX(train_x, train_y, likelihood, kernel, X_all).to(device)
 
         model.train(); likelihood.train()
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-        for _ in range(int(iters)):
-            optimizer.zero_grad()
-            output = model(train_x)
-            K_op = output.lazy_covariance_matrix
-            # Build residual operator R
-            if isinstance(likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood):
-                noise_diag = likelihood.noise
-                R_op = DiagLinearOperator(noise_diag)
-            else:
-                R_op = DiagLinearOperator(likelihood.noise.expand(train_y.shape[0]))
-            V_op = K_op + R_op
-            # Design matrix for current training rows
-            Xtt = model.mean_module.X_all.index_select(0, train_x[:, 2].long())
-            ll_reml = reml_loglik_from_V(train_y, Xtt, V_op, jitter=1e-6)
-            loss = -ll_reml
-            # The same fixed-noise/fixed-scale condition can occur in the FA
-            # exact path when all covariance inputs are supplied. The later
-            # GLS profiling step still installs the fixed-effect estimate.
-            if not loss.requires_grad:
-                break
-            loss.backward()
-            optimizer.step()
+        prediction_fit = _fit_profiled_reml_adam(model, likelihood, train_x, train_y, iters, lr)
+        Xtt = model.mean_module.X_all.index_select(0, train_x[:, 2].long())
 
                 
         # AI/Newton refinement is opt-in for the prediction model. The public
@@ -4910,12 +4934,78 @@ def gp_icm_fa_with_X(
                                    max_steps=int(ai_steps), jitter=ai_jitter, verbose=False)
                 # refresh model cache after updates
                 out = model(train_x)
+                final_fit = _fit_profiled_reml_adam(model, likelihood, train_x, train_y, 0, lr)
+                final_fit["prediction_optimizer_steps"] = prediction_fit["prediction_optimizer_steps"]
+                prediction_fit = final_fit
+        # --- AI-REML variance-component SEs (ASReml-style) ---
+        varcomp_ai = pd.DataFrame([])
+        varcomp_asreml_df = None
+        varcomp_summary = None
+        varcomp_ai_matrix = None
+        env_names = env_index_to_name if env_index_to_name is not None else [str(i) for i in range(int(ei_t.max().item())+1)]
+        if bool(compute_ai_se):
+            try:
+                if _MODULAR_AI_REML_AVAILABLE:
+                    from ai_reml import build_fa_icm_ai_varcomp
+                    _env_sc = stdr.get_env_scales(env_names) if hasattr(stdr, 'get_env_scales') else None
+                    _nedf = int(train_y.shape[0] - Xtt.shape[1])
+                    varcomp_asreml_df, varcomp_summary, varcomp_ai_matrix = build_fa_icm_ai_varcomp(
+                        model, likelihood, train_x, train_y,
+                        fa_module=fa_module,
+                        env_labels=env_names,
+                        geno_kernel_names=list(geno_kernels.keys()),
+                        term_name=f"fa({interaction_term_name.split(':')[-1] if ':' in interaction_term_name else 'Env'},{fa_rank}):vm(GID,G)",
+                        env_col_name=interaction_term_name.split(':')[-1] if ':' in interaction_term_name else 'Env',
+                        hutch_samples=int(ai_hutch_samples),
+                        jitter=float(ai_jitter),
+                        seed=12345,
+                        env_scales=_env_sc,
+                        nedf=_nedf,
+                        max_iter=int(ai_max_iter),
+                        tol_loglik=float(ai_tol_loglik),
+                        tol_theta=float(ai_tol_theta),
+                        theta0_warm=theta0_warm,
+                    )
+                    varcomp_ai = varcomp_asreml_df
+                else:
+                    varcomp_ai = _ai_varcomp_table_gp_icm_fa(
+                        model, likelihood, train_x, train_y,
+                        fa_module=fa_module,
+                        hutch_samples=int(ai_hutch_samples),
+                        jitter=float(ai_jitter),
+                        include_fa_loadings=bool(ai_include_fa_loadings),
+                    )
+            except Exception as e:
+                warnings.warn(f"AI-SE computation failed (gp_icm_fa): {e}")
+                varcomp_summary = {"converged": False, "inference_available": False, "inference_status": "unavailable_failed", "inference_error": str(e)}
+        if isinstance(varcomp_summary, dict) and 'theta' in varcomp_summary and not use_fixed_noise:
+            # FA full inference estimates heterogeneous residuals. Condition
+            # predictions on those same residuals and the fitted FA covariance.
+            resid_diag_env = np.asarray(varcomp_summary['theta'][-len(env_names):], dtype=float)
+            resid_diag_obs = None
+            resid_diag_obs_std = None
+            use_fixed_noise = True
+            noise = _t(resid_diag_env, device=device, dtype=dtype_t)[train_x[:, 1].long()]
+            likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=noise, learn_additional_noise=False).to(device)
+            model.likelihood = likelihood
+            varcomp_summary['prediction_covariance_source'] = 'reported_reml_fit'
+
+        if isinstance(varcomp_summary, dict) and 'theta' in varcomp_summary:
+            if not varcomp_summary.get('converged', False):
+                warnings.warn('Predictions use a non-converged REML fit; covariance inference is unavailable.', RuntimeWarning)
+            prediction_fit['initial_prediction_reml_converged'] = prediction_fit.get('prediction_reml_converged')
+            prediction_fit['initial_prediction_reml_grad_max_abs'] = prediction_fit.pop('prediction_reml_grad_max_abs', None)
+            prediction_fit['prediction_reml_converged'] = bool(varcomp_summary['converged'])
+            prediction_fit['prediction_reml_neg_loglik'] = -float(varcomp_summary['loglik'])
+            prediction_fit['prediction_covariance_source'] = 'reported_reml_fit'
+            prediction_fit['inference_available'] = bool(varcomp_summary.get('inference_available', False))
+            prediction_fit['inference_status'] = varcomp_summary.get('inference_status', 'unavailable')
         with torch.no_grad():
             _assign_reml_beta_to_design_mean_(model, likelihood, train_x, train_y, jitter=1e-6)
         model.eval(); likelihood.eval()
         with torch.no_grad():
-            pred_lat = model(test_x); pred_obs = likelihood(pred_lat)
-            mean_obs_std = pred_obs.mean
+            pred_lat = model(test_x)
+            mean_obs_std = pred_lat.mean
 
         if prediction_output == "test_only":
             ei_sel = ei_t.index_select(0, s_default_t)
@@ -4962,47 +5052,7 @@ def gp_icm_fa_with_X(
                 lat_var = stdr.inv_var(pred_lat_var_std, _to_numpy(ei_sel)) if pred_lat_var_std is not None else None
                 obs_var = stdr.inv_var(pred_obs_var_std, _to_numpy(ei_sel)) if pred_obs_var_std is not None else None
                 predictions = _attach_prediction_se_columns(predictions, latent_var=lat_var, observed_var=obs_var)
-
-            # --- AI-REML variance-component SEs (ASReml-style) ---
-            varcomp_ai = pd.DataFrame([])
-            varcomp_asreml_df = None
-            varcomp_summary = None
-            varcomp_ai_matrix = None
-            env_names = env_index_to_name if env_index_to_name is not None else [str(i) for i in range(int(ei_t.max().item())+1)]
-            if bool(compute_ai_se):
-                try:
-                    if _MODULAR_AI_REML_AVAILABLE:
-                        from ai_reml import build_fa_icm_ai_varcomp
-                        _env_sc = stdr.get_env_scales(env_names) if hasattr(stdr, 'get_env_scales') else None
-                        _nedf = int(train_y.shape[0] - Xtt.shape[1])
-                        varcomp_asreml_df, varcomp_summary, varcomp_ai_matrix = build_fa_icm_ai_varcomp(
-                            model, likelihood, train_x, train_y,
-                            fa_module=fa_module,
-                            env_labels=env_names,
-                            geno_kernel_names=list(geno_kernels.keys()),
-                            term_name=f"fa({interaction_term_name.split(':')[-1] if ':' in interaction_term_name else 'Env'},{fa_rank}):vm(GID,G)",
-                            env_col_name=interaction_term_name.split(':')[-1] if ':' in interaction_term_name else 'Env',
-                            hutch_samples=int(ai_hutch_samples),
-                            jitter=float(ai_jitter),
-                            seed=12345,
-                            env_scales=_env_sc,
-                            nedf=_nedf,
-                            max_iter=int(ai_max_iter),
-                            tol_loglik=float(ai_tol_loglik),
-                            tol_theta=float(ai_tol_theta),
-                            theta0_warm=theta0_warm,
-                        )
-                        varcomp_ai = varcomp_asreml_df
-                    else:
-                        varcomp_ai = _ai_varcomp_table_gp_icm_fa(
-                            model, likelihood, train_x, train_y,
-                            fa_module=fa_module,
-                            hutch_samples=int(ai_hutch_samples),
-                            jitter=float(ai_jitter),
-                            include_fa_loadings=bool(ai_include_fa_loadings),
-                        )
-                except Exception as e:
-                    warnings.warn(f"AI-SE computation failed (gp_icm_fa): {e}")
+                predictions = _attach_genetic_pev(predictions, model, train_x, test_x, V_lin, Var_beta, stdr)
 
             Sigma_ge = _to_numpy(fa_module.cov())
             wfa_report, we_report = _effective_fa_reporting_scales(
@@ -5056,7 +5106,7 @@ def gp_icm_fa_with_X(
                 "heritability_summary": report_bundle["heritability_summary"],
                 "sigma2_resid_env": sigma2_resid_report,
                 "sigma2_resid_overall": _safe_nanmean_or_nan(sigma2_resid_report),
-                "diagnostics": {"method":"gp_icm_fa", "iters": int(iters), "device": device,
+                "diagnostics": {"method":"gp_icm_fa", "iters": int(iters), "device": device, **prediction_fit,
                                 "use_fixed_noise": bool(use_fixed_noise), "fa_rank": int(fa_rank),
                                 "reml_normalize": reml_normalize, "learn_scales": bool(learn_scales)},
                 "env_covariance_fa": fa_total_response,
@@ -5079,22 +5129,20 @@ def gp_icm_fa_with_X(
         out_idx = (np.arange(gi_t.numel()) if (prediction_output == "all") else s_idx_default)
         out_idx_t = _t(out_idx, device=device, dtype=torch.int64)
         ei_sel = ei_t.index_select(0, out_idx_t)
-        mean_obs = _t(stdr.inv_mean(_to_numpy(mean_obs_std), _to_numpy(ei_sel)), device=device, dtype=dtype_t)
+        pred_x = x_all if prediction_output == "all" else x_all.index_select(0, s_default_t)
+        pred_lat = model(pred_x)
+        mean_obs = _t(stdr.inv_mean(_to_numpy(pred_lat.mean), _to_numpy(ei_sel)), device=device, dtype=dtype_t)
         gi_sel = gi_t.index_select(0, out_idx_t)
         names = [geno_id_list[int(i)] if geno_id_list is not None else str(int(i)) for i in _to_numpy(gi_sel)]
         envs  = [env_index_to_name[int(j)] if env_index_to_name is not None else str(int(j)) for j in _to_numpy(ei_sel)]
         predictions = pd.DataFrame({"row": out_idx, "Name": names, "Env": envs, "Prediction": _to_numpy(mean_obs)})
-        if return_se:
-            pred_x = x_all if prediction_output == "all" else x_all.index_select(0, s_default_t)
-            pred_lat = model(pred_x)
-            pred_obs = likelihood(pred_lat)
         # FE beta, beta_se
         Var_beta = None
         if return_se:
             with torch.no_grad():
                 K_lin = model.covar_module(train_x, train_x)
                 if isinstance(likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood):
-                    noise_diag = _t(resid_diag_env, device=device, dtype=dtype_t).index_select(0, ei_t.index_select(0, t))
+                    noise_diag = likelihood.noise
                 else:
                     noise_diag = torch.full((train_x.shape[0],), float(likelihood.noise.item()), dtype=dtype_t, device=device)
                 V_lin = K_lin + DiagLinearOperator(noise_diag)
@@ -5112,47 +5160,8 @@ def gp_icm_fa_with_X(
             lat_var = stdr.inv_var(_to_numpy(lat_var_std_t), _to_numpy(ei_sel))
             obs_var = stdr.inv_var(_to_numpy(torch.clamp(lat_var_std_t + noise_pred_std, min=0.0)), _to_numpy(ei_sel))
             predictions = _attach_prediction_se_columns(predictions, latent_var=lat_var, observed_var=obs_var)
+            predictions = _attach_genetic_pev(predictions, model, train_x, pred_x, V_lin, Var_beta, stdr)
 
-        # --- AI-REML variance-component SEs (ASReml-style) ---
-        varcomp_ai = pd.DataFrame([])
-        varcomp_asreml_df = None
-        varcomp_summary = None
-        varcomp_ai_matrix = None
-        env_names = env_index_to_name if env_index_to_name is not None else [str(i) for i in range(int(ei_t.max().item())+1)]
-        if bool(compute_ai_se):
-            try:
-                if _MODULAR_AI_REML_AVAILABLE:
-                    from ai_reml import build_fa_icm_ai_varcomp
-                    _env_sc = stdr.get_env_scales(env_names) if hasattr(stdr, 'get_env_scales') else None
-                    _nedf = int(train_y.shape[0] - Xtt.shape[1])
-                    varcomp_asreml_df, varcomp_summary, varcomp_ai_matrix = build_fa_icm_ai_varcomp(
-                        model, likelihood, train_x, train_y,
-                        fa_module=fa_module,
-                        env_labels=env_names,
-                        geno_kernel_names=list(geno_kernels.keys()),
-                        term_name=f"fa({interaction_term_name.split(':')[-1] if ':' in interaction_term_name else 'Env'},{fa_rank}):vm(GID,G)",
-                        env_col_name=interaction_term_name.split(':')[-1] if ':' in interaction_term_name else 'Env',
-                        hutch_samples=int(ai_hutch_samples),
-                        jitter=float(ai_jitter),
-                        seed=12345,
-                        env_scales=_env_sc,
-                        nedf=_nedf,
-                        max_iter=int(ai_max_iter),
-                        tol_loglik=float(ai_tol_loglik),
-                        tol_theta=float(ai_tol_theta),
-                        theta0_warm=theta0_warm,
-                    )
-                    varcomp_ai = varcomp_asreml_df
-                else:
-                    varcomp_ai = _ai_varcomp_table_gp_icm_fa(
-                        model, likelihood, train_x, train_y,
-                        fa_module=fa_module,
-                        hutch_samples=int(ai_hutch_samples),
-                        jitter=float(ai_jitter),
-                        include_fa_loadings=bool(ai_include_fa_loadings),
-                    )
-            except Exception as e:
-                warnings.warn(f"AI-SE computation failed (gp_icm_fa): {e}")
         Sigma_ge = _to_numpy(fa_module.cov())
         wfa_report, we_report = _effective_fa_reporting_scales(
             model.covar_module, wg_fa_vec, float(w_e)
@@ -5205,7 +5214,7 @@ def gp_icm_fa_with_X(
             "heritability_summary": report_bundle["heritability_summary"],
             "sigma2_resid_env": sigma2_resid_report,
             "sigma2_resid_overall": _safe_nanmean_or_nan(sigma2_resid_report),
-            "diagnostics": {"method":"gp_icm_fa", "iters": int(iters), "device": device,
+            "diagnostics": {"method":"gp_icm_fa", "iters": int(iters), "device": device, **prediction_fit,
                             "use_fixed_noise": bool(use_fixed_noise), "fa_rank": int(fa_rank),
                             "reml_normalize": reml_normalize, "learn_scales": bool(learn_scales)},
             "env_covariance_fa": fa_total_response,
@@ -6538,6 +6547,10 @@ def fit_mixed_model(
         compute_ai_se=compute_ai_se,
     )
     method = str(method).lower()
+    # Folds may request only means while fitting the delivered REML estimator.
+    # Output selection must not silently select a different covariance model.
+    fit_reml = bool(kwargs.pop('fit_reml', False))
+    compute_ai_se = bool(compute_ai_se) or fit_reml
     valid_methods = ("gp_exact", "krr_exact", "gp_icm_fa")
     if method not in valid_methods:
         raise ValueError(f"method must be one of {valid_methods}; got {method!r}")
@@ -6589,6 +6602,7 @@ def fit_mixed_model(
             mom_n_hutch=int(kwargs.pop("mom_n_hutch", 16)),
             mom_h2_prior=float(kwargs.pop("mom_h2_prior", 0.5)),
             method=str(method), backend=str(backend),
+            krr_lam=float(krr_lam if lam is None else lam), krr_lams=krr_lams, lam_select=lam_select,
             dtype=str(dtype) if not hasattr(dtype, "itemsize") else "float32",
             operator_dtype_compute=(
                 operator_dtype_compute
@@ -6649,6 +6663,7 @@ def fit_mixed_model(
         fixed_effects=fixed_effects,
     )
     if reused_preprocessed_context:
+        ctx = preprocessed_context
         df = preprocessed_context["df"]
         y = np.asarray(preprocessed_context["y"], dtype=float)
         gi = np.asarray(preprocessed_context["gi"], dtype=np.int64)
@@ -6677,6 +6692,12 @@ def fit_mixed_model(
         obs_weights=obs_weights, obs_var=obs_var, stage1_pev=stage1_pev,
         obs_weight_mode=obs_weight_mode, obs_weight_global_scale=obs_weight_global_scale,
     )
+    # Explicit Python residual inputs share the response-scale contract of
+    # Stage-2 weights and must activate the fixed-noise likelihood too.
+    if resid_diag_obs_input is None:
+        resid_diag_obs_input = kwargs.get('resid_diag_obs', None)
+    if resid_diag_env_input is None:
+        resid_diag_env_input = kwargs.get('resid_diag_env', None)
 
     modular_dense_delegate = bool(kwargs.pop("modular_dense_delegate", False) or kwargs.pop("use_modular_dense", False))
     modular_fit_method = str(kwargs.pop("modular_fit_method", "reml")).lower()
@@ -6882,6 +6903,16 @@ def fit_mixed_model(
     w_e = _rn["w_e"]
     train_idx = _rn["train_idx"]
     _rn_info = _rn.get("info", {})
+    from gp_fixed_effects import full_rank_design
+    fixed_train_mask = np.zeros(len(y), dtype=bool)
+    fixed_train_mask[train_idx] = True
+    X = full_rank_design(X, fixed_train_mask, ctx.get('x_columns'))
+    # Keep the caller's shared tensor cache. The fold-specific estimable X is
+    # passed explicitly and keyed by its content; do not replace the context
+    # with a shallow copy whose newly-created cache disappears after this fit.
+    if 'g' not in include_components: w_g = np.zeros_like(w_g)
+    if 'ge' not in include_components: w_ge = np.zeros_like(w_ge)
+    if 'e' not in include_components: w_e = 0.
 
     # ---- Large-n SNP-matrix path warning ----
     # Encourage streaming the SNP -> low-rank Phi via grm_factor_cache instead
@@ -6905,35 +6936,31 @@ def fit_mixed_model(
             RuntimeWarning, stacklevel=2,
         )
 
-    # Zero-obs-env guard: any env with 0 rows in train_idx has no Fisher
-    # information for its variance components (!var, !fa*, !R). AI-REML
-    # will return ~inf SE for those rows and gp_icm_fa full mode will
-    # typically fail to meet the convergence tol because the dead
-    # components dominate the gradient norm. Warn explicitly so the
-    # huge-SE rows are expected rather than mysterious.
+    # Environment-specific parameters require observations in that environment.
+    # Covariate-kernel prediction can still extrapolate with a stated model.
     _ei_tr = np.asarray(ei, dtype=np.int64)[np.asarray(train_idx, dtype=np.int64)]
     _env_counts = np.bincount(_ei_tr, minlength=len(env_levels))
     _zero_obs_envs = [env_levels[i] for i, c in enumerate(_env_counts) if c == 0]
-    if _zero_obs_envs:
+    if _zero_obs_envs and bool(compute_ai_se) and method == 'gp_icm_fa':
         _warn_once(
             ("zero_obs_envs", tuple(str(x) for x in _zero_obs_envs)),
             f"{len(_zero_obs_envs)} environment(s) have zero observed rows in "
             f"the training split: {_zero_obs_envs}. Variance components for "
-            f"these envs (!var, !fa*, Env_*!R) are not identifiable -- AI-REML "
-            f"will report huge SEs and gp_icm_fa full mode may not converge. "
-            f"For CV0 env-holdout designs use mode='fast' or exclude these "
-            f"rows from the VC table before reporting.",
+            f"these envs (!var, !fa*, Env_*!R) are not identifiable; ordinary "
+            f"parameter inference is unavailable. For CV0 prediction, use a "
+            f"supplied environment kernel with output_level='predict_only' "
+            f"or include training observations in those environments.",
             RuntimeWarning,
             stacklevel=2,
         )
 
     lam_eff = float(krr_lam if lam is None else lam)
 
-    if output_level == "full_vc" and reml_normalize == "diag_mean":
+    if (output_level == "full_vc" or fit_reml) and reml_normalize == "diag_mean":
         warnings.warn(
             "reml_normalize='diag_mean' rescales the genetic kernel; "
             "variance components will NOT be on the original y scale. "
-            "Overriding to 'asreml' (no rescale) for full_vc output. "
+            "Overriding to 'asreml' (no rescale) for matched REML fitting. "
             "Pass reml_normalize='asreml' explicitly to suppress this warning.",
             stacklevel=2,
         )
@@ -7059,6 +7086,10 @@ def fit_mixed_model(
             lanczos_iters=_op_lan_iters,
             lanczos_seed=_op_lan_seed,
             lanczos_theta_floor=_op_lan_floor,
+            lam=lam_eff,
+            lam_select=lam_select,
+            krr_lams=krr_lams,
+            operator_gcv_max_rows=int(kwargs.get("operator_gcv_max_rows", 512)),
         )
         if _krr_fa_mom:
             res["env_covariance_fa"] = sigma_g_mom
@@ -7105,7 +7136,7 @@ def fit_mixed_model(
             interaction_terms_meta=interaction_terms_meta,
             return_se=bool(return_se),
         )
-        res.setdefault("envwise", {}).setdefault("details", {})["lam"] = lam_eff
+        res.setdefault("envwise", {}).setdefault("details", {})["lam"] = res['diagnostics']['lam_eff']
         if _krr_fa_mom:
             res["env_covariance_fa"] = sigma_g_mom
             res["env_correlation_fa"] = _corr_from_cov_np(sigma_g_mom)
@@ -7118,7 +7149,7 @@ def fit_mixed_model(
         if (
             output_level == "full_vc"
             and not _krr_fa_mom
-            and res.get("variance_component_method") != "krr_gcv_variance_ratio"
+            and res.get("variance_component_method") not in ("krr_gcv_variance_ratio", "krr_profiled_variance_ratio", "krr_fixed_residual_reml")
         ):
             try:
                 vc_method = "gp_icm_fa" if env_structure == "fa" else "gp_exact"
@@ -7241,11 +7272,12 @@ def fit_mixed_model(
     elif method == "gp_exact":
         res = gp_exact_with_X(geno_kernels, gi, ei, y, train_idx, test_idx,
                                w_g, w_ge, w_e, X, S_e=env_similarity, device=device, dtype=dtype_t,
+                               dense_cholesky_max_size=int(kwargs.get("dense_cholesky_max_size", 2048)),
                                iters=int(kwargs.get("gp_iters", 300)), lr=float(kwargs.get("gp_lr", 0.03)),
                                use_fixed_noise = True if (resid_diag_obs_input is not None or resid_diag_env_input is not None) else (not bool(learn_envdiag_noise)),
                                standardize=standardize, reml_normalize=reml_normalize,
                                learn_scales=bool(learn_scales),
-                               compute_ai_se=(output_level == "full_vc") and bool(compute_ai_se),
+                               compute_ai_se=fit_reml or ((output_level == "full_vc") and bool(compute_ai_se)),
                                ai_hutch_samples=int(ai_hutch_samples),
                                ai_jitter=float(ai_jitter),
                                optimizer_method=str(optimizer_method),
@@ -7254,7 +7286,7 @@ def fit_mixed_model(
                                ai_tol_loglik=float(ai_tol_loglik),
                                ai_tol_theta=float(ai_tol_theta),
                                env_mean_from_obs_diag=bool(kwargs.get("env_mean_from_obs_diag", False)),
-                               point_predictions_only=bool(point_predictions_only),
+                               point_predictions_only=bool(point_predictions_only) and not fit_reml,
                                resid_diag_env=(resid_diag_env_input if resid_diag_env_input is not None else kwargs.get("resid_diag_env", None)),
                                resid_diag_obs=resid_diag_obs_input,
                                return_se=bool(return_se),
@@ -7288,7 +7320,7 @@ def fit_mixed_model(
                                 fa_rank=int(fa_rank if fa_rank is not None else icm_rank),
                                 standardize=standardize, reml_normalize=reml_normalize,
                                 learn_scales=bool(learn_scales),
-                                compute_ai_se=(output_level == "full_vc") and bool(compute_ai_se),
+                                compute_ai_se=fit_reml or ((output_level == "full_vc") and bool(compute_ai_se)),
                                 ai_hutch_samples=int(ai_hutch_samples),
                                 ai_jitter=float(ai_jitter),
                                 ai_include_fa_loadings=bool(ai_include_fa_loadings),
@@ -7298,7 +7330,7 @@ def fit_mixed_model(
                                 ai_tol_loglik=float(ai_tol_loglik),
                                 ai_tol_theta=float(ai_tol_theta),
                                 env_mean_from_obs_diag=bool(kwargs.get("env_mean_from_obs_diag", False)),
-                                point_predictions_only=bool(point_predictions_only),
+                                point_predictions_only=bool(point_predictions_only) and not fit_reml,
                                 resid_diag_env=(resid_diag_env_input if resid_diag_env_input is not None else kwargs.get("resid_diag_env", None)),
                                 resid_diag_obs=resid_diag_obs_input,
                                 return_se=bool(return_se),
@@ -7523,19 +7555,6 @@ def _batch_krr_point_predict_candidates(
     Xss = X_t.index_select(0, s)
     ei_test = ei_t.index_select(0, s)
 
-    n_obs = int(gi.size)
-    n_env = int(ei_t.max().item()) + 1 if n_obs else 0
-    n_probes = max(0, int(hutch_samples))
-    if n_probes > 0:
-        set_deterministic(seed)
-        probes = []
-        for _ in range(n_probes):
-            z = torch.randint(0, 2, (n_obs,), device=device_resolved, dtype=torch.int64) * 2 - 1
-            probes.append(z.to(dtype=dtype_t))
-        Z_full = torch.stack(probes, dim=1)
-    else:
-        Z_full = torch.empty((n_obs, 0), dtype=dtype_t, device=device_resolved)
-
     names_out = [geno_ids[int(gi[i])] if 0 <= int(gi[i]) < len(geno_ids) else str(int(gi[i])) for i in s_idx]
     envs_out = [str(env_levels[int(ei[i])]) for i in s_idx]
     geno_kernel = np.asarray(geno_kernel, dtype=np.float64)
@@ -7565,7 +7584,6 @@ def _batch_krr_point_predict_candidates(
         ytt_kernel = y_t.index_select(0, t_kernel)
         Xtt_kernel = X_t.index_select(0, t_kernel)
         ei_train_kernel = ei_t.index_select(0, t_kernel)
-        Zt_kernel = Z_full.index_select(0, t_kernel)
         G_norm_list, S_norm = _apply_kernel_normalization(
             [geno_kernel],
             np.asarray(S_np, dtype=np.float64),
@@ -7584,7 +7602,6 @@ def _batch_krr_point_predict_candidates(
             "ytt": ytt_kernel,
             "Xtt": Xtt_kernel,
             "ei_train": ei_train_kernel,
-            "Zt": Zt_kernel,
             "Kg_tt": Kg_tt,
             "Kg_ts": Kg_ts,
             "Kge_tt": Kg_tt * Se_tt,
@@ -7592,60 +7609,6 @@ def _batch_krr_point_predict_candidates(
             "Ke_tt": Se_tt,
             "Ke_ts": Se_ts,
         }
-
-    def _residual_diag_env(Ktt: "torch.Tensor", lam_eff: float, blocks: Dict[str, Any]) -> np.ndarray:
-        ytt = blocks["ytt"]
-        Xtt = blocks["Xtt"]
-        ei_train = blocks["ei_train"]
-        Zt = blocks["Zt"]
-        Vtmp = 0.5 * (Ktt + Ktt.mT)
-        Vtmp.diagonal().add_(float(lam_eff))
-        Ltmp = _cholesky_factor(Vtmp)
-        Vinv_y = _cholesky_solve_from_factor(Ltmp, ytt)
-        Vinv_X = _cholesky_solve_from_factor(Ltmp, Xtt)
-        Xt_Vinv_X = Xtt.mT @ Vinv_X
-        Var_beta_tmp = _spd_inverse(Xt_Vinv_X)
-        beta_tmp = Var_beta_tmp @ (Xtt.mT @ Vinv_y)
-        alpha_tmp = _cholesky_solve_from_factor(Ltmp, ytt - Xtt @ beta_tmp)
-        yhat_tr = (Xtt @ beta_tmp) + Ktt @ alpha_tmp
-        resid = (ytt - yhat_tr).reshape(-1)
-
-        if n_probes > 0:
-            Vinv_Z = _cholesky_solve_from_factor(Ltmp, Zt)
-            Sx_Z = Xtt @ (Var_beta_tmp @ (Xtt.mT @ Vinv_Z))
-            HZ = Sx_Z + Ktt @ _cholesky_solve_from_factor(Ltmp, Zt - Sx_Z)
-            hat_diag_train = torch.mean(Zt * HZ, dim=1)
-        else:
-            hat_diag_train = torch.zeros_like(resid)
-
-        sig2 = np.full(n_env, np.nan, dtype=float)
-        ei_train_np = _to_numpy(ei_train)
-        for e in range(n_env):
-            mask_np = ei_train_np == e
-            n_e = int(np.sum(mask_np))
-            if n_e == 0:
-                continue
-            mask = _t(mask_np, device=device_resolved, dtype=torch.bool)
-            r_e = resid[mask]
-            tr_He = float(torch.clamp(hat_diag_train[mask].sum(), min=0.0, max=float(max(n_e - 1, 0))).item())
-            denom = max(1.0, n_e - tr_He)
-            if str(env_resid_robust).lower() == "mad":
-                s2 = _robust_env_var(r_e)
-                if np.isnan(s2):
-                    s2 = float(torch.clamp((r_e.pow(2).sum() / denom), min=1e-12).item())
-            else:
-                s2 = float(torch.clamp((r_e.pow(2).sum() / denom), min=1e-12).item())
-            sig2[e] = s2
-
-        if np.isfinite(sig2).any() and float(env_resid_shrink_tau) > 0:
-            m = float(np.nanmean(sig2))
-            sig2 = (1.0 - float(env_resid_shrink_tau)) * sig2 + float(env_resid_shrink_tau) * m
-        if np.isnan(sig2).any():
-            r2 = resid.pow(2)
-            mask = torch.isfinite(resid)
-            global_s2 = r2[mask].mean().item() if bool(mask.any().item()) else 1.0
-            sig2 = np.where(np.isfinite(sig2), sig2, global_s2)
-        return sig2
 
     pred_parts: List[pd.DataFrame] = []
     detail_rows: List[Dict[str, Any]] = []
@@ -7665,12 +7628,11 @@ def _batch_krr_point_predict_candidates(
             Kts = wg * blocks["Kg_ts"] + wge * blocks["Kge_ts"] + we * blocks["Ke_ts"]
             ytt = blocks["ytt"]
             Xtt = blocks["Xtt"]
-            ei_train = blocks["ei_train"]
-            resid_diag_env = _residual_diag_env(Ktt, lam_eff, blocks)
-            sigma2_env_t = _t(np.asarray(resid_diag_env, dtype=float), device=device_resolved, dtype=dtype_t)
-            diag_add = sigma2_env_t.index_select(0, ei_train) + float(lam_eff)
+            # Match the single-fit residual/kernel variance ratio. Profiling
+            # its common scale cancels from the GLS mean; adding a second
+            # empirical residual variance changes the fitted model.
             Vtt = 0.5 * (Ktt + Ktt.mT)
-            Vtt.diagonal().add_(diag_add)
+            Vtt.diagonal().add_(float(lam_eff))
             L = _cholesky_factor(Vtt)
             Vinv_y = _cholesky_solve_from_factor(L, ytt)
             Vinv_X = _cholesky_solve_from_factor(L, Xtt)

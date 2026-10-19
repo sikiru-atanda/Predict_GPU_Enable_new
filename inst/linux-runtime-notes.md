@@ -20,16 +20,54 @@ dependencies in a few minutes.
 
 ## Python
 
-Python models run as subprocesses. A bare system `python3` usually has no
-numpy/scikit-learn; PredictProR no longer auto-selects such an interpreter for
-ML models and instead asks for `PREDICTPRO_PYTHON`. Point the env vars at a
-conda/venv Python before running models:
+Python models run as subprocesses. PredictProR installs the Python packages
+the requested models need on first use (numpy, pandas, scikit-learn,
+xgboost/catboost/lightgbm, PyTorch, GPyTorch, ...), once per interpreter and
+before any parallel worker starts. PyTorch comes from the PyTorch wheel index:
+the newest CUDA build the NVIDIA driver supports, else the CPU build.
+
+A bare system `python3` on Debian/Ubuntu cannot take installs: it is not
+writable, and on recent releases it is "externally managed" (PEP 668) and
+refuses pip. PredictProR then creates its own virtualenv from it under
+`~/.cache/R/PredictProR/python-envs` (or `PREDICTPRO_PYTHON_ENV_HOME`). No sudo
+is needed: without the `python3-venv` package the virtualenv is created without
+pip, and PredictProR adds pip from its official zipapp
+(`https://bootstrap.pypa.io/pip/pip.pyz`; `PREDICTPRO_PIP_BOOTSTRAP_URL` sets
+another URL). The same happens for an interpreter you cannot write to.
+Checked on Ubuntu 22.04 with only the system `python3` 3.10 (no pip, no
+`python3-venv`) and nothing configured.
+
+A virtualenv's `bin/python` is a symlink to the base Python. PredictProR keeps
+the path as given (before 0.20.196 it resolved the link and ran the base
+Python, outside the virtualenv).
+
+Without these variables, PredictProR checks the interpreters it finds
+(virtualenvs, conda environments, system Pythons) to choose one per model
+family. Each check starts the interpreter and imports torch, so the results
+are kept in `~/.cache/R/PredictProR/python-discovery.rds` (on every OS the
+folder is `tools::R_user_dir("PredictProR", "cache")`). A result is used
+again only while the interpreter and its site-packages folders are
+unchanged (installing, upgrading or removing a package counts as a change),
+and for at most 30 days; the conda environment list is kept until conda
+creates or removes an environment, for at most 7 days. The same file keeps
+the memory of an idle parallel worker, which the parallel policy measures
+by starting one: until PredictProR or one of its imports is reinstalled, R
+or the ML interpreter changes, for at most 30 days. Set
+`PREDICTPRO_PROBE_CACHE=false` to check and measure every time.
+
+To use a specific interpreter, point the env vars at it:
 
 ```sh
 export PREDICTPRO_PYTHON=$HOME/miniconda3/envs/<env>/bin/python      # ML
 export PREDICTPRO_DL_PYTHON=$PREDICTPRO_PYTHON                       # DL (torch)
 export PREDICTPRO_GP_PYTHON=$PREDICTPRO_PYTHON                       # GP (gpytorch, linear_operator, zarr)
 ```
+
+To prepare a server before running jobs, run
+`PredictProR::ensure_python_dependencies()` once. On a machine without internet
+access, point pip at a mirror (`PIP_INDEX_URL`, and `PYTORCH_INDEX_URL` for
+PyTorch wheels) or install the packages yourself and set
+`PREDICTPRO_AUTO_INSTALL=false`.
 
 ## Output files
 

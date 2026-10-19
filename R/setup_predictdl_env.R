@@ -24,7 +24,7 @@ gp_conda_env_python <- function(env_name) {
     return(NULL)
   }
 
-  normalizePath(py, winslash = "/", mustWork = FALSE)
+  gp_python_path(py, mustWork = FALSE)
 }
 
 #' Create or update the package-owned Python environment for deep learning
@@ -100,7 +100,7 @@ setup_predictdl_env <- function(
     env_python <- info_python
   }
   if (!is.null(env_python) && nzchar(env_python)) {
-    env_python <- normalizePath(env_python, winslash = "/", mustWork = FALSE)
+    env_python <- gp_python_path(env_python, mustWork = FALSE)
     Sys.setenv(PREDICTPRO_DL_PYTHON = env_python, PREDICTPRO_PYTHON_DL = env_python)
   }
 

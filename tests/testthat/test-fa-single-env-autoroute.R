@@ -102,24 +102,27 @@ test_that("GP_FA with heter_groups carrying one unique env fails before fitting"
   expect_false(seen$called)
 })
 
-test_that("GP_FA with >=2 distinct envs reaches the FA backend", {
+test_that("GP_FA rank 1 rejects two environments and routes three to the FA backend", {
   pheno <- data.frame(
-    GID = c("g1", "g1", "g2", "g2"),
-    Env = c("E1", "E2", "E1", "E2"),
-    Yield = c(1.0, 1.5, 2.0, 2.5),
+    GID = rep(c("g1", "g2"), each = 3L),
+    Env = rep(c("E1", "E2", "E3"), times = 2L),
+    Yield = c(1.0, 1.5, 1.8, 2.0, 2.5, 2.8),
     stringsAsFactors = FALSE
   )
   K <- diag(2); rownames(K) <- colnames(K) <- c("g1", "g2")
   seen <- list()
   testthat::local_mocked_bindings(
-    gp_single_trait_model = function(model_name, ...) {
+    gp_single_trait_model = function(model_name, gp_fa_rank, pheno_data, ...) {
       seen$model_name <<- model_name
+      seen$rank <<- gp_fa_rank
+      seen$environments <<- unique(pheno_data$Env)
       list(
         predictions = data.frame(
           GID = pheno$GID,
+          Env = pheno$Env,
           Predicted_value = pheno$Yield,
-          Standard_error = c(0.1, 0.1, 0.1, 0.1),
-          PEV = c(0.01, 0.01, 0.01, 0.01),
+          Standard_error = rep(0.1, nrow(pheno)),
+          PEV = rep(0.01, nrow(pheno)),
           stringsAsFactors = FALSE
         ),
         result = list(),
@@ -129,7 +132,20 @@ test_that("GP_FA with >=2 distinct envs reaches the FA backend", {
     .package = "PredictProR"
   )
 
-  # No warning expected.
+  # FA1 has four parameters for three entries at two environments: reject
+  # before the backend. At three environments it is saturated (6 = 6).
+  # Passing this count check is a routing test, not a convergence claim.
+  expect_error(
+    PredictProR:::gp_backend_gaussian_model(
+      model_name = "GP_FA", pheno_data = pheno[pheno$Env != "E3", ],
+      response = "Yield", gen_name = "GID", gmatrix = K,
+      heter_groups = "Env", gp_fa_rank = 1L,
+      gp_backend = "auto", gp_output_level = "predict_only"
+    ),
+    "rank 1 has 4 parameters for 3 covariance entries and cannot be identified"
+  )
+  expect_length(seen, 0L)
+
   out <- PredictProR:::gp_backend_gaussian_model(
     model_name      = "GP_FA",
     pheno_data      = pheno,
@@ -137,10 +153,13 @@ test_that("GP_FA with >=2 distinct envs reaches the FA backend", {
     gen_name        = "GID",
     gmatrix         = K,
     heter_groups    = "Env",
+    gp_fa_rank      = 1L,
     gp_backend      = "auto",
     gp_output_level = "predict_only"
   )
   expect_identical(seen$model_name, "GP_FA")
+  expect_identical(seen$rank, 1L)
+  expect_setequal(seen$environments, c("E1", "E2", "E3"))
   expect_false("fa_auto_routed_from" %in% out$model_parameters$stat)
 })
 

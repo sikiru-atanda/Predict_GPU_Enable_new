@@ -246,6 +246,8 @@ asreml_tst_model_cv <- asreml_cv_model(pheno_dataa = pheno_data,
                                        workspace = workspace,
                                        pworkspace = pworkspace,
                                        maxit = maxit)
+# the fold's model goes no further than this function: its data is released here
+on.exit(asreml_model_data_release(asreml_tst_model_cv[["data_cache_id"]]), add = TRUE)
 
 modm <-  asreml_tst_model_cv[["model_cv"]]
 
@@ -670,7 +672,7 @@ if(is.null(var_cov_str) & is.null(inter_gen_pos) ){
 gp_ml_cv_train_y_scaler <- function(y, tst) {
   y_df <- as.data.frame(as.matrix(y))
   train_df <- if (length(tst)) y_df[-tst, , drop = FALSE] else y_df
-  caret::preProcess(train_df, method = c("center", "scale"))
+  gp_center_scale_fit(train_df)
 }
 
 #' Cross-validation fit for an XGBoost genomic prediction model
@@ -733,7 +735,7 @@ AI_xgboost_cv <- function(y,
 
   if (is_regression) {
     y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
-    y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+    y_fit <- gp_center_scale_apply(y_scaler, as.data.frame(as.matrix(y)))[, 1]
   } else {
     y_fit <- y
   }
@@ -796,7 +798,7 @@ AI_catboost_cv <- function(y,
 
   if (is_regression) {
     y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
-    y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+    y_fit <- gp_center_scale_apply(y_scaler, as.data.frame(as.matrix(y)))[, 1]
   } else {
     y_fit <- y
   }
@@ -849,7 +851,7 @@ AI_lightgbm_cv <- function(y,
 
   if (is_regression) {
     y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
-    y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+    y_fit <- gp_center_scale_apply(y_scaler, as.data.frame(as.matrix(y)))[, 1]
   } else {
     y_fit <- y
   }
@@ -904,7 +906,7 @@ AI_pls_cv <- function(y,
                       omic_count){
   omics <- gp_ml_preprocess_predictors(omics, scaling = scaling, centering = centering)$data
   y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
-  y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+  y_fit <- gp_center_scale_apply(y_scaler, as.data.frame(as.matrix(y)))[, 1]
 
   use_auto <- is.null(ncomp) || !is.numeric(ncomp)
   model_params <- if (use_auto) {
@@ -961,7 +963,7 @@ AI_randomforest_cv <- function(y,
 
   if (is_regression) {
     y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
-    y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+    y_fit <- gp_center_scale_apply(y_scaler, as.data.frame(as.matrix(y)))[, 1]
   } else {
     y_fit <- y
   }
@@ -1010,7 +1012,7 @@ AI_ridge_regression_cv <- function(y,
                                    omic_count){
   omics <- gp_ml_preprocess_predictors(omics, scaling = scaling, centering = centering)$data
   y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
-  y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+  y_fit <- gp_center_scale_apply(y_scaler, as.data.frame(as.matrix(y)))[, 1]
 
   preds <- gp_py_ml_fit_predict(
     model_type = "ridge",
@@ -1045,7 +1047,7 @@ AI_lasso_cv <- function(y,
                         omic_count){
   omics <- gp_ml_preprocess_predictors(omics, scaling = scaling, centering = centering)$data
   y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
-  y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+  y_fit <- gp_center_scale_apply(y_scaler, as.data.frame(as.matrix(y)))[, 1]
 
   preds <- gp_py_ml_fit_predict(
     model_type = "lasso",
@@ -1087,7 +1089,7 @@ AI_knn_cv <- function(y,
 
   if (is_regression) {
     y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
-    y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+    y_fit <- gp_center_scale_apply(y_scaler, as.data.frame(as.matrix(y)))[, 1]
   } else {
     y_fit <- y
   }
@@ -1147,7 +1149,7 @@ AI_svm_cv <- function(y,
 
   if (is_regression) {
     y_scaler <- gp_ml_cv_train_y_scaler(y, tst)
-    y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y)))[, 1]
+    y_fit <- gp_center_scale_apply(y_scaler, as.data.frame(as.matrix(y)))[, 1]
   } else {
     y_fit <- y
   }

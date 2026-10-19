@@ -61,7 +61,7 @@ test_that("preferred python selection is workload-aware for DL", {
   # Candidates must exist on disk; use stand-in files so this runs on any OS.
   root <- withr::local_tempdir()
   general_py <- file.path(root, "Python", "python.exe")
-  dl_py <- file.path(root, ".virtualenvs", "r-torchgwas", "Scripts", "python.exe")
+  dl_py <- file.path(root, ".virtualenvs", "predictdl", "Scripts", "python.exe")
   for (p in c(general_py, dl_py)) {
     dir.create(dirname(p), recursive = TRUE)
     file.create(p)
@@ -73,7 +73,7 @@ test_that("preferred python selection is workload-aware for DL", {
     gp_python_candidates = function() c(general_py, dl_py),
     gp_python_module_score = function(py_bin, purpose = c("general", "ml", "dl"), modules = c("numpy", "sklearn", "xgboost", "lightgbm", "catboost", "torch")) {
       purpose <- match.arg(purpose)
-      if (grepl("r-torchgwas", py_bin, fixed = TRUE)) {
+      if (grepl("predictdl", py_bin, fixed = TRUE)) {
         return(if (identical(purpose, "dl")) 30 else 5)
       }
       return(if (identical(purpose, "dl")) 10 else 12)
@@ -128,7 +128,7 @@ test_that("ML python detection falls back from generic DL runtime without sklear
   expect_true(TRUE)
 })
 
-test_that("ML python detection rejects an auto-found interpreter without numpy/sklearn", {
+test_that("ML python detection uses an auto-found interpreter without numpy/sklearn only when it may install", {
   rm(
     list = ls(envir = PredictProR:::PredictProR_runtime_cache),
     envir = PredictProR:::PredictProR_runtime_cache
@@ -145,6 +145,12 @@ test_that("ML python detection rejects an auto-found interpreter without numpy/s
     },
     .package = "PredictProR"
   )
+  # default: PredictProR installs numpy/pandas/scikit-learn into it
+  withr::local_envvar(c(PREDICTPRO_AUTO_INSTALL = NA))
+  expect_identical(PredictProR:::gp_detect_ml_python_uncached(),
+                   normalizePath(bare_py, winslash = "/", mustWork = TRUE))
+  # installing turned off: a bare interpreter is not selected
+  withr::local_envvar(c(PREDICTPRO_AUTO_INSTALL = "false"))
   expect_null(PredictProR:::gp_detect_ml_python_uncached())
   expect_error(
     PredictProR:::gp_ml_run_cli("fit-predict", character()),
@@ -709,6 +715,8 @@ test_that("model_execute does not call setup_predictdl_env when deep runtime is 
     gp_finalize_model_execute_results = function(..., run_metadata = NULL) {
       list(run_metadata = run_metadata)
     },
+    # no model is fitted here, so no Python packages are needed
+    gp_python_prepare_runtimes = function(...) invisible(character()),
     .package = "PredictProR"
   )
 

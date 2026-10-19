@@ -1,10 +1,11 @@
 # =============================================================================
 # Scenario 10: parallel execution and saving results to a folder
 # =============================================================================
-# parallel_mode: "auto" (default; PredictProR scores the backends for your
-#   machine and data), "sequential", "future", "base_parallel", "foreach",
-#   "mirai". num_cores caps the workers. Every worker loads the same
-#   PredictProR as your session.
+# parallel_mode: "auto" (default; PredictProR decides whether parallel work
+#   pays for your machine and data, and then uses base_parallel, or mirai for
+#   GPU models on several GPUs), "sequential", "future", "base_parallel",
+#   "foreach", "mirai". num_cores caps the workers. Every worker loads the
+#   same PredictProR as your session.
 # Results: system_database = FALSE writes one folder per run under
 #   options(PredictProR.output_dir = "...") or PREDICTPRO_OUTPUT_DIR (default:
 #   the working directory); res$export_directory gives the folder.

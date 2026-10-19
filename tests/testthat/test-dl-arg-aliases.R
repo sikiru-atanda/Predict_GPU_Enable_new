@@ -44,3 +44,13 @@ test_that("identity aliases keep the user's deep-learning settings", {
   mlp <- dl("mlp", list(mlp_neurons_per_layer = c(32L, 16L)))
   expect_identical(mlp$neurons_per_layer, c(32L, 16L))
 })
+
+test_that("TabTransformer has its own default learning rate; an explicit one wins", {
+  dl <- function(type, args) PredictProR:::gp_dl_bridge_fit_params(type, args)
+  expect_equal(dl("ft_transformer", list())$learning_rate, 3e-4)
+  expect_equal(dl("ft_transformer", list(learning_rate = 1e-3))$learning_rate, 1e-3)
+  expect_equal(dl("ft_transformer", list(ft_learning_rate = 5e-4))$learning_rate, 5e-4)
+  # the other models keep the shared default
+  expect_equal(dl("saint", list())$learning_rate, 1e-3)
+  expect_equal(dl("mlp", list())$learning_rate, 1e-3)
+})

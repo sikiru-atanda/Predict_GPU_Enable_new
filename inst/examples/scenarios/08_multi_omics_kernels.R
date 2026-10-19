@@ -137,7 +137,7 @@ for (cfg in omics_setups) {
       iteration = 30L,
       catboost_iterations = 30L,
       lightgbm_nrounds = 30L,
-      epochs = 100L,                 # attention models (TabNet, TabAttention) need ~100
+      epochs = "auto",                 # default: sized to the data (about 200 optimizer steps)
       batch_size = 16L,
       deterministic = TRUE,
       random_seed = 20260903L,

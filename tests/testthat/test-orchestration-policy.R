@@ -95,7 +95,7 @@ test_that("auto policy avoids PSOCK startup cost for tiny CPU queues on Windows"
 
   expect_identical(res$backend, "sequential")
   expect_true(grepl("small_windows_cpu_queue", res$decision_reason, fixed = TRUE))
-  expect_true(all(c("future", "mirai", "sequential") %in% res$backend_candidates$backend))
+  expect_setequal(res$backend_candidates$backend, c("sequential", "base_parallel"))
 })
 
 test_that("auto policy avoids worker startup cost for tiny CPU queues on Unix", {
@@ -131,7 +131,10 @@ test_that("auto policy avoids worker startup cost for tiny CPU queues on Unix", 
   expect_true(grepl("small_cpu_queue", res$decision_reason, fixed = TRUE))
 })
 
-test_that("auto policy prefers mirai for larger CPU queues on Windows", {
+# Measured 2026-10-10 (inst/parallel-policy-knobs.md): base_parallel was the
+# fastest parallel backend on Windows (every shape) and on Linux. Auto mode
+# weighs it against running sequentially and scores no other backend.
+test_that("auto policy weighs only sequential against base_parallel for CPU work on Windows", {
   local_mocked_bindings(
     detect_num_gpus = function() 0L,
     detect_hidden_threads = function() 1L,
@@ -156,20 +159,63 @@ test_that("auto policy prefers mirai for larger CPU queues on Windows", {
     prefer_fork = FALSE
   )
 
-  if (!identical(res$backend, "mirai")) {
-    stop(
-      paste("Expected mirai backend, got", res$backend, "with reason", res$decision_reason),
-      call. = FALSE
-    )
-  }
-  expect_true(grepl("low_overhead_worker_pool", res$decision_reason, fixed = TRUE))
-  expect_gt(
-    res$backend_candidates$score[res$backend_candidates$backend == "mirai"],
-    res$backend_candidates$score[res$backend_candidates$backend == "future"]
-  )
+  expect_identical(res$backend, "base_parallel", info = res$decision_reason)
+  expect_setequal(res$backend_candidates$backend, c("sequential", "base_parallel"))
 })
 
-test_that("mori signal biases large shared-global CPU queues toward mirai", {
+test_that("auto policy weighs only sequential against base_parallel on Unix, forked or not", {
+  local_mocked_bindings(
+    detect_num_gpus = function() 0L,
+    detect_hidden_threads = function() 1L,
+    .package = "PredictProR"
+  )
+  models <- rep(c("BayesB", "GBLUP_BRR"), 8L)
+  for (fork in c(TRUE, FALSE)) {
+    res <- PredictProR:::sp_decide_policy(
+      models = models,
+      model_params_list = rep(list(list()), length(models)),
+      globals = list(pheno_data = data.frame(y = seq_len(200L))),
+      n_tasks = length(models),
+      user_mode = "auto",
+      verbose = FALSE,
+      num_cores = 4L,
+      sys_name = "Linux",
+      prefer_fork = fork
+    )
+    expect_identical(res$backend, "base_parallel", info = paste("prefer_fork", fork))
+    expect_setequal(res$backend_candidates$backend, c("sequential", "base_parallel"))
+  }
+})
+
+test_that("the retired mirai, future and foreach weights no longer move CPU work", {
+  local_mocked_bindings(
+    detect_num_gpus = function() 0L,
+    detect_hidden_threads = function() 1L,
+    .package = "PredictProR"
+  )
+  withr::local_envvar(
+    GP_PAR_SCORE_MIRAI_WORKER_POOL = "100", GP_PAR_SCORE_WINDOWS_MIRAI_PENALTY = "-100",
+    GP_PAR_SCORE_WINDOWS_FUTURE = "100", GP_PAR_SCORE_WINDOWS_FUTURE_STARTUP = "-100",
+    GP_PAR_SCORE_FOREACH_PENALTY = "-100"
+  )
+  models <- rep(c("BayesB", "GBLUP_BRR"), 8L)
+  for (sys in c("Windows", "Linux")) {
+    res <- PredictProR:::sp_decide_policy(
+      models = models,
+      model_params_list = rep(list(list()), length(models)),
+      globals = list(pheno_data = data.frame(y = seq_len(200L))),
+      n_tasks = length(models),
+      user_mode = "auto",
+      verbose = FALSE,
+      num_cores = 4L,
+      sys_name = sys,
+      prefer_fork = !identical(sys, "Windows")
+    )
+    expect_identical(res$backend, "base_parallel", info = sys)
+  }
+})
+
+test_that("mori signal is added for large shared-global CPU queues", {
   old_use <- Sys.getenv("GP_USE_MORI", unset = NA_character_)
   old_min <- Sys.getenv("GP_MORI_MIN_MB", unset = NA_character_)
   on.exit({
@@ -203,13 +249,11 @@ test_that("mori signal biases large shared-global CPU queues toward mirai", {
     prefer_fork = FALSE
   )
 
-  if (!identical(res$backend, "mirai")) {
-    stop(
-      paste("Expected mori-biased mirai backend, got", res$backend, "with reason", res$decision_reason),
-      call. = FALSE
-    )
-  }
+  # the mori bonus goes to base_parallel, the only parallel candidate here
+  expect_identical(res$backend, "base_parallel", info = res$decision_reason)
   expect_true(grepl("mori_shared_globals", res$decision_reason, fixed = TRUE))
+  expect_true(all(grepl("mori_shared_globals",
+                        res$backend_candidates$reasons[res$backend_candidates$backend != "sequential"], fixed = TRUE)))
 })
 
 test_that("auto policy prefers mirai for multi-GPU deep workloads", {
@@ -237,11 +281,67 @@ test_that("auto policy prefers mirai for multi-GPU deep workloads", {
 
   expect_identical(res$backend, "mirai")
   expect_true(grepl("multi_gpu_model_bonus", res$decision_reason, fixed = TRUE))
-  expect_gt(
-    res$backend_candidates$score[res$backend_candidates$backend == "mirai"],
-    res$backend_candidates$score[res$backend_candidates$backend == "future"]
-  )
+  expect_setequal(res$backend_candidates$backend, c("sequential", "mirai"))
   expect_true(isTRUE(res$gpu_parallel_enabled))
+})
+
+# mirai is the only backend that gives each worker its own GPU (one daemon
+# per CUDA device); base_parallel workers would all use the default device.
+gpu_cost_policy <- function(...) {
+  PredictProR:::sp_decide_policy(
+    models = c("mlp", "tabnet", "resnet", "cnn"),
+    model_params_list = rep(list(list()), 4L),
+    globals = list(pheno_data = data.frame(y = 1:200), omics_data = matrix(rnorm(2000), nrow = 200)),
+    n_tasks = 4L,
+    user_mode = "auto",
+    verbose = FALSE,
+    num_cores = 4L,
+    sys_name = "Linux",
+    task_cost = list(n_train = 200, n_markers = 1000, folds_per_task = 5),
+    worker_memory_gb = 0.5,
+    ...
+  )
+}
+
+# Lasso is fitted in R by glmnet. Counted as a Python model, it made the probe
+# start a Python child (and look for an interpreter): 19 s instead of 2.4 s in
+# a fresh Windows session.
+test_that("the worker-memory probe starts no Python child for R-fitted models such as Lasso", {
+  asked <- NULL
+  local_mocked_bindings(
+    gp_parallel_measure_worker_gb = function(python_models = TRUE) { asked <<- python_models; 0.5 },
+    .package = "PredictProR"
+  )
+  withr::local_envvar(GP_PAR_WORKER_OVERHEAD_GB = NA)
+  res <- PredictProR:::gp_parallel_resolve_worker_memory_gb(models = c("BayesB", "Lasso", "GBLUP_BRR"))
+  expect_false(asked)
+  expect_identical(res$source, "measured_r_worker")
+})
+
+test_that("the cost model sends GPU models on several GPUs to mirai", {
+  local_mocked_bindings(
+    detect_num_gpus = function() 2L,
+    detect_hidden_threads = function() 1L,
+    get_gpu_usage = function() 0,
+    .package = "PredictProR"
+  )
+  res <- gpu_cost_policy()
+  expect_identical(res$backend, "mirai", info = res$decision_reason)
+  expect_match(res$decision_reason, "^cost_model_parallel.*multi_gpu_mirai")
+  expect_identical(res$workers, 2L)
+})
+
+test_that("GPU models on several GPUs use base_parallel when mirai is not installed", {
+  local_mocked_bindings(
+    detect_num_gpus = function() 2L,
+    detect_hidden_threads = function() 1L,
+    get_gpu_usage = function() 0,
+    gp_parallel_backend_available = function(backend, plan = NULL) !identical(backend, "mirai"),
+    .package = "PredictProR"
+  )
+  res <- gpu_cost_policy()
+  expect_identical(res$backend, "base_parallel", info = res$decision_reason)
+  expect_match(res$decision_reason, "base_parallel_preferred")
 })
 
 test_that("forced backend overrides scoring while preserving explanation", {
@@ -478,17 +578,18 @@ test_that("mirai production policy exposes bounded queue settings", {
 
   Sys.setenv(GP_MIRAI_QUEUE_MEMORY_MB = "256")
   expect_identical(PredictProR:::gp_mirai_queue_memory_mb(workers = 4L, n_tasks = 12L), 256)
-  expect_identical(PredictProR:::gp_mirai_queue_memory_bytes(workers = 4L, n_tasks = 12L), 256 * 1024^2)
+  Sys.unsetenv("GP_MIRAI_QUEUE_MEMORY_MB")
+  expect_identical(PredictProR:::gp_mirai_queue_memory_mb(workers = 4L, n_tasks = 12L), 512)
 })
 
-test_that("mirai backend uses bounded non-blocking submission before collecting results", {
+test_that("mirai backend submits every task before collecting results", {
   skip_if_not_installed("mirai")
   skip_if_not_installed("purrr")
 
   submitted <- 0L
   collected_after_submissions <- integer()
   daemon_memory <- NULL
-  fake_submit <- function(expr, .args = list(), .compute = NULL) {
+  fake_submit <- function(task_x, .compute = NULL) {
     submitted <<- submitted + 1L
     out <- new.env(parent = emptyenv())
     makeActiveBinding("value", function() {
@@ -501,17 +602,18 @@ test_that("mirai backend uses bounded non-blocking submission before collecting 
   local_mocked_bindings(
     start_metrics_endpoint = function(...) NULL,
     stop_metrics_endpoint = function(...) invisible(NULL),
-    stop_daemons = function(...) invisible(NULL),
+    gp_mirai_stop_daemons = function(...) invisible(NULL),
     get_gpu_usage = function(...) NA_real_,
-    gp_mirai_start_daemons = function(n, .compute = NULL, .expr = NULL, sync = FALSE, memory = NULL) {
+    gp_mirai_start_daemons = function(n, .compute = NULL, memory = NULL) {
       daemon_memory <<- memory
       invisible(NULL)
     },
+    gp_mirai_init_daemons = function(...) invisible(NULL),
     gp_mirai_submit = fake_submit,
     gp_mirai_collect = function(x) x$value,
     gp_mirai_is_error_value = function(x) FALSE,
     gp_mirai_queue_depth = function() 0L,
-    gp_mirai_queue_memory_bytes = function(...) 64 * 1024^2,
+    gp_mirai_queue_memory_mb = function(...) 64,
     .package = "PredictProR"
   )
 
@@ -531,7 +633,7 @@ test_that("mirai backend uses bounded non-blocking submission before collecting 
 
   expect_length(out, 3L)
   expect_identical(collected_after_submissions, rep(3L, 3L))
-  expect_identical(daemon_memory, 64 * 1024^2)
+  expect_identical(daemon_memory, 64)
 })
 
 test_that("base_parallel PSOCK workers initialize runtime environment", {

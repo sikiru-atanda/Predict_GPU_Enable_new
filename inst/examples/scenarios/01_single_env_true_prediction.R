@@ -33,7 +33,7 @@ single_env_single_trait_models <- c(
 #                    classification workflows (scenarios 03-06).
 #   NeuralAdditive - works, but fits one small network per marker: very slow
 #                    with 100 epochs on 400 markers.
-#   FA-GBLUP (needs 2+ environments or traits), Scalable-GBLUP (multi-trait only).
+#   FA-GBLUP (rank 1 needs 3+ environments or traits), Scalable-GBLUP (multi-trait only).
 
 results <- list()
 for (m in single_env_single_trait_models) {
@@ -200,7 +200,7 @@ for (m in single_env_single_trait_models) {
       lowrank_jitter = NULL,
 
       # Deep-learning controls (all deep-learning models)
-      epochs = 100L,                 # default 10; attention models need ~100 to learn
+      epochs = "auto",                 # default: sized to the data (about 200 optimizer steps)
       batch_size = 16L,            # example; default 64
       validation_split = 0.2,
       early_stop = TRUE,
@@ -226,11 +226,15 @@ for (m in single_env_single_trait_models) {
       ft_dropout = 0.1,
       ft_token_dropout = 0,
       ft_use_cls = TRUE,
+      ft_learning_rate = 3e-4,     # TabTransformer's own learning rate
       use_grouping = FALSE,
       group_trigger = 2048L,
       group_method = "auto",
       init_group_size = 64L,
       max_tokens = 1024L,
+
+      # TabNet
+      tabnet_learning_rate = 2e-2, # TabNet's own learning rate
 
       # Prediction uncertainty
       n_bootstrap = 10,            # use 30

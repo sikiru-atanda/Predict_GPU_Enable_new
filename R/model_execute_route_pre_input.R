@@ -163,7 +163,8 @@ if (isTRUE(hybrid_asreml)) {
       plot_height = plot_height,
       plot_units = plot_units,
       plot_dpi = plot_dpi,
-      feature_selected = feature_selected
+      feature_selected = feature_selected,
+      feature_selection_kind = feature_selection_kind
     ))
   }
 
@@ -227,7 +228,8 @@ if (isTRUE(hybrid_asreml)) {
     plot_height = plot_height,
     plot_units = plot_units,
     plot_dpi = plot_dpi,
-    feature_selected = feature_selected
+    feature_selected = feature_selected,
+    feature_selection_kind = feature_selection_kind
   ))
 }
 
@@ -353,7 +355,8 @@ if (isTRUE(hybrid_bayes)) {
       plot_height = plot_height,
       plot_units = plot_units,
       plot_dpi = plot_dpi,
-      feature_selected = feature_selected
+      feature_selected = feature_selected,
+      feature_selection_kind = feature_selection_kind
     ))
   }
 
@@ -424,7 +427,8 @@ if (isTRUE(hybrid_bayes)) {
     plot_height = plot_height,
     plot_units = plot_units,
     plot_dpi = plot_dpi,
-    feature_selected = feature_selected
+    feature_selected = feature_selected,
+    feature_selection_kind = feature_selection_kind
   ))
 }
 
@@ -587,7 +591,8 @@ if (isTRUE(hybrid_gp)) {
       plot_height = plot_height,
       plot_units = plot_units,
       plot_dpi = plot_dpi,
-      feature_selected = feature_selected
+      feature_selected = feature_selected,
+      feature_selection_kind = feature_selection_kind
     ))
   }
 
@@ -707,7 +712,8 @@ if (isTRUE(hybrid_gp)) {
     plot_height = plot_height,
     plot_units = plot_units,
     plot_dpi = plot_dpi,
-    feature_selected = feature_selected
+    feature_selected = feature_selected,
+    feature_selection_kind = feature_selection_kind
   ))
 }
 

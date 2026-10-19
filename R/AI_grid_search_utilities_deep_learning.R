@@ -303,8 +303,8 @@ grid_search_deep_learning <- function(
     init_group_size = 64, max_tokens = 1024, kmeans_batch = 4096, kmeans_iter = 100,
 
     # TabNet
-    tabnet_steps = 5, tabnet_feature_dim = 64, tabnet_output_dim = 64,
-    tabnet_gamma = 1.5, tabnet_lambda_sparse = 1e-4,
+    tabnet_steps = 3, tabnet_feature_dim = 8, tabnet_output_dim = 8,
+    tabnet_gamma = 1.3, tabnet_lambda_sparse = 1e-3,
 
     # NODE
     node_trees = 8, node_depth = 3,

@@ -22,6 +22,26 @@ gp_python_executable_relpath <- function(os_type = .Platform$OS.type) {
   file.path("bin", "python")
 }
 
+# An interpreter path made absolute without resolving the interpreter file
+# itself. A virtualenv's bin/python is a symlink to the base Python; the
+# resolved path starts the base Python outside the virtualenv, so its
+# packages are not seen and installs go into the base environment.
+gp_python_path <- function(path, mustWork = FALSE, os_type = .Platform$OS.type) {
+  if (!length(path)) {
+    return(character())
+  }
+  if (identical(tolower(os_type), "windows")) {
+    return(normalizePath(path, winslash = "/", mustWork = mustWork))
+  }
+  path <- path.expand(as.character(path))
+  if (isTRUE(mustWork)) {
+    normalizePath(path, mustWork = TRUE)   # the usual error for a missing file
+  }
+  out <- file.path(normalizePath(dirname(path), mustWork = FALSE), basename(path))
+  out[!nzchar(path)] <- ""
+  out
+}
+
 gp_system_python_commands <- function(os_type = .Platform$OS.type) {
   if (identical(tolower(os_type), "windows")) {
     c("python", "python3")
@@ -62,5 +82,17 @@ gp_detect_cores <- function(logical = TRUE, reserve = 0L, detected = NULL) {
 
 gp_parallel_safe_fork_preference <- function(prefer_fork = TRUE,
                                              needs_process_initializer = FALSE) {
-  isTRUE(prefer_fork) && !isTRUE(needs_process_initializer)
+  isTRUE(prefer_fork) && !isTRUE(needs_process_initializer) && isTRUE(gp_fork_safe_after_mirai())
+}
+
+# Forked workers crashed ("caught illegal operation") when this session had
+# forked workers before, then ran mirai daemons, then forked again (Linux,
+# mirai 2.7 / nanonext 1.9; measured 2026-10-10, reproducible). After
+# PredictProR has started mirai daemons, or while daemons are set, workers are
+# started as separate processes (PSOCK, future multisession) instead.
+gp_fork_safe_after_mirai <- function() {
+  if (exists("mirai_daemons_started", envir = PredictProR_runtime_cache, inherits = FALSE)) {
+    return(FALSE)
+  }
+  !(isNamespaceLoaded("mirai") && isTRUE(tryCatch(mirai::daemons_set(), error = function(e) FALSE)))
 }

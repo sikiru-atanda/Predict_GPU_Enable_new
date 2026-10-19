@@ -351,6 +351,10 @@ compute_inverse_and_sparse <- function(kernel = NULL,
     attr(sparse, "colNames") <- colnames(kernel)
     attr(sparse, "INVERSE") <- FALSE
   }
+  # The fitted kernel's diagonal K_ii: a line's prior genetic variance is sigma2_g * K_ii, the
+  # denominator of its reliability (asreml_apply_genetic_reliability()). The inverse alone does
+  # not give it without a second inversion.
+  attr(sparse, "kernel_diag") <- stats::setNames(as.numeric(diag(kernel)), rownames(kernel))
 
   return(sparse)
 }
@@ -527,14 +531,15 @@ asreml_utilis_new <- function(
   fixed <- asreml_normalize_formula_arg(fixed, labels = c("FIXED", "fixed_term_model", "NULL"))
   cova <- asreml_normalize_formula_arg(cova, labels = c("COVA", "covariate", "NULL"))
 
-  if(engine %in% rownames(installed.packages())){
-    do.call('library', list(engine))
-
-    # if package is not installed locally then stop
-  } else {
-
+  # Loading the namespace is enough: ASReml checks its licence and loads its
+  # engine in .onLoad, and the fits call asreml:: functions. Attaching it
+  # (library()) put asreml and Matrix on the caller's search path. An error
+  # loading it is ASReml's own, from loadNamespace(); a missing licence does
+  # not stop the load, and the fit reports it.
+  if (!nzchar(system.file(package = engine))) {
     stop(print(paste(msg,'You need to install asreml-R to use asreml-R')), call. = FALSE)
   }
+  loadNamespace(engine)
 
   datasets <- gp_collect_kernel_inputs(
     gmatrix = gmatrix,
@@ -626,9 +631,7 @@ asreml_utilis_new <- function(
   }
 
   ##### THis is important for asreml inorder to update the model if need be
-  for (i in seq_along(inv_list)) {
-    assign(names(inv_list)[i], inv_list[[i]], envir = .GlobalEnv)
-  }
+  gp_asreml_assign_run_globals(inv_list)
 
   #a <- a + 1
   # Code Strings for all factors y= XB + UZ + e

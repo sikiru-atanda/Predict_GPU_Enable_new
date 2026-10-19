@@ -33,3 +33,9 @@ fitted as an ASReml weight column with Gaussian dispersion fixed at one.}
 \description{
 Documentation for \code{asreml_cv_model}. This topic is generated to keep exported package APIs documented and synchronized with the current function signature.
 }
+\value{
+A list with the fitted fold model (\code{model_cv}), the prepared ASReml
+model components and the phenotypic data with the test records masked. If the
+ASReml fit fails (for example a licence error), the function stops with
+"ASReml fit failed: " followed by the ASReml message.
+}

@@ -7,15 +7,15 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-try:
-    import numpy as np
-except Exception:
-    np = None
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+import predictpror_deps as _deps
 
-try:
-    import pandas as pd
-except Exception:
-    pd = None
+# numpy/pandas are installed on first use (torch when dl_models loads)
+_deps.ensure_groups(["tabular"])
+
+import numpy as np
+import pandas as pd
 
 
 def _module_dir() -> Path:
@@ -34,13 +34,8 @@ def _load_dl_models():
 
 
 def _require_tabular_runtime():
-    global np, pd
-    if np is None:
-        import numpy as _np
-        np = _np
-    if pd is None:
-        import pandas as _pd
-        pd = _pd
+    # numpy and pandas are imported (installed if missing) at module load
+    return None
 
 
 def _read_matrix_csv(path: str) -> np.ndarray:
@@ -81,6 +76,17 @@ def _json_default(value: Any):
 
 def _write_json(obj: Dict[str, Any], path: str):
     Path(path).write_text(json.dumps(obj, indent=2, default=_json_default), encoding="utf-8")
+
+
+# One line per command for R (gp_dl_device_report_record): fits per device and
+# any fallback to the CPU.
+DEVICE_REPORT_PREFIX = "PREDICTPRO_DL_DEVICE "
+
+
+def _print_device_report(dl_models) -> None:
+    report = dl_models.device_report()
+    if report["fits"] or report["notes"]:
+        print(DEVICE_REPORT_PREFIX + json.dumps(report, default=_json_default), flush=True)
 
 
 def _read_class_levels(path: Optional[str]):
@@ -189,6 +195,7 @@ def _fit_predict(args) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_predictions(result, task, out_dir)
+    _print_device_report(dl_models)
     return 0
 
 
@@ -241,6 +248,7 @@ def _batch_fit_predict(args) -> int:
     summary_path = manifest.get("summary_json") if isinstance(manifest, dict) else None
     if summary_path:
         _write_json({"jobs": completed, "python": sys.executable}, summary_path)
+    _print_device_report(dl_models)
     return 0
 
 
@@ -283,6 +291,7 @@ def _bootstrap_predict(args) -> int:
         "n_model_fits": int(payload["n_model_fits"]),
     }
     _write_json(meta, str(out_dir / "meta.json"))
+    _print_device_report(dl_models)
     return 0
 
 
@@ -312,7 +321,6 @@ def _setup_deps(args) -> int:
         cuda=args.cuda,
         torch_version=args.torch_version,
         numpy_spec="numpy>=1.24",
-        extra_packages=("torchvision", "torchaudio"),
         index_url=args.index_url,
     )
     return _print_setup_info(info)

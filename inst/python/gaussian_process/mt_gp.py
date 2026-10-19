@@ -20,6 +20,7 @@ from mt_gp_internals import (
 )
 from mt_gp_reporting import covariance_correlation_payload, covariance_to_response_scale
 from gp_device import pick_torch_device
+from fa_rank import validate_fa_rank
 
 
 def _resolve_mt_torch_device(
@@ -88,6 +89,14 @@ def fit_multi_trait_gp(
     See README.md in this folder.
     """
     t0 = time.perf_counter()
+    # Validate before MoM/REML dispatch or any fitting work.
+    groups = pheno_df[trait_col].nunique(dropna=True)
+    if str(trait_structure).lower() == 'fa':
+        validate_fa_rank(trait_fa_rank, groups, 'trait_fa_rank')
+    effective_residual = residual_structure if residual_structure is not None else trait_structure
+    if str(effective_residual).lower() == 'fa':
+        validate_fa_rank(residual_fa_rank if residual_fa_rank is not None else trait_fa_rank,
+                         groups, 'residual_fa_rank')
     mode = str(varcomp_mode).strip().lower()
     torch_device, device_policy = _resolve_mt_torch_device(device, mode)
     prediction_output = str(prediction_output).strip().lower()
@@ -164,6 +173,7 @@ def fit_multi_trait_gp(
                 "mom_psd_clip_count": mom_out["mom_psd_clip_count"],
                 "pcg_n_iter":         mom_out["pcg_n_iter"],
                 "pcg_residual_norm":  mom_out["pcg_residual_norm"],
+                **{key: mom_out[key] for key in ("pcg_all_converged", "pcg_failed_rhs", "pcg_rhs_count", "pcg_worst_residual_norm")},
             },
             "info": {
                 "trait_levels":  design["trait_levels"],
@@ -178,6 +188,8 @@ def fit_multi_trait_gp(
                 "prediction_output": prediction_output,
                 "trait_correlations": bool(return_trait_correlations),
                 "covariance_scale": "response",
+                "cov_traits_target": "genetic_prediction_error",
+                "variance_parameters": "plug_in",
             },
         }
     # Else: fall through to existing v1 REML body (unchanged).
@@ -222,17 +234,11 @@ def fit_multi_trait_gp(
     if trait_structure == "fa":
         if trait_fa_rank is None:
             raise ValueError("trait_fa_rank required when trait_structure='fa'")
-        if int(trait_fa_rank) >= T:
-            raise ValueError(
-                f"trait_fa_rank={trait_fa_rank} must be < T={T} for identifiability"
-            )
+        validate_fa_rank(trait_fa_rank, T, 'trait_fa_rank')
     if residual_structure == "fa":
         if residual_fa_rank is None:
             raise ValueError("residual_fa_rank required when residual_structure='fa'")
-        if int(residual_fa_rank) >= T:
-            raise ValueError(
-                f"residual_fa_rank={residual_fa_rank} must be < T={T} for identifiability"
-            )
+        validate_fa_rank(residual_fa_rank, T, 'residual_fa_rank')
 
     Sigma_G0, Sigma_eps0 = _initialize_params(
         y_std=design["y_std"], X=design["X_fixed"],
@@ -260,6 +266,8 @@ def fit_multi_trait_gp(
         device=torch_device,
     )
     weights = np.asarray(fit["kernel_weights"], dtype=np.float64)
+    from gp_covariance_inference import response_inference
+    inference = response_inference(fit.get('parameter_inference'), design['trait_levels'], design['trait_sds'])
     # Predictions must use the mixture that was actually fitted.
     K_geno = np.zeros_like(K_geno)
     for name, weight in zip(kernel_names, weights.tolist()):
@@ -267,24 +275,17 @@ def fit_multi_trait_gp(
             geno_kernels[name], dtype=np.float64
         )
     preds_df, cov_traits = _predict_mt(
-        K_geno=K_geno, fit=fit, design=design,
+        K_geno=fit.get("_K_geno", K_geno), fit=fit, design=design,
         gid_col=gid_col, trait_col=trait_col,
         device=torch_device,
+        return_se=bool(return_se), return_cov_traits=bool(return_cov_traits),
     )
-    if not return_se:
-        preds_df = preds_df.drop(
-            columns=[
-                "SE",
-                "SE_latent",
-                "PEV",
-                "Prediction_Var_latent",
-                "Prediction_Var_observed",
-            ],
-            errors="ignore",
-        )
     result = {
         "predictions": preds_df,
         "cov_traits": cov_traits,
+        "varcomp": None if inference is None else inference['varcomp'],
+        "correlation_parameters": None if inference is None else inference['correlation_parameters'],
+        "inference_summary": None if inference is None else inference['summary'],
     }
     if return_trait_correlations:
         Sigma_G_response = covariance_to_response_scale(fit["Sigma_G"], design["trait_sds"])
@@ -300,6 +301,8 @@ def fit_multi_trait_gp(
         "result": result,
         "fit": {
             "Sigma_G":    fit["Sigma_G"],
+            "varcomp": None if inference is None else inference['varcomp'],
+            "inference_summary": None if inference is None else inference['summary'],
             "Sigma_eps":  fit["Sigma_eps"],
             "kernel_weights": weights,
             "kernel_names": list(kernel_names),
@@ -321,6 +324,10 @@ def fit_multi_trait_gp(
             "loglik_history": fit["loglik_history"],
             "n_iter":     fit["n_iter"],
             "converged":  fit["converged"],
+            "grad_max_abs": fit.get("grad_max_abs"),
+            "neg_reml": fit.get("neg_reml"),
+            "training_solver": fit.get("training_solver"),
+            "n_training_genotypes": fit.get("n_training_genotypes"),
             "kernel_eigen_clip_count": fit.get("kernel_eigen_clip_count", 0),
             "kernel_min_eigenvalue_input": fit.get("kernel_min_eigenvalue_input"),
             "line_search_invalid_candidate_rejections": fit.get(
@@ -334,11 +341,16 @@ def fit_multi_trait_gp(
             "wall_s":       float(wall),
             "varcomp_mode": "reml",
             "method":       "mt_gp_dense_v1",
+            "training_solver": fit.get("training_solver"),
+            "n_training_genotypes": fit.get("n_training_genotypes"),
             "device":       str(torch_device),
             "device_policy": device_policy,
             "prediction_se": bool(return_se),
             "prediction_output": prediction_output,
             "trait_correlations": bool(return_trait_correlations),
             "covariance_scale": "response",
+            "cov_traits_target": "genetic_prediction_error",
+            "prediction_variance_target": "fixed_plus_genetic",
+            "variance_parameters": "plug_in",
         },
     }

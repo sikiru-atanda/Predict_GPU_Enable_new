@@ -318,26 +318,22 @@ test_that("backend argument is validated", {
 test_that("auto backend routes BLAS-backed and dominance methods deliberately", {
   withr::local_envvar(c(PREDICTPRO_KERNEL_BACKEND = NA, PREDICTPRO_GRM_BACKEND = NA))
 
-  for (method in c(
-    "Gaussian_kernel",
-    "Linear_kernel",
-    "Composite_kernel",
-    "Poly2_kernel",
-    "Poly3_kernel",
-    "Poly4_kernel"
-  )) {
+  # linear / polynomial kernels: R's BLAS tcrossprod is as fast
+  for (method in c("Linear_kernel", "Poly2_kernel", "Poly3_kernel", "Poly4_kernel")) {
     expect_identical(PredictProR:::gp_kernel_backend(NULL, method), "r")
   }
-
-  for (method in c("VanRaden", "Weighted_VanRaden", "Epistasis")) {
-    expect_identical(PredictProR:::gp_grm_backend(NULL, method), "r")
+  # distance-based kernels: native BLAS Gram + distances are faster
+  for (method in c("Gaussian_kernel", "Composite_kernel", "Matern32_kernel", "Laplacian_kernel")) {
+    expect_identical(PredictProR:::gp_kernel_backend(NULL, method), "cpp")
   }
 
-  for (method in c("Dominance", "Dominance_Vitezica", "Dominance_Su", "Dominance_Heterozygosity")) {
-    expect_identical(PredictProR:::gp_grm_backend(NULL, method), "cpp")
+  # GRMs: the native backend forms every product with BLAS dsyrk since
+  # 0.20.211, as fast as R for VanRaden and faster for the others (it was a
+  # triple loop, 10-16x slower, and was still chosen for dominance)
+  for (method in c("VanRaden", "Weighted_VanRaden", "Epistasis", "Yang",
+                   "Dominance", "Dominance_Vitezica", "Dominance_Su", "Dominance_Heterozygosity")) {
+    expect_identical(PredictProR:::gp_grm_backend(NULL, method), "cpp", info = method)
   }
-
-  expect_identical(PredictProR:::gp_grm_backend(NULL, "Yang"), "r")
 })
 
 test_that("forced native kernel backend ignores parameters unused by the selected method", {
@@ -525,4 +521,21 @@ test_that("GRM cleanup recomputes frequencies and resyncs weights", {
 
   expect_equal(as.matrix(actual), expected, tolerance = 1e-10)
   expect_named_relationship_matrix(actual, rownames(geno))
+})
+
+test_that("native median distance equals median(dist(x)) over positive distances", {
+  skip_if_not(PredictProR:::gp_kernel_dense_cpp_available(), "native kernel backend unavailable")
+  set.seed(5)
+  for (n in c(7L, 8L)) {                      # odd and even number of pairs
+    x <- matrix(stats::rnorm(n * 20), n, 20)
+    x[2, ] <- x[1, ]                          # a duplicated row (zero distance) is excluded
+    d <- as.numeric(stats::dist(x)); d <- d[d > 0]
+    expect_equal(.Call("predictpror_median_positive_distance", x, PACKAGE = "PredictProR"),
+                 stats::median(d), tolerance = 1e-12)
+  }
+  same <- matrix(1, 4, 3)
+  expect_true(is.na(.Call("predictpror_median_positive_distance", same, PACKAGE = "PredictProR")))
+  # a repeated non-representable row: rounding in |a|^2 + |b|^2 - 2 a.b is not a distance
+  same_random <- matrix(rep(stats::rnorm(500), each = 6), 6, 500)
+  expect_true(is.na(.Call("predictpror_median_positive_distance", same_random, PACKAGE = "PredictProR")))
 })

@@ -16,6 +16,8 @@
 #' @param maxit Maximum number of ASReml iterations.
 #'
 #' @return A list containing the fitted cross-validation model, the prepared ASReml model components, and the modified phenotypic data.
+#'   If the ASReml fit fails (for example a licence error), the function stops
+#'   with "ASReml fit failed: " and the ASReml message.
 #' \itemize{
 #'   \item{model_cv}{The fitted ASReml cross-validation model.}
 #'   \item{asreml_models_prep_cv}{The prepared ASReml model components.}
@@ -120,9 +122,7 @@ asreml_cv_model <- function(pheno_dataa = NULL,
   str_mod_cv <- paste(code_asr_fit_cv[1],code_asr_fit_cv[2],code_asr_fit_cv[3],code_asr_fit_cv[4],sep=',')
 
   ##### THis is important for asreml inorder to update the model if need be
-  for (i in seq_along(inv_list)) {
-    assign(names(inv_list)[i], inv_list[[i]], envir = .GlobalEnv)
-  }
+  gp_asreml_assign_run_globals(inv_list)
   # Loop through each variable name in the list
 
   result_model <-  tryCatch(
@@ -136,9 +136,11 @@ asreml_cv_model <- function(pheno_dataa = NULL,
       mod_cv
     },
   error = function(e) {
-    # Handle the error, you can print a message or take other actions
-    cat(paste("Asreml model fail:", conditionMessage(e), "\n"))
-    return(NULL)  # Return NULL or an appropriate value to indicate the failure
+    # Pass the failure on: the CV engine records it per fold, warns, and stops
+    # with this message when every fold fails (e.g. a licence error). It used
+    # to be printed and replaced by NULL, so the cause was lost.
+    asreml_model_data_release(data_cache_id)
+    stop("ASReml fit failed: ", conditionMessage(e), call. = FALSE)
   }
   )
 
@@ -146,11 +148,14 @@ if(!is.null(result_model)){
 
   output <- list(model_cv = result_model,
                  asreml_models_prep_cv = asreml_models_prep_cv,
-                 pheno_dataa = pheno_dataa
+                 pheno_dataa = pheno_dataa,
+                 # the model reads its data under this key (asreml_model_data_release())
+                 data_cache_id = data_cache_id
                  #gen_tst = gen_tst
                  )
 
 }else{
+  asreml_model_data_release(data_cache_id)
   output <- list(model_cv = NULL,
                  asreml_models_prep_cv = NULL,
                  pheno_dataa = NULL

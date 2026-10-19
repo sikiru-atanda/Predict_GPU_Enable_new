@@ -41,7 +41,7 @@ test_that("RandomForest scoring supports binary, ordinal, and nominal multiclass
 # continuous values above 2 without ploidy metadata.
 dose <- function(v) findInterval(v, stats::quantile(v, c(1 / 3, 2 / 3)))
 
-test_that("multi-trait ML uses fold-internal trait-specific feature sets", {
+test_that("multi-trait ML uses fold-internal joint shared feature sets", {
   set.seed(8101)
   ids <- paste0("g", seq_len(16))
   # inbred lines: homozygous 0/2 dosages (the default het_threshold = 0.1
@@ -81,11 +81,16 @@ test_that("multi-trait ML uses fold-internal trait-specific feature sets", {
 
   meta <- out$cv_results_processed$feature_selection_metadata
   expect_true(is.data.frame(meta))
-  expect_equal(sort(unique(meta$trait)), c("T1", "T2"))
+  expect_identical(unique(meta$trait), "T1+T2")
+  expect_identical(unique(meta$scoring_scope), "joint")
+  expect_equal(sort(unique(meta$held_out_trait)), c("T1", "T2"))
   expect_true(all(meta$selection_mode == "fold_internal"))
   expect_equal(sort(unique(meta$fold)), 1:2)
-  expect_true(all(tapply(meta$selected, interaction(meta$trait, meta$fold), sum) == 2L))
-  expect_equal(length(unique(meta$training_id_hash)), 2L)
+  expect_true(all(tapply(meta$selected, interaction(meta$held_out_trait, meta$fold), sum) == 2L))
+  expect_equal(length(unique(meta$training_id_hash)), 1L)
+  # Every ID retains an auxiliary observed trait; this hash identifies records,
+  # not the set of visible trait cells. Visibility is asserted in joint CV tests.
+  expect_equal(unique(meta$n_train), 16L)
 })
 
 test_that("hybrid ML uses fold-internal hybrid-level feature sets", {

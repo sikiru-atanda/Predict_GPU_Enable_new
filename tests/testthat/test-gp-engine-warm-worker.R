@@ -90,14 +90,10 @@ test_that("warm worker honors gp_engine on each successive fit", {
   mp_mme <- fit_mme$model_results$model_parameters
   expect_identical(mp_mme$summary[mp_mme$stat == "gp_engine_requested"],
                    "mme")
-  # gp_engine_used reflects what actually ran. For Kernel-GBLUP the
-  # canonical model is KRR which routes through method="krr_exact" --
-  # that Python path does NOT yet have the MME branch wired (Phase 3.7f
-  # territory), so we expect a deterministic "dense_v" diagnostic
-  # showing the fallback. For models that DO reach gp_exact_with_X
-  # (Gaussian-Process-GBLUP, canonical "GP"), the value would be "mme".
-  expect_true(mp_mme$summary[mp_mme$stat == "gp_engine_used"] %in%
-              c("mme", "dense_v"))
+  # Matched 0.20.221 inference preserves the requested model by using
+  # dense_v until the alternative reporting engines support that contract.
+  # The requested label must still be retained independently on every fit.
+  expect_identical(mp_mme$summary[mp_mme$stat == "gp_engine_used"], "dense_v")
 
   # Fit 3: dense_v again, to pin that mme doesn't stick.
   fit_dense2 <- tryCatch(run_kg_fit(fx$pheno_long, fx$G, "dense_v"),

@@ -411,9 +411,14 @@ test_that("GP model-execute MT-MET adapter returns the common Gaussian columns",
   )
   expect_false("Env" %in% names(public_total))
   expect_equal(nrow(public_total), 4L)
-  expect_true(all(is.finite(public_total$Standard_error)))
-  expect_true(all(is.finite(public_total$PEV)))
-  expect_true(all(is.finite(public_total$Reliability)))
+  # Marginal environment PEVs alone cannot supply the uncertainty of an
+  # across-environment mean: its off-diagonal prediction-error covariances
+  # are also required. Do not silently assume independence for a genetic fit.
+  expect_true(all(is.na(public_total$Standard_error)))
+  expect_true(all(is.na(public_total$PEV)))
+  expect_true(all(is.na(public_total$Reliability)))
+  expect_true(all(grepl("cross-environment genetic prediction-error covariance unavailable",
+    public_total$Reliability_remarks, fixed = TRUE)))
 })
 
 test_that("BGLR joint multi-trait Bayesian helper uses documented Cov and common columns", {

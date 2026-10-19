@@ -8,4 +8,4 @@ manual ``sys.modules`` aliasing.
 from __future__ import annotations
 
 from gp_large_backend import *  # noqa: F401,F403
-from gp_large_backend import _scatter_add_cells, _unique_inverse  # noqa: F401
+from gp_large_backend import _scatter_add_1d, _scatter_add_cells, _unique_inverse  # noqa: F401

@@ -240,7 +240,7 @@ test_that("model_execute applies guardrails before ordinary ASReml dispatch", {
     random = ~ GID + GID:Env,
     heter_groups = "Env",
     heter_resid = TRUE,
-    var_cov_str = "fa1",
+    var_cov_str = "corgh",  # fa1 over 2 environments is not identifiable
     eval_metrics = "accuracy",
     system_database = TRUE,
     message = FALSE

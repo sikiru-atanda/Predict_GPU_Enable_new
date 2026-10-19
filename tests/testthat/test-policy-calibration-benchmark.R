@@ -5,7 +5,11 @@ test_that("policy calibration benchmark writes report tables", {
     testthat::skip("policy calibration benchmark helper is not included in source-tarball checks")
   }
 
-  env <- new.env(parent = globalenv())
+  # The helper needs PredictProR internals; when it cannot see them it runs
+  # pkgload::load_all() and every later test file ran against the source tree
+  # instead of the package under test. Source it inside the namespace.
+  ns_path <- getNamespaceInfo("PredictProR", "path")
+  env <- new.env(parent = asNamespace("PredictProR"))
   source(script, local = env)
 
   out_dir <- tempfile("policy-calibration-")
@@ -34,4 +38,5 @@ test_that("policy calibration benchmark writes report tables", {
   expect_true(all(c("workload", "auto_backend", "decision_reason") %in% names(decisions)))
   expect_identical(summary$workload, "tiny_cpu")
   expect_identical(summary$fastest_backend, "sequential")
+  expect_identical(getNamespaceInfo("PredictProR", "path"), ns_path)
 })

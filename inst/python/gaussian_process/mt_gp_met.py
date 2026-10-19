@@ -13,6 +13,7 @@ import pandas as pd
 from mt_gp_met_internals import _build_mt_met_design, _fit_mt_met_mom_op
 from mt_gp_reporting import covariance_by_environment_payload
 from gp_device import pick_torch_device
+from fa_rank import validate_fa_rank
 
 
 def _validate_env_similarity_matrix(K_env: np.ndarray, n_env: int) -> np.ndarray:
@@ -113,7 +114,7 @@ def fit_multi_trait_gp_met(
     mom_pcg_max_iter: int = 300,
     mom_psd_floor: float = 1e-4,
     dense_reml_max_train: int = 3000,
-    reml_max_iter: int = 30,
+    reml_max_iter: int = 300,
     reml_tol: float = 1e-5,
     return_se: bool = False,
     prediction_output: str = "test_only",
@@ -149,6 +150,13 @@ def fit_multi_trait_gp_met(
     See README.md in this folder.
     """
     t0 = time.perf_counter()
+    groups = pheno_df[trait_col].nunique(dropna=True)
+    if str(trait_structure).lower() == 'fa':
+        validate_fa_rank(trait_fa_rank, groups, 'trait_fa_rank')
+    effective_gxe = gxe_trait_structure if gxe_trait_structure is not None else trait_structure
+    if str(effective_gxe).lower() == 'fa':
+        validate_fa_rank(gxe_trait_fa_rank if gxe_trait_fa_rank is not None else trait_fa_rank,
+                         groups, 'gxe_trait_fa_rank')
     torch_device = pick_torch_device(device)
     prediction_output = str(prediction_output).strip().lower()
     if prediction_output not in {"test_only", "all"}:
@@ -214,6 +222,8 @@ def fit_multi_trait_gp_met(
 
     # Build design first (need env_levels to size K_env if it's user-supplied)
     design = _build_mt_met_design(
+        standardization='trait' if dense_reml else 'per_env',
+        absorb_means=not dense_reml,
         pheno_df=pheno_df, gid_col=gid_col, env_col=env_col,
         trait_col=trait_col, y_col=y_col,
         fixed_effects=tuple(fixed_effects),
@@ -315,9 +325,17 @@ def fit_multi_trait_gp_met(
         result["residual_correlation"] = eps_payload["mean_correlation"]
         result["residual_correlation_by_environment"] = eps_payload["correlation_by_environment"]
 
+    from gp_covariance_inference import response_inference
+    inference = response_inference(mom_out.get('parameter_inference'), design['trait_levels'],
+        design['trait_env_sds'], design['env_levels'])
+    result['varcomp'] = None if inference is None else inference['varcomp']
+    result['correlation_parameters'] = None if inference is None else inference['correlation_parameters']
+    result['inference_summary'] = None if inference is None else inference['summary']
     return {
         "result": result,
         "fit": {
+            "varcomp": result['varcomp'],
+            "inference_summary": result['inference_summary'],
             "Sigma_G":            mom_out["Sigma_G"],
             "Sigma_GE":           mom_out["Sigma_GE"],
             "Sigma_eps":          mom_out["Sigma_eps"],
@@ -344,11 +362,14 @@ def fit_multi_trait_gp_met(
             "pcg_n_iter":         mom_out["pcg_n_iter"],
             "pcg_residual_norm":  mom_out["pcg_residual_norm"],
             "pcg_converged":      mom_out["pcg_converged"],
+            **{key: mom_out[key] for key in ("pcg_all_converged", "pcg_failed_rhs", "pcg_rhs_count", "pcg_worst_residual_norm")},
             "pcg_preconditioner": mom_out["pcg_preconditioner"],
             "kernel_weights":     mom_out["kernel_weights"],
             "reml_loglik_history": mom_out["reml_loglik_history"],
             "reml_n_iter":         mom_out["reml_n_iter"],
             "reml_converged":      mom_out["reml_converged"],
+            "reml_convergence_status": mom_out["reml_convergence_status"],
+            "reml_gradient_scaled_max_abs": mom_out["reml_gradient_scaled_max_abs"],
         },
         "info": {
             "trait_levels":     design["trait_levels"],
@@ -370,5 +391,11 @@ def fit_multi_trait_gp_met(
             "prediction_output": prediction_output,
             "trait_correlations": bool(return_trait_correlations),
             "covariance_scale": "response_by_environment",
+            "standardization": 'trait' if dense_reml else 'per_env_trait',
+            "cov_traits_target": "genetic_plus_gxe_prediction_error",
+            "prediction_variance_target": "fixed_plus_genetic_plus_gxe",
+            "variance_parameters": "plug_in",
+            "unobserved_environment_mean": "pooled_training_trait_mean",
+            "mean_design_method": mom_out['mean_design_method'],
         },
     }

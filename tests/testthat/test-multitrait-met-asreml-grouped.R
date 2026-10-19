@@ -13,8 +13,16 @@ test_that("grouped MT-MET ASReml structure accepts only validated FA specificati
   )
   expect_error(
     PredictProR:::gp_multitrait_asreml_mtmet_structure("fa4", 4L),
-    "smaller than"
+    "not identifiable"
   )
+  # 0.20.221: the Ledermann bound, not rank < groups. FA2 over 4 groups has 11 parameters
+  # for 10 covariance entries; the old default picked fa3 there.
+  expect_error(
+    PredictProR:::gp_multitrait_asreml_mtmet_structure("fa2", 4L),
+    "not identifiable for 4 trait-environment groups: it has 11 parameters, more than the 10"
+  )
+  expect_equal(PredictProR:::gp_multitrait_asreml_mtmet_structure(NULL, 4L)$token, "fa1")
+  expect_equal(PredictProR:::gp_multitrait_asreml_mtmet_structure(NULL, 12L)$token, "fa3")
 })
 
 test_that("grouped MT-MET long data uses an explicit collision-safe group lookup", {

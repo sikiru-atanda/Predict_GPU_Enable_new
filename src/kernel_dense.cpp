@@ -1,7 +1,12 @@
+#define USE_FC_LEN_T
 #include <R.h>
 #include <Rinternals.h>
 #include <R_ext/Utils.h>
+#include <R_ext/BLAS.h>
 #include <Rmath.h>
+#ifndef FCONE
+#define FCONE
+#endif
 
 #include <cmath>
 #include <cstring>
@@ -92,29 +97,27 @@ static KernelMethod parse_method(SEXP method_sexp) {
   return KERNEL_LINEAR;
 }
 
-static double row_dot(const double* x, int n, int p, int row_a, int row_b) {
-  double value = 0.0;
-  for (int col = 0; col < p; ++col) {
-    value += x[row_a + col * n] * x[row_b + col * n];
-  }
-  return value;
+// Gram matrix G = X X' (upper triangle) with one BLAS call; x is column-major n x p.
+static void gram_upper(const double* x, int n, int p, double* g) {
+  const double one = 1.0, zero = 0.0;
+  F77_CALL(dsyrk)("U", "N", &n, &p, &one, x, &n, &zero, g, &n FCONE FCONE);
 }
 
-static double row_squared_distance(const double* x, int n, int p,
-                                   int row_a, int row_b) {
-  double value = 0.0;
-  for (int col = 0; col < p; ++col) {
-    double diff = x[row_a + col * n] - x[row_b + col * n];
-    value += diff * diff;
-  }
-  return value;
+// Squared Euclidean distance from the Gram matrix: |a|^2 + |b|^2 - 2 a.b.
+static inline double gram_squared_distance(const double* g, int n, int row, int col) {
+  if (row == col) return 0.0;
+  double d2 = g[row + row * static_cast<R_xlen_t>(n)] + g[col + col * static_cast<R_xlen_t>(n)] -
+    2.0 * g[row + col * static_cast<R_xlen_t>(n)];
+  return d2 > 0.0 ? d2 : 0.0;
 }
 
-static double row_l1_distance(const double* x, int n, int p,
-                              int row_a, int row_b) {
+// L1 distance between two rows stored contiguously (row-major copy).
+static inline double contiguous_l1_distance(const double* xr, int p, int row_a, int row_b) {
+  const double* a = xr + static_cast<R_xlen_t>(row_a) * p;
+  const double* b = xr + static_cast<R_xlen_t>(row_b) * p;
   double value = 0.0;
   for (int col = 0; col < p; ++col) {
-    value += std::fabs(x[row_a + col * n] - x[row_b + col * n]);
+    value += std::fabs(a[col] - b[col]);
   }
   return value;
 }
@@ -137,27 +140,32 @@ static double matern_general(double distance,
   return value;
 }
 
-static double median_distance_squared(const double* x, int n, int p) {
-  std::vector<double> distances;
-  distances.reserve(static_cast<std::size_t>(n) * static_cast<std::size_t>(n));
-
-  for (int col = 0; col < n; ++col) {
-    for (int row = 0; row < n; ++row) {
-      double value = row_squared_distance(x, n, p, row, col);
-      if (!R_FINITE(value)) {
-        Rf_error("x must contain only finite values");
-      }
-      distances.push_back(value);
+// Median of all n x n squared distances (diagonal zeros and both triangles),
+// from the n(n-1)/2 upper-triangle values: the full sorted multiset is n zeros
+// followed by every off-diagonal value twice. Linear-time selection.
+static double median_distance_squared(const double* g, int n) {
+  std::vector<double> off;
+  off.reserve(static_cast<std::size_t>(n) * static_cast<std::size_t>(n - 1) / 2);
+  for (int col = 1; col < n; ++col) {
+    for (int row = 0; row < col; ++row) {
+      off.push_back(gram_squared_distance(g, n, row, col));
     }
   }
-
-  std::sort(distances.begin(), distances.end());
-  std::size_t count = distances.size();
-  std::size_t mid = count / 2;
-  if (count % 2 == 0) {
-    return 0.5 * (distances[mid - 1] + distances[mid]);
+  const std::size_t total = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
+  auto full_at = [&](std::size_t pos) -> double {
+    if (pos < static_cast<std::size_t>(n)) {
+      // zeros come first, but only while no off-diagonal value is negative (never)
+      return 0.0;
+    }
+    std::size_t k = (pos - static_cast<std::size_t>(n)) / 2;
+    std::nth_element(off.begin(), off.begin() + k, off.end());
+    return off[k];
+  };
+  const std::size_t mid = total / 2;
+  if (total % 2 == 0) {
+    return 0.5 * (full_at(mid - 1) + full_at(mid));
   }
-  return distances[mid];
+  return full_at(mid);
 }
 
 static SEXP predictpror_kernel_dense_impl(SEXP xSEXP,
@@ -233,29 +241,64 @@ static SEXP predictpror_kernel_dense_impl(SEXP xSEXP,
     }
   }
 
+  SEXP outSEXP = PROTECT(Rf_allocMatrix(REALSXP, n, n));
+  double* out = REAL(outSEXP);
+
+  // Laplacian needs L1 distances (no BLAS form): rows copied contiguously so
+  // each pair reads two cache-friendly blocks. Every other kernel works from
+  // the Gram matrix X X', computed once with BLAS into `out` (upper triangle)
+  // and turned into the kernel in place. Scratch buffers use R_alloc so an
+  // interrupt (R_CheckUserInterrupt) cannot leak them.
+  double* xr = nullptr;
+  if (method == KERNEL_LAPLACIAN) {
+    xr = reinterpret_cast<double*>(
+      R_alloc(static_cast<std::size_t>(n) * static_cast<std::size_t>(p), sizeof(double)));
+    for (int col = 0; col < p; ++col) {
+      for (int row = 0; row < n; ++row) {
+        xr[static_cast<std::size_t>(row) * p + col] = x[row + static_cast<R_xlen_t>(col) * n];
+      }
+    }
+  } else {
+    gram_upper(x, n, p, out);
+  }
+
   double median_d2 = 0.0;
   bool needs_gaussian = method == KERNEL_GAUSSIAN || method == KERNEL_COMPOSITE;
   if (needs_gaussian) {
-    median_d2 = median_distance_squared(x, n, p);
+    median_d2 = median_distance_squared(out, n);
     if (!R_FINITE(median_d2) || median_d2 <= 0.0) {
+      UNPROTECT(1);
       Rf_error("median squared distance must be positive and finite");
     }
   }
 
-  SEXP outSEXP = PROTECT(Rf_allocMatrix(REALSXP, n, n));
-  double* out = REAL(outSEXP);
+  // Squared norms are needed after the diagonal is overwritten.
+  double* norms = nullptr;
+  if (method != KERNEL_LAPLACIAN) {
+    norms = reinterpret_cast<double*>(R_alloc(static_cast<std::size_t>(n), sizeof(double)));
+    for (int i = 0; i < n; ++i) norms[i] = out[i + static_cast<R_xlen_t>(i) * n];
+  }
+  auto squared_distance = [&](int row, int col) -> double {
+    if (row == col) return 0.0;
+    double d2 = norms[row] + norms[col] - 2.0 * out[row + static_cast<R_xlen_t>(col) * n];
+    return d2 > 0.0 ? d2 : 0.0;
+  };
 
-  for (int col = 0; col < n; ++col) {
+  // The Gram entry (row, col), row <= col, is read and then replaced by the
+  // kernel value; the mirrored write goes to the strict lower triangle, which
+  // holds no Gram data, and diagonal Gram values were saved in `norms`.
+  for (int col = n - 1; col >= 0; --col) {
     if ((col & 63) == 0) {
       R_CheckUserInterrupt();
     }
 
     for (int row = 0; row <= col; ++row) {
-      double linear = row_dot(x, n, p, row, col) / static_cast<double>(p);
+      double gram = (method == KERNEL_LAPLACIAN) ? 0.0 : out[row + static_cast<R_xlen_t>(col) * n];
+      double linear = gram / static_cast<double>(p);
       double value = linear;
 
       if (method == KERNEL_GAUSSIAN || method == KERNEL_COMPOSITE) {
-        double d2 = row_squared_distance(x, n, p, row, col);
+        double d2 = squared_distance(row, col);
         double gaussian = std::exp(-theta * d2 / median_d2);
         value = gaussian;
         if (method == KERNEL_COMPOSITE) {
@@ -268,7 +311,7 @@ static SEXP predictpror_kernel_dense_impl(SEXP xSEXP,
                  method == KERNEL_MATERN32 ||
                  method == KERNEL_MATERN52 ||
                  method == KERNEL_RATIONAL_QUADRATIC) {
-        double d2 = row_squared_distance(x, n, p, row, col);
+        double d2 = squared_distance(row, col);
         if (method == KERNEL_RATIONAL_QUADRATIC) {
           value = std::pow(
             1.0 + d2 / (2.0 * rq_alpha * length_scale * length_scale),
@@ -290,12 +333,12 @@ static SEXP predictpror_kernel_dense_impl(SEXP xSEXP,
           }
         }
       } else if (method == KERNEL_LAPLACIAN) {
-        double d1 = row_l1_distance(x, n, p, row, col);
+        double d1 = contiguous_l1_distance(xr, p, row, col);
         value = std::exp(-d1 / length_scale);
       }
 
-      out[row + col * n] = value;
-      out[col + row * n] = value;
+      out[row + static_cast<R_xlen_t>(col) * n] = value;
+      out[col + static_cast<R_xlen_t>(row) * n] = value;
     }
   }
 
@@ -328,6 +371,62 @@ extern "C" SEXP predictpror_kernel_dense(SEXP xSEXP,
     Rf_error("PredictProR native dense kernel backend failed: %s", ex.what());
   } catch (...) {
     Rf_error("PredictProR native dense kernel backend failed.");
+  }
+  return R_NilValue;
+}
+
+// Median of the positive pairwise Euclidean distances between rows (the
+// automatic length scale of the distance kernels); same definition as
+// median(dist(x)[dist(x) > 0]) but from one BLAS Gram product.
+static SEXP predictpror_median_positive_distance_impl(SEXP xSEXP) {
+  if (!Rf_isReal(xSEXP) || !Rf_isMatrix(xSEXP)) {
+    Rf_error("x must be a numeric matrix");
+  }
+  SEXP dim = Rf_getAttrib(xSEXP, R_DimSymbol);
+  int n = INTEGER(dim)[0];
+  int p = INTEGER(dim)[1];
+  if (n < 2 || p <= 0) {
+    return Rf_ScalarReal(NA_REAL);
+  }
+  const double* x = REAL(xSEXP);
+  // R_alloc: released by R even when R_CheckUserInterrupt jumps out
+  const std::size_t nn = static_cast<std::size_t>(n);
+  double* g = reinterpret_cast<double*>(R_alloc(nn * nn, sizeof(double)));
+  gram_upper(x, n, p, g);
+  double* d = reinterpret_cast<double*>(R_alloc(nn * (nn - 1) / 2, sizeof(double)));
+  std::size_t count = 0;
+  // Identical rows give |a|^2 + |b|^2 - 2 a.b = 0 only up to rounding, which an
+  // optimized BLAS may leave a few ulps above zero; such values count as zero
+  // (stats::dist on the rows gives exactly zero).
+  const double rel_tol = 1e-10;
+  for (int col = 1; col < n; ++col) {
+    if ((col & 255) == 0) R_CheckUserInterrupt();
+    for (int row = 0; row < col; ++row) {
+      double d2 = gram_squared_distance(g, n, row, col);
+      double scale = g[row + row * static_cast<R_xlen_t>(n)] + g[col + col * static_cast<R_xlen_t>(n)];
+      if (R_FINITE(d2) && d2 > rel_tol * scale) d[count++] = std::sqrt(d2);
+    }
+  }
+  if (count == 0) {
+    return Rf_ScalarReal(NA_REAL);
+  }
+  std::size_t mid = count / 2;
+  std::nth_element(d, d + mid, d + count);
+  double upper = d[mid];
+  if (count % 2 == 0) {
+    double lower = *std::max_element(d, d + mid);
+    return Rf_ScalarReal(0.5 * (lower + upper));
+  }
+  return Rf_ScalarReal(upper);
+}
+
+extern "C" SEXP predictpror_median_positive_distance(SEXP xSEXP) {
+  try {
+    return predictpror_median_positive_distance_impl(xSEXP);
+  } catch (const std::bad_alloc&) {
+    Rf_error("PredictProR native median distance ran out of memory.");
+  } catch (...) {
+    Rf_error("PredictProR native median distance failed.");
   }
   return R_NilValue;
 }

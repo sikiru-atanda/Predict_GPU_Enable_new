@@ -656,7 +656,7 @@ gp_hybrid_ml_gaussian_cv <- function(model_type = c("RandomForest", "Ridge_Regre
       }
       x_feature <- x
       if (isTRUE(feature_active)) {
-        feature_view <- gp_feature_multitrait_view(
+        feature_view <- gp_feature_trait_view(
           predictor_data = x,
           pheno_data = ph,
           response = response,
@@ -665,6 +665,9 @@ gp_hybrid_ml_gaussian_cv <- function(model_type = c("RandomForest", "Ridge_Regre
           selection_mode = feature_scoring_cv,
           feature_score_metadata = feature_score_metadata,
           test_rows = test_idx,
+          # the scenario's training rows: Both_New_Parents also keeps the test parents'
+          # half-sib hybrids out of training, so scoring must not see them either
+          train_rows = train_idx,
           scoring_model = feature_scoring_model,
           seed = as.integer((random_state %||% 123L) + rep_idx * 10000L + part_idx),
           source_block = feature_source_map,
@@ -678,7 +681,8 @@ gp_hybrid_ml_gaussian_cv <- function(model_type = c("RandomForest", "Ridge_Regre
           ntree = ntree,
           mtry = mtry,
           nodesize = nodesize,
-          rf_n_jobs = rf_n_jobs
+          rf_n_jobs = rf_n_jobs,
+          heter_groups = heter_groups
         )
         x_feature <- feature_view$predictor_data
         feature_records[[length(feature_records) + 1L]] <- feature_view$metadata
@@ -758,7 +762,7 @@ gp_hybrid_ml_gaussian_cv <- function(model_type = c("RandomForest", "Ridge_Regre
         pred_parts[[part_idx]][[heter_groups]] <- ph[[heter_groups]][test_idx]
       }
       if (isTRUE(feature_active)) {
-        pred_parts[[part_idx]][["feature_k"]] <- as.integer(feature_k)
+        pred_parts[[part_idx]][["feature_k"]] <- as.integer(feature_view$feature_k)
         pred_parts[[part_idx]][["feature_scoring_model"]] <- feature_scoring_model
         pred_parts[[part_idx]][["feature_scoring_cv"]] <- feature_scoring_cv
       }
@@ -777,7 +781,7 @@ gp_hybrid_ml_gaussian_cv <- function(model_type = c("RandomForest", "Ridge_Regre
       model_type = model_type
     )
     if (isTRUE(feature_active) && nrow(metric_table)) {
-      metric_table[["feature_k"]] <- as.integer(feature_k)
+      metric_table[["feature_k"]] <- as.integer(feature_view$feature_k)
       metric_table[["feature_scoring_model"]] <- feature_scoring_model
       metric_table[["feature_scoring_cv"]] <- feature_scoring_cv
     }

@@ -23,11 +23,9 @@ Design notes
 SE derivation summary (the user's concern)
 ------------------------------------------
 1. AI matrix is computed as
-       AI_ij = 0.5 * [ y' P D_i P D_j P y + tr(P D_i P D_j) ]
-   with P the REML projector. Trace is a Rademacher-Hutchinson estimate
-   using `ai_hutch_samples` probes; probe noise dominates for large
-   `ai_hutch_samples`, so SEs are stable only when probe count is adequate
-   (recommended >= 256 for reference comparisons).
+       AI_ij = 0.5 * y' P D_i P D_j P y
+   with P the REML projector. This AI matrix requires no trace estimation.
+   Score trace terms are separate from the AI calculation.
 2. For bound parameters (variances clipped at 0, or fixed), rows/cols are
    removed from AI before inversion (active set). Their SE is NaN, which
    matches ASReml's NA convention.
@@ -289,14 +287,15 @@ def _exact_dense_precompute(
     device = y.device
     dtype = y.dtype
     I_n = torch.eye(n, device=device, dtype=dtype)
-    I_p = torch.eye(p, device=device, dtype=dtype)
 
     L_V = torch.linalg.cholesky(V_dense + jitter * I_n)
     logdet_V = 2.0 * torch.log(torch.diag(L_V)).sum()
 
     Vinv_y = torch.cholesky_solve(y.unsqueeze(-1), L_V).squeeze(-1)
     Vinv_X = torch.cholesky_solve(X, L_V)
-    XtVinvX_jit = X.T @ Vinv_X + jitter * I_p
+    # Preserve the historical dictionary key, but do not penalize fixed
+    # effects: such a ridge changes REML when covariate units change.
+    XtVinvX_jit = X.T @ Vinv_X
     L_xvx = torch.linalg.cholesky(XtVinvX_jit)
     logdet_XtVinvX = 2.0 * torch.log(torch.diag(L_xvx)).sum()
 
@@ -535,7 +534,7 @@ def build_fa_icm_ai_varcomp(
 
     # ---- Initial state from converged Adam ---------------------------------
     with torch.no_grad():
-        psi0 = (torch.nn.functional.softplus(fa_module.d_unconstrained) + 1e-8).detach().clone()
+        psi0 = torch.nn.functional.softplus(fa_module.d_unconstrained).detach().clone()
         L0 = fa_module.L.detach().clone()
         if isinstance(likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood):
             init_noise = likelihood.noise.detach()
@@ -562,10 +561,11 @@ def build_fa_icm_ai_varcomp(
         sub = f"fa{r+1}"
         for e in range(k):
             specs.append(ParamSpec(kind="fa_lambda", term=term_name,
-                                   env_label=str(env_labels[e]), sub_label=sub))
+                                   env_label=str(env_labels[e]), sub_label=sub, fixed=(e < r)))
     for e in range(k):
         specs.append(ParamSpec(kind="resid_env", term=env_col_name,
-                               env_label=str(env_labels[e]), lower=0.0))
+                               env_label=str(env_labels[e]), lower=0.0,
+                               fixed=isinstance(likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood)))
 
     # ---- State setter: theta (numpy) -> writes into fa_module --------------
     def _softplus_inv_torch(y):
@@ -576,13 +576,15 @@ def build_fa_icm_ai_varcomp(
     def _set_state(theta_np: np.ndarray):
         theta_t = torch.as_tensor(theta_np, dtype=torch.float64, device=device)
         idx = 0
-        psi = torch.clamp(theta_t[idx:idx+k].to(dtype_t), min=1e-10); idx += k
-        d_uncon = _softplus_inv_torch(psi - 1e-8)
+        psi = torch.clamp(theta_t[idx:idx+k].to(dtype_t), min=0.); idx += k
+        d_uncon = _softplus_inv_torch(psi)
         fa_module.d_unconstrained.data.copy_(d_uncon.reshape(fa_module.d_unconstrained.shape))
         for r in range(rank):
             lam = theta_t[idx:idx+k].to(dtype_t); idx += k
-            fa_module.L.data[:, r].copy_(lam)
+            fa_module.L.data[:, r].copy_(lam * (torch.arange(k, device=device) >= r))
         resid = torch.clamp(theta_t[idx:idx+k].to(dtype_t), min=1e-10); idx += k
+        if isinstance(likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood):
+            return init_noise
         return resid[ei_t]   # per-obs noise diag
 
     # ---- DV builders parameterized by current model state ------------------
@@ -805,6 +807,16 @@ def build_fa_icm_ai_varcomp(
                 RuntimeWarning,
             )
         else:
+            warm = warm.copy()
+            # Older caches may contain an unconstrained loading rotation.
+            # Rotate before zeroing the upper triangle: truncation alone
+            # changes the covariance and therefore the warm-start likelihood.
+            warm_L = warm[k:k + k*rank].reshape(rank, k).T
+            if rank > 1 and np.any(np.triu(warm_L[:rank], 1) != 0.):
+                rotation, _ = np.linalg.qr(warm_L[:rank].T)
+                warm[k:k + k*rank] = (warm_L @ rotation).T.reshape(-1)
+            for r in range(rank):
+                warm[k + r*k:k + r*k + r] = 0.
             theta_start, _bounds_check = apply_boundary_projection(warm, specs)
             if max_iter_warm is not None:
                 iter_budget = int(max_iter_warm)
@@ -863,6 +875,12 @@ def build_fa_icm_ai_varcomp(
         parameters_free=parameters_free, n_ai_iter=int(result.n_iter),
         converged=bool(result.converged), sigma=1.0,
     )
+    from varcomp_asreml import inference_status
+    summary.update(inference_status(result.ai, result.bounds, result.converged))
+    if not summary['inference_available']:
+        varcomp_df[['std.error', 'z.ratio']] = np.nan
+        import warnings
+        warnings.warn('FA covariance inference ' + summary['inference_status'], RuntimeWarning)
     # Delta-method SE for derived sigma2_g and h^2. sigma2_g is NOT a
     # direct REML parameter in FA; it is sum_k lambda_k^2 + psi_e, so SE
     # needs J^T Sigma_theta J on the active set.
@@ -872,7 +890,7 @@ def build_fa_icm_ai_varcomp(
         bounds=result.bounds, env_scales=env_scales,
         kernel_weight_total=float(w_fa.detach().sum().cpu().item()),
     )
-    if fa_derived is not None:
+    if fa_derived is not None and summary['inference_available']:
         summary = dict(summary)
         summary["fa_derived"] = fa_derived
     # Surface the converged variance-component theta and its layout so the
@@ -885,6 +903,7 @@ def build_fa_icm_ai_varcomp(
     summary["theta"] = result.theta.tolist()
     summary["theta_layout"] = "fa_icm"
     summary["theta_shape"] = {"k": int(k), "rank": int(rank), "n_params": int(len(result.theta))}
+    summary['covariance_parameter_conditioning'] = 'kernel_weights_and_standardization'
     return varcomp_df, summary, np.asarray(result.ai, dtype=np.float64)
 
 
@@ -905,7 +924,7 @@ def compute_ai_se_active_set(
     ai_torch : torch.Tensor of shape (p, p), symmetric.
     bounds   : length-p list of bound flags (P, B, F, U). Rows flagged B or F
                are excluded from the inversion; their SE is NaN.
-    jitter   : ridge added to the active sub-block for Cholesky safety.
+    jitter   : retained for API compatibility; no ridge is used for inference.
 
     Returns
     -------
@@ -919,7 +938,7 @@ def compute_ai_se_active_set(
     adjacent SEs because the Fisher information is singular in the direction
     of the boundary. ASReml handles this by treating bound parameters as
     inactive (fixed) during inversion; their reported SE is NA. This function
-    mirrors that behavior on the torch side without copying to numpy.
+    uses the same equilibrated active-set inverse as the reporting tables.
     """
     import torch
 
@@ -932,46 +951,10 @@ def compute_ai_se_active_set(
     if len(bounds) != p:
         raise ValueError(f"bounds length {len(bounds)} != AI size {p}")
 
-    device, dtype = ai.device, ai.dtype
-    active_mask = torch.tensor(
-        [b not in ("B", "F") for b in bounds], device=device, dtype=torch.bool
-    )
-    nan = float("nan")
-    cov = torch.full((p, p), nan, device=device, dtype=dtype)
-    se = torch.full((p,), nan, device=device, dtype=dtype)
-
-    if active_mask.any():
-        idx = active_mask.nonzero(as_tuple=True)[0]
-        sub = ai.index_select(0, idx).index_select(1, idx)
-        sub = 0.5 * (sub + sub.T)
-        m = sub.shape[0]
-        I = torch.eye(m, device=device, dtype=dtype)
-
-        inv_sub = None
-        for mult in (1.0, 10.0, 100.0, 1000.0):
-            try:
-                L = torch.linalg.cholesky(sub + (jitter * mult) * I)
-                inv_sub = torch.cholesky_solve(I, L)
-                break
-            except Exception:
-                inv_sub = None
-        if inv_sub is None:
-            try:
-                evals, evecs = torch.linalg.eigh(sub)
-                evals = torch.clamp(evals, min=max(jitter, 1e-12))
-                inv_sub = (evecs * evals.reciprocal().unsqueeze(0)) @ evecs.T
-            except Exception:
-                inv_sub = torch.linalg.pinv(sub)
-
-        # Scatter inv_sub back into the full-size cov matrix
-        grid_i = idx.view(-1, 1).expand(m, m)
-        grid_j = idx.view(1, -1).expand(m, m)
-        cov.index_put_((grid_i.reshape(-1), grid_j.reshape(-1)), inv_sub.reshape(-1))
-
-        se_active = torch.sqrt(torch.clamp(torch.diag(inv_sub), min=0.0))
-        se.index_put_((idx,), se_active)
-
-    return se, cov
+    from varcomp_asreml import active_set_inverse
+    covariance = active_set_inverse(ai.detach().cpu().to(torch.float64).numpy(), bounds)
+    cov = torch.as_tensor(covariance, device=ai.device, dtype=ai.dtype)
+    return torch.sqrt(torch.diag(cov)), cov
 
 
 def bounds_from_specs_and_theta(
@@ -1015,381 +998,15 @@ def build_gp_exact_ai_varcomp(
     max_iter_warm: Optional[int] = None,
     refine_kernel_scales: bool = True,
 ):
-    """Boundary-aware AI-Newton REML for the gp_exact path.
-
-    Parameter vector (in this order):
-      - w_g[k]  for each genetic kernel k       -> "vm(GID,K)!var"
-      - w_ge[k] for each genetic kernel k       -> "Env:vm(GID,K)!var" (if cached and multi-env)
-      - w_e                                     -> "Env!var"           (if cached and multi-env)
-      - sigma2_resid_e for each env             -> "<env_col>_<env>!R"
-
-    If ``refine_kernel_scales`` is False, kernel weights are kept fixed and only
-    per-env residuals are jointly optimized; this matches the common gp_exact
-    default of learn_scales=False but still produces fitted residuals via REML.
-
-    Returns ``(varcomp_df, summary_dict, ai_matrix_np)`` aligned with the
-    schema used by build_fa_icm_ai_varcomp.
-    """
-    import torch
-    import gpytorch
-    from linear_operator.operators import DiagLinearOperator
-    import os as _os
-    _tll_env = _os.environ.get("PREDICTPRO_GP_TOL_LOGLIK", "").strip()
-    _tth_env = _os.environ.get("PREDICTPRO_GP_TOL_THETA", "").strip()
-    _mit_env = _os.environ.get("PREDICTPRO_GP_MAX_ITER", "").strip()
-    _dem_env = _os.environ.get("PREDICTPRO_GP_DISABLE_ENV_MAIN", "").strip().lower()
-    if _tll_env:
-        try: tol_loglik = float(_tll_env)
-        except ValueError: pass
-    if _tth_env:
-        try: tol_theta = float(_tth_env)
-        except ValueError: pass
-    if _mit_env:
-        try: max_iter = int(_mit_env)
-        except ValueError: pass
-    _disable_env_main = _dem_env in ("1", "true", "yes", "on")
-
-    device = train_y.device
-    dtype_t = train_y.dtype
-    ei_t = train_x[:, 1].long()
-    n_obs = int(train_y.shape[0])
-    Xtt = model.mean_module.X_all.index_select(0, train_x[:, 2].long())
-    fw = _get_framework_module()
-    kernel = model.covar_module
-    k = len(env_labels)
-    nK = len(geno_kernel_names)
-
-    # Cached dense component matrices stored on the kernel during forward.
-    # The prediction path may have just evaluated all rows, while AI-REML must
-    # use training-row component matrices. Refresh the kernel cache explicitly.
-    with torch.no_grad():
-        _ = model(train_x)
-    Kg_list = getattr(kernel, "_Kg_list", None)
-    Kge_list = getattr(kernel, "_Kge_list", None)
-    Ke = getattr(kernel, "_Ke", None)
-    have_kernel_caches = (Kg_list is not None) and (Ke is not None)
-    have_ge = have_kernel_caches and (Kge_list is not None)
-    use_kernel_scales = bool(refine_kernel_scales) and have_kernel_caches
-    single_env = k <= 1
-    optimize_ge = bool(use_kernel_scales and have_ge and not single_env)
-    optimize_env_main = bool(use_kernel_scales and not single_env and not _disable_env_main)
-
-    with torch.no_grad():
-        data_var = float(torch.var(train_y.detach().to(torch.float64), unbiased=False).item()) if n_obs > 1 else 0.0
-    if not math.isfinite(data_var) or data_var <= 0.0:
-        data_var = 1.0
-    resid_floor = max(1e-4 * data_var, 1e-10)
-
-    # ---- Initial state from converged Adam ---------------------------------
-    with torch.no_grad():
-        if isinstance(likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood):
-            init_noise = likelihood.noise.detach()
-        else:
-            init_noise = torch.full((n_obs,), float(likelihood.noise.item()),
-                                    dtype=dtype_t, device=device)
-        resid0 = torch.zeros(k, dtype=torch.float64, device=device)
-        for e in range(k):
-            m = (ei_t == e)
-            resid0[e] = (init_noise[m].mean() if m.any() else init_noise.mean()).to(torch.float64)
-
-        if use_kernel_scales:
-            wg0 = torch.nn.functional.softplus(kernel.w_g_unconstrained.detach()).to(torch.float64)
-            we0 = torch.nn.functional.softplus(kernel.w_e_unconstrained.detach()).reshape(()).to(torch.float64)
-            if have_ge:
-                wge0 = torch.nn.functional.softplus(kernel.w_ge_unconstrained.detach()).to(torch.float64)
-            else:
-                wge0 = None
-        else:
-            wg0 = we0 = wge0 = None
-
-    # ---- Specs --------------------------------------------------------------
-    specs: List[ParamSpec] = []
-    if use_kernel_scales:
-        for ki, kn in enumerate(geno_kernel_names):
-            specs.append(ParamSpec(kind="var_kernel",
-                                   term=kernel_term_template.format(K=kn),
-                                   sub_label="var", lower=0.0))
-        if optimize_ge:
-            for ki, kn in enumerate(geno_kernel_names):
-                specs.append(ParamSpec(kind="var_kernel",
-                                       term=f"{env_col_name}:{kernel_term_template.format(K=kn)}",
-                                       sub_label="var", lower=0.0))
-        if optimize_env_main:
-            specs.append(ParamSpec(kind="var_kernel", term=env_col_name, sub_label="var", lower=0.0))
-    for e in range(k):
-        specs.append(ParamSpec(kind="resid_env", term=env_col_name,
-                               env_label=str(env_labels[e]), lower=resid_floor))
-
-    n_kernel_params = (
-        nK + (nK if optimize_ge else 0) + (1 if optimize_env_main else 0)
-    ) if use_kernel_scales else 0
-
-    # ---- theta0 (with MINQUE-0 re-initialization if Adam weights are tiny) --
-    pieces = []
-    if use_kernel_scales:
-        pieces.append(wg0.cpu().numpy())
-        if optimize_ge:
-            pieces.append(wge0.cpu().numpy())
-        if optimize_env_main:
-            pieces.append(np.array([float(we0.item())], dtype=np.float64))
-    pieces.append(resid0.cpu().numpy())
-    theta0_np = np.concatenate(pieces)
-
-    # MINQUE-0 override: if Adam converged to near-zero kernel weights,
-    # re-initialize from genotype-mean variance analysis so the AI-REML
-    # starts from a basin where genetic variance is not collapsed.
-    if use_kernel_scales and nK >= 1:
-        wg0_np = wg0.cpu().numpy()
-        mean_resid = float(resid0.mean().item())
-        if np.all(wg0_np < 0.05 * mean_resid):
-            # Estimate genetic variance from genotype means
-            with torch.no_grad():
-                y_np = train_y.cpu().to(torch.float64).numpy()
-                gi_np = train_x[:, 0].long().cpu().numpy()
-                ei_np = train_x[:, 1].long().cpu().numpy()
-                n_geno_unique = int(gi_np.max()) + 1
-                # Genotype means (across envs and reps)
-                geno_sums = np.zeros(n_geno_unique, dtype=np.float64)
-                geno_counts = np.zeros(n_geno_unique, dtype=np.float64)
-                np.add.at(geno_sums, gi_np, y_np)
-                np.add.at(geno_counts, gi_np, 1.0)
-                geno_means = geno_sums / np.maximum(geno_counts, 1.0)
-                mean_reps = float(np.mean(geno_counts[geno_counts > 0]))
-                # Between-genotype variance
-                grand_mean = float(np.mean(y_np))
-                var_between = float(np.var(geno_means[geno_counts > 0], ddof=0))
-                # Within-genotype variance
-                resid_obs = y_np - geno_means[gi_np]
-                var_within = float(np.var(resid_obs, ddof=0))
-                # ANOVA h2 estimate
-                h2_est = max(0.0, (var_between - var_within / mean_reps)
-                             / (var_between + (mean_reps - 1.0) * var_within / mean_reps))
-                h2_est = min(h2_est, 0.95)  # cap to avoid degenerate init
-                total_var = var_between + var_within
-                genetic_var = h2_est * total_var
-                if genetic_var > 0.01 * total_var:
-                    # Set each kernel weight to genetic_var / nK
-                    wg_init = np.full(nK, genetic_var / nK, dtype=np.float64)
-                    # Set residuals from within-genotype variance per env
-                    resid_init = np.zeros(k, dtype=np.float64)
-                    for e in range(k):
-                        mask_e = (ei_np == e)
-                        if mask_e.any():
-                            r_e = y_np[mask_e] - geno_means[gi_np[mask_e]]
-                            resid_init[e] = max(float(np.var(r_e, ddof=0)), 1e-6)
-                        else:
-                            resid_init[e] = var_within
-                    # Rebuild theta0
-                    pieces_new = [wg_init]
-                    if optimize_ge:
-                        # Keep GxE at small positive value
-                        pieces_new.append(np.full(nK, 0.01 * genetic_var / nK, dtype=np.float64))
-                    if optimize_env_main:
-                        pieces_new.append(np.array([1e-4], dtype=np.float64))  # w_e near zero
-                    pieces_new.append(resid_init)
-                    theta0_np = np.concatenate(pieces_new)
-                    import warnings as _wn
-                    _wn.warn(
-                        f"MINQUE-0 init: Adam kernel weights near zero "
-                        f"(max={float(wg0_np.max()):.4f}); "
-                        f"re-initialized to h2={h2_est:.3f}, "
-                        f"w_g={np.round(wg_init,4)}, "
-                        f"resid_mean={float(resid_init.mean()):.4f}",
-                        stacklevel=2,
-                    )
-
-    # ---- State setter -------------------------------------------------------
-    def _softplus_inv_torch(y):
-        y_clamped = torch.clamp(y, min=1e-12)
-        return torch.where(y_clamped > 20.0, y_clamped, torch.log(torch.expm1(y_clamped)))
-
-    def _set_state(theta_np: np.ndarray):
-        theta_t = torch.as_tensor(theta_np, dtype=torch.float64, device=device)
-        idx = 0
-        if use_kernel_scales:
-            wg_t = torch.clamp(theta_t[idx:idx+nK].to(dtype_t), min=1e-10); idx += nK
-            kernel.w_g_unconstrained.data.copy_(_softplus_inv_torch(wg_t).reshape(kernel.w_g_unconstrained.shape))
-            if have_ge:
-                if optimize_ge:
-                    wge_t = torch.clamp(theta_t[idx:idx+nK].to(dtype_t), min=1e-10); idx += nK
-                else:
-                    wge_t = torch.full_like(kernel.w_ge_unconstrained, 1e-10)
-                kernel.w_ge_unconstrained.data.copy_(_softplus_inv_torch(wge_t).reshape(kernel.w_ge_unconstrained.shape))
-            if optimize_env_main:
-                we_t = torch.clamp(theta_t[idx:idx+1].to(dtype_t), min=1e-10); idx += 1
-            else:
-                we_t = torch.full_like(kernel.w_e_unconstrained, 1e-10)
-            kernel.w_e_unconstrained.data.copy_(_softplus_inv_torch(we_t).reshape(kernel.w_e_unconstrained.shape))
-        resid_t = torch.clamp(theta_t[idx:idx+k].to(dtype_t), min=float(resid_floor)); idx += k
-        return resid_t[ei_t]
-
-    # ---- DV builders (matvec) ------------------------------------------------
-    def _build_dv_list():
-        DV: List[Callable] = []
-        if use_kernel_scales:
-            for ki in range(nK):
-                Km = Kg_list[ki]
-                DV.append(lambda v, Km=Km: Km @ v)
-            if optimize_ge:
-                for ki in range(nK):
-                    Km = Kge_list[ki]
-                    DV.append(lambda v, Km=Km: Km @ v)
-            if optimize_env_main:
-                DV.append(lambda v, Km=Ke: Km @ v)
-        for e in range(k):
-            def DVres(v, e=e):
-                m = (ei_t == e).to(dtype_t)
-                return v * m
-            DV.append(DVres)
-        return DV
-
-    # ---- DV dense matrices (for exact score traces) -----------------------
-    def _build_dv_dense():
-        """Return list of dense (n,n) or diagonal (n,) derivative matrices."""
-        DV_dense = []
-        if use_kernel_scales:
-            for ki in range(nK):
-                DV_dense.append(Kg_list[ki])    # (n, n) cached kernel
-            if optimize_ge:
-                for ki in range(nK):
-                    DV_dense.append(Kge_list[ki])  # (n, n) cached GxE kernel
-            if optimize_env_main:
-                DV_dense.append(Ke)                   # (n, n) cached env kernel
-        for e in range(k):
-            DV_dense.append((ei_t == e).to(dtype_t))  # (n,) diagonal
-        return DV_dense
-
-    def _build_V(noise_diag_obs):
-        K_op = kernel(train_x, train_x)
-        return K_op + DiagLinearOperator(noise_diag_obs)
-
-    # ---- Cached numpy callables --------------------------------------------
-    # Theta-only cache key + shared precompute -- see the FA backend above
-    # for the rationale. This handles the multi-kernel case identically to
-    # single-kernel: V_dense is built from sum_k w_k K_k + R upstream, and
-    # the per-parameter DV_matvecs already encodes the per-kernel
-    # derivatives.
-    cache = {"key": None, "ll": None, "score": None, "ai": None, "pre": None}
-
-    def _ensure(theta_np: np.ndarray, need_score_ai: bool):
-        key = theta_np.tobytes()
-        if cache["key"] == key:
-            if (not need_score_ai) or (cache["score"] is not None):
-                return
-            with torch.no_grad():
-                DV_matvecs = _build_dv_list()
-                DV_dense = _build_dv_dense()
-                score_np, AI_np = _exact_dense_score_and_AI_from_pre(
-                    cache["pre"], DV_matvecs, DV_dense,
-                )
-                cache["score"] = score_np
-                cache["ai"] = AI_np
-            return
-        with torch.no_grad():
-            noise_obs = _set_state(theta_np)
-            V_op = _build_V(noise_obs)
-            # Deterministic dense-Cholesky path: fw.reml_loglik_from_V uses
-            # CG/Lanczos with stochastic probes whose Monte Carlo noise
-            # (~0.5 per call) destroys the trust-region rho ratio.
-            V_dense = V_op.to_dense()
-            pre = _exact_dense_precompute(
-                train_y, Xtt, V_dense, jitter=float(jitter),
-            )
-            cache["pre"] = pre
-            cache["ll"] = _exact_dense_reml_loglik_from_pre(pre)
-            if need_score_ai:
-                DV_matvecs = _build_dv_list()
-                DV_dense = _build_dv_dense()
-                score_np, AI_np = _exact_dense_score_and_AI_from_pre(
-                    pre, DV_matvecs, DV_dense,
-                )
-                cache["score"] = score_np
-                cache["ai"] = AI_np
-            else:
-                cache["score"] = None
-                cache["ai"] = None
-        cache["key"] = key
-
-    def loglik_fn(theta_np):
-        _ensure(theta_np, need_score_ai=False); return cache["ll"]
-    def score_fn(theta_np):
-        _ensure(theta_np, need_score_ai=True); return cache["score"]
-    def ai_fn(theta_np):
-        _ensure(theta_np, need_score_ai=True); return cache["ai"]
-
-    # ---- Run AI-Newton ------------------------------------------------------
-    import os as _os
-    _verbose = bool(int(_os.environ.get("AIREML_VERBOSE", "0")))
-    if _verbose:
-        print(f"[gp_exact AI] theta0={np.round(theta0_np, 5).tolist()}  specs={[(s.kind, s.term, s.env_label) for s in specs]}", flush=True)
-    backend = DenseVCBackend(specs=specs, loglik_fn=loglik_fn, score_fn=score_fn, ai_fn=ai_fn)
-
-    # Warm-start: see build_fa_icm_ai_varcomp for rationale and Phase 2.2
-    # shape-mismatch safety net.
-    theta_start = theta0_np
-    iter_budget = int(max_iter)
-    if theta0_warm is not None:
-        warm = np.asarray(theta0_warm, dtype=np.float64).reshape(-1)
-        if warm.shape[0] != theta0_np.shape[0]:
-            import warnings as _wn
-            _wn.warn(
-                f"theta0_warm length {warm.shape[0]} does not match expected "
-                f"{theta0_np.shape[0]} for gp_exact spec layout; falling back "
-                f"to cold theta0 (Adam init).",
-                RuntimeWarning,
-            )
-        else:
-            theta_start, _bounds_check = apply_boundary_projection(warm, specs)
-            if max_iter_warm is not None:
-                iter_budget = int(max_iter_warm)
-            else:
-                iter_budget = min(5, int(max_iter))
-            if _verbose:
-                print(f"[gp_exact AI] WARM-START enabled; iter_budget={iter_budget}", flush=True)
-    result = _ai_reml_optimize(
-        backend, theta_start,
-        max_iter=iter_budget,
-        tol_loglik=float(tol_loglik),
-        tol_theta=float(tol_theta),
-        damping=1.0,
-        max_halvings=8,
-        verbose=_verbose,
-    )
-    _set_state(result.theta)
-
-    # ---- Output -------------------------------------------------------------
-    pct = np.where(np.isfinite(result.pct_change), result.pct_change, 0.0)
-    varcomp_df = build_asreml_varcomp_table(
-        specs=specs, theta=result.theta, ai=result.ai, bounds=result.bounds,
-        pct_change=pct, env_scales=env_scales,
-    )
-    parameters_free = int(sum(b not in ("B", "F") for b in result.bounds))
-    summary = build_summary(
-        loglik=float(result.loglik), nedf=int(nedf),
-        parameters_free=parameters_free, n_ai_iter=int(result.n_iter),
-        converged=bool(result.converged), sigma=1.0,
-    )
-    # Off-diagonal active-set AI inverse for non-FA models. Gives the R-side
-    # h2 SE the cross-term it needs:
-    #   Var(h2) = (dh2/dg)^2 var_g + (dh2/de)^2 var_e + 2*(dh2/dg)*(dh2/de)*cov_g_e
-    # vs the existing 2-variance independence-assuming formula.
-    from varcomp_asreml import compute_genetic_residual_covariance as _compute_g_r_cov
-    g_r_cov = _compute_g_r_cov(
-        specs=specs, theta=result.theta, ai=result.ai,
-        bounds=result.bounds, env_scales=env_scales,
-    )
-    if g_r_cov is not None:
-        summary = dict(summary)
-        summary["genetic_residual_covariance"] = g_r_cov
-    # Surface the converged variance-component theta and its layout for the
-    # R-side warm-start cache (Phase 2.1 Stage B). The gp_exact spec layout
-    # is dynamic depending on optimize flags; layout key encodes the
-    # backend so the R-side cache only feeds it back into a matching fit.
-    summary = dict(summary)
-    summary["theta"] = result.theta.tolist()
-    summary["theta_layout"] = "gp_exact"
-    summary["theta_shape"] = {"n_params": int(len(result.theta))}
-    return varcomp_df, summary, np.asarray(result.ai, dtype=np.float64)
+    """Fit and report the exact GP covariance without changing its model."""
+    from gp_exact_inference import build_exact_inference
+    return build_exact_inference(model, likelihood, train_x, train_y,
+        geno_kernel_names=geno_kernel_names, env_labels=env_labels,
+        env_col_name=env_col_name, kernel_term_template=kernel_term_template,
+        env_scales=env_scales, nedf=nedf, max_iter=max_iter,
+        tol_loglik=tol_loglik, tol_theta=tol_theta, jitter=jitter,
+        refine_kernel_scales=refine_kernel_scales, theta0_warm=theta0_warm,
+        max_iter_warm=max_iter_warm)
 
 
 def build_gp_exact_ai_varcomp_mme(

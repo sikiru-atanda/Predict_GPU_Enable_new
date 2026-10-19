@@ -15,7 +15,11 @@ gp_kernel_backend <- function(backend = NULL, method = NULL) {
   }
   if (identical(backend, "auto") && gp_kernel_dense_cpp_available()) {
     method <- if (is.null(method)) "" else as.character(method)
+    # Linear and polynomial kernels stay on R's BLAS tcrossprod (as fast);
+    # the distance-based kernels are faster natively.
     native_auto_methods <- c(
+      "Gaussian_kernel",
+      "Composite_kernel",
       "Matern_kernel",
       "Matern12_kernel",
       "Matern32_kernel",
@@ -200,12 +204,20 @@ kernel_calculation <- function(
 
   if (isTRUE(length_scale_auto)) {
     if (any(method %in% length_scale_methods)) {
-      distance_values <- as.numeric(stats::dist(M_matrix_clean))
-      distance_values <- distance_values[is.finite(distance_values) & distance_values > 0]
-      if (!length(distance_values)) {
+      # median positive Euclidean distance between rows; natively from one
+      # BLAS product (stats::dist was the slowest step of the distance kernels)
+      use_native <- gp_kernel_dense_cpp_available() &&
+        !identical(gp_kernel_backend(backend, "Matern_kernel"), "r")
+      length_scale <- if (isTRUE(use_native)) {
+        .Call("predictpror_median_positive_distance", M_matrix_clean, PACKAGE = "PredictProR")
+      } else {
+        distance_values <- as.numeric(stats::dist(M_matrix_clean))
+        distance_values <- distance_values[is.finite(distance_values) & distance_values > 0]
+        if (length(distance_values)) stats::median(distance_values) else NA_real_
+      }
+      if (!is.finite(length_scale)) {
         stop(paste(msg, "Cannot infer a distance-kernel length scale from identical rows."), call. = FALSE)
       }
-      length_scale <- stats::median(distance_values)
     } else {
       # The native kernel call accepts one common parameter bundle even when a
       # distance kernel was not requested; keep that unused slot finite.
@@ -237,7 +249,14 @@ kernel_calculation <- function(
   }
   squared_distance <- function(x) {
     if (is.null(dist2_cache)) {
-      dist2_cache <<- as.matrix(stats::dist(x))^2
+      # |a|^2 + |b|^2 - 2 a.b from one BLAS product instead of stats::dist
+      g <- tcrossprod(x)
+      sq <- diag(g)
+      d2 <- outer(sq, sq, "+") - 2 * g
+      d2[d2 < 0] <- 0
+      diag(d2) <- 0
+      dimnames(d2) <- list(rownames(x), rownames(x))
+      dist2_cache <<- d2
     }
     dist2_cache
   }

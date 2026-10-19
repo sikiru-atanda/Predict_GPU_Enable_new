@@ -19,7 +19,7 @@ gp_conda_env_python <- function(env_name) {
   if (is.null(py) || !nzchar(py)) {
     return(NULL)
   }
-  normalizePath(py, winslash = "/", mustWork = FALSE)
+  gp_python_path(py, mustWork = FALSE)
 }
 
 #' Create or update the package-owned Python environment for Gaussian-process models

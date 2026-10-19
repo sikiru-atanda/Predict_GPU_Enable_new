@@ -151,6 +151,8 @@ test_that("model_execute only routes joint GP when multi_trait_gp is explicit", 
       captured[[length(captured) + 1L]] <<- isTRUE(ctx$gp_public_multitrait_run)
       list(gp_public_multitrait_run = isTRUE(ctx$gp_public_multitrait_run))
     },
+    # no model is fitted here, so no Python packages are needed
+    gp_python_prepare_runtimes = function(...) invisible(character()),
     .package = "PredictProR"
   )
 

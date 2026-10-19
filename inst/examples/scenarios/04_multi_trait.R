@@ -1,7 +1,7 @@
 # =============================================================================
 # Scenario 4: several traits (multi-trait), one and several environments
 # =============================================================================
-# response = c("Yield", "Protein").
+# response = c("Yield", "Protein"), except FA-GBLUP uses four traits below.
 #   No multi-trait flag      : each trait fitted on its own (one GS_model per trait)
 #   multi_trait_bayes = TRUE : GBLUP_BRR, RKHS (joint model, genetic covariance)
 #   multi_trait_asreml = TRUE: GBLUP (engine = "asreml"), var_cov_str "us" / "corgh" / "diag"
@@ -19,6 +19,28 @@ dat <- sim_multi_trait(n = 80, p = 300)
 pheno <- dat$pheno            # GID, Yield, Protein (NA = lines to predict)
 Geno.data <- dat$geno
 response <- c("Yield", "Protein")
+
+# FA1 needs at least 3 traits (saturated); use 4 here for 8 parameters versus
+# 10 covariance entries. FA2 needs 5+ traits and FA3 needs 6+ (also saturated).
+# These count bounds are necessary, not a guarantee of identification in data.
+# Add independently noisy traits only to the FA inputs, preserving the original
+# data, held-out lines and RNG stream used by every other scenario call.
+fa_trait_pheno <- function(dat, seed = 21L) {
+  saved_seed <- .Random.seed  # sim_multi_trait() has already initialized it
+  on.exit(assign(".Random.seed", saved_seed, envir = .GlobalEnv))
+  common <- sim_genetic_value(dat$geno, seed = seed + 1L)
+  height <- 0.7 * common + 0.6 * sim_genetic_value(dat$geno, seed = seed + 4L)
+  maturity <- -0.5 * common + 0.7 * sim_genetic_value(dat$geno, seed = seed + 5L)
+  k <- match(dat$pheno$GID, rownames(dat$geno))
+  set.seed(seed + 6L)
+  out <- dat$pheno
+  out$Height <- 100 + height[k] + rnorm(nrow(out), sd = 0.8)
+  out$Maturity <- 90 + maturity[k] + rnorm(nrow(out), sd = 0.8)
+  out[out$GID %in% dat$test, c("Height", "Maturity")] <- NA
+  out
+}
+pheno_fa <- fa_trait_pheno(dat)
+response_fa <- c(response, "Height", "Maturity")
 
 # ---- 1. Separate and joint multi-trait models ----------------------------------------
 mt_models <- c(
@@ -41,13 +63,13 @@ for (cfg in mt_models) {
   model_runtime <- system.time({
     res <- try(PredictProR::model_execute(
       # Input data
-      pheno_data = pheno,
+      pheno_data = if (identical(cfg$model, "FA-GBLUP")) pheno_fa else pheno,
       geno_data = Geno.data,
       gmatrix = NULL,
 
       # Trait and genotype identifiers
       gen_name = "GID",
-      response = response,
+      response = if (identical(cfg$model, "FA-GBLUP")) response_fa else response,
       response_family = "gaussian",
 
       # Multi-trait mode (exactly one flag for a joint model)
@@ -113,7 +135,7 @@ for (cfg in mt_models) {
       gp_return_trait_correlations = TRUE,
 
       # Deep-learning controls
-      epochs = 100L,
+      epochs = "auto",
       batch_size = 16L,
       deterministic = TRUE,
       random_seed = 20260903L,
@@ -248,6 +270,7 @@ log_result(label, res, model_runtime)
 met <- sim_multi_trait(n = 60, p = 300, envs = c("E1", "E2", "E3"))
 pheno_met <- met$pheno
 Geno_met <- met$geno
+pheno_met_fa <- fa_trait_pheno(met)
 
 mt_met_models <- c(
   lapply(c("GBLUP_BRR", "RKHS"), function(m) list(name = paste("joint Bayesian", m), flag = "bayes", model = m)),
@@ -261,12 +284,12 @@ for (cfg in mt_met_models) {
   model_runtime <- system.time({
     res <- try(PredictProR::model_execute(
       # Input data
-      pheno_data = pheno_met,
+      pheno_data = if (identical(cfg$model, "FA-GBLUP")) pheno_met_fa else pheno_met,
       geno_data = Geno_met,
 
       # Trait and genotype identifiers
       gen_name = "GID",
-      response = response,
+      response = if (identical(cfg$model, "FA-GBLUP")) response_fa else response,
       response_family = "gaussian",
 
       # Multi-trait, multi-environment mode
@@ -275,7 +298,7 @@ for (cfg in mt_met_models) {
       multi_trait_asreml = cfg$flag == "asreml",
       heter_groups = "Env",
       heter_resid = cfg$flag == "asreml",   # ASReml MET: environment-specific residuals
-      var_cov_str = if (cfg$flag == "asreml") cfg[["vcs"]] else NULL,   # fa1, fa2 or fa3 for MT-MET ASReml
+      var_cov_str = if (cfg$flag == "asreml") cfg[["vcs"]] else NULL,   # fa1 here: 3 environments; fa2 needs 5+, fa3 needs 6+
 
       # ASReml settings
       engine = if (cfg$flag == "asreml") "asreml" else NULL,

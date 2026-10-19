@@ -12,6 +12,83 @@ remove_from_global <- function(var_names) {
   }
 }
 
+# Stops with `message` when the ASReml package `engine` is not installed, and
+# loads its namespace: ASReml checks its licence and loads its engine in
+# .onLoad, so it works without being attached, and an error loading it is
+# its own (a missing licence does not stop the load; the fit reports it).
+# installed.packages() read every installed package (0.4 s in a session's
+# first fit here, 14.6 s on a cold disk).
+gp_asreml_require_engine <- function(engine, message) {
+  if (!nzchar(system.file(package = engine))) stop(message, call. = FALSE)
+  loadNamespace(engine)
+  invisible(TRUE)
+}
+
+# Assigns the named objects in the global environment, where ASReml finds a
+# vm() inverse by name, and returns a function that puts the environment back:
+# a user's object with one of these names is restored, the others are removed.
+gp_asreml_assign_globals <- function(objects) {
+  had <- vapply(names(objects), exists, logical(1), envir = .GlobalEnv, inherits = FALSE)
+  saved <- lapply(names(objects)[had], get, envir = .GlobalEnv, inherits = FALSE)
+  names(saved) <- names(objects)[had]
+  for (nm in names(objects)) assign(nm, objects[[nm]], envir = .GlobalEnv)
+  function() {
+    for (nm in names(objects)) {
+      if (nm %in% names(saved)) {
+        assign(nm, saved[[nm]], envir = .GlobalEnv)
+      } else if (exists(nm, envir = .GlobalEnv, inherits = FALSE)) {
+        rm(list = nm, envir = .GlobalEnv)
+      }
+    }
+    invisible(NULL)
+  }
+}
+
+# The single-trait routes leave their vm() inverses (gmatrix_inv, omic1_inv
+# ...) in the global environment after the fit: the model's predict() and
+# update() find them there. model_execute() opens a scope for its run, and
+# closing it puts the global environment back as gp_asreml_assign_globals()
+# does, and releases the fits' data (asreml_model_data_register()). Only the
+# outermost scope records, and only a name's first assignment, so the folds
+# of a CV keep no earlier inverses alive. A direct call outside a run keeps
+# the objects and the data, as before.
+gp_asreml_globals_scope <- function() {
+  if (exists("asreml_run_globals", envir = PredictProR_runtime_cache, inherits = FALSE)) {
+    return(function() invisible(NULL))
+  }
+  record <- new.env(parent = emptyenv())
+  record$names <- character()
+  record$saved <- list()
+  record$data_keys <- character()
+  assign("asreml_run_globals", record, envir = PredictProR_runtime_cache)
+  function() {
+    rm("asreml_run_globals", envir = PredictProR_runtime_cache)
+    asreml_model_data_release(record$data_keys)
+    for (nm in record$names) {
+      if (nm %in% names(record$saved)) {
+        assign(nm, record$saved[[nm]], envir = .GlobalEnv)
+      } else if (exists(nm, envir = .GlobalEnv, inherits = FALSE)) {
+        rm(list = nm, envir = .GlobalEnv)
+      }
+    }
+    invisible(NULL)
+  }
+}
+
+gp_asreml_assign_run_globals <- function(objects) {
+  record <- get0("asreml_run_globals", envir = PredictProR_runtime_cache, inherits = FALSE)
+  if (!is.null(record)) {
+    for (nm in setdiff(names(objects), record$names)) {
+      if (exists(nm, envir = .GlobalEnv, inherits = FALSE)) {
+        record$saved[nm] <- list(get(nm, envir = .GlobalEnv, inherits = FALSE))
+      }
+      record$names <- c(record$names, nm)
+    }
+  }
+  for (nm in names(objects)) assign(nm, objects[[nm]], envir = .GlobalEnv)
+  invisible(NULL)
+}
+
 #' Calculate ASReml coefficients from EBV output
 #'
 #' @param gmatrix Relationship or design matrix used for coefficient recovery.
@@ -217,34 +294,46 @@ asreml_predict_pvals <- function(mod,
                                  pworkspace = NULL) {
   predict_impl <- getOption("PredictProR.asreml_predict_impl", asreml::predict.asreml)
   has_workspace <- asreml_has_arg_value(workspace)
-  has_pworkspace <- asreml_has_arg_value(pworkspace)
 
-  pred <- if (has_workspace && has_pworkspace) {
-    predict_impl(
-      mod,
-      classify = classify,
-      sed = FALSE,
-      workspace = workspace[1L],
-      pworkspace = pworkspace[1L]
-    )
-  } else if (has_workspace) {
-    predict_impl(
-      mod,
-      classify = classify,
-      sed = FALSE,
-      workspace = workspace[1L]
-    )
-  } else if (has_pworkspace) {
-    predict_impl(
-      mod,
-      classify = classify,
-      sed = FALSE,
-      pworkspace = pworkspace[1L]
-    )
-  } else {
-    predict_impl(mod, classify = classify, sed = FALSE)
+  call_predict <- function(pws) {
+    has_pworkspace <- asreml_has_arg_value(pws)
+    pred <- if (has_workspace && has_pworkspace) {
+      predict_impl(
+        mod,
+        classify = classify,
+        sed = FALSE,
+        workspace = workspace[1L],
+        pworkspace = pws[1L]
+      )
+    } else if (has_workspace) {
+      predict_impl(
+        mod,
+        classify = classify,
+        sed = FALSE,
+        workspace = workspace[1L]
+      )
+    } else if (has_pworkspace) {
+      predict_impl(
+        mod,
+        classify = classify,
+        sed = FALSE,
+        pworkspace = pws[1L]
+      )
+    } else {
+      predict_impl(mod, classify = classify, sed = FALSE)
+    }
+    pred$pvals
   }
-  pred$pvals
+  first <- tryCatch(call_predict(pworkspace), error = identity)
+  if (!inherits(first, "error")) return(first)
+  # At about 1,000 lines the default prediction workspace (1e6 words) is too small, and the
+  # coefficient fallback then returned point predictions without SEs or intervals: retry once at
+  # 1gb, as the multi-trait route does
+  retry <- if (gp_multitrait_asreml_workspace_error(conditionMessage(first))) {
+    gp_multitrait_asreml_retry_pworkspace(pworkspace)
+  }
+  if (is.null(retry)) stop(first)
+  call_predict(retry)
 }
 
 # Environment level of each ASReml random-coefficient row, parsed from its
@@ -617,6 +706,29 @@ asreml_apply_met_reliability <- function(ebv_df, heter_groups, heter_grp, varian
   ebv_df
 }
 
+# Kernels x environments genetic variances from either MET path: the compound-symmetry
+# matrix (varG_per_omics), the structured path's per-kernel list, or one kernel's
+# Total_genetic_var. Environments are aligned to heter_grp by position, as
+# asreml_apply_met_reliability() does. NULL when no complete matrix can be formed.
+asreml_met_varG_matrix <- function(res, n_kernels, heter_grp) {
+  if (is.null(res) || !length(heter_grp)) return(NULL)
+  v <- res[["varG_per_omics"]]
+  m <- NULL
+  if (is.matrix(v) && nrow(v) == n_kernels && ncol(v) == length(heter_grp)) {
+    m <- v
+  } else if (is.list(v) && length(v) == n_kernels) {
+    rows <- lapply(v, function(x) suppressWarnings(as.numeric(unlist(x))))
+    if (all(lengths(rows) == length(heter_grp))) m <- do.call(rbind, rows)
+  }
+  if (is.null(m) && n_kernels == 1L) {
+    total <- suppressWarnings(as.numeric(unlist(res[["Total_genetic_var"]])))
+    if (length(total) == length(heter_grp)) m <- matrix(total, nrow = 1L)
+  }
+  if (is.null(m)) return(NULL)
+  matrix(suppressWarnings(as.numeric(m)), nrow = n_kernels,
+         dimnames = list(NULL, as.character(heter_grp)))
+}
+
 asreml_met_reliability_variance_valid <- function(variance_by_env, environment_levels) {
   value <- suppressWarnings(as.numeric(variance_by_env))
   length(value) == length(environment_levels) &&
@@ -649,20 +761,19 @@ asreml_add_uncertainty_fields <- function(predicted_df,
     predicted_df[["Prediction_error_variance"]] <- suppressWarnings(as.numeric(predicted_df[["PEV"]]))
   }
 
-  y <- suppressWarnings(as.numeric(pheno_data[[response]]))
-  reference_variance <- suppressWarnings(stats::var(y[is.finite(y)], na.rm = TRUE))
-  if (!is.finite(reference_variance) || reference_variance <= 0) {
-    reference_variance <- NA_real_
-  }
+  # Reliability is genetic: 1 - genetic PEV / prior genetic variance, set by
+  # asreml_apply_genetic_reliability() (or asreml_apply_met_reliability() for
+  # the EBV tables). PEV here is the total-mean SE^2 and the phenotypic
+  # variance is not a genetic variance, so without those inputs reliability
+  # stays NA rather than 1 - SE^2 / var(y), which overstated it about twofold.
   if (!"Reliability_reference_variance" %in% names(predicted_df)) {
-    predicted_df[["Reliability_reference_variance"]] <- rep(reference_variance, nrow(predicted_df))
+    predicted_df[["Reliability_reference_variance"]] <- rep(NA_real_, nrow(predicted_df))
+  }
+  if (!"Reliability_variance_input" %in% names(predicted_df)) {
+    predicted_df[["Reliability_variance_input"]] <- rep(NA_real_, nrow(predicted_df))
   }
 
-  pev <- if ("PEV" %in% names(predicted_df)) {
-    suppressWarnings(as.numeric(predicted_df[["PEV"]]))
-  } else {
-    rep(NA_real_, nrow(predicted_df))
-  }
+  pev <- suppressWarnings(as.numeric(predicted_df[["Reliability_variance_input"]]))
   ref <- suppressWarnings(as.numeric(predicted_df[["Reliability_reference_variance"]]))
   reliability <- rep(NA_real_, nrow(predicted_df))
   valid <- is.finite(pev) & is.finite(ref) & ref > 0
@@ -695,9 +806,138 @@ asreml_add_uncertainty_fields <- function(predicted_df,
     }
   }
   if (!"Reliability_basis" %in% names(predicted_df)) {
-    predicted_df[["Reliability_basis"]] <- rep("observed_response_variance", nrow(predicted_df))
+    predicted_df[["Reliability_basis"]] <- rep(
+      "unavailable: genetic prediction-error variance and prior genetic variance not supplied",
+      nrow(predicted_df)
+    )
   }
   predicted_df
+}
+
+# Genetic random terms of an ASReml model: every term with vm(<gen_name>, ...),
+# main effects and genotype-by-environment terms alike, as predict(only =) names them.
+asreml_genetic_terms <- function(mod, gen_name) {
+  terms <- names(mod$G.param %||% list())
+  terms[grepl(paste0("vm(", gen_name, ","), gsub("\\s+", "", terms), fixed = TRUE)]
+}
+
+# Var(ghat - g) for the classify rows: predict() with only = the genetic terms, so the
+# fixed effects (the overall and environment means) and their uncertainty are left out.
+asreml_genetic_pev_table <- function(mod, pheno_data, classify, only,
+                                     workspace = NULL, pworkspace = NULL) {
+  predict_impl <- getOption("PredictProR.asreml_predict_impl", asreml::predict.asreml)
+  # Called directly, not through do.call(): predict.asreml re-evaluates its own call, and
+  # do.call() would put the whole model object into that call.
+  has_ws <- asreml_has_arg_value(workspace)
+  call_predict <- function(pws) {
+    has_pws <- asreml_has_arg_value(pws)
+    asreml_run_with_model_data_context(mod, pheno_data, if (has_ws && has_pws) {
+      predict_impl(mod, classify = classify, only = only, sed = FALSE,
+                   workspace = workspace[1L], pworkspace = pws[1L])
+    } else if (has_ws) {
+      predict_impl(mod, classify = classify, only = only, sed = FALSE, workspace = workspace[1L])
+    } else if (has_pws) {
+      predict_impl(mod, classify = classify, only = only, sed = FALSE, pworkspace = pws[1L])
+    } else {
+      predict_impl(mod, classify = classify, only = only, sed = FALSE)
+    })$pvals
+  }
+  first <- tryCatch(call_predict(pworkspace), error = identity)
+  if (!inherits(first, "error")) return(first)
+  # predict(only = ) can need more prediction workspace than the total-mean prediction (1,000
+  # lines at the default 1e6 words): retry once at 1gb, as the multi-trait route does
+  retry <- if (gp_multitrait_asreml_workspace_error(conditionMessage(first))) {
+    gp_multitrait_asreml_retry_pworkspace(pworkspace)
+  }
+  if (is.null(retry)) stop(first)
+  call_predict(retry)
+}
+
+# K_ii of each fitted kernel for the given lines, from the attribute
+# compute_inverse_and_sparse() leaves on the vm() inverse (NULL when absent).
+asreml_kernel_diagonals <- function(names_in_inv_list, ids) {
+  out <- lapply(names_in_inv_list, function(nm) {
+    obj <- get0(nm, envir = .GlobalEnv, inherits = FALSE)
+    d <- attr(obj, "kernel_diag", exact = TRUE)
+    if (is.null(d) || is.null(names(d))) return(NULL)
+    v <- as.numeric(d[as.character(ids)])
+    if (any(!is.finite(v))) NULL else v
+  })
+  names(out) <- names_in_inv_list
+  out
+}
+
+# Genetic reliability of ASReml predictions, the same quantity the GP engine reports:
+#   Reliability_i = 1 - PEV_g,i / sum_k sigma2_k(env_i) * K_k,ii
+# PEV_g is Var(ghat - g) from asreml_genetic_pev_table() (Reliability_variance_input);
+# PEV and Standard_error keep the prediction's total-mean SE^2. varG_per_omics is a
+# kernels x environments matrix of genetic variances (one column: one environment).
+# Without the kernel diagonal, K_ii = 1 is used and Reliability_basis says so.
+asreml_apply_genetic_reliability <- function(pred_df, mod, pheno_data, gen_name,
+                                             classify, varG_per_omics, names_in_inv_list,
+                                             heter_groups = NULL,
+                                             workspace = NULL, pworkspace = NULL,
+                                             high_reliability_thres = 0.6,
+                                             low_reliability_thres = 0.2) {
+  if (is.null(pred_df) || !is.data.frame(pred_df) || !nrow(pred_df)) return(pred_df)
+  n <- nrow(pred_df)
+  unavailable <- function(reason) {
+    pred_df[["Reliability_variance_input"]] <- rep(NA_real_, n)
+    pred_df[["Reliability_reference_variance"]] <- rep(NA_real_, n)
+    pred_df[["Reliability"]] <- rep(NA_real_, n)
+    pred_df[["Reliability_basis"]] <- rep(paste("unavailable:", reason), n)
+    pred_df[["Reliability_remarks"]] <- rep(paste("Reliability unavailable:", reason), n)
+    pred_df
+  }
+  only <- asreml_genetic_terms(mod, gen_name)
+  if (!length(only)) return(unavailable("no genetic vm() term in the model"))
+  pv <- tryCatch(
+    asreml_genetic_pev_table(mod, pheno_data, classify, only, workspace, pworkspace),
+    error = function(e) e
+  )
+  if (inherits(pv, "error")) {
+    return(unavailable(paste("ASReml predict(only = genetic terms) failed:", conditionMessage(pv))))
+  }
+  by_env <- !is.null(heter_groups) && heter_groups %in% names(pred_df) && heter_groups %in% names(pv)
+  key_cols <- c(gen_name, if (by_env) heter_groups)
+  row_key <- function(d) do.call(paste, c(lapply(key_cols, function(k) as.character(d[[k]])), sep = "\r"))
+  gpev <- as.numeric(pv[["std.error"]])[match(row_key(pred_df), row_key(pv))]^2
+
+  vg <- as.matrix(varG_per_omics)
+  if (nrow(vg) != length(names_in_inv_list) || !all(is.finite(vg))) {
+    return(unavailable("genetic variance components are not available for every kernel"))
+  }
+  env_of_row <- if (by_env) as.character(pred_df[[heter_groups]]) else rep(NA_character_, n)
+  vg_row <- if (ncol(vg) == 1L) {
+    matrix(rep(vg[, 1L], each = n), nrow = n)
+  } else {
+    if (is.null(colnames(vg)) || !all(env_of_row %in% colnames(vg))) {
+      return(unavailable("environment genetic variances do not cover every prediction environment"))
+    }
+    t(vg[, env_of_row, drop = FALSE])
+  }
+  kd <- asreml_kernel_diagonals(names_in_inv_list, pred_df[[gen_name]])
+  have_diag <- all(!vapply(kd, is.null, logical(1)))
+  kmat <- if (have_diag) do.call(cbind, kd) else matrix(1, n, length(names_in_inv_list))
+  prior <- rowSums(vg_row * kmat)
+
+  rel <- rep(NA_real_, n)
+  ok <- is.finite(gpev) & is.finite(prior) & prior > 0
+  rel[ok] <- pmax(0, pmin(1, 1 - gpev[ok] / prior[ok]))
+  pred_df[["Reliability_variance_input"]] <- gpev
+  pred_df[["Reliability_reference_variance"]] <- prior
+  pred_df[["Reliability"]] <- rel
+  pred_df[["Reliability_basis"]] <- rep(if (have_diag) {
+    "genetic_prior_variance: 1 - genetic PEV / (sum of sigma2_g * K_ii)"
+  } else {
+    "genetic_prior_variance (kernel diagonal unavailable, K_ii = 1): 1 - genetic PEV / sigma2_g"
+  }, n)
+  pred_df[["Reliability_remarks"]] <- ifelse(
+    is.na(rel), "Reliability unavailable: genetic PEV or prior genetic variance not finite",
+    ifelse(rel >= high_reliability_thres, "Reliable",
+           ifelse(rel <= low_reliability_thres, "Unreliable", "Acceptable"))
+  )
+  pred_df
 }
 
 asreml_mark_prediction_uncertainty_unavailable <- function(predicted_df,

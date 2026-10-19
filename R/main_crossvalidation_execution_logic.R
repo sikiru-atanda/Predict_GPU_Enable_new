@@ -38,10 +38,23 @@ models_execute_crossval <- function(pheno_data = NULL,
     log_info("Cleaning up resources")
     stop_daemons()
   }, add = TRUE)
+  # fold-internal rankings memoised by this CV's tasks (gp_feature_fold_view()) are not needed after it
+  on.exit(gp_feature_fold_cache_clear(), add = TRUE)
 
   `%||%` <- function(a, b) if (is.null(a)) b else a
-  gp_py_bin <- if (exists("gp_detect_python", mode = "function")) gp_detect_python() else NULL
-  init_py <- function() if (exists("gp_init_python_once", mode = "function")) gp_init_python_once(gp_py_bin)
+  # The interpreter is looked for only when a task embeds Python: finding it
+  # starts every Python on the machine (13.8 s for 13 on a Windows test
+  # machine), and R-only cross-validations never need it.
+  gp_py_bin <- NULL
+  gp_py_bin_resolved <- FALSE
+  resolve_py_bin <- function() {
+    if (!gp_py_bin_resolved) {
+      gp_py_bin <<- if (exists("gp_detect_python", mode = "function")) gp_detect_python() else NULL
+      gp_py_bin_resolved <<- TRUE
+    }
+    gp_py_bin
+  }
+  init_py <- function() if (exists("gp_init_python_once", mode = "function")) gp_init_python_once(resolve_py_bin())
   metric_needs_probabilities <- function(metric, fam) {
     metric <- tolower(metric)
     if (identical(fam, "binary")) {
@@ -258,6 +271,16 @@ models_execute_crossval <- function(pheno_data = NULL,
                               NA_integer_
                             },
                             stringsAsFactors = FALSE)
+  # Fold-internal scoring runs once per trait x replication x fold, not once per task: every
+  # model and k value of a fold reuses its ranking (gp_feature_fold_view(predictor_hash =)). The
+  # predictor matrix is hashed once here; a task's matrix is it or a column subset of it.
+  feature_fold_predictor_hash <- if (exists("omics_data", inherits = FALSE) && !is.null(omics_data) &&
+                                     !is.null(feature_score_metadata) && !is.null(feature_k_grid) &&
+                                     "fold_internal" %in% gp_feature_cv_modes(feature_scoring_cv)) {
+    gp_feature_predictor_hash(omics_data)
+  } else {
+    NULL
+  }
   tasks_full$modell <- as.character(GS_model_cv_can[tasks_full$model_idx])
   tasks_full$modell_label <- as.character(GS_model_cv_labels[tasks_full$model_idx])
   tasks_full$model_idx <- NULL
@@ -327,6 +350,9 @@ models_execute_crossval <- function(pheno_data = NULL,
   # fails on machines whose python3 cannot be embedded (no shared libpython).
   direct_python_cv_models <- unique(c(AI_valid_models, gp_valid_models, gp_parallel_r_only_models()))
   cv_scheduler_needs_python_init <- any(!tasks_full$modell %in% direct_python_cv_models)
+  # found here, once, so workers receive it with init_py instead of each
+  # looking for it
+  if (isTRUE(cv_scheduler_needs_python_init)) resolve_py_bin()
 
   policy_model_params <- lapply(tasks_full$modell, function(mod) {
     gp_parallel_extract_model_policy_params(mod, params)
@@ -347,6 +373,11 @@ models_execute_crossval <- function(pheno_data = NULL,
     # on every backend.
     old_rng_kind_task <- RNGkind("Mersenne-Twister", "Inversion", "Rejection")
     on.exit(do.call(RNGkind, as.list(old_rng_kind_task)), add = TRUE)
+    # The models' own seeds (gp_ml_random_state(): the folds Lasso picks its
+    # penalty on, bootstraps) come from the random_state option, which
+    # workers do not have: there a Lasso took 123, here the run's seed.
+    old_random_state_task <- options(random_state = random_state)
+    on.exit(options(old_random_state_task), add = TRUE)
     fold_only <- suppressWarnings(as.integer(task_row[["fold_only"]] %||% NA_integer_))
     if (!length(fold_only)) fold_only <- NA_integer_
     fold_n_split <- suppressWarnings(as.integer(task_row[["fold_n_split"]] %||% NA_integer_))
@@ -487,6 +518,7 @@ models_execute_crossval <- function(pheno_data = NULL,
         fixed_selected <- gp_feature_selected_metadata(fixed_meta, trait = trait, k = feature_k)
         fixed_meta[["selected"]] <- fixed_meta[["predictor"]] %in% fixed_selected[["predictor"]]
         fixed_meta[["feature_k"]] <- as.integer(sum(fixed_meta[["selected"]]))
+        fixed_meta[["tied_at_cutoff"]] <- isTRUE(attr(fixed_selected, "tied_at_cutoff"))
         fixed_meta[["replication"]] <- rep_i
         fixed_meta[["fold"]] <- NA_integer_
         fixed_meta[["selection_mode"]] <- "fixed"
@@ -530,7 +562,10 @@ models_execute_crossval <- function(pheno_data = NULL,
         ntree = params$ntree %||% 500L,
         mtry = params$mtry,
         nodesize = params$nodesize,
-        rf_n_jobs = params$rf_n_jobs %||% 1L
+        rf_n_jobs = params$rf_n_jobs %||% 1L,
+        fixed = params$fixed,
+        heter_groups = heter_groups,
+        predictor_hash = feature_fold_predictor_hash
       )
       omics_data <<- view$predictor_data
       apply_selected_model_inputs(view$selected_by_source)
@@ -622,12 +657,23 @@ models_execute_crossval <- function(pheno_data = NULL,
     len_y <- nrow(pheno_data)
     y <- if (identical(response_family, "gaussian")) as.double(pheno_data[[trait]]) else pheno_data[[trait]]
     class_levels <- class_levels_for_y(pheno_data[[trait]], response_family)
-    handle_error <- FALSE
+    # Fold failures are recorded with the task: a task whose folds all failed is
+    # dropped, and the dropped-task warning / final error name the cause.
+    fold_errors <- character()
     # Phase 3.17: warn-once dictionary for Bayes CV tryCatch handlers --
     # silent log_error calls used to swallow real engine errors for
     # RKHS / GBLUP_BRR / BRR; now they emit one warning() per (trait,
     # model) so users see the cause.
     bayes_warned <- list()
+    # ASReml fold failures: one warning per task with the ASReml message (the
+    # fold is left NA; later folds with the same failure are not repeated).
+    asreml_fold_warned <- FALSE
+    warn_asreml_fold_failure <- function(fold, e) {
+      if (isTRUE(asreml_fold_warned)) return(invisible(NULL))
+      warning(sprintf("GBLUP (ASReml) failed for trait '%s' in cross-validation fold %s (later folds with the same failure not repeated): %s",
+                      trait, fold, conditionMessage(e)), call. = FALSE)
+      asreml_fold_warned <<- TRUE
+    }
     yhat_init <- if (response_family %in% c("gaussian", "binary")) {
       rep(NA_real_, len_y)
     } else {
@@ -924,6 +970,7 @@ models_execute_crossval <- function(pheno_data = NULL,
         yprob_cv <<- merged$yprob_cv
         feature_selection_records <<- c(feature_selection_records, merged$feature_selection_records)
         gp_batch_cv_info <<- merged$gp_batch_cv_info %||% gp_batch_cv_info
+        fold_errors <<- c(fold_errors, merged$fold_errors)
         return(NULL)
       }
       if (is.na(fold_only)) {
@@ -937,7 +984,8 @@ models_execute_crossval <- function(pheno_data = NULL,
         ypred_cv = ypred_cv,
         yprob_cv = yprob_cv,
         feature_selection_records = Filter(Negate(is.null), fold_records),
-        gp_batch_cv_info = gp_batch_cv_info
+        gp_batch_cv_info = gp_batch_cv_info,
+        fold_errors = unique(fold_errors)
       )
     }
 
@@ -969,7 +1017,7 @@ models_execute_crossval <- function(pheno_data = NULL,
             warning(sprintf("Bayes %s failed for trait '%s': %s",
                             model_can, trait, conditionMessage(e)),
                     call. = FALSE)
-            handle_error <<- TRUE
+            fold_errors <<- c(fold_errors, conditionMessage(e))
         })
       }
 
@@ -979,7 +1027,8 @@ models_execute_crossval <- function(pheno_data = NULL,
           assign_preds(tst, predict_with_model("GBLUP", tst = tst, additional_params = params))
         }, error = function(e) {
           log_error("GBLUP(asreml) failed for {trait}: {conditionMessage(e)}")
-          handle_error <<- TRUE
+          warn_asreml_fold_failure("hold-out", e)
+          fold_errors <<- c(fold_errors, conditionMessage(e))
         })
       }
 
@@ -988,7 +1037,7 @@ models_execute_crossval <- function(pheno_data = NULL,
           assign_preds(tst, predict_with_model(model_can, y = yNA, tst = tst, additional_params = params))
         }, error = function(e) {
           log_error("{model_can} failed for {trait}: {conditionMessage(e)}")
-          handle_error <<- TRUE
+          fold_errors <<- c(fold_errors, conditionMessage(e))
         })
       }
 
@@ -1045,7 +1094,7 @@ models_execute_crossval <- function(pheno_data = NULL,
             }
           }, error = function(e) {
             log_error("AI model {model_can} failed for {trait}: {conditionMessage(e)}")
-          handle_error <<- TRUE
+          fold_errors <<- c(fold_errors, conditionMessage(e))
         })
       }
 
@@ -1122,7 +1171,7 @@ models_execute_crossval <- function(pheno_data = NULL,
                         call. = FALSE)
                 bayes_warned[[paste(trait, model_can, sep="::")]] <<- TRUE
               }
-              handle_error <<- TRUE
+              fold_errors <<- c(fold_errors, conditionMessage(e))
             })
           }
 
@@ -1132,7 +1181,8 @@ models_execute_crossval <- function(pheno_data = NULL,
               assign_preds(tst, predict_with_model("GBLUP", tst = tst, additional_params = params))
             }, error = function(e) {
               log_error("GBLUP(asreml) failed for {trait} fold {j}: {conditionMessage(e)}")
-              handle_error <<- TRUE
+              warn_asreml_fold_failure(j, e)
+              fold_errors <<- c(fold_errors, conditionMessage(e))
             })
           }
 
@@ -1141,7 +1191,7 @@ models_execute_crossval <- function(pheno_data = NULL,
               assign_preds(tst, predict_with_model(model_can, y = yNA, tst = tst, additional_params = params))
             }, error = function(e) {
               log_error("{model_can} failed for {trait} fold {j}: {conditionMessage(e)}")
-              handle_error <<- TRUE
+              fold_errors <<- c(fold_errors, conditionMessage(e))
             })
           }
 
@@ -1198,7 +1248,7 @@ models_execute_crossval <- function(pheno_data = NULL,
               }
             }, error = function(e) {
               log_error("AI model {model_can} failed for {trait} fold {j}: {conditionMessage(e)}")
-              handle_error <<- TRUE
+              fold_errors <<- c(fold_errors, conditionMessage(e))
             })
           }
 
@@ -1296,7 +1346,7 @@ models_execute_crossval <- function(pheno_data = NULL,
                       call. = FALSE)
               bayes_warned[[paste(trait, model_can, sep="::")]] <<- TRUE
             }
-            handle_error <<- TRUE
+            fold_errors <<- c(fold_errors, conditionMessage(e))
           })
         }
 
@@ -1306,7 +1356,8 @@ models_execute_crossval <- function(pheno_data = NULL,
             assign_preds(tst, predict_with_model("GBLUP", tst = tst, additional_params = params))
           }, error = function(e) {
             log_error("GBLUP(asreml) failed for {trait} fold {j}: {conditionMessage(e)}")
-            handle_error <<- TRUE
+            warn_asreml_fold_failure(j, e)
+            fold_errors <<- c(fold_errors, conditionMessage(e))
           })
         }
 
@@ -1315,7 +1366,7 @@ models_execute_crossval <- function(pheno_data = NULL,
             assign_preds(tst, predict_with_model(model_can, y = yNA, tst = tst, additional_params = params))
           }, error = function(e) {
             log_error("{model_can} failed for {trait} fold {j}: {conditionMessage(e)}")
-            handle_error <<- TRUE
+            fold_errors <<- c(fold_errors, conditionMessage(e))
           })
         }
 
@@ -1372,7 +1423,7 @@ models_execute_crossval <- function(pheno_data = NULL,
             }
           }, error = function(e) {
             log_error("AI model {model_can} failed for {trait} fold {j}: {conditionMessage(e)}")
-            handle_error <<- TRUE
+            fold_errors <<- c(fold_errors, conditionMessage(e))
           })
         }
 
@@ -1467,6 +1518,7 @@ models_execute_crossval <- function(pheno_data = NULL,
       ypred_cv_Reps_all = ypred_cv,
       yprob_cv_Reps_all = if (!is.null(yprob_cv)) as.data.frame(yprob_cv, stringsAsFactors = FALSE) else NULL,
       feature_selection_metadata = gp_feature_bind_metadata(feature_selection_records),
+      fold_errors = unique(fold_errors),
       cv_info = c(
         list(
           method = cross_validation_meth,
@@ -1488,7 +1540,7 @@ models_execute_crossval <- function(pheno_data = NULL,
   # original task order, by computing metrics on the pooled out-of-fold
   # predictions (the same code path as an unsplit task).
   merge_fold_task_results <- function(results) {
-    if (all(is.na(tasks_full$fold_only))) {
+    if (all(is.na(tasks_full$fold_only)) || isTRUE(attr(results, "gp_unsplit"))) {
       return(results)
     }
     policy <- attr(results, "gp_execution_policy", exact = TRUE)
@@ -1522,7 +1574,8 @@ models_execute_crossval <- function(pheno_data = NULL,
         ypred_cv = ypred,
         yprob_cv = yprob,
         feature_selection_records = unlist(lapply(parts, `[[`, "feature_selection_records"), recursive = FALSE),
-        gp_batch_cv_info = parts[[1L]]$gp_batch_cv_info
+        gp_batch_cv_info = parts[[1L]]$gp_batch_cv_info,
+        fold_errors = unique(unlist(lapply(parts, `[[`, "fold_errors")))
       ))
     })
     attr(out, "gp_execution_policy") <- policy
@@ -1546,17 +1599,24 @@ models_execute_crossval <- function(pheno_data = NULL,
       parallel_count = 0L
     )
   } else {
+    # The task and init_py share a copy of this frame holding only what they
+    # read (52.3 MB -> 46.2 MB in a 3-trait run; the repeats in it go once,
+    # gp_share_repeated_objects()). Its closures' `<<-` writes go to the copy.
+    cv_task <- gp_trim_closure_frame(list(
+      run = function(i) run_one_task(tasks_full[i, , drop = FALSE]),
+      init = init_py
+    ))
     results <- gp_execute_partitioned_tasks(
       model_ids = tasks_full$modell,
-      run_task = function(i) run_one_task(tasks_full[i, , drop = FALSE]),
+      run_task = cv_task$run,
       sequential_models = sequential_models,
       decision_args = list(
         model_params_list = policy_model_params,
-        # What workers actually receive: run_task serialises this whole frame.
-        # The former hand-picked list sized 0.81 GB of a 1.79 GB payload (mice
-        # CV), and, kept in the frame, was itself shipped (826 MB). Built
-        # inline so it is not bound here; shares the frame's objects (no copy).
-        globals = as.list(environment(), all.names = FALSE),
+        # What workers actually receive: run_task serialises its frame, the
+        # copy. The former hand-picked list sized 0.81 GB of a 1.79 GB payload
+        # (mice CV), and, kept in the frame, was itself shipped (826 MB). Built
+        # inline so it is not bound here; shares the copy's objects (no copy).
+        globals = as.list(environment(cv_task$run), all.names = FALSE),
         user_mode = parallel_mode,
         num_cores = num_cores,
         globals_max_GB = params$globals_max_GB %||% as.numeric(Sys.getenv("GP_GLOBALS_MAX_GB", "4")),
@@ -1572,14 +1632,21 @@ models_execute_crossval <- function(pheno_data = NULL,
       ),
       packages = c("dplyr", "logger"),
       seed = TRUE,
-      initializer = if (isTRUE(cv_scheduler_needs_python_init)) init_py else NULL,
-      fail_fast = params$fail_fast %||% FALSE
+      initializer = if (isTRUE(cv_scheduler_needs_python_init)) cv_task$init else NULL,
+      fail_fast = params$fail_fast %||% FALSE,
+      # if the policy runs nothing in parallel: one task per model, not per fold
+      unsplit = if (any(!is.na(tasks_full$fold_only))) list(
+        model_ids = tasks_unsplit$modell,
+        run_task = function(i) run_one_task(tasks_unsplit[i, , drop = FALSE])
+      ) else NULL
     )
     results <- merge_fold_task_results(results)
   }
 
   filtered_results <- gp_filter_crossval_results(results)
   attr(filtered_results, "gp_execution_policy") <- attr(results, "gp_execution_policy")
+  # a tie at the k cut-off found on a parallel worker warned only there
+  gp_feature_warn_returned_ties(filtered_results)
 
   log_info("Cross-validation completed with {length(filtered_results)} valid results")
   return(filtered_results)

@@ -14,6 +14,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+import predictpror_deps as _deps
+
+# numpy/pandas are installed on first use; torch, gpytorch, linear_operator,
+# scipy and zarr before the GP framework loads (_load_framework)
+_deps.ensure_groups(["tabular"])
+
 import numpy as np
 import pandas as pd
 
@@ -279,36 +287,20 @@ def _install_torch_with_fallback(
     torch_version: Optional[str],
     forced_index: Optional[str],
 ) -> Dict[str, str]:
-    logs: List[str] = []
-    candidates: List[Tuple[str, Optional[str], str]] = []
-    if forced_index:
-        candidates.append(("forced", forced_index, "gpu" if "cu" in forced_index else "cpu"))
-    elif platform.system() == "Darwin":
-        candidates.append(("macos-default", None, "cpu"))
-    else:
-        if bool(prefer_gpu) and cuda != "cpu" and _has_nvidia_gpu():
-            cu_tag = cuda.lower() if str(cuda).lower().startswith("cu") else "cu121"
-            candidates.append((f"pytorch-{cu_tag}", f"https://download.pytorch.org/whl/{cu_tag}", "gpu"))
-        candidates.append(("pytorch-cpu", "https://download.pytorch.org/whl/cpu", "cpu"))
-
-    torch_spec = [f"torch=={torch_version}"] if torch_version else ["torch"]
-    last_error = ""
-    for desc, index_url, flavor in candidates:
-        _pip_uninstall(["torch", "torchvision", "torchaudio", "torchtext", "functorch"])
-        result = _pip_install(torch_spec, index_url=index_url)
-        logs.append(f"[{desc}] pip stdout:\n{result.stdout or ''}")
-        ok, err = _torch_import_probe()
-        if ok:
-            return {
-                "index_used": index_url or "default",
-                "flavor": flavor,
-                "attempt": desc,
-                "logs": "\n".join(logs)[-8000:],
-            }
-        last_error = err
-        if flavor != "cpu" and (("WinError 127" in err) or ("DLL load failed" in err) or ("shm.dll" in err)):
-            continue
-    raise RuntimeError(f"Unable to import torch after installs. Last error: {last_error}")
+    # the shared installer picks the newest CUDA build the driver supports
+    # (else CPU) and holds the environment lock
+    problem = _deps.install_problem()
+    if problem:
+        raise _deps.DependencyError(problem, _deps._message(problem, ["torch"]))
+    with _deps.environment_lock():
+        meta = _deps.install_torch(verbose=True, prefer_gpu=bool(prefer_gpu), cuda=str(cuda),
+                                   torch_version=torch_version, index_url=forced_index)
+    return {
+        "index_used": meta.get("index"),
+        "flavor": meta.get("build"),
+        "attempt": meta.get("build"),
+        "logs": "",
+    }
 
 
 def _ensure_torch(prefer_gpu: bool = True,
@@ -359,17 +351,22 @@ def setup_deps(project_root: Optional[str] = None,
                torch_version: Optional[str] = None,
                index_url: Optional[str] = None,
                install_scikit_sparse: bool = True):
-    _pip_install(["numpy", "pandas"])
+    _deps.ensure_groups(["tabular"])
     torch_meta = _ensure_torch(
         prefer_gpu=bool(prefer_gpu),
         cuda=str(cuda).lower(),
         torch_version=torch_version,
         index_url=index_url,
     )
+    _deps.ensure_groups(["gp"])
     reqs = _requirements_without_torch(project_root)
-    if not reqs:
-        reqs = ["gpytorch", "linear-operator", "zarr", "pytest", "pyreadr"]
-    _pip_install(reqs)
+    if reqs:
+        with _deps.environment_lock():
+            pins = [f"{d}=={v}" for d in ("torch", "numpy") for v in [_deps._installed_version(d)] if v]
+            rc, lines = _deps._pip_install(reqs, True, constraints=pins)
+        if rc != 0:
+            reason = _deps._classify_pip_failure(lines)
+            raise _deps.DependencyError(reason, _deps._message(reason, reqs, "\n".join(lines)))
 
     scikit_sparse_version: Optional[str] = None
     if install_scikit_sparse:
@@ -404,6 +401,7 @@ def setup_deps(project_root: Optional[str] = None,
 
 
 def _load_framework(project_root: str):
+    _deps.ensure_groups(["torch", "gp"])
     module_name = "gp_framework"
     py = os.path.join(project_root, module_name + ".py")
     if not os.path.exists(py):
@@ -1192,6 +1190,12 @@ def _fast_krr_cv_ineligible_reason(
         return "lambda_selection_not_fixed"
     if str(kw_base.get("lam_select", "fixed")).lower() != "fixed":
         return "lambda_selection_not_fixed"
+    lam = float(_coalesce(kw_base.get("lam", None), kw_base.get("krr_lam", None), default=1e-3))
+    if not np.isfinite(lam) or lam <= 0:
+        return "fast_cv_requires_positive_lambda"
+    if any(kw_base.get(name, None) is not None for name in ("resid_diag_obs", "resid_diag_env")):
+        # The fitted genetic scale changes per fold even without standardization.
+        return "fixed_residual_requires_fold_specific_reml"
     if kw_base.get("learn_scales", False):
         return "learn_scales_enabled"
     if kw_base.get("compute_ai_se", False):
@@ -1350,48 +1354,12 @@ def _fast_krr_block_cv_predictions_learned_scalar_residual(
         Var_beta0 = fw._spd_inverse(X_train_t.mT @ Ainv_X)
         beta0 = Var_beta0 @ (X_train_t.mT @ Ainv_y)
         Py_train = Ainv_y - Ainv_X @ beta0
-        resid = float(lam_eff) * Py_train.reshape(-1)
-        hutch_samples = int(kw_base.get("hutch_samples", 64))
-        if hutch_samples > 0:
-            K_TT0 = K.index_select(0, train_pos_t).index_select(1, train_pos_t)
-            train_idx_full_t = fw._t(train_idx, device=device, dtype=torch.int64)
-
-            def H_times(z):
-                zt = z.index_select(0, train_idx_full_t)
-                Ainv_z = Ainv_T @ zt
-                Sx_zt = X_train_t @ (Var_beta0 @ (X_train_t.mT @ Ainv_z))
-                Hz_t = Sx_zt + K_TT0 @ (Ainv_T @ (zt - Sx_zt))
-                out = torch.zeros_like(z)
-                out.index_copy_(0, train_idx_full_t, Hz_t)
-                return out
-
-            hat_diag = fw._estimate_diag_Hutch(
-                H_times,
-                n=int(df.shape[0]),
-                probes=hutch_samples,
-                device=device,
-                dtype=dtype_t,
-                seed=int(kw_base.get("seed", 12345)),
-            )
-            tr_H = float(
-                torch.clamp(
-                    hat_diag.index_select(0, train_idx_full_t).sum(),
-                    min=0.0,
-                    max=float(max(int(train_idx.size) - 1, 0)),
-                ).item()
-            )
-        else:
-            tr_H = 0.0
-        denom = max(1.0, float(train_idx.size) - tr_H)
-        if str(kw_base.get("env_resid_robust", "none")).lower() == "mad" and hasattr(fw, "_robust_env_var"):
-            sig2 = float(fw._robust_env_var(resid))
-            if not np.isfinite(sig2):
-                sig2 = float(torch.clamp((resid.pow(2).sum() / denom), min=1e-12).item())
-        else:
-            sig2 = float(torch.clamp((resid.pow(2).sum() / denom), min=1e-12).item())
+        # Exact training-only profile scale at the selected variance ratio.
+        sigma2_g_std = max(float((y_train_t @ Py_train).item()) /
+                            max(1, int(train_idx.size)-int(X_train_t.shape[1])), 1e-12)
+        sig2 = float(lam_eff)*sigma2_g_std
         sigma_rows.append(sig2)
-
-        c_eff = float(lam_eff) + sig2
+        c_eff = float(lam_eff)
         inv_c = 1.0 / torch.clamp(eigvals + c_eff, min=1e-12)
         Uy = eigvecs.mT @ y_obs_t
         Cy = eigvecs @ (inv_c * Uy)
@@ -1433,20 +1401,28 @@ def _fast_krr_block_cv_predictions_learned_scalar_residual(
             Ainv_K = Ainv_T_c @ K_TB
             proj = (K_TB * Ainv_K).sum(dim=0)
             Kss_diag = K.diagonal().index_select(0, block_pos_t)
-            var_lat_std = torch.clamp(Kss_diag - proj, min=0.0)
             X_B = X_obs_t.index_select(0, block_pos_t)
-            XB = X_B @ Var_beta_c
-            var_beta_diag = (XB * X_B).sum(dim=1)
-            var_obs_std = torch.clamp(var_lat_std + var_beta_diag + sig2, min=0.0)
+            Q = K_TB.mT @ Ainv_X_c
+            B = X_B - Q
+            conditional = Kss_diag - proj
+            var_lat_std = torch.clamp(conditional + ((B @ Var_beta_c) * B).sum(dim=1), min=0.0) * sigma2_g_std
+            var_gen_std = torch.clamp(conditional + ((Q @ Var_beta_c) * Q).sum(dim=1), min=0.0) * sigma2_g_std
+            var_obs_std = var_lat_std + sig2
             var_obs = stdr.inv_var(fw._to_numpy(var_obs_std), ei[test_idx])
             var_lat = stdr.inv_var(fw._to_numpy(var_lat_std), ei[test_idx])
+            var_gen = stdr.inv_var(fw._to_numpy(var_gen_std), ei[test_idx])
+            prior_gen = stdr.inv_var(fw._to_numpy(Kss_diag * sigma2_g_std), ei[test_idx])
             pred_df["SE_observed"] = np.sqrt(np.maximum(var_obs, 0.0))
             pred_df["SE_latent"] = np.sqrt(np.maximum(var_lat, 0.0))
-            pred_df["SE_g_latent"] = pred_df["SE_latent"]
+            pred_df["SE_g_latent"] = np.sqrt(np.maximum(var_gen, 0.0))
             pred_df["Prediction_Var_latent"] = np.maximum(var_lat, 0.0)
             pred_df["Prediction_Var_observed"] = np.maximum(var_obs, 0.0)
             pred_df["Prediction_SE_latent"] = pred_df["SE_latent"]
             pred_df["Prediction_SE_observed"] = pred_df["SE_observed"]
+            pred_df["PEV"] = pred_df["Prediction_Var_latent"]
+            pred_df["Reliability_variance_input"] = var_gen
+            pred_df["Reliability_reference_variance"] = prior_gen
+            pred_df["Reliability_basis"] = "genetic_prior_variance"
 
         pred_df = _cv_prediction_frame(pred_df, fold_id, test_idx)
         predictions_all.append(pred_df)
@@ -1560,78 +1536,15 @@ def _fast_krr_block_cv_predictions_learned_env_residual(
         Var_beta0 = fw._spd_inverse(X_train_t.mT @ Ainv_X)
         beta0 = Var_beta0 @ (X_train_t.mT @ Ainv_y)
         Py_train = Ainv_y - Ainv_X @ beta0
-        resid = float(lam_eff) * Py_train.reshape(-1)
+        sigma2_g_std = max(float((y_train_t @ Py_train).item()) /
+                            max(1, int(train_idx.size)-int(X_train_t.shape[1])), 1e-12)
+        sig2 = np.full(n_env, float(lam_eff)*sigma2_g_std)
+        sigma_rows.append(sig2)
 
-        hutch_samples = int(kw_base.get("hutch_samples", 64))
-        if hutch_samples > 0:
-            K_TT0 = K.index_select(0, train_pos_t).index_select(1, train_pos_t)
-            train_idx_full_t = fw._t(train_idx, device=device, dtype=torch.int64)
-
-            def H_times(z):
-                zt = z.index_select(0, train_idx_full_t)
-                Ainv_z = Ainv_T @ zt
-                Sx_zt = X_train_t @ (Var_beta0 @ (X_train_t.mT @ Ainv_z))
-                Hz_t = Sx_zt + K_TT0 @ (Ainv_T @ (zt - Sx_zt))
-                out = torch.zeros_like(z)
-                out.index_copy_(0, train_idx_full_t, Hz_t)
-                return out
-
-            hat_diag = fw._estimate_diag_Hutch(
-                H_times,
-                n=int(df.shape[0]),
-                probes=hutch_samples,
-                device=device,
-                dtype=dtype_t,
-                seed=int(kw_base.get("seed", 12345)),
-            )
-        else:
-            hat_diag = torch.zeros(int(df.shape[0]), dtype=dtype_t, device=device)
-
-        train_env = np.asarray(ei[train_idx], dtype=np.int64)
-        sig2 = np.full(n_env, np.nan, dtype=float)
-        robust_mode = str(kw_base.get("env_resid_robust", "none")).lower()
-        for env_i in range(n_env):
-            rel_np = np.where(train_env == env_i)[0].astype(np.int64)
-            n_e = int(rel_np.size)
-            if n_e == 0:
-                continue
-            rel_t = fw._t(rel_np, device=device, dtype=torch.int64)
-            r_e = resid.index_select(0, rel_t)
-            idx_full_t = fw._t(train_idx[rel_np], device=device, dtype=torch.int64)
-            tr_He = float(
-                torch.clamp(
-                    hat_diag.index_select(0, idx_full_t).sum(),
-                    min=0.0,
-                    max=float(max(n_e - 1, 0)),
-                ).item()
-            )
-            denom = max(1.0, float(n_e) - tr_He)
-            if robust_mode == "mad" and hasattr(fw, "_robust_env_var"):
-                s2 = float(fw._robust_env_var(r_e))
-                if not np.isfinite(s2):
-                    s2 = float(torch.clamp((r_e.pow(2).sum() / denom), min=1e-12).item())
-            else:
-                s2 = float(torch.clamp((r_e.pow(2).sum() / denom), min=1e-12).item())
-            sig2[env_i] = s2
-
-        shrink_tau = float(kw_base.get("env_resid_shrink_tau", 0.0) or 0.0)
-        if np.isfinite(sig2).any() and shrink_tau > 0:
-            m = float(np.nanmean(sig2))
-            sig2 = (1.0 - shrink_tau) * sig2 + shrink_tau * m
-        if np.isnan(sig2).any():
-            resid_np = fw._to_numpy(resid)
-            mask = np.isfinite(resid_np)
-            global_s2 = float(np.mean(resid_np[mask] ** 2)) if np.any(mask) else 1.0
-            sig2 = np.where(np.isfinite(sig2), sig2, global_s2)
-        if np.any(~np.isfinite(sig2)) or np.any(sig2 <= 0):
-            raise ValueError("fast KRR CV: learned environment residuals must be finite and > 0")
-        sigma_rows.append(sig2.copy())
-
-        resid_train_std_t = fw._t(sig2[train_env], device=device, dtype=dtype_t)
         K_TT = K.index_select(0, train_pos_t).index_select(1, train_pos_t)
         Vtt = K_TT.clone()
         Vtt = 0.5 * (Vtt + Vtt.mT)
-        Vtt.diagonal().add_(resid_train_std_t + float(lam_eff))
+        Vtt.diagonal().add_(float(lam_eff))
         L = fw._cholesky_factor(Vtt)
         Vinv_y = fw._cholesky_solve_from_factor(L, y_train_t)
         Vinv_X = fw._cholesky_solve_from_factor(L, X_train_t)
@@ -1665,7 +1578,7 @@ def _fast_krr_block_cv_predictions_learned_env_residual(
                 "n_test": int(test_idx.size),
                 "elapsed_sec": float(elapsed),
                 "status": "ok",
-                "fast_path": "krr_block_delete_learned_env_residual",
+                "fast_path": "krr_block_delete_profiled_scale",
                 "sigma2_resid_env_std_mean": float(np.mean(sig2)),
                 "sigma2_resid_env_std_min": float(np.min(sig2)),
                 "sigma2_resid_env_std_max": float(np.max(sig2)),
@@ -1680,11 +1593,11 @@ def _fast_krr_block_cv_predictions_learned_env_residual(
         "fold_rows": fold_rows,
         "metric_rows": metric_rows,
         "meta": {
-            "cv_fast_path": "krr_block_delete_learned_env_residual",
+            "cv_fast_path": "krr_block_delete_profiled_scale",
             "cv_fast_path_device": str(device),
             "cv_fast_path_n_observed": int(n_obs),
             "cv_fast_path_fixed_residual": False,
-            "cv_fast_path_residual_mode": "per_environment",
+            "cv_fast_path_residual_mode": "profiled_variance_ratio",
             "cv_fast_path_final_solve": "fold_specific_cholesky",
             "cv_fast_path_sigma2_resid_std_mean": float(np.mean(sigma_stack)) if sigma_stack.size else np.nan,
             "cv_fast_path_elapsed_sec": float(time.perf_counter() - started),
@@ -1810,158 +1723,7 @@ def _fast_krr_block_cv_predictions(
             kw_base=kw_base,
         )
 
-    if resid_diag_obs is not None:
-        resid_diag_obs = np.asarray(resid_diag_obs, dtype=float).reshape(-1)
-        if resid_diag_obs.size != df.shape[0]:
-            raise ValueError(f"fast KRR CV: resid_diag_obs length {resid_diag_obs.size} != n_obs_all {df.shape[0]}")
-        scale2_obs = stdr.inv_var(np.ones(df.shape[0], dtype=float), ei)
-        scale2_obs = np.where(np.isfinite(scale2_obs) & (scale2_obs > 0), scale2_obs, 1.0)
-        resid_std_np = resid_diag_obs[observed_rows] / scale2_obs[observed_rows]
-    elif resid_diag_env is not None:
-        resid_diag_env = np.asarray(resid_diag_env, dtype=float).reshape(-1)
-        if resid_diag_env.size != len(env_levels):
-            raise ValueError(f"fast KRR CV: resid_diag_env length {resid_diag_env.size} != n_env {len(env_levels)}")
-        if np.any(~np.isfinite(resid_diag_env)) or np.any(resid_diag_env <= 0):
-            raise ValueError("fast KRR CV: resid_diag_env must be finite and > 0")
-        resid_std_np = resid_diag_env[ei[observed_rows]]
-    else:
-        Vtmp = K.clone()
-        Vtmp = 0.5 * (Vtmp + Vtmp.mT)
-        Vtmp.diagonal().add_(float(lam_eff))
-        Vinv_y_tmp = fw._cholesky_solve(Vtmp, y_obs_t)
-        Vinv_X_tmp = fw._cholesky_solve(Vtmp, X_obs_t)
-        Xt_Vinv_X_tmp = X_obs_t.mT @ Vinv_X_tmp
-        Var_beta_tmp = fw._spd_inverse(Xt_Vinv_X_tmp)
-        beta_tmp = Var_beta_tmp @ (X_obs_t.mT @ Vinv_y_tmp)
-        alpha_tmp = fw._cholesky_solve(Vtmp, y_obs_t - X_obs_t @ beta_tmp)
-        yhat_tmp = (X_obs_t @ beta_tmp) + K @ alpha_tmp
-        resid = (y_obs_t - yhat_tmp).reshape(-1)
-
-        hutch_samples = int(kw_base.get("hutch_samples", 64))
-        if hutch_samples > 0:
-            def H_times(z):
-                Vinv_z = fw._cholesky_solve(Vtmp, z)
-                Sx_z = X_obs_t @ (Var_beta_tmp @ (X_obs_t.mT @ Vinv_z))
-                return Sx_z + K @ fw._cholesky_solve(Vtmp, z - Sx_z)
-
-            hat_diag = fw._estimate_diag_Hutch(
-                H_times,
-                n=n_obs,
-                probes=hutch_samples,
-                device=device,
-                dtype=dtype_t,
-                seed=int(kw_base.get("seed", 12345)),
-            )
-        else:
-            hat_diag = torch.zeros(n_obs, dtype=dtype_t, device=device)
-
-        tr_H = float(torch.clamp(hat_diag.sum(), min=0.0, max=float(max(n_obs - 1, 0))).item())
-        denom = max(1.0, float(n_obs) - tr_H)
-        if str(kw_base.get("env_resid_robust", "none")).lower() == "mad" and hasattr(fw, "_robust_env_var"):
-            sig2 = float(fw._robust_env_var(resid))
-            if not np.isfinite(sig2):
-                sig2 = float(torch.clamp((resid.pow(2).sum() / denom), min=1e-12).item())
-        else:
-            sig2 = float(torch.clamp((resid.pow(2).sum() / denom), min=1e-12).item())
-        resid_std_np = np.full(n_obs, sig2, dtype=float)
-
-    if np.any(~np.isfinite(resid_std_np)) or np.any(resid_std_np <= 0):
-        raise ValueError("fast KRR CV: residual diagonal must be finite and > 0")
-    resid_std_t = fw._t(np.asarray(resid_std_np, dtype=float), device=device, dtype=dtype_t)
-
-    V = K.clone()
-    V = 0.5 * (V + V.mT)
-    V.diagonal().add_(resid_std_t + float(lam_eff))
-    L = fw._cholesky_factor(V)
-    Vinv_y = fw._cholesky_solve_from_factor(L, y_obs_t)
-    Vinv_X = fw._cholesky_solve_from_factor(L, X_obs_t)
-    Xt_Vinv_X = X_obs_t.mT @ Vinv_X
-    Var_beta = fw._spd_inverse(Xt_Vinv_X)
-    beta = Var_beta @ (X_obs_t.mT @ Vinv_y)
-    Py = Vinv_y - Vinv_X @ beta
-
-    return_se = str(output_level).lower() in ("predict_with_se", "full_vc")
-    predictions_all: List[pd.DataFrame] = []
-    fold_rows: List[Dict[str, Any]] = []
-    metric_rows: List[Dict[str, Any]] = []
-    started = time.perf_counter()
-
-    for fold in folds:
-        fold_id = str(fold["fold_id"])
-        fold_number = int(fold["fold_number"])
-        test_idx = np.asarray(fold["test_idx"], dtype=np.int64).reshape(-1)
-        block_pos_np = row_to_obs_pos[test_idx]
-        if (block_pos_np < 0).any():
-            raise ValueError(f"fast KRR CV: fold {fold_id!r} contains non-observed test rows")
-        t0 = time.perf_counter()
-        block_pos_t = fw._t(block_pos_np, device=device, dtype=torch.int64)
-        b = int(block_pos_np.size)
-        E = torch.zeros((n_obs, b), dtype=dtype_t, device=device)
-        E[block_pos_t, torch.arange(b, device=device, dtype=torch.int64)] = 1.0
-        Vinv_E = fw._cholesky_solve_from_factor(L, E)
-        Vinv_BB = Vinv_E.index_select(0, block_pos_t)
-        Vinv_X_B = Vinv_X.index_select(0, block_pos_t)
-        PBB = Vinv_BB - Vinv_X_B @ Var_beta @ Vinv_X_B.mT
-        PBB = 0.5 * (PBB + PBB.mT)
-        Lbb = fw._cholesky_factor(PBB)
-        cv_resid_std = fw._cholesky_solve_from_factor(
-            Lbb,
-            Py.index_select(0, block_pos_t).reshape(-1, 1),
-        ).reshape(-1)
-        pred_std = y_obs_t.index_select(0, block_pos_t) - cv_resid_std
-        pred_obs = stdr.inv_mean(fw._to_numpy(pred_std), ei[test_idx])
-
-        pred_df = pd.DataFrame(
-            {
-                "Name": [str(gid_values[i]) for i in test_idx],
-                "Env": [str(df[str(env_col)].iloc[i]) for i in test_idx],
-                "Prediction": np.asarray(pred_obs, dtype=float),
-            }
-        )
-        if return_se:
-            PBB_inv = torch.cholesky_inverse(Lbb)
-            var_obs_std = torch.clamp(PBB_inv.diagonal() - float(lam_eff), min=0.0)
-            resid_test_std = resid_std_t.index_select(0, block_pos_t)
-            var_lat_std = torch.clamp(var_obs_std - resid_test_std, min=0.0)
-            var_obs = stdr.inv_var(fw._to_numpy(var_obs_std), ei[test_idx])
-            var_lat = stdr.inv_var(fw._to_numpy(var_lat_std), ei[test_idx])
-            pred_df["SE_observed"] = np.sqrt(np.maximum(var_obs, 0.0))
-            pred_df["SE_latent"] = np.sqrt(np.maximum(var_lat, 0.0))
-            pred_df["Prediction_Var_latent"] = np.maximum(var_lat, 0.0)
-            pred_df["Prediction_Var_observed"] = np.maximum(var_obs, 0.0)
-            pred_df["Prediction_SE_latent"] = pred_df["SE_latent"]
-            pred_df["Prediction_SE_observed"] = pred_df["SE_observed"]
-
-        pred_df = _cv_prediction_frame(pred_df, fold_id, test_idx)
-        predictions_all.append(pred_df)
-        elapsed = time.perf_counter() - t0
-        fold_rows.append(
-            {
-                "fold_id": fold_id,
-                "fold_number": fold_number,
-                "n_train": int(np.asarray(fold["train_idx"], dtype=np.int64).size),
-                "n_test": int(test_idx.size),
-                "elapsed_sec": float(elapsed),
-                "status": "ok",
-                "fast_path": "krr_block_delete",
-            }
-        )
-        metric_rows.append(_cv_fold_metrics(fold_id, df, str(y_col), pred_df))
-
-    combined = pd.concat(predictions_all, axis=0, ignore_index=True) if predictions_all else pd.DataFrame()
-    return {
-        "predictions": combined,
-        "fold_rows": fold_rows,
-        "metric_rows": metric_rows,
-        "meta": {
-            "cv_fast_path": "krr_block_delete",
-            "cv_fast_path_device": str(device),
-            "cv_fast_path_n_observed": int(n_obs),
-            "cv_fast_path_fixed_residual": bool(fixed_residual),
-            "cv_fast_path_elapsed_sec": float(time.perf_counter() - started),
-            "cv_fast_path_self_checked": False,
-        },
-    }
+    raise ValueError('Fixed residual KRR requires a separate REML fit per fold')
 
 
 def _fast_cv_self_check_passed(
@@ -2161,227 +1923,14 @@ def _try_fast_krr_block_cv(
     return result, None
 
 
-def _fast_gp_exact_cv_ineligible_reason(
-    *,
-    fw: Any,
-    pheno_df: pd.DataFrame,
-    env_col: str,
-    method: str,
-    backend: str,
-    prediction_output: str,
-    output_level: str,
-    include_components: Sequence[Any],
-    fixed_effects: Sequence[Any],
-    env_similarity: Optional[np.ndarray],
-    env_covariates: Optional[Any],
-    grm_factor_cache: Optional[Any],
-    kw_base: Dict[str, Any],
-    y_values: np.ndarray,
-    folds: Sequence[Dict[str, Any]],
-    geno_kernel: np.ndarray,
-) -> Optional[str]:
-    if not _env_enabled("PREDICTPRO_GP_FAST_CV", "auto"):
-        return "disabled"
-    if not _env_enabled("PREDICTPRO_GP_EXACT_FAST_CV", "false"):
-        return "gp_exact_fast_cv_disabled"
-    if not bool(getattr(fw, "TORCH_AVAILABLE", False)) or not bool(getattr(fw, "GPTY_AVAILABLE", False)):
-        return "torch_or_gpytorch_unavailable"
-    if str(method).lower() != "gp_exact":
-        return "method_not_gp_exact"
-    if str(prediction_output).lower() != "test_only":
-        return "prediction_output_not_test_only"
-    output_level_l = str(output_level).lower()
-    if output_level_l not in ("predict_only", "predict_with_se"):
-        return "output_level_not_supported"
-    if output_level_l != "predict_only":
-        return "gp_exact_fast_cv_predict_with_se_requires_force"
-    if str(backend).lower() == "operator" or grm_factor_cache is not None:
-        return "operator_or_factor_cache"
-    if env_similarity is not None or env_covariates is not None:
-        return "environment_kernel_present"
-    comps = [str(x).lower() for x in list(include_components or [])]
-    if comps and set(comps) != {"g"}:
-        return "non_genetic_components_present"
-    if fixed_effects is not None and len(list(fixed_effects)) > 0:
-        return "fixed_effects_present"
-    if any(kw_base.get(name, None) is not None for name in ("obs_weights", "obs_var", "stage1_pev")):
-        return "observation_specific_residual_inputs_present"
-    if kw_base.get("learn_scales", False):
-        return "learn_scales_enabled"
-    if kw_base.get("compute_ai_se", False):
-        return "ai_se_enabled"
-    if kw_base.get("random_terms", None) is not None:
-        return "random_terms_present"
-    if kw_base.get("interaction_terms_meta", None) is not None:
-        return "interaction_terms_present"
-    if kw_base.get("env_structure", None) not in (None, "", "identity"):
-        return "structured_environment_covariance"
-    if str(env_col) not in pheno_df.columns:
-        return "env_col_missing"
-    if pheno_df[str(env_col)].astype(str).nunique(dropna=False) != 1:
-        return "not_single_environment"
-    observed_rows = np.where(np.isfinite(np.asarray(y_values, dtype=float)))[0].astype(np.int64)
-    if observed_rows.size == 0:
-        return "no_observed_rows"
-    if not _folds_are_delete_blocks(folds, observed_rows):
-        return "folds_not_observed_delete_blocks"
-    n = int(observed_rows.size)
-    max_n = _env_int("PREDICTPRO_GP_EXACT_FAST_CV_MAX_N", 3000)
-    if n > max_n:
-        return f"n_observed_gt_gp_exact_fast_limit_{max_n}"
-    G = np.asarray(geno_kernel)
-    if G.ndim != 2 or G.shape[0] != G.shape[1]:
-        return "geno_kernel_not_square"
-    if not np.all(np.isfinite(G)):
-        return "geno_kernel_nonfinite"
-    return None
-
-
-def _try_fast_gp_exact_shared_noise_block_cv(
-    *,
-    fw: Any,
-    pheno_df: pd.DataFrame,
-    gid_col: str,
-    env_col: str,
-    y_col: str,
-    geno_kernel: np.ndarray,
-    geno_ids: Sequence[str],
-    y_values: np.ndarray,
-    folds: Sequence[Dict[str, Any]],
-    method: str,
-    backend: str,
-    prediction_output: str,
-    output_level: str,
-    include_components: Sequence[Any],
-    fixed_effects: Sequence[Any],
-    env_similarity: Optional[np.ndarray],
-    env_covariates: Optional[Any],
-    grm_factor_cache: Optional[Any],
-    kw_base: Dict[str, Any],
-) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def _try_fast_gp_exact_shared_noise_block_cv(**kwargs):
+    """Compatibility notice for the retired shared-full-data GP CV shortcut."""
     mode = str(os.environ.get("PREDICTPRO_GP_EXACT_FAST_CV", "false")).strip().lower()
-    force = mode in ("force", "forced", "always")
-    reason = _fast_gp_exact_cv_ineligible_reason(
-        fw=fw,
-        pheno_df=pheno_df,
-        env_col=env_col,
-        method=method,
-        backend=backend,
-        prediction_output=prediction_output,
-        output_level=output_level,
-        include_components=include_components,
-        fixed_effects=fixed_effects,
-        env_similarity=env_similarity,
-        env_covariates=env_covariates,
-        grm_factor_cache=grm_factor_cache,
-        kw_base=kw_base,
-        y_values=y_values,
-        folds=folds,
-        geno_kernel=geno_kernel,
-    )
-    if reason is not None and not force:
-        return None, reason
-
-    observed_rows = np.where(np.isfinite(np.asarray(y_values, dtype=float)))[0].astype(np.int64)
-    try:
-        fit_kw = dict(kw_base)
-        fit_kw.update(
-            {
-                "method": "gp_exact",
-                "prediction_output": "test_only",
-                "output_level": "predict_only",
-                "point_predictions_only": True,
-                "return_se": False,
-                "compute_ai_se": False,
-                "train_idx": observed_rows,
-                "test_idx": np.array([], dtype=np.int64),
-            }
-        )
-        full_fit = fw.fit_mixed_model(
-            pheno_df=pheno_df,
-            gid_col=str(gid_col),
-            env_col=str(env_col),
-            y_col=str(y_col),
-            geno_kernels={"G": geno_kernel},
-            geno_ids=list(geno_ids or []),
-            **fit_kw,
-        )
-        diagnostics = dict(full_fit.get("diagnostics", {}) or {})
-        noise_variance = float(diagnostics.get("likelihood_noise", np.nan))
-        if not np.isfinite(noise_variance) or noise_variance <= 0:
-            raise ValueError(f"shared exact-GP noise variance was not finite and positive: {noise_variance!r}")
-
-        block_kw = dict(kw_base)
-        block_kw["method"] = "krr_exact"
-        block_kw["krr_lam"] = 0.0
-        block_kw["lam"] = 0.0
-        block_kw["resid_diag_env"] = np.array([noise_variance], dtype=float)
-        block_kw["learn_envdiag_noise"] = False
-        result = _fast_krr_block_cv_predictions(
-            fw=fw,
-            pheno_df=pheno_df,
-            gid_col=gid_col,
-            env_col=env_col,
-            y_col=y_col,
-            geno_kernel=geno_kernel,
-            geno_ids=geno_ids,
-            folds=folds,
-            kw_base=block_kw,
-            output_level=output_level,
-        )
-    except Exception as exc:
-        if force:
-            raise
-        warnings.warn(
-            f"Fast exact-GP shared-noise CV failed; falling back to per-fold fits: {exc}",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        return None, f"fast_gp_exact_path_failed:{type(exc).__name__}"
-
-    result_meta = result.setdefault("meta", {})
-    result_meta.update(
-        {
-            "cv_fast_path": "gp_exact_shared_noise_block_delete",
-            "cv_fast_path_model": "gp_exact",
-            "cv_fast_path_approximate": True,
-            "cv_fast_path_exact_refit": False,
-            "cv_fast_path_solver": "krr_block_delete",
-            "cv_fast_path_shared_hyperparameters": True,
-            "cv_fast_path_likelihood_noise_variance": float(noise_variance),
-            # Compatibility alias: the value has always been a variance.
-            "cv_fast_path_likelihood_noise_std": float(noise_variance),
-            "cv_fast_path_self_checked": False,
-        }
-    )
-    for row in result.get("fold_rows", []) or []:
-        if isinstance(row, dict):
-            row["fast_path"] = "gp_exact_shared_noise_block_delete"
-
-    self_check = _env_enabled("PREDICTPRO_GP_FAST_CV_SELF_CHECK", "true") and not force
-    if self_check:
-        ok, check_reason = _fast_cv_self_check_passed(
-            fw=fw,
-            fast_result=result,
-            folds=folds,
-            pheno_df=pheno_df,
-            gid_col=gid_col,
-            env_col=env_col,
-            y_col=y_col,
-            geno_kernel=geno_kernel,
-            geno_ids=geno_ids,
-            kw_base=kw_base,
-        )
-        if not ok:
-            warnings.warn(
-                f"Fast exact-GP shared-noise CV self-check failed ({check_reason}); falling back to per-fold fits.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            return None, f"self_check_failed:{check_reason}"
-        result_meta["cv_fast_path_self_checked"] = True
-        result_meta["cv_fast_path_self_check_reason"] = check_reason
-    return result, None
+    if mode in ("false", "off", "0", "none", ""):
+        return None, "gp_exact_fast_cv_disabled"
+    warnings.warn("gp_exact_fast_cv has been removed; GP CV refits each training fold.",
+                  FutureWarning, stacklevel=2)
+    return None, "gp_exact_fast_cv_removed"
 
 
 def _fit_predict_cv_spec(args, fw=None) -> int:

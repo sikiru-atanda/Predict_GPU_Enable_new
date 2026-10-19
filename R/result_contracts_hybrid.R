@@ -80,6 +80,17 @@ gp_format_hybrid_prediction_table <- function(x,
   }
   df[["Female"]] <- if (!is.na(female_col)) as.character(original[[female_col]]) else NA_character_
   df[["Male"]] <- if (!is.na(male_col)) as.character(original[[male_col]]) else NA_character_
+  # Generic uncertainty/stability fallbacks must not replace the explicitly
+  # unavailable genetic reliability of the fixed-scale hybrid GP route.
+  fixed_gp <- which(df$Reliability_basis ==
+                      "genetic_prior_variance_unavailable_hybrid_gp_fixed_scale")
+  if (length(fixed_gp)) {
+    rel_cols <- c("Reliability", "Reliability_variance_input",
+                  "Reliability_reference_variance", "Reliability_basis", "Reliability_remarks")
+    df[fixed_gp, rel_cols] <- gp_hybrid_gp_unestimated_reliability(
+      df[fixed_gp, , drop = FALSE]
+    )[, rel_cols, drop = FALSE]
+  }
   include_env <- "Env" %in% names(df)
   include_trait <- "Trait" %in% names(df)
   ordered_cols <- gp_hybrid_prediction_columns(include_env = include_env, include_trait = include_trait)

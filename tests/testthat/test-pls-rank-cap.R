@@ -5,8 +5,7 @@ test_that("PLS caps components at the rank of each fit's training data", {
   # ncomp that was valid for the full data produced predictions around 1e11
   # inside the bootstrap, which then failed the prediction-interval contract
   # (hybrid ML PartialLeastSquare true prediction on a small panel).
-  py <- PredictProR:::gp_detect_ml_python()
-  skip_if(is.null(py) || !nzchar(py) || !file.exists(py), "No ML Python runtime")
+  py <- skip_if_no_ml_python()
   set.seed(3)
   n <- 13L; p <- 60L
   # rank-deficient design like hybrid mid-parent genotypes: 13 rows, rank 6

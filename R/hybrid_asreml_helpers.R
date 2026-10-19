@@ -780,19 +780,22 @@ gp_hybrid_asreml_gaussian_model <- function(pheno_object,
   ph[[male_parent]] <- factor(ph[[male_parent]], levels = male_levels)
   ph$HybridCross <- factor(ph$HybridCross, levels = cross_levels)
 
-  female_inv_name <- paste0("female_gca_inv_", as.integer(Sys.getpid()))
-  male_inv_name <- paste0("male_gca_inv_", as.integer(Sys.getpid()))
-  assign(female_inv_name, compute_inverse_and_sparse(kernel = female_g, epsilon = epsilon, inverse = inverse), envir = .GlobalEnv)
-  assign(male_inv_name, compute_inverse_and_sparse(kernel = male_g, epsilon = epsilon, inverse = inverse), envir = .GlobalEnv)
-  cleanup_names <- c(female_inv_name, male_inv_name)
+  # fixed names, so the reported components match between runs; a user's
+  # object with one of these names is put back on exit
+  female_inv_name <- "female_gca_inv"
+  male_inv_name <- "male_gca_inv"
+  inverses <- list(
+    female_gca_inv = compute_inverse_and_sparse(kernel = female_g, epsilon = epsilon, inverse = inverse),
+    male_gca_inv = compute_inverse_and_sparse(kernel = male_g, epsilon = epsilon, inverse = inverse)
+  )
   if (!is.null(sca_g)) {
-    sca_inv_name <- paste0("hybrid_sca_inv_", as.integer(Sys.getpid()))
-    assign(sca_inv_name, compute_inverse_and_sparse(kernel = sca_g, epsilon = epsilon, inverse = inverse), envir = .GlobalEnv)
-    cleanup_names <- c(cleanup_names, sca_inv_name)
+    sca_inv_name <- "hybrid_sca_inv"
+    inverses$hybrid_sca_inv <- compute_inverse_and_sparse(kernel = sca_g, epsilon = epsilon, inverse = inverse)
   } else {
     sca_inv_name <- NULL
   }
-  on.exit(remove_from_global(cleanup_names), add = TRUE)
+  restore_inverses <- gp_asreml_assign_globals(inverses)
+  on.exit(restore_inverses(), add = TRUE)
 
   asreml_fn <- getFromNamespace("asreml", engine)
   update_fn <- getFromNamespace("update.asreml", engine)

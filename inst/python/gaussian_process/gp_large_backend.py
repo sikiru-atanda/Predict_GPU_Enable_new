@@ -681,7 +681,7 @@ def pcg_solve(
     dtype = b.dtype
     x = torch.zeros_like(b) if x0 is None else x0.clone()
     r = b - A_mv(x)
-    b_norm = torch.norm(b).clamp_min(torch.tensor(1e-30, device=device, dtype=dtype))
+    b_norm = torch.norm(b).clamp_min(torch.finfo(dtype).tiny)
     rel = (torch.norm(r) / b_norm).item()
     if rel < tol:
         return PCGResult(x=x, iters=0, converged=True, rel_resid=rel)
@@ -690,23 +690,37 @@ def pcg_solve(
     p = z.clone()
     rz_old = torch.dot(r, z)
 
-    eps = torch.tensor(1e-30, device=device, dtype=dtype)
-
+    k = 0
     for k in range(1, max_iter + 1):
         Ap = A_mv(p)
-        alpha = rz_old / torch.dot(p, Ap).clamp_min(eps)
+        pAp = torch.dot(p, Ap)
+        if not bool(torch.isfinite(pAp) & torch.isfinite(rz_old)) or pAp <= 0 or rz_old <= 0:
+            break
+        alpha = rz_old / pAp
         x = x + alpha * p
         r = r - alpha * Ap
         rel = (torch.norm(r) / b_norm).item()
         if rel < tol:
-            return PCGResult(x=x, iters=k, converged=True, rel_resid=rel)
+            # Recurrence residuals drift in finite precision, especially for
+            # ill-conditioned GRMs. Certify against the original equation.
+            r = b - A_mv(x)
+            rel = (torch.norm(r) / b_norm).item()
+            if rel < tol:
+                return PCGResult(x=x, iters=k, converged=True, rel_resid=rel)
+            # Residual replacement invalidates conjugacy; restart CG within
+            # the caller's existing iteration budget, without relaxing tol.
+            z = r if M_inv_mv is None else M_inv_mv(r)
+            p = z.clone()
+            rz_old = torch.dot(r, z)
+            continue
         z = r if M_inv_mv is None else M_inv_mv(r)
         rz_new = torch.dot(r, z)
-        beta = rz_new / rz_old.clamp_min(eps)
+        beta = rz_new / rz_old
         p = z + beta * p
         rz_old = rz_new
 
-    return PCGResult(x=x, iters=max_iter, converged=False, rel_resid=rel)
+    rel = (torch.norm(b - A_mv(x)) / b_norm).item()
+    return PCGResult(x=x, iters=k, converged=bool(np.isfinite(rel) and rel < tol), rel_resid=rel)
 
 
 # ----------------------------
@@ -989,7 +1003,41 @@ def _pev_mc_rel_error(probe_sum, probe_sumsq, n_probes, pev, *, rel_floor_frac=0
     return mc_se, float(torch.quantile(rel, 0.5)), float(torch.max(rel))
 
 
+class _OperatorPrecisionRetry(RuntimeError):
+    """Abandon the float32 fit before reporting uncertified predictions."""
+
+
 def fit_predict_operator_backend(
+    y, X, gi, ei, cache, Sigma_e, train_idx, test_idx, w_g, w_ge, w_e,
+    S_e, r_diag, config=None, random_terms=None,
+):
+    """Try the requested precision; promote a failed float32 fit to float64.
+
+    Every float32 solve is certified by a float64 covariance application.
+    Retrying the complete fit keeps GLS, prediction and uncertainty at one
+    precision. Tolerances, iteration caps, seeds and covariance are unchanged.
+    """
+    from dataclasses import replace
+    config = config or OperatorBackendConfig()
+    args = (y, X, gi, ei, cache, Sigma_e, train_idx, test_idx, w_g, w_ge, w_e, S_e, r_diag)
+    reason = None
+    try:
+        result = _fit_predict_operator_backend_once(*args, config=config, random_terms=random_terms)
+    except _OperatorPrecisionRetry as exc:
+        reason = str(exc)
+    # Leave the exception scope before retrying, releasing the failed fit's
+    # traceback and tensors instead of retaining both precision workspaces.
+    if reason is not None:
+        result = _fit_predict_operator_backend_once(*args,
+            config=replace(config, dtype_compute=torch.float64), random_terms=random_terms)
+    result['pcg_info'].update(
+        requested_dtype=str(config.dtype_compute).removeprefix('torch.'),
+        effective_dtype='float64' if reason else str(config.dtype_compute).removeprefix('torch.'),
+        precision_promoted=(reason is not None), precision_retry_reason=reason)
+    return result
+
+
+def _fit_predict_operator_backend_once(
     y: torch.Tensor,
     X: torch.Tensor,
     gi: torch.Tensor,
@@ -1064,7 +1112,7 @@ def fit_predict_operator_backend(
     if isinstance(r_diag, (float, int)):
         r_diag_tr = float(r_diag)
     else:
-        r_diag_t = _as_torch(r_diag, device, dt)
+        r_diag_t = _as_torch(r_diag, device, torch.float64)
         # If r_diag is full-observation length, slice to training; else assume already aligned.
         if r_diag_t.numel() == gi.numel():
             r_diag_tr = r_diag_t.index_select(0, train_idx.long())
@@ -1075,10 +1123,10 @@ def fit_predict_operator_backend(
         gi=gi_tr,
         ei=ei_tr,
         cache=cache,
-        Sigma_e=_as_torch(Sigma_e, device, dt),
-        S_e=None if S_e is None else _as_torch(S_e, device, dt),
-        w_g=_as_torch(w_g, device, dt),
-        w_ge=_as_torch(w_ge, device, dt),
+        Sigma_e=_as_torch(Sigma_e, device, torch.float64),
+        S_e=None if S_e is None else _as_torch(S_e, device, torch.float64),
+        w_g=_as_torch(w_g, device, torch.float64),
+        w_ge=_as_torch(w_ge, device, torch.float64),
         w_e=w_e,
         r_diag=r_diag_tr,
         random_terms=random_terms_train,
@@ -1151,15 +1199,29 @@ def fit_predict_operator_backend(
     def V_mv(v):
         return V.matvec(v, context=context, dtype_compute=dt)
 
+    def solve_pcg(A_mv, rhs, **kwargs):
+        result = pcg_solve(A_mv, rhs, **kwargs)
+        if dt == torch.float32:
+            rhs64 = rhs.to(torch.float64)
+            residual = rhs64 - V.matvec(result.x.to(torch.float64), context=context,
+                                        dtype_compute=torch.float64)
+            relative = float((residual.norm() / rhs64.norm().clamp_min(torch.finfo(torch.float64).tiny)).item())
+            if not np.isfinite(relative) or relative >= kwargs['tol']:
+                raise _OperatorPrecisionRetry(
+                    f'float32 solve failed float64 residual check: {relative:.3e} >= {kwargs["tol"]:.3e}')
+            result.rel_resid = relative
+            result.converged = True
+        return result
+
     # GLS beta: beta = (X'V^-1X)^-1 X'V^-1 y
-    Vinv_y = pcg_solve(V_mv, y_tr, M_inv_mv=M_inv_mv, tol=config.tol, max_iter=config.max_iter)
+    Vinv_y = solve_pcg(V_mv, y_tr, M_inv_mv=M_inv_mv, tol=config.tol, max_iter=config.max_iter)
     p = X_tr.shape[1]
     Vinv_X_cols = []
     pcg_iters = [Vinv_y.iters]
     converged_X_cols: List[bool] = []
     rel_resid_X_cols: List[float] = []
     for j in range(p):
-        sol = pcg_solve(V_mv, X_tr[:, j], M_inv_mv=M_inv_mv, tol=config.tol, max_iter=config.max_iter)
+        sol = solve_pcg(V_mv, X_tr[:, j], M_inv_mv=M_inv_mv, tol=config.tol, max_iter=config.max_iter)
         Vinv_X_cols.append(sol.x)
         pcg_iters.append(sol.iters)
         converged_X_cols.append(bool(sol.converged))
@@ -1172,12 +1234,12 @@ def fit_predict_operator_backend(
     # Stable small solve in float64
     XtVinvX64 = XtVinvX.to(torch.float64)
     XtVinvY64 = XtVinvY.to(torch.float64)
-    L = torch.linalg.cholesky(XtVinvX64 + 1e-8 * torch.eye(p, device=device, dtype=torch.float64))
+    L = torch.linalg.cholesky(XtVinvX64)
     beta = torch.cholesky_solve(XtVinvY64.unsqueeze(-1), L).squeeze(-1).to(dt)
 
     # alpha = V^-1 (y - X beta)
     r_tr = y_tr - X_tr @ beta
-    alpha = pcg_solve(V_mv, r_tr, M_inv_mv=M_inv_mv, tol=config.tol, max_iter=config.max_iter)
+    alpha = solve_pcg(V_mv, r_tr, M_inv_mv=M_inv_mv, tol=config.tol, max_iter=config.max_iter)
     pcg_iters.append(alpha.iters)
 
     # Predict on test: yhat = X_te beta + cov(te,tr) alpha
@@ -1193,6 +1255,8 @@ def fit_predict_operator_backend(
     # Build per-op test_states once so SE block can reuse them.
     op_test_states: List[Tuple[torch.nn.Module, Dict[str, object]]] = []
     for op in ops:
+        if hasattr(op, 'weight') and float(op.weight.detach()) == 0.:
+            continue
         if isinstance(op, LowRankGRMOperator):
             if fold_g_train is None:
                 continue
@@ -1237,12 +1301,21 @@ def fit_predict_operator_backend(
     prediction_se_latent_np = None
     prediction_se_observed_np = None
     prediction_pev_np = None
+    genetic_prior_np = None
     se_info: Dict[str, object] = {}
     if config.return_se:
         n_te = int(test_idx.numel())
         K_te_te_diag = torch.zeros((n_te,), device=device, dtype=dt)
         for op, ts in op_test_states:
             K_te_te_diag = K_te_te_diag + op.self_var_diag(ts, dtype_compute=dt)
+        genetic_states = [(op, ts) for op, ts in op_test_states
+                          if isinstance(op, (LowRankGRMOperator, LowRankGxEOperator))]
+        all_genetic = len(genetic_states) == len(op_test_states)
+        genetic_prior = torch.zeros_like(K_te_te_diag)
+        for op, ts in genetic_states:
+            genetic_prior += op.self_var_diag(ts, dtype_compute=dt)
+        genetic_diag_sum = torch.zeros_like(K_te_te_diag)
+        genetic_diag_sumsq = torch.zeros_like(K_te_te_diag)
 
         M_probes = int(config.n_hutchinson_probes)
         gen = torch.Generator(device=device).manual_seed(int(config.hutchinson_seed))
@@ -1276,6 +1349,8 @@ def fit_predict_operator_backend(
         F_lan: Optional[torch.Tensor] = None
         det_diag_lan: Optional[torch.Tensor] = None
         inv_theta_lan: Optional[torch.Tensor] = None
+        F_genetic_lan = None
+        det_genetic_lan = torch.zeros_like(K_te_te_diag)
         if bool(config.use_lanczos_se_variance_reduction):
             gen_init = torch.Generator(device=device).manual_seed(
                 int(config.lanczos_seed) * 2654435761 + 1
@@ -1311,6 +1386,12 @@ def fit_predict_operator_backend(
                     F_lan[:, j] = s_col
                 inv_theta_lan = (1.0 / lanczos_obj.theta).to(dt)
                 det_diag_lan = (F_lan * F_lan) @ inv_theta_lan
+                if not all_genetic:
+                    F_genetic_lan = torch.zeros_like(F_lan)
+                    for j in range(k_lan):
+                        for op, ts in genetic_states:
+                            F_genetic_lan[:,j] += op.cross_cov_apply(V_vecs[:,j], ts, dtype_compute=dt)
+                    det_genetic_lan = (F_genetic_lan*F_genetic_lan)@inv_theta_lan
             else:
                 # Lanczos failed to find positive Ritz values — skip CV quietly.
                 lanczos_obj = None
@@ -1321,7 +1402,7 @@ def fit_predict_operator_backend(
             u = torch.zeros_like(y_tr)
             for op, ts in op_test_states:
                 u = u + op.cross_cov_apply_transpose(z, ts, dtype_compute=dt)
-            w_sol = pcg_solve(V_mv, u, M_inv_mv=se_M_inv_mv, tol=se_tol, max_iter=se_max_it)
+            w_sol = solve_pcg(V_mv, u, M_inv_mv=se_M_inv_mv, tol=se_tol, max_iter=se_max_it)
             probe_iters.append(w_sol.iters)
             probe_converged.append(bool(w_sol.converged))
             probe_rel_resids.append(float(w_sol.rel_resid))
@@ -1337,6 +1418,20 @@ def fit_predict_operator_backend(
                 term = z * s
             diag_sum = diag_sum + term
             diag_sumsq = diag_sumsq + term * term
+            if not all_genetic:
+                ug = torch.zeros_like(y_tr)
+                for op, ts in genetic_states:
+                    ug += op.cross_cov_apply_transpose(z, ts, dtype_compute=dt)
+                gs = solve_pcg(V_mv, ug, M_inv_mv=se_M_inv_mv, tol=se_tol, max_iter=se_max_it)
+                probe_iters.append(gs.iters); probe_converged.append(bool(gs.converged))
+                probe_rel_resids.append(float(gs.rel_resid))
+                sg = torch.zeros_like(z)
+                for op, ts in genetic_states:
+                    sg += op.cross_cov_apply(gs.x, ts, dtype_compute=dt)
+                if F_genetic_lan is not None:
+                    sg -= F_genetic_lan@((lanczos_obj.V_vecs.T@ug)*inv_theta_lan)
+                genetic_diag_sum += z*sg
+                genetic_diag_sumsq += (z*sg)**2
         diag_est = diag_sum / float(max(M_probes, 1))
 
         if lanczos_obj is not None and det_diag_lan is not None:
@@ -1344,12 +1439,27 @@ def fit_predict_operator_backend(
             pev = (K_te_te_diag - det_diag_lan - diag_est).clamp_min(0.0)
         else:
             pev = (K_te_te_diag - diag_est).clamp_min(0.0)
-        prediction_pev_np = pev.detach().cpu().numpy()
+        conditional_genetic = pev if all_genetic else genetic_prior-det_genetic_lan-genetic_diag_sum/max(M_probes, 1)
+        Q = torch.zeros((n_te,p),device=device,dtype=dt)
+        Qg = torch.zeros_like(Q)
+        for j in range(p):
+            for op, ts in op_test_states:
+                Q[:,j] += op.cross_cov_apply(Vinv_X[:,j],ts,dtype_compute=dt)
+            for op, ts in genetic_states:
+                Qg[:,j] += op.cross_cov_apply(Vinv_X[:,j],ts,dtype_compute=dt)
+        beta_cov = torch.cholesky_inverse(L).to(dt)
+        genetic_pev = (conditional_genetic+((Qg@beta_cov)*Qg).sum(1)).clamp_min(0.)
+        B = X_te-Q
+        pev = (pev+((B@beta_cov)*B).sum(1)).clamp_min(0.)
+        prediction_pev_np = genetic_pev.detach().cpu().numpy()
+        genetic_prior_np = genetic_prior.detach().cpu().numpy()
         prediction_se_latent_np = torch.sqrt(pev).detach().cpu().numpy()
 
         # Monte-Carlo relative-error diagnostic for the stochastic PEV estimate.
         pev_mc_se_t, pev_mc_rel_error_median, pev_mc_rel_error_max = _pev_mc_rel_error(
-            diag_sum, diag_sumsq, M_probes, pev
+            diag_sum if all_genetic else genetic_diag_sum,
+            diag_sumsq if all_genetic else genetic_diag_sumsq,
+            M_probes, genetic_pev
         )
         if np.isfinite(pev_mc_rel_error_median) and pev_mc_rel_error_median > 0.10:
             warnings.warn(
@@ -1452,6 +1562,9 @@ def fit_predict_operator_backend(
     result: Dict[str, object] = {
         "predictions": yhat.detach().cpu().numpy(),
         "beta": beta.detach().cpu().numpy(),
+        # Profile the common covariance multiplier without another solve.
+        # The caller decides whether r_diag is a ratio or an absolute variance.
+        "profile_variance_scale": float((r_tr @ alpha.x).item()) / max(1, int(y_tr.numel()) - int(X_tr.shape[1])),
         "pcg_info": {
             "tol": config.tol,
             "max_iter": config.max_iter,
@@ -1488,5 +1601,6 @@ def fit_predict_operator_backend(
         result["prediction_se_latent"] = prediction_se_latent_np
         result["prediction_se_observed"] = prediction_se_observed_np
         result["prediction_pev"] = prediction_pev_np
+        result['genetic_prior_variance'] = genetic_prior_np
         result["se_info"] = se_info
     return result

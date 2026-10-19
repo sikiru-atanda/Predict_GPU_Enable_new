@@ -11,64 +11,28 @@ from typing import Optional, Sequence, Tuple, List, Dict
 os.environ.setdefault("PYTHONNOUSERSITE", "1")
 
 # =========================
-# Pip / system helpers
+# Dependencies: installed on first use by predictpror_deps (shared by the
+# ML, DL and GP bridges; it locks the environment so parallel workers never
+# run pip at the same time)
 # =========================
-def _run(cmd: Sequence[str]):
-    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False, text=True)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import predictpror_deps as _deps
 
-def _pip_install(pkgs: Sequence[str], index_url: Optional[str] = None, extra: Sequence[str] = ()):
-    cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--quiet", "--no-cache-dir"]
-    if index_url:
-        cmd += ["--index-url", index_url]
-    cmd += list(pkgs) + list(extra)
-    return _run(cmd)
+_deps.ensure_groups(["numpy", "torch"])
 
-def _pip_uninstall(pkgs: Sequence[str]):
-    if not pkgs:
-        return None
-    cmd = [sys.executable, "-m", "pip", "uninstall", "-y", "--quiet"] + list(pkgs)
-    return _run(cmd)
-
-# =========================
-# Foundation bootstrap
-# =========================
-def _ensure_foundations():
-    """
-    Ensure critical build-time libraries are present.
-    These must be installed before torch or other packages.
-    """
-    base_pkgs = [
-        "pip>=23.2",
-        "setuptools>=65",
-        "wheel",
-        "packaging",
-        "numpy>=1.24",
-    ]
-    for pkg in base_pkgs:
-        try:
-            importlib.import_module(pkg.split(">=")[0])
-        except Exception:
-            _pip_install([pkg])
-
-# Run this once at import time
-_ensure_foundations()
-
-# Now we can safely import numpy
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, TensorDataset, random_split
 
-def _has_nvidia_gpu() -> bool:
-    try:
-        r = _run(["nvidia-smi"])
-        return r.returncode == 0
-    except Exception:
-        return False
+try:
+    torch.set_default_dtype(torch.float32)
+except Exception:
+    pass
 
-def _lazy_import(name: str, pip_name: Optional[str] = None):
-    try:
-        return importlib.import_module(name)
-    except Exception:
-        _pip_install([pip_name or name])
-        return importlib.import_module(name)
 
 def _windows_msvc_runtime_ok() -> bool:
     if platform.system() != "Windows":
@@ -81,178 +45,10 @@ def _windows_msvc_runtime_ok() -> bool:
             continue
     return False
 
-def _torch_import_probe() -> Tuple[bool, str]:
-    try:
-        t = importlib.import_module("torch")
-        _ = t.__version__
-        _ = t.tensor([0.0]).sum().item()  # light op
-        return True, ""
-    except Exception as e:
-        return False, repr(e)
-
-def _pin_extras_to(torch_version: Optional[str], extra_packages: Tuple[str, ...]) -> List[str]:
-    out: List[str] = []
-    for p in (extra_packages or ()):
-        if p in ("torchvision", "torchaudio") and torch_version:
-            out.append(f"{p}=={torch_version if p=='torchaudio' else '0.19.0' if torch_version.startswith('2.4') else p}")
-        else:
-            out.append(p)
-    return out
-
-def _install_torch_with_fallback(
-    prefer_gpu: bool,
-    cuda: str,
-    torch_version: Optional[str],
-    extra_packages: Tuple[str, ...],
-    forced_index: Optional[str],
-) -> Dict[str, str]:
-    """
-    Try GPU wheel (only if GPU detected) then fall back to CPU wheel if import fails.
-    Returns meta info including 'index_used', 'flavor', and 'logs'.
-    """
-    logs: List[str] = []
-    sys_os = platform.system()
-
-    # Only try GPU wheels when an NVIDIA GPU is really present, unless index is forced
-    gpu_candidate = False
-    if not forced_index:
-        gpu_candidate = prefer_gpu and (cuda != "cpu") and _has_nvidia_gpu()
-
-    # Build candidate installs: [(desc, index_url, flavor)]
-    candidates: List[Tuple[str, Optional[str], str]] = []
-    if forced_index:
-        candidates.append(("forced", forced_index, "gpu" if "cu" in forced_index else "cpu"))
-    else:
-        if sys_os == "Darwin":
-            # macOS: use default index; MPS handled by standard wheel
-            candidates.append(("macos-default", None, "cpu"))
-        else:
-            if gpu_candidate:
-                cu_tag = None
-                if isinstance(cuda, str) and cuda.startswith("cu"):
-                    cu_tag = cuda.lower()           # e.g., 'cu121'
-                elif cuda == "auto":
-                    cu_tag = "cu121"                # safe default for recent PyTorch
-                if cu_tag:
-                    candidates.append((f"pytorch-{cu_tag}", f"https://download.pytorch.org/whl/{cu_tag}", "gpu"))
-            # Always queue a CPU fallback
-            candidates.append(("pytorch-cpu", "https://download.pytorch.org/whl/cpu", "cpu"))
-
-    def pkg_spec() -> List[str]:
-        base = [f"torch=={torch_version}"] if torch_version else ["torch"]
-        base += _pin_extras_to(torch_version, extra_packages)
-        return base
-
-    last_error = ""
-    for desc, index_url, flavor in candidates:
-        # Clean slate to avoid ABI mismatches
-        _pip_uninstall(["torch", "torchvision", "torchaudio", "torchtext", "functorch"])
-        r = _pip_install(pkg_spec(), index_url=index_url)
-        logs.append(f"[{desc}] pip stdout:\n{r.stdout or ''}")
-
-        ok, err = _torch_import_probe()
-        if ok:
-            return {
-                "index_used": index_url or "default",
-                "flavor": flavor,
-                "logs": "\n".join(logs)[-8000:],
-                "attempt": desc,
-            }
-
-        # Special self-heal for CUDA symbol mixups that can linger on Windows
-        bad_cuda_sym = (
-            "profiler_allow_cudagraph_cupti_lazy_reinit_cuda12" in err
-            or "cupti" in err.lower()
-            or "cudagraph" in err.lower()
-        )
-        if bad_cuda_sym:
-            _pip_uninstall(["torch", "torchvision", "torchaudio", "torchtext", "functorch"])
-            _run([sys.executable, "-m", "pip", "cache", "purge"])
-            r2 = _pip_install(
-                ["torch==2.4.0", "torchvision==0.19.0", "torchaudio==2.4.0"],
-                index_url="https://download.pytorch.org/whl/cpu",
-                extra=["--no-cache-dir"],
-            )
-            logs.append(f"[cpu-hard-reset] pip stdout:\n{r2.stdout or ''}")
-            ok2, err2 = _torch_import_probe()
-            if ok2:
-                return {
-                    "index_used": "https://download.pytorch.org/whl/cpu",
-                    "flavor": "cpu-hard-reset",
-                    "logs": "\n".join(logs)[-8000:],
-                    "attempt": "cpu-hard-reset",
-                }
-            last_error = err2
-            continue  # try next candidate if any
-
-        # DLL issues on Windows? Let the CPU candidate run next.
-        last_error = err
-        if (("WinError 127" in err) or ("DLL load failed" in err) or ("shm.dll" in err)) and flavor != "cpu":
-            continue
-
-    raise RuntimeError(f"Unable to import torch after installs. Last error: {last_error}")
-
-def _ensure_torch(
-    prefer_gpu: bool = True,
-    cuda: str = "auto",
-    torch_version: Optional[str] = None,
-    extra_packages: Tuple[str, ...] = ("torchvision", "torchaudio"),
-    index_url: Optional[str] = None,
-):
-    """Ensure torch is importable. If broken, install a suitable wheel and import it."""
-    try:
-        t = importlib.import_module("torch")
-        return t, {"index_used": None, "flavor": "existing", "logs": "", "attempt": "import-existing"}
-    except Exception:
-        pass
-
-    forced_idx_env = (os.environ.get("PYTORCH_INDEX_URL") or "").strip() or None
-    meta = _install_torch_with_fallback(
-        prefer_gpu=prefer_gpu,
-        cuda=cuda,
-        torch_version=torch_version,
-        extra_packages=extra_packages,
-        forced_index=index_url or forced_idx_env,
-    )
-    t = importlib.import_module("torch")
-    return t, meta
 
 def _ensure_sklearn():
-    try:
-        return importlib.import_module("sklearn")
-    except Exception:
-        _pip_install(["scikit-learn"], index_url=None)
-        return importlib.import_module("sklearn")
+    return _deps.ensure_module("sklearn")
 
-# =========================
-# Early bootstrap: numpy / torch / nn
-# =========================
-try:
-    import numpy as np
-except Exception:
-    np = _lazy_import("numpy", pip_name="numpy")
-
-try:
-    import torch
-except Exception:
-    torch, _ = _ensure_torch()
-
-# MUST exist before any "class X(nn.Module)" executes
-try:
-    import torch.nn as nn
-    import torch.nn.functional as F
-    from torch.utils.data import DataLoader, TensorDataset, random_split
-except Exception:
-    torch = importlib.import_module("torch")
-    nn = importlib.import_module("torch.nn")
-    F = importlib.import_module("torch.nn.functional")
-    _tud = importlib.import_module("torch.utils.data")
-    DataLoader, TensorDataset, random_split = _tud.DataLoader, _tud.TensorDataset, _tud.random_split
-
-try:
-    torch.set_default_dtype(torch.float32)
-except Exception:
-    pass
 
 # =========================
 # Public env/setup entrypoint
@@ -262,57 +58,44 @@ def setup_deps(
     cuda: str = "auto",
     torch_version: Optional[str] = None,
     numpy_spec: str = "numpy>=1.24",
-    extra_packages: Tuple[str, ...] = ("torchvision", "torchaudio"),
+    extra_packages: Tuple[str, ...] = (),
     index_url: Optional[str] = None,
     install_sklearn: bool = True,
 ):
-    logs = []
-    pkgs_installed = []
+    """Install everything the DL models need (torch with the best CUDA build).
 
-    # NumPy first (neutral index)
-    r = _pip_install([numpy_spec])
-    logs.append(r.stdout or "")
-    np = _lazy_import("numpy", pip_name="numpy")
-    pkgs_installed.append(f"numpy {np.__version__}")
+    ``numpy_spec`` and ``extra_packages`` are accepted for compatibility;
+    torchvision/torchaudio are not used by PredictProR and are not installed.
+    """
+    groups = ["tabular", "torch"] + (["sklearn"] if install_sklearn else [])
+    report = _deps.ensure_groups(groups, verbose=True, prefer_gpu=prefer_gpu, cuda=cuda,
+                                 torch_version=torch_version, index_url=index_url,
+                                 probe_torch=True)
+    torch_meta = report.get("torch") or {}
+    pkgs_installed = [f"numpy {np.__version__}", f"torch {getattr(torch, '__version__', 'unknown')}"]
 
-    # Torch (+friends) with GPU->CPU fallback
-    torch_mod, torch_meta = _ensure_torch(
-        prefer_gpu=prefer_gpu, cuda=cuda, torch_version=torch_version,
-        extra_packages=extra_packages, index_url=index_url
-    )
-    logs.append(torch_meta.get("logs", ""))
-    pkgs_installed.append(f"torch {getattr(torch_mod, '__version__', 'unknown')}")
-    for _m in ("torchvision", "torchaudio"):
-        try:
-            _mm = importlib.import_module(_m)  # tolerate failure for torchaudio on Win CPU
-            pkgs_installed.append(f"{_m} {getattr(_mm, '__version__', 'unknown')}")
-        except Exception:
-            pass
-
-    # Info block
     info = {
         "python": sys.version.split()[0],
         "platform": platform.platform(),
-        "pytorch_version": getattr(torch_mod, "__version__", "unknown"),
-        "cuda_compiled": getattr(getattr(torch_mod, "version", None), "cuda", None),
-        "cuda_available": bool(getattr(torch_mod, "cuda", None) and torch_mod.cuda.is_available()),
-        "gpu_name": (torch_mod.cuda.get_device_name(0) if getattr(torch_mod, "cuda", None) and torch_mod.cuda.is_available() else None),
-        "mps_available": bool(getattr(torch_mod.backends, "mps", None) and torch_mod.backends.mps.is_available()),
-        "index_used": torch_meta.get("index_used"),
-        "install_flavor": torch_meta.get("flavor"),
+        "pytorch_version": getattr(torch, "__version__", "unknown"),
+        "cuda_compiled": getattr(getattr(torch, "version", None), "cuda", None),
+        "cuda_available": bool(torch.cuda.is_available()),
+        "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+        "mps_available": bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available()),
+        "index_used": torch_meta.get("index"),
+        "install_flavor": torch_meta.get("build", "existing"),
         "packages_installed": pkgs_installed,
-        "logs": "\n".join(filter(None, logs))[-8000:],
+        "logs": "",
     }
 
     # cuDNN perf hint (safe try)
-    if getattr(torch_mod.backends, "cudnn", None) and torch_mod.cuda.is_available():
+    if getattr(torch.backends, "cudnn", None) and torch.cuda.is_available():
         try:
-            if not getattr(torch_mod, "are_deterministic_algorithms_enabled", lambda: False)():
-                torch_mod.backends.cudnn.benchmark = True
+            if not getattr(torch, "are_deterministic_algorithms_enabled", lambda: False)():
+                torch.backends.cudnn.benchmark = True
         except Exception:
-            torch_mod.backends.cudnn.benchmark = True
+            torch.backends.cudnn.benchmark = True
 
-    # scikit-learn on default index
     if install_sklearn:
         try:
             sk = _ensure_sklearn()
@@ -337,32 +120,152 @@ def _as_int_list(x: Sequence) -> List[int]:
         return [int(x)]
     return [int(v) for v in list(x)]
 
-def _pick_device(device=None):
-    try:
-        if device:
-            dev = device if isinstance(device, torch.device) else torch.device(device)
-            if dev.type == "cuda" and not torch.cuda.is_available():
-                return torch.device("cpu")
-            return dev
-    except Exception:
-        return torch.device("cpu")
-    if getattr(torch, "cuda", None) and torch.cuda.is_available():
-        return torch.device("cuda")
-    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
+# Device choice and device reports. device None / "auto": a CUDA GPU when
+# PyTorch sees one, else Apple MPS, else the CPU. When the device cannot be
+# used (device = "cuda" without a CUDA GPU, a CUDA error while training or
+# predicting, ...) the work goes on on the CPU and the switch is reported:
+# printed to stderr the first time and kept here. dl_bridge.py prints
+# device_report() as one "PREDICTPRO_DL_DEVICE {json}" line per command; R
+# turns the notes into a warning and records them in Run_metadata.
+_DEVICE_FITS: Dict[str, int] = {}
+_DEVICE_NOTES: Dict[Tuple[str, str, str], Dict[str, object]] = {}
+_GPU_UNUSED: Optional[str] = None  # None: not checked yet; "": nothing to report
 
-def _safe_to_device(model: nn.Module, device: torch.device):
-    try:
-        model = model.to(device)
-        return model, device
-    except Exception:
-        cpu = torch.device("cpu")
+def _short_error(err: BaseException, limit: int = 200) -> str:
+    """Error class and first sentence: the same failure on another fit gives
+    the same text (CUDA out-of-memory messages go on with changing figures)."""
+    lines = str(err).strip().splitlines()
+    first = lines[0] if lines else ""
+    end = first.find(". ")
+    text = f"{type(err).__name__}: {first[:end + 1] if end >= 0 else first}".strip()
+    return text if len(text) <= limit else text[:limit - 3] + "..."
+
+def _device_note(kind: str, message: str, model: Optional[str] = None) -> None:
+    key = (kind, str(model or ""), message)
+    note = _DEVICE_NOTES.get(key)
+    if note is None:
+        note = {"kind": kind, "model": str(model or ""), "message": message, "count": 0}
+        _DEVICE_NOTES[key] = note
+        label = f"{model}: " if model else ""
+        print(f"PredictProR deep learning: {label}{message}", file=sys.stderr, flush=True)
+    note["count"] += 1
+
+def _device_fit_done(dev) -> None:
+    key = getattr(dev, "type", None) or str(dev)
+    _DEVICE_FITS[key] = _DEVICE_FITS.get(key, 0) + 1
+
+def device_report(reset: bool = True) -> Dict[str, object]:
+    """Fits per device and the device notes since the last reset."""
+    report = {"fits": dict(_DEVICE_FITS), "notes": [dict(n) for n in _DEVICE_NOTES.values()]}
+    if reset:
+        _DEVICE_FITS.clear()
+        _DEVICE_NOTES.clear()
+    return report
+
+def _torch_label() -> str:
+    exe = sys.executable
+    if os.name == "nt":
         try:
-            model = model.to(cpu)
-        except Exception:
+            exe = os.path.realpath(exe)  # long names, not 8.3 short ones
+        except OSError:
             pass
+    return f"PyTorch {getattr(torch, '__version__', '?')} in {exe}"
+
+def _mps_available() -> bool:
+    mps = getattr(torch.backends, "mps", None)
+    return bool(mps is not None and mps.is_available())
+
+def _unused_gpu_message() -> str:
+    """Why an NVIDIA GPU on this machine is not used (checked once per process).
+    Not reported when CUDA_VISIBLE_DEVICES hides the GPUs or
+    PREDICTPRO_TORCH_DEVICE=cpu asks for CPU builds."""
+    global _GPU_UNUSED
+    if _GPU_UNUSED is None:
+        _GPU_UNUSED = ""
+        chosen = ("CUDA_VISIBLE_DEVICES" in os.environ
+                  or os.environ.get("PREDICTPRO_TORCH_DEVICE", "").strip().lower() == "cpu"
+                  or platform.system() == "Darwin")
+        driver = None if chosen else _deps._driver_cuda_version()
+        if driver is not None:
+            built = getattr(getattr(torch, "version", None), "cuda", None)
+            if built is None:
+                _GPU_UNUSED = (f"this machine has an NVIDIA GPU, but {_torch_label()} is a CPU-only "
+                               "build, so deep learning trains on the CPU. Uninstall torch from that "
+                               "Python and PredictProR installs the CUDA build on the next run.")
+            else:
+                _GPU_UNUSED = (f"this machine has an NVIDIA GPU (driver for CUDA {driver[0]}.{driver[1]}), "
+                               f"but {_torch_label()} (built for CUDA {built}) cannot use it, so deep "
+                               "learning trains on the CPU. The driver may be older than this build needs.")
+    return _GPU_UNUSED
+
+def _pick_device(device=None, model: Optional[str] = None):
+    if isinstance(device, torch.device):
+        dev = device
+    else:
+        name = "" if device is None else str(device).strip().lower()
+        name = "cuda" if name == "gpu" else name
+        if name in ("", "auto", "none", "null"):
+            if torch.cuda.is_available():
+                return torch.device("cuda")
+            if _mps_available():
+                return torch.device("mps")
+            message = _unused_gpu_message()
+            if message:
+                _device_note("gpu_unused", message, model)
+            return torch.device("cpu")
+        try:
+            dev = torch.device(name)
+        except (RuntimeError, ValueError):
+            dev = None
+        if dev is None or dev.type not in ("cpu", "cuda", "mps"):
+            raise ValueError(f'device must be "cpu", "cuda", "cuda:<index>", "mps" or None (a CUDA GPU, '
+                             f'else Apple MPS, else the CPU); got {device!r}.')
+    if dev.type == "cuda":
+        n_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        if n_gpus == 0 or (dev.index is not None and dev.index >= n_gpus):
+            build = " (a CPU-only build)" if getattr(torch.version, "cuda", None) is None else ""
+            seen = "no CUDA GPU" if n_gpus == 0 else f"{n_gpus} CUDA GPU{'s' if n_gpus > 1 else ''}"
+            _device_note("cuda_unavailable",
+                         f'device = "{device}" was given, but {_torch_label()}{build} sees {seen}; '
+                         "it ran on the CPU.", model)
+            return torch.device("cpu")
+    if dev.type == "mps" and not _mps_available():
+        _device_note("mps_unavailable",
+                     f'device = "{device}" was given, but {_torch_label()} sees no Apple MPS device; '
+                     "it ran on the CPU.", model)
+        return torch.device("cpu")
+    return dev
+
+def _safe_to_device(model: nn.Module, device: torch.device, model_label: Optional[str] = None,
+                    action: str = "trained"):
+    """Move a model to device; when that fails on a GPU, report it and use the CPU."""
+    try:
+        return model.to(device), device
+    except Exception as err:
+        if getattr(device, "type", "cpu") == "cpu":
+            raise
+        cpu = torch.device("cpu")
+        model = model.to(cpu)
+        _device_note("setup", f"moving the model to {device} failed ({_short_error(err)}); "
+                     f"it {action} on the CPU.", model_label)
         return model, cpu
+
+def _uncompiled(model, state=None):
+    """The module behind a torch.compile wrapper (same parameters), and a state
+    dict saved from the wrapper with the wrapper's key prefix removed."""
+    inner = getattr(model, "_orig_mod", None)
+    if inner is None:
+        return model, state
+    if state is not None:
+        prefix = "_orig_mod."
+        state = {(k[len(prefix):] if k.startswith(prefix) else k): v for k, v in state.items()}
+    return inner, state
+
+def _optimizer_to(opt, dev) -> None:
+    for state in opt.state.values():
+        for key, value in list(state.items()):
+            if torch.is_tensor(value):
+                state[key] = value.to(dev)
 
 def _set_deterministic(seed: int = 42):
     random.seed(int(seed))
@@ -408,41 +311,6 @@ def _maybe_compile(model, dev, compile_model=True):
         except Exception:
             pass
         return model
-
-def _as_int_list(x: Sequence) -> List[int]:
-    if x is None:
-        return []
-    if isinstance(x, (int, np.integer)):
-        return [int(x)]
-    return [int(v) for v in list(x)]
-
-def _pick_device(device=None):
-    try:
-        if device:
-            dev = device if isinstance(device, torch.device) else torch.device(device)
-            if dev.type == "cuda" and not torch.cuda.is_available():
-                return torch.device("cpu")
-            return dev
-    except Exception:
-        return torch.device("cpu")
-    if getattr(torch, "cuda", None) and torch.cuda.is_available():
-        return torch.device("cuda")
-    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
-
-def _safe_to_device(model: nn.Module, device: 'torch.device'):
-    try:
-        model = model.to(device)
-        return model, device
-    except Exception:
-        cpu = torch.device("cpu")
-        try:
-            model = model.to(cpu)
-        except Exception:
-            pass
-        return model, cpu
-
 
 def _infer_task(y, multi_class_max=10):
     y = np.asarray(y)
@@ -452,54 +320,6 @@ def _infer_task(y, multi_class_max=10):
         return ("binary", 2) if len(uniq) == 2 else ("multiclass", len(uniq))
     return "regression", 1
 
-def _set_deterministic(seed: int = 42):
-    random.seed(int(seed))
-    np.random.seed(int(seed))
-    torch.manual_seed(int(seed))
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(int(seed))
-    try:
-        torch.use_deterministic_algorithms(True)
-    except Exception:
-        pass
-    if hasattr(torch.backends, "cudnn"):
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-
-# put near other imports
-import os, shutil, platform
-import torch
-
-def _maybe_compile(model, dev, compile_model=True):
-    # Allow users to disable via env
-    if not compile_model or not hasattr(torch, "compile"):
-        return model
-    if os.getenv("TORCH_COMPILE_DISABLE", "").lower() in {"1", "true", "yes"}:
-        return model
-    if os.getenv("PREDICTDL_COMPILE", "").lower() in {"0", "false", "no"}:
-        return model
-
-    # Choose backend safely
-    if dev.type == "cuda":
-        # On Windows, inductor needs cl.exe; skip if missing
-        if platform.system() == "Windows" and shutil.which("cl") is None:
-            return model
-        backend = "inductor"
-    elif dev.type in ("mps", "cpu"):
-        return model
-    else:
-        return model
-
-    try:
-        return torch.compile(model, backend=backend, mode="max-autotune")
-    except Exception:
-        # Do not crash training; run eager.
-        try:
-            import torch._dynamo as dynamo
-            dynamo.config.suppress_errors = True
-        except Exception:
-            pass
-        return model
 # ---------------------------------------------------------------------
 # Blocks
 # ---------------------------------------------------------------------
@@ -606,7 +426,7 @@ def _build_groups_from_chunks(n_features: int, init_group_size: int, max_tokens:
 def _build_groups_kmeans(X_train: np.ndarray, n_features: int, init_group_size: int,
                          max_tokens: int, kmeans_batch: int, kmeans_iter: int, seed: int):
     try:
-        from sklearn.cluster import MiniBatchKMeans
+        MiniBatchKMeans = _deps.ensure_module("sklearn.cluster").MiniBatchKMeans
     except Exception:
         return None
     proposed = int(math.ceil(n_features / max(1, init_group_size)))
@@ -655,7 +475,7 @@ def _build_feature_groups(
         return groups
 
     try:
-        from sklearn.cluster import MiniBatchKMeans
+        MiniBatchKMeans = _deps.ensure_module("sklearn.cluster").MiniBatchKMeans
         Xf = X_train.astype(np.float32)
         eps = 1e-6
         mu = Xf.mean(axis=0, keepdims=True)
@@ -770,12 +590,17 @@ class FTTransformer(nn.Module):
         else:
             self.tok = FeatureTokenizer(n_features, self.d_model, token_dropout, use_cls=self.use_cls)
 
+        # Pre-layer-norm blocks (norm_first): the post-LN default collapsed to a
+        # constant prediction in 2 of 5 seeds at 200 and 500 lines; pre-LN did
+        # not collapse. self.norm below is the closing LayerNorm of a pre-LN stack.
         enc_layer = nn.TransformerEncoderLayer(
             d_model=self.d_model, nhead=int(n_heads),
             dim_feedforward=int(ff_mult) * self.d_model,
-            dropout=float(dropout), activation='gelu', batch_first=True
+            dropout=float(dropout), activation='gelu', batch_first=True,
+            norm_first=True
         )
-        self.enc = nn.TransformerEncoder(enc_layer, num_layers=int(n_layers))
+        self.enc = nn.TransformerEncoder(enc_layer, num_layers=int(n_layers),
+                                         enable_nested_tensor=False)
         self.norm = nn.LayerNorm(self.d_model)
         self.head = nn.Linear(self.d_model, int(out_dim))
 
@@ -857,7 +682,7 @@ class SAINT(nn.Module):
         return self.head(h)
 
 # ---------------------------------------------------------------------
-# TabNet (sparsemax)
+# TabNet
 # ---------------------------------------------------------------------
 class Sparsemax(nn.Module):
     @staticmethod
@@ -881,67 +706,91 @@ class Sparsemax(nn.Module):
 
 sparsemax = Sparsemax()
 
-class GLU(nn.Module):
-    def __init__(self, in_dim, out_dim):
+class TabNetGLU(nn.Module):
+    """FC -> BatchNorm -> gated linear unit; the FC layer may be shared."""
+    def __init__(self, in_dim, out_dim, fc=None):
         super().__init__()
-        self.lin = nn.Linear(int(in_dim), int(out_dim) * 2)
-        self.bn = nn.BatchNorm1d(int(out_dim) * 2)
+        self.out_dim = int(out_dim)
+        self.fc = fc if fc is not None else nn.Linear(int(in_dim), 2 * self.out_dim, bias=False)
+        self.bn = nn.BatchNorm1d(2 * self.out_dim, momentum=0.02)
     def forward(self, x):
-        a, b = self.bn(self.lin(x)).chunk(2, dim=-1)
-        return a * torch.sigmoid(b)
+        z = self.bn(self.fc(x))
+        return z[:, :self.out_dim] * torch.sigmoid(z[:, self.out_dim:])
 
-class FeatureTransformer(nn.Module):
-    def __init__(self, dim, n_glu=2):
+class TabNetFeatureTransformer(nn.Module):
+    """Shared GLU blocks followed by step-specific ones, residuals scaled by sqrt(0.5)."""
+    def __init__(self, in_dim, width, shared_fcs, n_independent=2):
         super().__init__()
-        layers = []
-        for _ in range(n_glu):
-            layers += [GLU(dim, dim)]
-        self.net = nn.Sequential(*layers)
-    def forward(self, x): return self.net(x)
-
-class AttentiveTransformer(nn.Module):
-    def __init__(self, feat_dim, input_dim, relax=1.5):
-        super().__init__()
-        self.lin = nn.Linear(int(feat_dim), int(input_dim))
-        self.bn = nn.BatchNorm1d(int(input_dim))
-        self.relax = float(relax)
-    def forward(self, h_feat, prior):
-        scores = self.bn(self.lin(h_feat))
-        scores = scores * prior
-        mask = sparsemax(scores)
-        new_prior = prior * (self.relax - mask)
-        return mask, new_prior
+        blocks = [TabNetGLU(in_dim, width, fc=shared_fcs[0])]
+        blocks += [TabNetGLU(width, width, fc=fc) for fc in shared_fcs[1:]]
+        blocks += [TabNetGLU(width, width) for _ in range(int(n_independent))]
+        self.blocks = nn.ModuleList(blocks)
+    def forward(self, x):
+        x = self.blocks[0](x)
+        for block in self.blocks[1:]:
+            x = (x + block(x)) * math.sqrt(0.5)
+        return x
 
 class TabNet(nn.Module):
+    """TabNet (Arik & Pfister 2021): sequential attention over the features.
+
+    Each step's feature transformer output is split into a decision part
+    (ReLU, summed into the prediction) and an attention part that sets the
+    next step's feature mask; the prior relaxes feature reuse by gamma.
+
+    mask_type "softmax" (default) gives dense attention. The paper's
+    "sparsemax" keeps only a few features per step: on marker data (hundreds
+    of standardized markers, polygenic traits) it kept about 2 of 400 markers
+    per line and did not generalize (test r about 0 against 0.47-0.68 for
+    ridge); softmax masks reached 0.42-0.64.
+    """
     def __init__(self, in_dim, out_dim, task,
-                 steps=5, feature_dim=64, output_dim=64, gamma=1.5,
-                 lambda_sparse=1e-4):
+                 steps=3, feature_dim=8, output_dim=8, gamma=1.3,
+                 lambda_sparse=1e-3, mask_type="softmax", n_shared=2, n_independent=2):
         super().__init__()
-        self.in_dim = int(in_dim)
-        self.initial = nn.Linear(int(in_dim), int(feature_dim))
-        self.ft = FeatureTransformer(int(feature_dim), n_glu=2)
-        self.atts = nn.ModuleList([AttentiveTransformer(int(feature_dim), int(in_dim), relax=gamma) for _ in range(int(steps))])
-        self.dts  = nn.ModuleList([FeatureTransformer(int(feature_dim), n_glu=2) for _ in range(int(steps))])
-        self.steps = int(steps)
-        self.out = nn.Linear(int(feature_dim), int(out_dim))
         self.task = task
+        self.in_dim = int(in_dim)
+        self.n_a = int(feature_dim)          # attention width
+        self.n_d = int(output_dim)           # decision width
+        self.steps = int(steps)
+        self.gamma = float(gamma)
         self.lambda_sparse = float(lambda_sparse)
-        self.register_buffer("_last_sparse_loss", torch.tensor(0.0), persistent=False)
+        self.mask_type = str(mask_type).lower()
+        if self.mask_type not in ("softmax", "sparsemax"):
+            raise ValueError("tabnet mask_type must be 'softmax' or 'sparsemax'")
+        width = self.n_d + self.n_a
+        self.bn0 = nn.BatchNorm1d(self.in_dim, momentum=0.01)
+        shared = [nn.Linear(self.in_dim, 2 * width, bias=False)]
+        shared += [nn.Linear(width, 2 * width, bias=False) for _ in range(max(0, int(n_shared) - 1))]
+        self.shared = nn.ModuleList(shared)
+        self.initial = TabNetFeatureTransformer(self.in_dim, width, self.shared, n_independent)
+        self.step_transformers = nn.ModuleList(
+            [TabNetFeatureTransformer(self.in_dim, width, self.shared, n_independent) for _ in range(self.steps)])
+        self.att_fc = nn.ModuleList([nn.Linear(self.n_a, self.in_dim, bias=False) for _ in range(self.steps)])
+        self.att_bn = nn.ModuleList([nn.BatchNorm1d(self.in_dim, momentum=0.02) for _ in range(self.steps)])
+        self.out = nn.Linear(self.n_d, int(out_dim))
+        self._last_mask_entropy = None
     def extra_loss(self):
-        return self.lambda_sparse * self._last_sparse_loss
+        # mask entropy of the last forward pass (kept in the graph, so the
+        # sparsity regularizer has a gradient)
+        if self._last_mask_entropy is None or self.lambda_sparse <= 0:
+            return 0.0
+        return self.lambda_sparse * self._last_mask_entropy
     def forward(self, x):
-        h0 = F.relu(self.initial(x))
-        h0 = self.ft(h0)
-        prior = torch.ones(x.size(0), self.in_dim, device=x.device, dtype=x.dtype)
-        agg = torch.zeros_like(h0)
-        sparse_loss = x.new_tensor(0.0)
-        for att, dt in zip(self.atts, self.dts):
-            mask, prior = att(h0, prior)
-            x_masked = x * mask
-            h_step = dt(F.relu(self.initial(x_masked)))
-            agg = agg + h_step
-            sparse_loss = sparse_loss + (mask * mask).sum(dim=1).mean()
-        self._last_sparse_loss.copy_(sparse_loss.detach())
+        x = self.bn0(x)
+        prior = torch.ones_like(x)
+        att = self.initial(x)[:, self.n_d:]
+        agg = 0.0
+        entropy = 0.0
+        for i in range(self.steps):
+            scores = prior * self.att_bn[i](self.att_fc[i](att))
+            mask = sparsemax(scores) if self.mask_type == "sparsemax" else torch.softmax(scores, dim=-1)
+            entropy = entropy + torch.mean(torch.sum(-mask * torch.log(mask + 1e-15), dim=1))
+            prior = prior * (self.gamma - mask)
+            h = self.step_transformers[i](x * mask)
+            agg = agg + F.relu(h[:, :self.n_d])
+            att = h[:, self.n_d:]
+        self._last_mask_entropy = entropy / self.steps
         return self.out(agg)
 
 # ---------------------------------------------------------------------
@@ -1402,14 +1251,10 @@ class MoE(nn.Module):
 
 def _try_import_gpytorch():
     try:
-        import gpytorch  # noqa
+        _deps.ensure_groups(["gpytorch"])
         return importlib.import_module("gpytorch")
     except Exception:
-        try:
-            _pip_install(["gpytorch"])
-            return importlib.import_module("gpytorch")
-        except Exception:
-            return None
+        return None
 
 class RandomFourierFeatures(nn.Module):
     def __init__(self, in_dim, out_features=1024, lengthscale=1.0, learnable=False):
@@ -1507,9 +1352,10 @@ def predict_with_uncertainty(model, X, device=None, prefer_bayesian=True):
         return {"mean": mu.reshape(-1), "variance": var.reshape(-1), "kind": "bayesian"}
 
     # Heteroscedastic regression (non-Bayesian)
-    dev = _pick_device(device)
+    label = getattr(model, "_model_label", None)
+    dev = _pick_device(device, label)
     if isinstance(model, nn.Module) and getattr(model, "_hetero", False):
-        model.eval(); model, dev = _safe_to_device(model, dev)
+        model.eval(); model, dev = _safe_to_device(model, dev, label, action="predicted")
         Xt = torch.as_tensor(X, dtype=torch.float32, device=dev)
         out = model(Xt)
         if isinstance(out, torch.Tensor) and out.shape[-1] >= 2:
@@ -1542,7 +1388,7 @@ def build_model(
     ft_group_index: Optional[torch.LongTensor] = None, ft_group_counts: Optional[torch.Tensor] = None,
     ft_scalar_tokenizer: bool = True,
     # TabNet
-    tabnet_steps=5, tabnet_feature_dim=64, tabnet_output_dim=64, tabnet_gamma=1.5, tabnet_lambda_sparse=1e-4,
+    tabnet_steps=3, tabnet_feature_dim=8, tabnet_output_dim=8, tabnet_gamma=1.3, tabnet_lambda_sparse=1e-3,
     # NODE
     node_trees=8, node_depth=3,
     # DeepFM
@@ -1622,7 +1468,8 @@ def build_model(
 # ---------------------------------------------------------------------
 @torch.no_grad()
 def predict(model, X, device=None):
-    dev = _pick_device(device)
+    label = getattr(model, "_model_label", None)
+    dev = _pick_device(device, label)
     was_training = getattr(model, "training", False)
 
     X = np.asarray(X, dtype=np.float32)
@@ -1640,7 +1487,7 @@ def predict(model, X, device=None):
 
         if isinstance(model, nn.Module):
             model.eval()
-            model, dev = _safe_to_device(model, dev)
+            model, dev = _safe_to_device(model, dev, label, action="predicted")
 
         if hasattr(model, "_expected_input_dim") and X.shape[1] != model._expected_input_dim:
             raise ValueError(f"Expected {model._expected_input_dim} features, got {X.shape[1]}.")
@@ -1657,20 +1504,21 @@ def predict(model, X, device=None):
 
         return logits.detach().cpu().numpy()
 
-    except Exception as e:
-        if os.environ.get("DL_VERBOSE_ERRORS") == "1":
-            print(f"[WARN] predict() failed on {dev}: {type(e).__name__}: {e}.", flush=True)
-
-        if getattr(dev, "type", "") in ("cuda", "mps"):
-            cpu = torch.device("cpu")
-            if isinstance(model, nn.Module):
-                model, _ = _safe_to_device(model, cpu)
-            X_t = torch.as_tensor(X, dtype=torch.float32, device=cpu)
-            logits = model(X_t)
-            if getattr(model, "_hetero", False) and isinstance(logits, torch.Tensor) and logits.shape[-1] >= 2:
-                logits = logits[:, :1]
-            return logits.detach().cpu().numpy()
-        raise e
+    except ValueError:
+        raise
+    except Exception as err:
+        if getattr(dev, "type", "cpu") == "cpu":
+            raise
+        cpu = torch.device("cpu")
+        _device_note("prediction", f"predicting on {dev} failed ({_short_error(err)}); "
+                     "it predicted on the CPU.", label)
+        if hasattr(model, "predict_mean") and callable(getattr(model, "predict_mean")):
+            return model.predict_mean(X, device=cpu)
+        model = _uncompiled(model)[0].to(cpu)  # never compiled for the CPU
+        logits = model(torch.as_tensor(X, dtype=torch.float32, device=cpu))
+        if getattr(model, "_hetero", False) and isinstance(logits, torch.Tensor) and logits.shape[-1] >= 2:
+            logits = logits[:, :1]
+        return logits.detach().cpu().numpy()
     finally:
         if isinstance(model, nn.Module) and was_training:
             model.train()
@@ -1681,6 +1529,25 @@ def predict(model, X, device=None):
 # On small panels the validation split holds only a handful of lines; its
 # loss is noisy and often never beats the first epochs, so restoring the
 # "best" epoch kept a model that predicts about the mean for everyone.
+# epochs = "auto": size training by optimizer steps, not passes over the data.
+# A fixed epoch count gives a 100-line panel about 2 steps per epoch and a
+# 5000-line panel about 60, so small panels were undertrained and large ones
+# over-trained. "auto" asks for about 200 steps, kept within 20-100 epochs
+# (batch 64, 20% validation: 100 lines -> 100 epochs, 250 -> 50, 500 -> 29,
+# 1000 or more -> 20). Benchmarked on 100-2000 lines for six DL models: more
+# epochs helped at 100-250 lines; at 2000 lines 10, 30 and 60 epochs were
+# within 0.01-0.03 of each other; at 1000 lines 16 epochs cost ResNet 0.03.
+EPOCHS_AUTO_TARGET_STEPS = 200
+EPOCHS_AUTO_MIN = 20
+EPOCHS_AUTO_MAX = 100
+
+def _resolve_epochs(epochs, steps_per_epoch) -> int:
+    """Epochs as given, or the data-size rule above for "auto" / None."""
+    if epochs is None or (isinstance(epochs, str) and epochs.strip().lower() == "auto"):
+        spe = max(1, int(steps_per_epoch))
+        return int(min(EPOCHS_AUTO_MAX, max(EPOCHS_AUTO_MIN, math.ceil(EPOCHS_AUTO_TARGET_STEPS / spe))))
+    return max(1, int(epochs))
+
 def _best_epoch_warmup(epochs) -> int:
     """Epochs that must pass before an epoch can be selected as best."""
     e = max(1, int(epochs))
@@ -1718,7 +1585,7 @@ def fit_model(
     num_hidden_layers: Optional[int] = None,
     neurons_per_layer: Optional[Sequence[int]] = None,
     learning_rate: float = 1e-3,
-    epochs: int = 32,
+    epochs="auto",
     batch_size: int = 64,
     l2_weight_decay: float = 1e-3,
     dropout: float = 0.5,
@@ -1761,7 +1628,7 @@ def fit_model(
     # NODE
     node_trees: int = 8, node_depth: int = 3,
     # TabNet
-    tabnet_steps: int = 5, tabnet_feature_dim: int = 64, tabnet_output_dim: int = 64, tabnet_gamma: float = 1.5, tabnet_lambda_sparse: float = 1e-4,
+    tabnet_steps: int = 3, tabnet_feature_dim: int = 8, tabnet_output_dim: int = 8, tabnet_gamma: float = 1.3, tabnet_lambda_sparse: float = 1e-3,
     # DeepFM / DCN
     deepfm_k: int = 16, deepfm_hidden: Sequence[int] = (128, 64),
     dcn_layers: int = 3, dcn_hidden: Sequence[int] = (256, 128),
@@ -1770,7 +1637,8 @@ def fit_model(
     # Multi-trait gaussian regression
     multitask: bool = False,
 ):
-    dev = _pick_device(device)
+    model_label = model_type  # as asked for (mlp_with_attention may run as mlp)
+    dev = _pick_device(device, model_label)
 
     if deterministic:
         _set_deterministic(42 if random_seed is None else int(random_seed))
@@ -1835,11 +1703,11 @@ def fit_model(
                 rff_features=int(rff_features), lengthscale=float(rff_lengthscale),
                 deep_hidden=_as_int_list(rff_deep_hidden), dropout=float(dropout)
             )
-            prebuilt_model, dev = _safe_to_device(prebuilt_model, dev)
+            prebuilt_model, dev = _safe_to_device(prebuilt_model, dev, model_label)
         else:
             # Build feature extractor
             extractor = MLPStack(input_dim, [int(gp_feature_dim)], dropout=0.0, batch_norm=False) if gp_feature_dim > 0 else nn.Identity()
-            extractor, dev = _safe_to_device(extractor, dev)
+            extractor, dev = _safe_to_device(extractor, dev, model_label)
 
             # Inducing points
             n_sub = min(int(gp_num_inducing), X.shape[0])
@@ -1918,6 +1786,7 @@ def fit_model(
                     if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
                         m.eval()
 
+            epochs = _resolve_epochs(epochs, len(train_dl))
             warmup = _best_epoch_warmup(epochs)
             for epoch_i in range(int(epochs)):
                                
@@ -1988,6 +1857,9 @@ def fit_model(
                     setattr(wrapper, "_best_epoch_rejected", True)
                 gp_model.train(); likelihood.train()   # no stale caches for later predictions
 
+            setattr(wrapper, "_trained_device", str(dev))
+            setattr(wrapper, "_model_label", model_label)
+            _device_fit_done(dev)
             return wrapper, history
         # else: prebuilt_model is set for RFF fallback
 
@@ -2072,7 +1944,7 @@ def fit_model(
             "orig_features": input_dim,
         })
 
-    model, dev = _safe_to_device(model, dev)
+    model, dev = _safe_to_device(model, dev, model_label)
     setattr(model, "_hetero", hetero)
     setattr(model, "_multitask", multitask_regression)
     setattr(model, "_multitask_out_dim", int(out_dim) if multitask_regression else None)
@@ -2112,8 +1984,6 @@ def fit_model(
     pin = (dev.type == "cuda")
     train_dl = DataLoader(train_ds, batch_size=safe_batch, shuffle=True, pin_memory=pin, persistent_workers=False, drop_last=drop_last_train)
     val_dl   = DataLoader(val_ds, batch_size=val_batch, shuffle=False, pin_memory=pin, persistent_workers=False, drop_last=False)
-
-    rebuilt_for_cpu = False
 
     # Loss
     if task == "multitask_regression":
@@ -2168,13 +2038,29 @@ def fit_model(
     else:
         raise ValueError("Unsupported optimizer.")
 
-    amp_ok = use_amp and (dev.type == "cuda" and torch.cuda.is_available())
-    """
-    scaler = torch.cuda.amp.GradScaler("cuda", enabled=amp_ok)
-    """
+    amp_ok = use_amp and dev.type == "cuda"
     from torch.amp import autocast, GradScaler
-    device_type = "cuda" if (torch.cuda.is_available() and (device != "cpu")) else "cpu"
+    device_type = "cuda" if dev.type == "cuda" else "cpu"
     scaler = GradScaler(device_type, enabled=amp_ok)
+
+    # one optimizer step; reads model/opt/scaler/criterion as they are now, so
+    # it keeps working after the fit moves to the CPU
+    def _train_step(xb, yb, mb):
+        opt.zero_grad(set_to_none=True)
+        with autocast(device_type=device_type, enabled=amp_ok):
+            logits = model(xb)
+            if task == "multitask_regression":
+                loss = criterion(logits, yb, mb)
+            else:
+                loss = criterion(yb, logits) if hetero else criterion(logits, yb)
+            if hasattr(model, "extra_loss") and callable(model.extra_loss):
+                loss = loss + model.extra_loss()
+        scaler.scale(loss).backward()
+        if max_grad_norm is not None:
+            scaler.unscale_(opt)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=float(max_grad_norm))
+        scaler.step(opt); scaler.update()
+        return loss
 
     patience = 50
     best_val = float("inf")
@@ -2182,6 +2068,7 @@ def fit_model(
     no_improve = 0
     history = {"train_loss": [], "val_loss": []}
     use_val = len(val_ds) > 0
+    epochs = _resolve_epochs(epochs, len(train_dl))
     warmup = _best_epoch_warmup(epochs)
 
     for epoch_i in range(int(epochs)):
@@ -2198,80 +2085,48 @@ def fit_model(
             xb = xb.to(dev, non_blocking=pin); yb = yb.to(dev, non_blocking=pin)
             if mb is not None:
                 mb = mb.to(dev, non_blocking=pin)
-            opt.zero_grad(set_to_none=True)
             try:
-                with autocast(device_type = device_type, enabled=amp_ok):
-                    logits = model(xb)
-                    if task == "multitask_regression":
-                        loss = criterion(logits, yb, mb)
-                    else:
-                        loss = criterion(yb, logits) if hetero else criterion(logits, yb)
-                    if hasattr(model, "extra_loss") and callable(model.extra_loss):
-                        loss = loss + model.extra_loss()
-                scaler.scale(loss).backward()
-                if max_grad_norm is not None:
-                    scaler.unscale_(opt)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=float(max_grad_norm))
-                scaler.step(opt); scaler.update()
-
-            except Exception:
-                # Fallback to CPU and rebuild loaders once with pin_memory=False
-                model, dev = _safe_to_device(model, torch.device("cpu"))
-                if isinstance(criterion, nn.Module):
-                    # class weights (pos_weight / weight) must follow the model
-                    criterion = criterion.to(dev)
-                amp_ok = False
-                pin = False
-                """
-                scaler = torch.cuda.amp.GradScaler(enabled=False)
-                """
-                from torch.amp import GradScaler
-                scaler = GradScaler("cpu", enabled=False)
-                n_train = len(train_ds)
-                any_bn = bool(batch_norm)
-                safe_batch = max(2, min(int(batch_size), n_train)) if n_train > 1 else 1
-                drop_last_train = (any_bn and (n_train % safe_batch == 1))
-                val_batch = max(1, min(int(batch_size), len(val_ds)))
-                if not rebuilt_for_cpu:
-                    train_dl = DataLoader(
-                        train_ds, batch_size=safe_batch, shuffle=True,
-                        pin_memory=False, persistent_workers=False, drop_last=drop_last_train
-                    )
-                    val_dl   = DataLoader(
-                        val_ds, batch_size=val_batch, shuffle=False,
-                        pin_memory=False, persistent_workers=False,drop_last=False
-                    )
-                    rebuilt_for_cpu = True
-
-                xb = xb.to(dev); yb = yb.to(dev)
-                if mb is not None:
-                    mb = mb.to(dev)
-
-                # Recreate optimizer of the same family (and clear grads to be safe)
-                if isinstance(opt, torch.optim.SGD):
-                    opt = torch.optim.SGD(model.parameters(), lr=float(learning_rate), momentum=0.9, weight_decay=float(l2_weight_decay))
-                elif isinstance(opt, torch.optim.AdamW):
-                    opt = torch.optim.AdamW(model.parameters(), lr=float(learning_rate), weight_decay=float(l2_weight_decay))
-                elif isinstance(opt, torch.optim.Adamax):
-                    opt = torch.optim.Adamax(model.parameters(), lr=float(learning_rate), weight_decay=float(l2_weight_decay))
-                elif isinstance(opt, torch.optim.RMSprop):
-                    opt = torch.optim.RMSprop(model.parameters(), lr=float(learning_rate), weight_decay=float(l2_weight_decay))
-                elif isinstance(opt, torch.optim.Adadelta):
-                    opt = torch.optim.Adadelta(model.parameters(), lr=float(learning_rate), weight_decay=float(l2_weight_decay))
-                elif isinstance(opt, torch.optim.NAdam):
-                    opt = torch.optim.NAdam(model.parameters(), lr=float(learning_rate), weight_decay=float(l2_weight_decay))
-                else:
-                    opt = torch.optim.AdamW(model.parameters(), lr=float(learning_rate), weight_decay=float(l2_weight_decay))
-                opt.zero_grad(set_to_none=True)
-
-                logits = model(xb)
-                if task == "multitask_regression":
-                    loss = criterion(logits, yb, mb)
-                else:
-                    loss = criterion(yb, logits) if hetero else criterion(logits, yb)
-                if hasattr(model, "extra_loss") and callable(model.extra_loss):
-                    loss = loss + model.extra_loss()
-                loss.backward(); opt.step()
+                loss = _train_step(xb, yb, mb)
+            except Exception as err:
+                if dev.type == "cpu":
+                    raise
+                failure = err
+                if hasattr(model, "_orig_mod"):
+                    # torch.compile can fail where the GPU works (Triton needs
+                    # a C compiler, for one): keep the GPU, train uncompiled
+                    model, best_state = _uncompiled(model, best_state)
+                    _device_note("compile", f"the compiled model failed on {dev} ({_short_error(err)}); "
+                                 f"it trained uncompiled on {dev}.", model_label)
+                    try:
+                        loss = _train_step(xb, yb, mb)
+                        failure = None
+                    except Exception as err_uncompiled:
+                        failure = err_uncompiled
+                if failure is not None:
+                    # the rest of the fit runs on the CPU, with the same model
+                    # and optimizer state (training goes on where it stopped);
+                    # if the GPU state is lost, moving fails and so does the fit
+                    gpu = dev
+                    model, best_state = _uncompiled(model, best_state)
+                    dev = torch.device("cpu")
+                    model = model.to(dev)
+                    _optimizer_to(opt, dev)
+                    if isinstance(criterion, nn.Module):
+                        criterion = criterion.to(dev)  # class weights follow the model
+                    amp_ok = False
+                    pin = False
+                    device_type = "cpu"
+                    scaler = GradScaler("cpu", enabled=False)
+                    train_dl = DataLoader(train_ds, batch_size=safe_batch, shuffle=True, pin_memory=False,
+                                          persistent_workers=False, drop_last=drop_last_train)
+                    val_dl = DataLoader(val_ds, batch_size=val_batch, shuffle=False, pin_memory=False,
+                                        persistent_workers=False, drop_last=False)
+                    _device_note("training", f"training on {gpu} failed ({_short_error(failure)}); "
+                                 "the fit continued on the CPU.", model_label)
+                    xb = xb.to(dev); yb = yb.to(dev)
+                    if mb is not None:
+                        mb = mb.to(dev)
+                    loss = _train_step(xb, yb, mb)
 
             total += float(loss.detach().item()) * xb.size(0)
 
@@ -2329,6 +2184,9 @@ def fit_model(
         else:
             model.load_state_dict(best_state)
 
+    setattr(model, "_trained_device", str(dev))
+    setattr(model, "_model_label", model_label)
+    _device_fit_done(dev)
     return model, history
 
 
@@ -2366,9 +2224,11 @@ def fit_predict_payload(
     if fit_task == "multiclass":
         observed_classes = [str(x) for x in np.unique(y_arr).tolist()]
     model, history = fit_model(X_train, y_arr, model_type=model_type, **fit_params)
+    # predict where the model trained (the CPU after a fallback)
+    pred_device = getattr(model, "_trained_device", None) or fit_params.get("device")
 
     if fit_task in ("binary", "multiclass"):
-        raw = predict(model, X_test, device=fit_params.get("device"))
+        raw = predict(model, X_test, device=pred_device)
         prob = _probabilities_from_logits(raw, fit_task)
         if fit_task == "binary":
             preds = prob[:, 1]
@@ -2384,7 +2244,7 @@ def fit_predict_payload(
             "history": history,
         }
 
-    preds = predict(model, X_test, device=fit_params.get("device"))
+    preds = predict(model, X_test, device=pred_device)
     preds = np.asarray(preds)
     if preds.ndim == 2 and preds.shape[1] == 1:
         preds = preds[:, 0]

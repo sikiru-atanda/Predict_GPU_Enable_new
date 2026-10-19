@@ -768,7 +768,11 @@ test_that("ASReml prediction labels always expose PEV and reliability aliases", 
     "Reliability_basis"
   ) %in% names(out)))
   expect_equal(out$PEV, pred$Standard_error^2)
-  expect_true(all(is.finite(out$Reliability)))
+  # 0.20.221: without the genetic PEV and prior genetic variance this helper leaves reliability
+  # NA and says why; it used to fill it from var(y), which overstated it about twofold
+  # (test-asreml-genetic-reliability.R covers the genetic reliability the ASReml routes add)
+  expect_true(all(is.na(out$Reliability)))
+  expect_true(all(grepl("^unavailable", out$Reliability_basis)))
 
   pheno_no_missing <- within(pheno, Yield[is.na(Yield)] <- 2)
   out_no_missing <- PredictProR:::asreml_add_train_test_labels(
@@ -779,7 +783,17 @@ test_that("ASReml prediction labels always expose PEV and reliability aliases", 
   )
   expect_identical(out_no_missing$Train_Test_Label, rep("Train", 3))
   expect_true(all(c("PEV", "Reliability") %in% names(out_no_missing)))
-  expect_true(all(is.finite(out_no_missing$Reliability)))
+  expect_true(all(is.na(out_no_missing$Reliability)))
+  with_inputs <- pred
+  with_inputs$Reliability_variance_input <- c(0.05, 0.1, 0.2)
+  with_inputs$Reliability_reference_variance <- 0.5
+  out_inputs <- PredictProR:::asreml_add_train_test_labels(
+    predicted_df = with_inputs,
+    pheno_data = pheno_no_missing,
+    response = "Yield",
+    gen_name = "NAME"
+  )
+  expect_equal(out_inputs$Reliability, c(0.9, 0.8, 0.6))
 })
 
 test_that("bayes variance components report posterior SD scale", {

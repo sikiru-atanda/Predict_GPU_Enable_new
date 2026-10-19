@@ -24,13 +24,16 @@
 #'   }
 #'
 #' @details
-#' The policy is **score-based**: each parallel backend (`sequential`,
-#' `future`, `mirai`, `base_parallel`, `foreach`) gets a numeric score
-#' built from object size, task fanout, OS, GPU availability, and
-#' workload shape; the highest-scoring eligible backend wins. The
-#' scoring weights, sequential-gate thresholds, mori share thresholds,
-#' and mirai daemon timing are all tunable through the knobs in this
-#' table.
+#' In `parallel_mode = "auto"` the policy decides whether to run in
+#' parallel and, if so, uses `base_parallel` (the fastest parallel
+#' backend measured on Windows and Linux), or `mirai` when GPU models run
+#' on several GPUs (one worker per GPU). Cross-validation and the
+#' best-model refit decide sequential versus parallel with a cost model
+#' (expected work against worker start-up); otherwise `sequential` and
+#' that backend are scored with the weights below. `future`, `mirai` and
+#' `foreach` stay available through `parallel_mode`. The scoring weights,
+#' sequential-gate thresholds, mori share thresholds, the mirai queue cap
+#' and the GPU ids are all tunable through the knobs in this table.
 #'
 #' Companion helper: \code{\link{gp_policy_decision_reason_glossary}}.
 #'
@@ -45,14 +48,12 @@ gp_parallel_policy_knobs <- function() {
       "MKL_NUM_THREADS", "BLIS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS",
       # Scoring weights (sp_decide_policy)
       "GP_PAR_SCORE_TASKS", "GP_PAR_SCORE_WORKERS", "GP_PAR_SCORE_GLOBALS",
-      "GP_PAR_SCORE_WINDOWS_FUTURE", "GP_PAR_SCORE_WINDOWS_FUTURE_STARTUP",
-      "GP_PAR_SCORE_WINDOWS_MIRAI_PENALTY", "GP_PAR_SCORE_MIRAI_WORKER_POOL",
-      "GP_PAR_SCORE_GPU_MIRAI", "GP_PAR_SCORE_GPU_FUTURE_PENALTY",
+      "GP_PAR_SCORE_GPU_MIRAI",
       "GP_PAR_SCORE_HIDDEN_THREADS", "GP_PAR_SCORE_MORI",
       "GP_PAR_SCORE_TINY_SEQ", "GP_PAR_SCORE_THREADED_SEQ",
       "GP_PAR_SCORE_OVERHEAD", "GP_PAR_SCORE_WORKER_STARTUP",
       "GP_PAR_SCORE_FORK_WORKER_STARTUP", "GP_PAR_SCORE_WINDOWS_WORKER_STARTUP",
-      "GP_PAR_SCORE_BASE_PARALLEL_UNIX", "GP_PAR_SCORE_FOREACH_PENALTY",
+      "GP_PAR_SCORE_BASE_PARALLEL_UNIX",
       # Sequential gates
       "GP_GLOBALS_MAX_GB", "GP_PAR_MEMORY_BUDGET_GB", "GP_PAR_MEMORY_FRACTION",
       "GP_PAR_PAYLOAD_MULTIPLIER", "GP_PAR_WORKER_OVERHEAD_GB",
@@ -62,8 +63,7 @@ gp_parallel_policy_knobs <- function() {
       "GP_MORI_SCORE_SIZE", "GP_MORI_SCORE_FANOUT", "GP_MORI_SCORE_REUSE",
       "GP_MORI_SCORE_COPYVOL", "GP_MORI_SCORE_OVERHEAD",
       # Mirai daemon
-      "GP_MIRAI_QUEUE_MEMORY_MB", "GP_MIRAI_SUBMIT_TIMEOUT_SEC",
-      "GP_MIRAI_SUBMIT_SLEEP_SEC", "GP_MIRAI_SYNC_STARTUP",
+      "GP_MIRAI_QUEUE_MEMORY_MB",
       # GPU
       "GP_CUDA_VISIBLE_DEVICES", "PREDICTPRO_GPU_BUSY_THRESHOLD",
       # Reproducibility
@@ -71,30 +71,30 @@ gp_parallel_policy_knobs <- function() {
     ),
     type = c(
       rep("env", 6),    # BLAS
-      rep("env", 19),   # scoring weights
+      rep("env", 13),   # scoring weights
       rep("env", 5), "option", "option",  # sequential gates
       rep("env", 8),    # mori
-      rep("env", 4),    # mirai
+      "env",            # mirai
       rep("env", 2),    # GPU
       "env"             # reproducibility
     ),
     default = c(
       "1", "(= GP_BLAS_THREADS)", "(= GP_BLAS_THREADS)", "(= GP_BLAS_THREADS)",
       "(= GP_BLAS_THREADS)", "(= GP_BLAS_THREADS)",
-      "0.9", "0.5", "0.35", "0.9", "2.0", "0.45", "0.8", "3.0", "1.75", "0.4",
-      "0.6", "2.2", "1.8", "0.45", "3.0", "1.2", "3.0", "0.9", "0.35",
+      "0.9", "0.5", "0.35", "3.0", "0.4",
+      "0.6", "2.2", "1.8", "0.45", "3.0", "1.2", "3.0", "0.9",
       "4", "(auto: available memory x fraction)", "0.7", "4", "0.75", "1.0", "TRUE",
       "auto", "128", "1.0", "1.0", "0.75", "0.5", "0.35", "1.0",
-      "(auto: 128 MB * fanout, capped 256-4096)", "600", "0.02", "true",
-      "(0:max(0, num_gpus - 1))", "85",
+      "(auto: 128 MB * fanout, capped 256-4096)",
+      "(every GPU: 0:1:...)", "85",
       "123"
     ),
     scope = c(
       rep("blas", 6),
-      rep("scoring", 19),
+      rep("scoring", 13),
       rep("sequential_gate", 7),
       rep("mori", 8),
-      rep("mirai", 4),
+      "mirai",
       rep("gpu", 2),
       "reproducibility"
     ),
@@ -110,22 +110,16 @@ gp_parallel_policy_knobs <- function() {
       "Weight on log1p(n_parallel_tasks). Larger -> more aggressive parallelism for big task queues.",
       "Weight on log1p(n_workers). Larger -> stronger preference for parallel when many cores are available.",
       "Weight on log1p(total_globals_GB). Larger -> stronger preference for parallel when globals are big (amortises copy cost).",
-      "Future-backend bonus on Windows. Larger -> Windows future preferred more often.",
-      "Penalty applied to future on Windows for PSOCK startup time. Larger -> stronger Windows-future avoidance.",
-      "Penalty applied to mirai on Windows (socket overhead). Larger -> mirai less preferred on Windows.",
-      "Bonus to mirai for reusable worker pool (queues > 2 tasks, no GPU). Larger -> stronger mirai preference for steady streams.",
-      "Bonus to mirai (parallel path) and sequential (single-GPU path) when num_gpus > 1. Drives GPU-aware scheduling.",
-      "Penalty to future when num_gpus > 1 (process-per-GPU overhead). Larger -> push GPU work to mirai instead.",
+      "Bonus to mirai when GPU models run on several GPUs, and to sequential when a GPU model has only one GPU. Drives GPU-aware scheduling.",
       "Penalty to parallel scores when internal-threaded models (xgboost/catboost/lightgbm/randomforest) are present.",
       "Bonus to parallel scores when a global object qualifies for mori sharing (size signal x weight).",
       "Bonus to sequential for tiny workloads (tasks <= 2 or tasks_per_worker <= 1). Larger -> more aggressive sequential on small queues.",
       "Bonus to sequential when thread-sensitive models would otherwise contend in parallel.",
-      "Penalty applied to every parallel score for general parallelization overhead.",
-      "Generic PSOCK worker startup penalty (applied to parallel backends with PSOCK transport).",
-      "Fork-cluster startup penalty (Unix base_parallel). Lower than PSOCK because fork is cheap.",
+      "Overhead weight: lowers sequential as the task queue grows and penalises mirai for queues of 2 or fewer tasks.",
+      "Small-queue startup penalty for Unix base_parallel workers started as new R processes (PSOCK, e.g. after mirai ran in the session).",
+      "Small-queue startup penalty for forked workers (Unix base_parallel) when they will fork. Lower than PSOCK because fork is cheap.",
       "Windows-specific worker startup penalty (PSOCK only on Windows; no fork).",
-      "Bonus to base_parallel on Unix (cheap fork).",
-      "Generic foreach penalty (extra dispatch overhead).",
+      "Bonus to base_parallel on Unix, where its workers start cheaply (forked, or PSOCK after mirai ran in the session).",
       # Sequential gates
       "Total globals (GB) threshold beyond which the policy will not attempt parallelism (avoids OOM on parallel copies). Default 4 GB.",
       "Explicit memory budget (GB) available for additional worker processes on every OS. When unset, the policy derives a budget from currently available physical memory.",
@@ -144,12 +138,9 @@ gp_parallel_policy_knobs <- function() {
       "Weight on log1p(copy_volume_mb / min_mb) -- favours sharing when total copy bytes would be large.",
       "Penalty (1 / log1p(size_mb)) -- discourages sharing tiny objects where overhead dominates.",
       # Mirai
-      "Per-daemon memory budget (MB). Empty (auto): max(256, min(4096, 128 * fanout)). Override for very large kernels.",
-      "Timeout (seconds) waiting for mirai task submission before failing the fold/task.",
-      "Sleep (seconds) between mirai submission attempts while waiting on backpressure.",
-      "When TRUE (default), block until daemons report ready before submitting tasks. 'false'/'0'/'no' skips the sync.",
+      "Cap (MB) on the task payloads queued at the mirai dispatcher in the main session; a full queue makes the next submission wait. Empty (auto): max(256, min(4096, 128 * fanout)). Tasks carry only their own element (the task function and its data go to each daemon once).",
       # GPU
-      "Colon-separated list of CUDA device IDs visible to workers. Default covers all detected GPUs.",
+      "Colon-separated CUDA device IDs for the GPU workers (e.g. 2:3); the mirai backend starts one daemon per id, each seeing only its own GPU. Default: every detected GPU.",
       "GPU utilisation percent threshold (0-100) above which the policy treats a GPU as busy and routes new GP tasks to CPU.",
       # Reproducibility
       "Base RNG seed used to derive deterministic L'Ecuyer-CMRG streams per task across sequential, future, mirai, base_parallel and foreach backends."
@@ -197,17 +188,14 @@ gp_policy_decision_reason_glossary <- function() {
       "multiple_sequential_constraints", "all_tasks_user_sequential",
       "single_direct_gp_cv_task", "backend_unavailable", "memory_limited_workers",
       # Backend choice (top-level summary)
-      "general_psock_backend", "low_overhead_worker_pool",
-      "reusable_worker_pool", "base_parallel_fallback", "foreach_fallback",
+      "cost_model_parallel", "cost_model_sequential",
+      "base_parallel_preferred", "multi_gpu_mirai",
       # Sequential tunings
       "tiny_workload", "thread_sensitive_parallel", "small_cpu_queue",
       "small_windows_cpu_queue", "single_gpu_model",
       # Penalty signals (folded into the chosen backend's score)
       "small_cpu_queue_penalty", "small_windows_cpu_queue_penalty",
-      "windows_future_startup_penalty", "windows_psock",
-      "windows_psock_penalty", "windows_socket_penalty",
-      "small_queue_penalty", "gpu_penalty", "thread_sensitive_penalty",
-      "memory_capped_workers",
+      "small_queue_penalty", "memory_capped_workers",
       # Bonus signals
       "multi_gpu_model_bonus", "unix_fork_bonus", "mori_shared_globals",
       # Routing diagnostics
@@ -218,17 +206,20 @@ gp_policy_decision_reason_glossary <- function() {
       "xgboost_internal_threads", "catboost_internal_threads",
       "lightgbm_internal_threads", "randomforest_internal_jobs",
       "rkhs_hidden_threads", "rkhs_memory_heavy", "rkhs_forced_seq",
-      "asreml_prepared", "single_gpu_exclusive"
+      "asreml_prepared", "single_gpu_exclusive",
+      # Dispatch
+      "fold_tasks_merged"
     ),
     category = c(
       rep("user_override", 5),
       rep("sequential_driver", 7),
-      rep("backend_choice", 5),
+      rep("backend_choice", 4),
       rep("sequential_driver", 5),
-      rep("bonus_penalty", 10),
+      rep("bonus_penalty", 4),
       rep("bonus_penalty", 3),
       rep("routing", 7),
-      rep("routing", 9)
+      rep("routing", 9),
+      "dispatch"
     ),
     meaning = c(
       # User overrides
@@ -246,11 +237,10 @@ gp_policy_decision_reason_glossary <- function() {
       "Requested backend's required package isn't installed; sequential is the only viable option.",
       "Available-memory fanout permits fewer than two workers, so the queue runs sequentially.",
       # Backend choice
-      "future (PSOCK or multicore) was chosen as the parallel backend.",
-      "mirai chosen for its reusable worker pool with low per-task overhead.",
-      "mirai chosen; the queue is large enough that reusing the daemon pool pays off.",
-      "base_parallel (mclapply / parLapply) chosen as the parallel backend.",
-      "foreach chosen as the parallel backend (typically when nothing else was eligible).",
+      "Cross-validation / best-model refit: the cost model expects the parallel run to take under 75% of the sequential time (est_seq, est_par in seconds).",
+      "Cross-validation / best-model refit: the cost model expects worker start-up to outweigh the parallel gain, so the tasks run sequentially.",
+      "base_parallel chosen: the fastest parallel backend measured on Windows and Linux (forked workers on Unix, PSOCK on Windows).",
+      "mirai chosen because GPU models run on several GPUs: it is the only backend that gives each worker its own GPU.",
       # Sequential tunings
       "tasks <= 2 or tasks_per_worker <= 1; sequential wins on small queues.",
       "Models with internal threading (xgboost/catboost/lightgbm/rf with n_threads/n_jobs > 1) push toward sequential.",
@@ -260,18 +250,12 @@ gp_policy_decision_reason_glossary <- function() {
       # Penalties
       "Startup penalty appended to a parallel backend's score when the CPU queue is small.",
       "Windows-specific startup penalty added to a parallel backend's score.",
-      "Windows future startup penalty (PSOCK cluster spin-up).",
-      "future on Windows uses PSOCK (no fork available).",
-      "base_parallel on Windows uses PSOCK with the PSOCK penalty.",
-      "mirai on Windows pays a socket-overhead penalty vs. Unix.",
       "Penalty applied to mirai when only 2 or fewer tasks are queued.",
-      "future penalised when num_gpus > 1 (process-per-GPU overhead).",
-      "future or sequential score adjustment when thread-sensitive models are present.",
       "Requested worker count was reduced so process globals fit the configured or detected memory budget.",
       # Bonuses
-      "mirai bonus when num_gpus > 1 (daemon-per-GPU profile available).",
-      "base_parallel bonus on Unix (fork is cheap).",
-      "Bonus applied (per backend) when a global qualifies for mori shared transport.",
+      "mirai bonus when GPU models run on several GPUs (one daemon per GPU).",
+      "base_parallel bonus on Unix, where its workers start cheaply (forked, or PSOCK after mirai ran in the session).",
+      "Bonus applied to the parallel backend when a global qualifies for mori shared transport.",
       # Routing diagnostics
       "Deep-learning model routed to GPU.",
       "Deep-learning model routed to CPU (no GPU or device='cpu').",
@@ -289,7 +273,9 @@ gp_policy_decision_reason_glossary <- function() {
       "RKHS forced sequential because the kernel exceeds gp.rkhs.mem.threshold.GB.",
       "RKHS forced sequential by the gp.always.seq.RKHS option (TRUE by default).",
       "ASReml prep detected in globals; forced sequential because asreml is not parallel-safe inside R workers.",
-      "GPU-exclusive model on a single-GPU host -> forced sequential for that task."
+      "GPU-exclusive model on a single-GPU host -> forced sequential for that task.",
+      # Dispatch
+      "Cross-validation ran one task per model, not per fold: nothing ran in parallel, and every fold task repeats its model's set-up."
     )
   )
 }

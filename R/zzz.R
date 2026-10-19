@@ -123,7 +123,7 @@ if (getRversion() >= "2.15.1") {
     if (inherits(x, "try-error") || is.null(x) || !nzchar(x)) {
       return(NULL)
     }
-    normalizePath(x, winslash = "/", mustWork = FALSE)
+    gp_python_path(x, mustWork = FALSE)
   }
   configured_python <- function(env_names, fallback) {
     for (env_name in env_names) {

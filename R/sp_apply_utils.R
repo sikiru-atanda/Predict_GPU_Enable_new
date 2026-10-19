@@ -48,7 +48,18 @@ gp_parallel_runtime_env <- function() {
     "R_LIBS",
     "R_LIBS_USER",
     "R_LIBS_SITE",
-    "PREDICTPRO_R_LIBPATHS"
+    "PREDICTPRO_R_LIBPATHS",
+    # Python packages verified by the main session (workers then skip the
+    # check) and the install settings, so workers resolve the same way
+    "PREDICTPRO_PYTHON_DEPS_OK",
+    "PREDICTPRO_AUTO_INSTALL",
+    "PREDICTPRO_PYTHON_ENV_HOME",
+    "PREDICTPRO_PIP_LOCK_TIMEOUT",
+    "PREDICTPRO_TORCH_DEVICE",
+    "PYTORCH_INDEX_URL",
+    "PREDICTPRO_PROBE_CACHE",
+    # the run's deep-learning device reports (gp_dl_device_report_record)
+    "PREDICTPRO_DL_DEVICE_LOG"
   )
   vals <- Sys.getenv(env_keys, unset = NA_character_)
   vals <- vals[!is.na(vals) & nzchar(vals)]
@@ -180,6 +191,28 @@ gp_make_psock_cluster <- function(workers) {
   parallel::makePSOCKcluster(workers, port = port)
 }
 
+gp_make_fork_cluster <- function(workers) {
+  workers <- max(1L, as.integer(workers)[1L])
+  port <- gp_psock_cluster_port()
+  logger::log_info("Starting fork cluster on process-distinct port {port}")
+  parallel::makeForkCluster(workers, port = port)
+}
+
+# The task function and initializer of the running base_parallel fork call;
+# forked workers inherit them (see sp_apply()).
+gp_parallel_fork_env <- new.env(parent = emptyenv())
+
+gp_parallel_fork_worker_setup <- function(env_map) {
+  gp_parallel_init_worker_runtime(env_map)
+  initializer <- get0("initializer", envir = gp_parallel_fork_env, inherits = FALSE)
+  if (is.function(initializer)) initializer()
+  invisible(NULL)
+}
+
+gp_parallel_fork_task <- function(x) {
+  get("task_fun", envir = gp_parallel_fork_env, inherits = FALSE)(x)
+}
+
 gp_parallel_init_runtime <- function(env_map = NULL) {
   if (!is.null(env_map) && length(env_map)) {
     do.call(Sys.setenv, as.list(env_map))
@@ -196,13 +229,12 @@ gp_parallel_init_runtime <- function(env_map = NULL) {
       }
     }
   }
-  py_bin <- Sys.getenv("RETICULATE_PYTHON", unset = "")
-  if (!nzchar(py_bin)) {
-    py_bin <- Sys.getenv("PREDICTPRO_PYTHON", unset = "")
-  }
-  if (nzchar(py_bin) && exists("gp_init_python_once", mode = "function")) {
-    try(gp_init_python_once(py_bin), silent = TRUE)
-  }
+  # Embedded Python is not started here. It used to be whenever
+  # RETICULATE_PYTHON / PREDICTPRO_PYTHON was set: about 4 s and a Python's
+  # memory in every worker, while the models run Python as a subprocess
+  # (CLI) or not at all. Code that embeds Python starts it itself
+  # (gp_init_python_once), and the schedulers pass init_py as the
+  # initializer when a task needs it.
   invisible(NULL)
 }
 
@@ -263,6 +295,19 @@ gp_parallel_init_worker_runtime <- function(env_map = NULL) {
   # Marks this process as a parallel worker: nested process pools (e.g. the
   # ML bootstrap) stay single-process here to avoid oversubscription.
   Sys.setenv(PREDICTPRO_IN_PARALLEL_WORKER = "1")
+  invisible(NULL)
+}
+
+# Runs on a PSOCK worker: loads the packages, runs the initializer and keeps
+# the task function for the tasks. Defined here, not inside sp_apply(): a
+# function created there carries sp_apply()'s frame, and with it the task
+# data, so every worker received the data twice. Each clusterCall() also
+# serialises its arguments again, hence one call for the function and the
+# initializer (which may close over the same data).
+gp_parallel_psock_worker_setup <- function(packages, task_fun, initializer = NULL) {
+  lapply(packages, requireNamespace, quietly = TRUE)
+  if (is.function(initializer)) initializer()
+  assign(".gp_sp_task_fun", task_fun, envir = globalenv())
   invisible(NULL)
 }
 
@@ -380,6 +425,10 @@ gp_mirai_check_runtime <- function() {
   invisible(TRUE)
 }
 
+# Cap on the task payloads queued at the mirai dispatcher, in MB (mirai's
+# unit). A task carries only its element of X (the task function goes to each
+# daemon once), so the cap bounds what waits in this process; a full queue
+# makes the next submission wait.
 gp_mirai_queue_memory_mb <- function(workers = 1L, n_tasks = 1L) {
   configured <- suppressWarnings(as.numeric(Sys.getenv("GP_MIRAI_QUEUE_MEMORY_MB", "")))
   if (is.finite(configured) && configured > 0) {
@@ -391,46 +440,61 @@ gp_mirai_queue_memory_mb <- function(workers = 1L, n_tasks = 1L) {
   as.numeric(max(256L, min(4096L, 128L * active_fanout)))
 }
 
-gp_mirai_queue_memory_bytes <- function(workers = 1L, n_tasks = 1L) {
-  gp_mirai_queue_memory_mb(workers = workers, n_tasks = n_tasks) * 1024^2
+# Daemons are separate R processes. Never sync = TRUE: in mirai 2.x that
+# evaluates every task in this session, one after the other.
+gp_mirai_start_daemons <- function(n, .compute = NULL, memory = NULL) {
+  # later forked workers of this session would crash (gp_fork_safe_after_mirai)
+  assign("mirai_daemons_started", TRUE, envir = PredictProR_runtime_cache)
+  mirai::daemons(n = n, .compute = .compute, memory = memory)
 }
 
-gp_mirai_submit_timeout_sec <- function() {
-  timeout <- suppressWarnings(as.numeric(Sys.getenv("GP_MIRAI_SUBMIT_TIMEOUT_SEC", "600")))
-  if (!is.finite(timeout) || timeout <= 0) {
-    return(600)
+# Prepares every daemon of a profile: the session's runtime env and library
+# paths with the worker version check, the daemon's GPU, the packages, and the
+# task function, which everywhere() keeps in the daemon's global environment
+# across mirai's per-task clean-up. Waits for all daemons; a daemon that failed
+# stops the run.
+gp_mirai_init_daemons <- function(task_fun, env_map, packages = character(), cuda_id = NULL, .compute = NULL) {
+  setup <- mirai::everywhere(
+    {
+      gp_parallel_init_worker_runtime(env_map)
+      if (length(cuda_id)) Sys.setenv(CUDA_VISIBLE_DEVICES = cuda_id)
+      lapply(packages, requireNamespace, quietly = TRUE)
+      Sys.getpid()
+    },
+    .gp_sp_task_fun = task_fun,
+    .args = list(
+      gp_parallel_init_worker_runtime = gp_parallel_init_worker_runtime,
+      env_map = env_map,
+      cuda_id = cuda_id,
+      packages = packages
+    ),
+    .compute = .compute
+  )
+  res <- mirai::collect_mirai(setup)
+  failed <- Filter(gp_mirai_is_error_value, res)
+  if (length(failed)) {
+    stop(sprintf("A mirai daemon failed to start: %s", gp_mirai_error_message(failed[[1L]])), call. = FALSE)
   }
-  timeout
+  invisible(unlist(res))
 }
 
-gp_mirai_submit_sleep_sec <- function() {
-  sleep <- suppressWarnings(as.numeric(Sys.getenv("GP_MIRAI_SUBMIT_SLEEP_SEC", "0.02")))
-  if (!is.finite(sleep) || sleep < 0) {
-    return(0.02)
-  }
-  sleep
-}
-
-gp_mirai_start_daemons <- function(n, .compute = NULL, .expr = NULL, sync = FALSE, memory = NULL) {
-  mirai::daemons(
-    n = n,
-    .compute = .compute,
-    .expr = .expr,
-    sync = sync,
-    memory = memory
+# Waits while the dispatcher queue is at its memory cap.
+gp_mirai_submit <- function(task_x, .compute = NULL) {
+  mirai::mirai(
+    get(".gp_sp_task_fun", envir = globalenv())(task_x),
+    .args = list(task_x = task_x),
+    .compute = .compute
   )
 }
 
-gp_mirai_submit <- function(.expr, .args = list(), .compute = NULL) {
-  expr <- substitute(.expr)
-  do.call(
-    mirai::try_mirai,
-    list(
-      .expr = expr,
-      .args = .args,
-      .compute = .compute
+gp_mirai_stop_daemons <- function(profiles = "default") {
+  for (profile in unique(profiles)) {
+    tryCatch(
+      mirai::daemons(0, .compute = profile),
+      error = function(e) logger::log_error("Failed to stop mirai daemons ({profile}): {conditionMessage(e)}")
     )
-  )
+  }
+  invisible(NULL)
 }
 
 gp_mirai_collect <- function(job) {
@@ -447,6 +511,17 @@ gp_mirai_error_message <- function(x) {
 
 gp_mirai_queue_depth <- function() {
   tryCatch(mirai::status()$daemons$tasks, error = function(e) NA_integer_)
+}
+
+# Order to hand tasks out in: the most expensive first (the policy's estimate
+# per task), so a long task does not start last and leave the other workers
+# idle. Without usable estimates, the given order.
+gp_parallel_task_order <- function(task_seconds, n) {
+  task_seconds <- suppressWarnings(as.numeric(task_seconds))
+  if (length(task_seconds) == n && all(is.finite(task_seconds))) {
+    return(order(-task_seconds))
+  }
+  seq_len(n)
 }
 
 gp_future_globals_limit_bytes <- function(decision,
@@ -485,9 +560,32 @@ gp_future_globals_limit_bytes <- function(decision,
   )
 }
 
+# Sets each task's random stream, then runs it. Built here so the function
+# holds only the task: made inside sp_apply(), it carried sp_apply()'s frame,
+# and through an argument not yet evaluated there the caller's frame too
+# (gp_execute_partitioned_tasks(), with the policy's globals: a 61 MB CV task
+# travelled as 1,026 MB to every PSOCK worker).
+gp_seeded_task <- function(task_fun) {
+  force(task_fun)
+  function(task) {
+    assign(".Random.seed", task$rng_seed, envir = .GlobalEnv)
+    task_fun(task$value)
+  }
+}
+
 sp_apply <- function(X, FUN, decision, packages = NULL, seed = TRUE, initializer = NULL, fail_fast = FALSE) {
+  # A promise left in this frame holds the caller's frame, and closures made
+  # here (for future and mirai) send this frame: evaluate every argument now.
+  force(X); force(FUN); force(decision); force(packages); force(seed); force(initializer); force(fail_fast)
+  # Tasks run in this process (sequential backend; future with a sequential
+  # plan) get the initializer and worker set-up here: put the caller's thread
+  # settings back when they are done.
+  restore_threads <- gp_thread_settings_restorer()
+  on.exit(restore_threads(), add = TRUE)
   backend <- decision$backend
-  packages <- unique(c(packages %||% character(), "reticulate", "logger"))
+  # Not reticulate: 0.58 s per worker on Windows (Matrix included), which
+  # BGLR tasks never use; code that embeds Python loads it itself.
+  packages <- unique(c(packages %||% character(), "logger"))
   runtime_env <- gp_parallel_runtime_env()
   # workers learn how many siblings share the machine (nested bootstrap pools)
   runtime_env[["PREDICTPRO_PARALLEL_WORKERS"]] <- as.character(max(1L, as.integer(decision$workers %||% 1L)))
@@ -529,14 +627,10 @@ sp_apply <- function(X, FUN, decision, packages = NULL, seed = TRUE, initializer
 
   task_seed_streams <- gp_parallel_seed_streams(length(X), seed = seed)
   if (!is.null(task_seed_streams)) {
-    task_fun <- FUN
     X <- lapply(seq_along(X), function(i) {
       list(value = X[[i]], rng_seed = task_seed_streams[[i]])
     })
-    FUN <- function(task) {
-      assign(".Random.seed", task$rng_seed, envir = .GlobalEnv)
-      task_fun(task$value)
-    }
+    FUN <- gp_seeded_task(FUN)
   }
 
   if (identical(backend, "sequential")) {
@@ -551,14 +645,14 @@ sp_apply <- function(X, FUN, decision, packages = NULL, seed = TRUE, initializer
     use_fork <- sys_name != "Windows" &&
       .Platform$OS.type == "unix" &&
       !identical(decision$prefer_fork, FALSE)
+    if (isTRUE(use_fork) && !isTRUE(gp_fork_safe_after_mirai())) {
+      logger::log_info("mirai daemons ran in this session: using PSOCK workers instead of forked ones")
+      use_fork <- FALSE
+    }
     # Task costs differ a lot (one RandomForest fold can cost 100 Ridge
     # folds). Run the most expensive tasks first and hand tasks out
     # dynamically; static contiguous chunks left workers idle.
-    task_order <- seq_along(X)
-    task_seconds <- suppressWarnings(as.numeric(decision$task_seconds))
-    if (length(task_seconds) == length(X) && all(is.finite(task_seconds))) {
-      task_order <- order(-task_seconds)
-    }
+    task_order <- gp_parallel_task_order(decision$task_seconds, length(X))
     X_run <- X[task_order]
     restore_order <- function(res) {
       out <- vector("list", length(X))
@@ -566,28 +660,28 @@ sp_apply <- function(X, FUN, decision, packages = NULL, seed = TRUE, initializer
       out
     }
     if (isTRUE(use_fork)) {
-      logger::log_info("Running {length(X)} tasks with load-balanced mclapply on {decision$workers} workers")
-      return(restore_order(parallel::mclapply(X_run, function(x) {
-        gp_parallel_init_worker_runtime(runtime_env)
-        if (is.function(initializer)) initializer()
-        FUN(x)
-      }, mc.cores = max(1L, decision$workers), mc.preschedule = FALSE,
-      mc.set.seed = !is.null(task_seed_streams))))
+      logger::log_info("Running {length(X)} tasks with load-balanced forked workers ({decision$workers})")
+      # Workers are forked once and set up once. mclapply(mc.preschedule =
+      # FALSE) forked once per task, so every task re-ran the worker set-up
+      # and the initializer: with PREDICTPRO_PYTHON set that started
+      # embedded Python, about 4 s per task. The workers inherit the task
+      # function and the initializer from this process: nothing is shipped.
+      assign("task_fun", FUN, envir = gp_parallel_fork_env)
+      assign("initializer", initializer, envir = gp_parallel_fork_env)
+      on.exit(rm(list = ls(gp_parallel_fork_env), envir = gp_parallel_fork_env), add = TRUE)
+      cl <- gp_make_fork_cluster(max(1L, decision$workers))
+      on.exit(try(parallel::stopCluster(cl), silent = TRUE), add = TRUE)
+      parallel::clusterCall(cl, gp_parallel_fork_worker_setup, runtime_env)
+      return(restore_order(parallel::parLapplyLB(cl, X_run, gp_parallel_fork_task, chunk.size = 1L)))
     } else {
       logger::log_info("Running {length(X)} tasks with load-balanced parLapply on {decision$workers} workers")
       cl <- gp_make_psock_cluster(max(1L, decision$workers))
       on.exit(try(parallel::stopCluster(cl), silent = TRUE), add = TRUE)
       parallel::clusterCall(cl, gp_parallel_init_worker_runtime, runtime_env)
-      if (length(packages)) {
-        parallel::clusterCall(cl, function(pkgs) lapply(pkgs, requireNamespace, quietly = TRUE), packages)
-      }
-      if (is.function(initializer)) parallel::clusterCall(cl, initializer)
       # Ship the task function (and the shared data it closes over) once per
-      # worker; each task then sends only a tiny wrapper and its index.
-      parallel::clusterCall(cl, function(f) {
-        assign(".gp_sp_task_fun", f, envir = globalenv())
-        invisible(NULL)
-      }, FUN)
+      # worker, in one call with the initializer; each task then sends only a
+      # tiny wrapper and its index.
+      parallel::clusterCall(cl, gp_parallel_psock_worker_setup, packages, FUN, initializer)
       task_wrapper <- function(x) get(".gp_sp_task_fun", envir = globalenv())(x)
       environment(task_wrapper) <- globalenv()
       return(restore_order(parallel::parLapplyLB(cl, X_run, task_wrapper, chunk.size = 1L)))
@@ -629,60 +723,20 @@ sp_apply <- function(X, FUN, decision, packages = NULL, seed = TRUE, initializer
     }
     has_progressr <- requireNamespace("progressr", quietly = TRUE)
 
-    # Start metrics endpoint
+    num_gpus <- as.integer(decision$num_gpus %||% 0L)
+    use_gpu <- isTRUE(decision$gpu_parallel_enabled) && num_gpus > 1L && decision$workers > 1L
+    # one daemon per GPU, for at most `workers` GPUs
+    gpu_ids <- if (use_gpu) utils::head(decision$gpu_ids, max(1L, decision$workers)) else character()
+    profiles <- if (use_gpu) sprintf("gpu%d", seq_along(gpu_ids)) else "default"
+
     metrics_server <- start_metrics_endpoint()
     on.exit({
       stop_metrics_endpoint(metrics_server)
-      stop_daemons()
+      gp_mirai_stop_daemons(c("default", profiles))
     }, add = TRUE)
-
-    # Reset daemons
-    stop_daemons()
-
-    # Initialize metrics
+    gp_mirai_stop_daemons(c("default", profiles))
     metrics_registry$initialize()
 
-    # Setup daemons
-    sync_startup <- !(tolower(Sys.getenv("GP_MIRAI_SYNC_STARTUP", "true")) %in% c("false", "0", "no"))
-    num_gpus <- decision$num_gpus
-    use_gpu <- isTRUE(decision$gpu_parallel_enabled) && num_gpus > 1L && decision$workers > 1L
-    profiles <- "default"
-    daemons <- list()
-    queue_memory <- gp_mirai_queue_memory_bytes(workers = decision$workers, n_tasks = length(X))
-
-    if (use_gpu) {
-      profiles <- sprintf("gpu%d", seq_along(decision$gpu_ids))
-      for (i in seq_along(profiles)) {
-        load_expr <- substitute({
-          gp_parallel_init_worker_runtime(env_map)
-          Sys.setenv(CUDA_VISIBLE_DEVICES = cuda_id)
-          lapply(pkgs, requireNamespace, quietly = TRUE)
-        }, list(pkgs = packages, cuda_id = Sys.getenv("GP_CUDA_VISIBLE_DEVICES", decision$gpu_ids[i]), env_map = runtime_env))
-        daemons[[profiles[i]]] <- tryCatch({
-          gp_mirai_start_daemons(n = 1L, .compute = profiles[i], .expr = load_expr, sync = sync_startup, memory = queue_memory)
-          logger::log_info("Started daemon for GPU {decision$gpu_ids[i]}")
-          1L
-        }, error = function(e) {
-          logger::log_error("Failed to start daemon for GPU {decision$gpu_ids[i]}: {conditionMessage(e)}")
-          stop("Daemon startup failed")
-        })
-      }
-    } else {
-      load_expr <- substitute({
-        gp_parallel_init_worker_runtime(env_map)
-        lapply(pkgs, requireNamespace, quietly = TRUE)
-      }, list(pkgs = packages, env_map = runtime_env))
-      daemons[["default"]] <- tryCatch({
-        gp_mirai_start_daemons(n = max(1L, decision$workers), .expr = load_expr, sync = sync_startup, memory = queue_memory)
-        logger::log_info("Started {decision$workers} default daemons with bounded queue memory {round(queue_memory / 1024^2)} MB")
-        decision$workers
-      }, error = function(e) {
-        logger::log_error("Failed to start default daemons: {conditionMessage(e)}")
-        stop("Daemon startup failed")
-      })
-    }
-
-    # Wrap FUN with initializer
     innerFUN <- if (is.function(initializer)) {
       function(x) {
         initializer()
@@ -690,47 +744,35 @@ sp_apply <- function(X, FUN, decision, packages = NULL, seed = TRUE, initializer
       }
     } else FUN
 
-    # Assign profiles round-robin
-    task_profiles <- profiles[(seq_along(X) - 1L) %% length(profiles) + 1L]
-
-    submit_mirai_one <- function(task_x, task_profile, task_index) {
-      deadline <- Sys.time() + gp_mirai_submit_timeout_sec()
-      sleep_base <- gp_mirai_submit_sleep_sec()
-      attempts <- 0L
-      last_error <- NULL
-      repeat {
-        attempts <- attempts + 1L
-        job <- gp_mirai_submit(
-          innerFUN(task_x),
-          .args = list(innerFUN = innerFUN, task_x = task_x),
-          .compute = task_profile
-        )
-        if (!gp_mirai_is_error_value(job)) {
-          return(job)
-        }
-        last_error <- gp_mirai_error_message(job)
-        if (Sys.time() >= deadline) {
-          stop(
-            sprintf(
-              "mirai submission timed out for task %d after %d attempts; last dispatcher response: %s",
-              task_index,
-              attempts,
-              last_error
-            ),
-            call. = FALSE
-          )
-        }
-        Sys.sleep(min(1, sleep_base * max(1, attempts)))
+    # The daemons get the runtime env, their GPU and innerFUN (with the data
+    # it closes over) once; each task then sends only its element of X.
+    queue_memory <- gp_mirai_queue_memory_mb(workers = decision$workers, n_tasks = length(X))
+    if (use_gpu) {
+      for (i in seq_along(profiles)) {
+        gp_mirai_start_daemons(n = 1L, .compute = profiles[i], memory = queue_memory)
+        gp_mirai_init_daemons(innerFUN, runtime_env, packages, cuda_id = gpu_ids[i], .compute = profiles[i])
+        logger::log_info("Started daemon for GPU {gpu_ids[i]}")
       }
+    } else {
+      gp_mirai_start_daemons(n = max(1L, decision$workers), memory = queue_memory)
+      gp_mirai_init_daemons(innerFUN, runtime_env, packages)
+      logger::log_info("Started {decision$workers} mirai daemons (queue cap {queue_memory} MB)")
     }
+
+    # The dispatcher hands tasks out in submission order: submit the most
+    # expensive first (as base_parallel runs them), and spread them over the
+    # GPU profiles round-robin in that order. Results keep the order of X.
+    task_order <- gp_parallel_task_order(decision$task_seconds, length(X))
+    task_profiles <- character(length(X))
+    task_profiles[task_order] <- profiles[(seq_along(task_order) - 1L) %% length(profiles) + 1L]
 
     submit_mirai_jobs <- function() {
       submit_times <- vector("list", length(X))
-      jobs <- purrr::map(seq_along(X), function(i) {
-        task_x <- X[[i]]
-        submit_times[[i]] <<- Sys.time()
-        submit_mirai_one(task_x = task_x, task_profile = task_profiles[i], task_index = i)
-      })
+      jobs <- vector("list", length(X))
+      for (i in task_order) {
+        submit_times[[i]] <- Sys.time()
+        jobs[i] <- list(gp_mirai_submit(X[[i]], .compute = task_profiles[i]))
+      }
       list(jobs = jobs, submit_times = submit_times)
     }
 
@@ -796,7 +838,12 @@ sp_apply <- function(X, FUN, decision, packages = NULL, seed = TRUE, initializer
   }
   old_plan <- future::plan()
   on.exit(try(future::plan(old_plan), silent = TRUE), add = TRUE)
-  future::plan(decision$plan, workers = max(1L, decision$workers))
+  plan <- decision$plan
+  if (identical(plan, future::multicore) && !isTRUE(gp_fork_safe_after_mirai())) {
+    logger::log_info("mirai daemons ran in this session: using future multisession instead of multicore")
+    plan <- future::multisession
+  }
+  future::plan(plan, workers = max(1L, decision$workers))
   innerFUN <- if (is.function(initializer)) {
     function(x) { gp_parallel_init_worker_runtime(runtime_env); initializer(); FUN(x) }
   } else FUN

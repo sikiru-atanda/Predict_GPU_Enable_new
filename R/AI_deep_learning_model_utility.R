@@ -277,15 +277,15 @@ gp_dl_bridge_script_path <- function() {
 gp_detect_dl_python <- function() {
   py <- Sys.getenv("PREDICTPRO_DL_PYTHON", unset = "")
   if (nzchar(py) && file.exists(py)) {
-    return(normalizePath(py, winslash = "/", mustWork = TRUE))
+    return(gp_python_path(py, mustWork = TRUE))
   }
   py <- Sys.getenv("PREDICTPRO_PYTHON_DL", unset = "")
   if (nzchar(py) && file.exists(py)) {
-    return(normalizePath(py, winslash = "/", mustWork = TRUE))
+    return(gp_python_path(py, mustWork = TRUE))
   }
   preferred <- gp_preferred_python(purpose = "dl")
   if (!is.null(preferred) && nzchar(preferred)) {
-    return(normalizePath(preferred, winslash = "/", mustWork = TRUE))
+    return(gp_python_path(preferred, mustWork = TRUE))
   }
   NULL
 }
@@ -303,6 +303,10 @@ gp_dl_run_cli <- function(command,
                           max_attempts = 1L,
                           run_fn = system2) {
   python_bin <- python_bin %||% gp_detect_dl_python()
+  if (!identical(command, "setup-deps") && identical(run_fn, system2)) {
+    # installs PyTorch, numpy, pandas, scikit-learn if missing (free once verified)
+    python_bin <- gp_python_ready("dl", python_bin)
+  }
   if (is.null(python_bin) || !nzchar(python_bin)) {
     stop(
       "No configured Python runtime was found for Python DL models.\n",
@@ -327,7 +331,10 @@ gp_dl_run_cli <- function(command,
       stderr = TRUE
     ))
     status <- suppressWarnings(as.integer(attr(out, "status") %||% 0L)[1L])
-    if (identical(status, 0L)) return(invisible(out))
+    if (identical(status, 0L)) {
+      gp_dl_device_report_record(out)
+      return(invisible(out))
+    }
     if (attempt < max_attempts) {
       # Training bridges write only to a call-private temporary output
       # directory. Remove known partial products before repeating the exact
@@ -359,6 +366,184 @@ gp_dl_run_cli <- function(command,
   }
 }
 
+# Deep-learning device reports. Each DL bridge command prints one
+# "PREDICTPRO_DL_DEVICE {json}" line: fits per device, and notes on work that
+# did not run where it was meant to (device = "cuda" without a CUDA GPU, a
+# CUDA error that moved a fit to the CPU, an NVIDIA GPU this PyTorch cannot
+# use, ...). Inside model_execute() the reports go to a folder shared with the
+# parallel workers (PREDICTPRO_DL_DEVICE_LOG, one file per process): Run_metadata
+# records them (dl_device, dl_device_notes) and the run ends with one warning.
+# Outside a run, notes are a warning straight away.
+gp_dl_device_report_prefix <- "PREDICTPRO_DL_DEVICE "
+
+gp_dl_device_valid_json <- function(json) {
+  json[vapply(json, function(x) isTRUE(jsonlite::validate(x)), logical(1), USE.NAMES = FALSE)]
+}
+
+gp_dl_device_report_json <- function(out) {
+  out <- as.character(out)
+  gp_dl_device_valid_json(
+    substring(out[startsWith(out, gp_dl_device_report_prefix)], nchar(gp_dl_device_report_prefix) + 1L)
+  )
+}
+
+gp_dl_device_reports_parse <- function(json) {
+  lapply(json, jsonlite::fromJSON, simplifyVector = FALSE)
+}
+
+gp_dl_device_report_record <- function(out) {
+  json <- gp_dl_device_report_json(out)
+  if (!length(json)) {
+    return(invisible(NULL))
+  }
+  log_dir <- Sys.getenv("PREDICTPRO_DL_DEVICE_LOG", unset = "")
+  if (nzchar(log_dir) && dir.exists(log_dir)) {
+    log_file <- file.path(log_dir, paste0("dl-device-", Sys.getpid(), ".jsonl"))
+    logged <- tryCatch({
+      cat(json, file = log_file, sep = "\n", append = TRUE)
+      TRUE
+    }, error = function(e) FALSE)
+    if (logged) {
+      return(invisible(NULL))
+    }
+  }
+  summary <- gp_dl_device_summary(gp_dl_device_reports_parse(json))
+  if (nrow(summary$notes)) {
+    warning(gp_dl_device_warning_text(summary), call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+gp_dl_device_log_start <- function() {
+  current <- Sys.getenv("PREDICTPRO_DL_DEVICE_LOG", unset = "")
+  if (nzchar(current) && dir.exists(current)) {
+    # a model_execute() call inside another: the outer run collects
+    return(list(dir = current, owner = FALSE))
+  }
+  log_dir <- tempfile("predictpror_dl_device_")
+  dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)
+  Sys.setenv(PREDICTPRO_DL_DEVICE_LOG = log_dir)
+  list(dir = log_dir, owner = TRUE, previous = current)
+}
+
+gp_dl_device_log_reports <- function(log_dir = Sys.getenv("PREDICTPRO_DL_DEVICE_LOG", unset = "")) {
+  if (!nzchar(log_dir) || !dir.exists(log_dir)) {
+    return(list())
+  }
+  files <- list.files(log_dir, pattern = "^dl-device-.*\\.jsonl$", full.names = TRUE)
+  json <- unlist(lapply(files, readLines, warn = FALSE), use.names = FALSE)
+  gp_dl_device_reports_parse(gp_dl_device_valid_json(json[nzchar(json)]))
+}
+
+gp_dl_device_log_finish <- function(log) {
+  if (!isTRUE(log$owner)) {
+    return(invisible(NULL))
+  }
+  on.exit({
+    unlink(log$dir, recursive = TRUE, force = TRUE)
+    if (nzchar(log$previous %||% "")) {
+      Sys.setenv(PREDICTPRO_DL_DEVICE_LOG = log$previous)
+    } else {
+      Sys.unsetenv("PREDICTPRO_DL_DEVICE_LOG")
+    }
+  }, add = TRUE)
+  summary <- gp_dl_device_summary(gp_dl_device_log_reports(log$dir))
+  if (nrow(summary$notes)) {
+    warning(gp_dl_device_warning_text(summary, run_metadata = TRUE), call. = FALSE)
+  }
+  invisible(summary)
+}
+
+gp_dl_device_summary <- function(reports) {
+  fits <- integer()
+  notes <- list()
+  for (report in reports) {
+    for (device in names(report$fits)) {
+      n <- as.integer(report$fits[[device]])
+      fits[device] <- if (device %in% names(fits)) fits[[device]] + n else n
+    }
+    for (note in report$notes) {
+      model <- as.character(note$model %||% "")
+      key <- paste(note$kind, model, note$message, sep = "\r")
+      count <- as.integer(note$count %||% 1L)
+      if (is.null(notes[[key]])) {
+        notes[[key]] <- data.frame(kind = as.character(note$kind), model = model,
+                                   message = as.character(note$message), count = count,
+                                   stringsAsFactors = FALSE)
+      } else {
+        notes[[key]]$count <- notes[[key]]$count + count
+      }
+    }
+  }
+  notes <- if (length(notes)) do.call(rbind, unname(notes)) else
+    data.frame(kind = character(), model = character(), message = character(), count = integer(),
+               stringsAsFactors = FALSE)
+  list(fits = fits, notes = notes)
+}
+
+# Python model types (dl_models.py) as model_execute() names them
+gp_dl_device_model_label <- function(model) {
+  public <- names(model_param_prefix)[match(model, unlist(model_param_prefix, use.names = FALSE))]
+  ifelse(is.na(public), model, public)
+}
+
+gp_dl_device_fits_text <- function(fits) {
+  if (!length(fits)) {
+    return("none")
+  }
+  paste(sprintf("%s: %d fit%s", names(fits), fits, ifelse(fits == 1L, "", "s")), collapse = "; ")
+}
+
+gp_dl_device_notes_text <- function(notes, sep = "; ") {
+  if (!nrow(notes)) {
+    return("none")
+  }
+  who <- ifelse(nzchar(notes$model), paste0(gp_dl_device_model_label(notes$model), ", "), "")
+  paste(sprintf("%s%d fit%s: %s", who, notes$count, ifelse(notes$count == 1L, "", "s"), notes$message),
+        collapse = sep)
+}
+
+gp_dl_device_warning_text <- function(summary, run_metadata = FALSE) {
+  paste0(
+    "Deep learning did not run where expected:\n- ",
+    gp_dl_device_notes_text(summary$notes, sep = "\n- "),
+    "\nDevices used: ", gp_dl_device_fits_text(summary$fits), ".",
+    if (isTRUE(run_metadata)) " Recorded in Run_metadata (dl_device, dl_device_notes)." else ""
+  )
+}
+
+# Run_metadata fields for the deep-learning fits of the current run
+gp_dl_device_metadata_fields <- function() {
+  reports <- gp_dl_device_log_reports()
+  if (!length(reports)) {
+    return(list())
+  }
+  summary <- gp_dl_device_summary(reports)
+  list(
+    dl_device = gp_dl_device_fits_text(summary$fits),
+    dl_device_notes = gp_dl_device_notes_text(summary$notes)
+  )
+}
+
+# model_execute(device = ...): NULL picks a CUDA GPU, else Apple MPS, else the CPU
+gp_dl_device_arg <- function(device) {
+  if (is.null(device) || (length(device) == 1L && is.na(device))) {
+    return(NULL)
+  }
+  dev <- if (is.character(device) && length(device) == 1L) tolower(trimws(device)) else NA_character_
+  if (!is.na(dev) && dev %in% c("", "auto")) {
+    return(NULL)
+  }
+  if (identical(dev, "gpu")) {
+    dev <- "cuda"
+  }
+  if (is.na(dev) || !grepl("^(cpu|cuda|cuda:[0-9]+|mps)$", dev)) {
+    stop("`device` must be NULL (a CUDA GPU when there is one, else Apple MPS, else the CPU), ",
+         "\"cuda\", \"cuda:<index>\", \"mps\" or \"cpu\".", call. = FALSE)
+  }
+  dev
+}
+
 gp_dl_write_matrix_csv <- function(x, path) {
   gp_bridge_csv_write(as.data.frame(unname(gp_dl_payload_matrix(x)), check.names = FALSE), path, quote = FALSE)
   invisible(path)
@@ -376,7 +561,7 @@ gp_dl_write_target_csv <- function(x, path) {
 }
 
 gp_dl_write_json <- function(x, path) {
-  writeLines(jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", pretty = TRUE), path, useBytes = TRUE)
+  writeLines(jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", pretty = TRUE, digits = NA), path, useBytes = TRUE)
   invisible(path)
 }
 

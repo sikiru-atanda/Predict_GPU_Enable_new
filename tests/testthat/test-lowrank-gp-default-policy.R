@@ -714,6 +714,8 @@ test_that("MT-MET dense REML rejects FA covariance before Python startup", {
   )
   pheno$Trait1 <- seq_len(nrow(pheno))
   pheno$Trait2 <- pheno$Trait1 + 0.5
+  pheno$Trait3 <- pheno$Trait1 + 1
+  pheno$Trait4 <- pheno$Trait1 + 1.5
 
   gmatrix <- diag(length(gids))
   rownames(gmatrix) <- colnames(gmatrix) <- gids
@@ -722,7 +724,7 @@ test_that("MT-MET dense REML rejects FA covariance before Python startup", {
     PredictProR::gp_multi_trait_met_model(
       pheno_data = pheno,
       gmatrix = gmatrix,
-      response = c("Trait1", "Trait2"),
+      response = paste0("Trait",1:4),
       gen_name = "GID",
       heter_groups = "Env",
       test_set = "g4",

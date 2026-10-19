@@ -34,7 +34,9 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
       centering = centering,
       context = context
     )
-    joint$kernel_bank
+    # The kernel bank is built; retain selection evidence without a dense matrix copy.
+    joint$view$predictor_data <- NULL
+    joint
   }
  if (isTRUE(multi_trait_bayes)) {
    if (!identical(response_family, "gaussian")) {
@@ -53,8 +55,10 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
      )
    }
    mt_bayes_pheno <- pheno_clean[["pheno_clean_data"]]
-   mt_bayes_kernel_bank <- selected_joint_kernel_bank("Multi-trait Bayesian true prediction") %||%
+   mt_bayes_selection <- selected_joint_kernel_bank("Multi-trait Bayesian true prediction")
+   mt_bayes_kernel_bank <- if (is.null(mt_bayes_selection)) {
      gmatrix_kernel_model_ready_list
+   } else mt_bayes_selection$kernel_bank
    kernels <- gp_collect_kernel_inputs(
      gmatrix = mt_bayes_kernel_bank[["gmatrix_model_ready"]] %||% gmatrix,
      omic1_kernel = mt_bayes_kernel_bank[["omic1_kernel_model_ready"]] %||% NULL,
@@ -130,6 +134,11 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
        )
      )
    )
+   res_model_output <- gp_feature_attach_joint_output(
+     res_model_output, response = response, selection = mt_bayes_selection,
+     ml_dat_res = ml_dat_res, feature_selected = feature_selected,
+     source_map = feature_source_map
+   )
    handled_result <- results_handling(
      GS_model = model_public,
      res_model_output = res_model_output,
@@ -150,7 +159,9 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
      plot_height = plot_height,
      plot_units = plot_units,
      plot_dpi = plot_dpi,
-     feature_selected = ml_dat_res[["feature_selected"]] %||% feature_selected
+     feature_selected = res_model_output[["feature_selected"]] %||% feature_selected,
+     feature_score_metadata = feature_score_metadata,
+     feature_selection_kind = feature_selection_kind
    )
    return(gp_index_specialized_model_execute_result(
      handled_result = handled_result,
@@ -167,8 +178,10 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
    if (!identical(response_family, "gaussian")) {
      stop("Multi-trait GP currently supports gaussian traits only.", call. = FALSE)
    }
-   mt_gp_kernel_bank <- selected_joint_kernel_bank("Multi-trait GP true prediction") %||%
+   mt_gp_selection <- selected_joint_kernel_bank("Multi-trait GP true prediction")
+   mt_gp_kernel_bank <- if (is.null(mt_gp_selection)) {
      gmatrix_kernel_model_ready_list
+   } else mt_gp_selection$kernel_bank
    mt_gp_gmatrix <- mt_gp_kernel_bank[["gmatrix_model_ready"]] %||% gmatrix
    if (is.null(mt_gp_gmatrix)) {
      stop("Multi-trait GP requires gmatrix input.", call. = FALSE)
@@ -400,6 +413,11 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
        )
      )
    )
+   res_model_output <- gp_feature_attach_joint_output(
+     res_model_output, response = response, selection = mt_gp_selection,
+     ml_dat_res = ml_dat_res, feature_selected = feature_selected,
+     source_map = feature_source_map
+   )
    handled_result <- results_handling(
      GS_model = GS_model_public,
      res_model_output = res_model_output,
@@ -420,7 +438,9 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
      plot_height = plot_height,
      plot_units = plot_units,
      plot_dpi = plot_dpi,
-     feature_selected = ml_dat_res[["feature_selected"]] %||% feature_selected
+     feature_selected = res_model_output[["feature_selected"]] %||% feature_selected,
+     feature_score_metadata = feature_score_metadata,
+     feature_selection_kind = feature_selection_kind
    )
    return(gp_index_specialized_model_execute_result(
      handled_result = handled_result,
@@ -554,7 +574,8 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
        plot_height = plot_height,
        plot_units = plot_units,
        plot_dpi = plot_dpi,
-       feature_selected = ml_dat_res[["feature_selected"]] %||% feature_selected
+       feature_selected = ml_dat_res[["feature_selected"]] %||% feature_selected,
+       feature_selection_kind = feature_selection_kind
      ))
    }
    if (length(GS_model) != 1L || !GS_model %in% gp_hybrid_ml_supported_models()) {
@@ -654,7 +675,8 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
      plot_height = plot_height,
      plot_units = plot_units,
      plot_dpi = plot_dpi,
-     feature_selected = ml_dat_res[["feature_selected"]] %||% feature_selected
+     feature_selected = ml_dat_res[["feature_selected"]] %||% feature_selected,
+     feature_selection_kind = feature_selection_kind
    )
    return(gp_index_specialized_model_execute_result(
      handled_result = handled_result,
@@ -733,6 +755,7 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
      ft_ff_mult = ft_ff_mult,
      ft_dropout = ft_dropout,
      ft_token_dropout = ft_token_dropout,
+     ft_learning_rate = ft_learning_rate,
      ft_use_cls = ft_use_cls,
      dropout = dropout,
       l2_weight_decay = l2_weight_decay,
@@ -753,8 +776,8 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
    )
    run_metadata <- gp_runtime_metadata(
      execution_policy = NULL,
-     python_path = gp_detect_python(),
-     preferred_python = gp_preferred_python(purpose = "dl"),
+     python_path = gp_known_python(),
+     preferred_python = gp_known_preferred_python("dl"),
      context = "model_execute_hybrid_dl",
      extra_fields = c(
        gp_runtime_profile_metadata_fields(run_profile),
@@ -781,7 +804,8 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
      plot_height = plot_height,
      plot_units = plot_units,
      plot_dpi = plot_dpi,
-     feature_selected = ml_dat_res[["feature_selected"]] %||% feature_selected
+     feature_selected = ml_dat_res[["feature_selected"]] %||% feature_selected,
+     feature_selection_kind = feature_selection_kind
    )
    return(gp_index_specialized_model_execute_result(
      handled_result = handled_result,
@@ -882,6 +906,11 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
        list(task_unit = "multi_trait_ml")
      )
    )
+   res_model_output <- gp_feature_attach_joint_output(
+     res_model_output, response = response,
+     ml_dat_res = ml_dat_res, feature_selected = feature_selected,
+     source_map = feature_source_map
+   )
    handled_result <- results_handling(
      GS_model = GS_model,
      res_model_output = res_model_output,
@@ -902,7 +931,9 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
      plot_height = plot_height,
      plot_units = plot_units,
      plot_dpi = plot_dpi,
-     feature_selected = ml_dat_res[["feature_selected"]] %||% feature_selected
+     feature_selected = res_model_output[["feature_selected"]] %||% feature_selected,
+     feature_score_metadata = feature_score_metadata,
+     feature_selection_kind = feature_selection_kind
    )
    return(gp_index_specialized_model_execute_result(
      handled_result = handled_result,
@@ -916,9 +947,10 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
  }
 
  if (isTRUE(multi_trait_asreml)) {
-   mt_asreml_source_bank <- selected_joint_kernel_bank(
-     "Multi-trait ASReml true prediction"
-   ) %||% gmatrix_kernel_model_ready_list
+   mt_asreml_selection <- selected_joint_kernel_bank("Multi-trait ASReml true prediction")
+   mt_asreml_source_bank <- if (is.null(mt_asreml_selection)) {
+     gmatrix_kernel_model_ready_list
+   } else mt_asreml_selection$kernel_bank
    mt_asreml_kernels <- gp_collect_kernel_inputs(
      gmatrix = mt_asreml_source_bank[["gmatrix_model_ready"]] %||% gmatrix %||% NULL,
      omic1_kernel = mt_asreml_source_bank[["omic1_kernel_model_ready"]] %||% NULL,
@@ -988,7 +1020,7 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
         ai_sing = TRUE
       )
     } else {
-      trait_covariance <- gp_multitrait_asreml_trait_covariance(var_cov_str)
+      trait_covariance <- gp_multitrait_asreml_trait_covariance(var_cov_str, length(response))
       res_model_output <- gp_multitrait_asreml_gaussian_model(
         pheno_object = mt_asreml_pheno,
         response = response,
@@ -1040,6 +1072,11 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
        list(task_unit = mt_asreml_mode)
      )
    )
+   res_model_output <- gp_feature_attach_joint_output(
+     res_model_output, response = response, selection = mt_asreml_selection,
+     ml_dat_res = ml_dat_res, feature_selected = feature_selected,
+     source_map = feature_source_map
+   )
    handled_result <- results_handling(
      GS_model = GS_model,
      res_model_output = res_model_output,
@@ -1060,7 +1097,9 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
      plot_height = plot_height,
      plot_units = plot_units,
      plot_dpi = plot_dpi,
-     feature_selected = ml_dat_res[["feature_selected"]] %||% feature_selected
+     feature_selected = res_model_output[["feature_selected"]] %||% feature_selected,
+     feature_score_metadata = feature_score_metadata,
+     feature_selection_kind = feature_selection_kind
    )
    return(gp_index_specialized_model_execute_result(
      handled_result = handled_result,
@@ -1133,6 +1172,7 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
      ft_ff_mult = ft_ff_mult,
      ft_dropout = ft_dropout,
      ft_token_dropout = ft_token_dropout,
+     ft_learning_rate = ft_learning_rate,
      ft_use_cls = ft_use_cls,
      dropout = dropout,
      l2_weight_decay = l2_weight_decay,
@@ -1152,13 +1192,18 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
    )
    run_metadata <- gp_runtime_metadata(
      execution_policy = NULL,
-     python_path = gp_detect_python(),
-     preferred_python = gp_preferred_python(purpose = "dl"),
+     python_path = gp_known_python(),
+     preferred_python = gp_known_preferred_python("dl"),
      context = "model_execute_multi_trait_dl",
      extra_fields = c(
        gp_runtime_profile_metadata_fields(run_profile),
        list(task_unit = "multi_trait_dl")
      )
+   )
+   res_model_output <- gp_feature_attach_joint_output(
+     res_model_output, response = response,
+     ml_dat_res = ml_dat_res, feature_selected = feature_selected,
+     source_map = feature_source_map
    )
    handled_result <- results_handling(
      GS_model = GS_model,
@@ -1180,7 +1225,9 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
      plot_height = plot_height,
      plot_units = plot_units,
      plot_dpi = plot_dpi,
-     feature_selected = ml_dat_res[["feature_selected"]] %||% feature_selected
+     feature_selected = res_model_output[["feature_selected"]] %||% feature_selected,
+     feature_score_metadata = feature_score_metadata,
+     feature_selection_kind = feature_selection_kind
    )
    return(gp_index_specialized_model_execute_result(
      handled_result = handled_result,

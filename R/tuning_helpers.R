@@ -31,9 +31,9 @@ gp_tuning_folds <- function(y, response_family = "gaussian", nfolds = 5L, random
   fam <- gp_resolve_response_family(response_family, y = y)
   gp_set_seed(as.integer(random_state %||% 123L))
   if (identical(fam, "gaussian")) {
-    caret::createFolds(y, k = as.integer(nfolds), list = TRUE, returnTrain = FALSE)
+    gp_create_folds(y, k = as.integer(nfolds), list = TRUE, returnTrain = FALSE)
   } else {
-    caret::createFolds(as.factor(y), k = as.integer(nfolds), list = TRUE, returnTrain = FALSE)
+    gp_create_folds(as.factor(y), k = as.integer(nfolds), list = TRUE, returnTrain = FALSE)
   }
 }
 

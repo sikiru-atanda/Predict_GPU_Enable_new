@@ -52,9 +52,8 @@ def _fa_project_covariance(
     """Principal-factor PSD approximation: Lambda Lambda' + diag(psi)."""
     from mt_gp_mom import _psd_project
     T = int(M.shape[0])
-    k = int(rank)
-    if k < 1 or k >= T:
-        raise ValueError(f"{name} FA rank must satisfy 1 <= rank < T={T}; got {rank}")
+    from fa_rank import validate_fa_rank
+    k = validate_fa_rank(rank, T, name)
     M_psd, _ = _psd_project(M, floor=floor, name=name)
     w, V = np.linalg.eigh(M_psd)
     order = np.argsort(w)[::-1]
@@ -103,6 +102,8 @@ def _build_mt_met_design(
     geno_ids: Sequence[str],
     train_idx: np.ndarray,
     test_idx: np.ndarray,
+    standardization: str = 'per_env',
+    absorb_means: bool = False,
 ) -> Dict[str, Any]:
     """Build long-format MET design with per-(env, trait) standardization.
 
@@ -216,33 +217,27 @@ def _build_mt_met_design(
             sd = float(np.std(sl, ddof=1))
             trait_env_sds[e, t] = sd if np.isfinite(sd) and sd > 1e-12 else trait_sds[t]
 
+    if standardization == 'trait':
+        # REML's shared trait covariance must remain shared on the response
+        # scale. Per-environment SDs would silently fit a different family.
+        trait_env_sds[:] = trait_sds[None, :]
+    elif standardization != 'per_env':
+        raise ValueError('standardization must be trait or per_env')
+
     env_idx_arr = df["_env_idx"].to_numpy()
     trait_idx_arr = df["_trait_idx"].to_numpy()
     y_std = (df[y_col].to_numpy(dtype=np.float64)
              - trait_env_means[env_idx_arr, trait_idx_arr]
              ) / trait_env_sds[env_idx_arr, trait_idx_arr]
 
-    # X_fixed: user fixed effects only. Per-(env, trait) means are removed by
-    # standardization and restored during back-transform, so explicit dense
-    # intercept columns are redundant and too expensive for large MET panels.
-    n_rows = len(df)
-    blocks = []
-    for col in fixed_effects:
-        if col not in df.columns:
-            raise ValueError(f"fixed_effects col {col!r} not in pheno_df")
-        levels = sorted(df[col].astype(str).unique().tolist())
-        if len(levels) < 2:
-            continue
-        col_oh = pd.get_dummies(df[col].astype(str)).to_numpy(dtype=np.float64)
-        for c in range(col_oh.shape[1]):
-            block = np.zeros((n_rows, T), dtype=np.float64)
-            for t in range(T):
-                m = trait_idx_arr == t
-                block[m, t] = col_oh[m, c]
-            blocks.append(block)
-    X_fixed = np.concatenate(blocks, axis=1) if blocks else np.zeros((n_rows, 0), dtype=np.float64)
-
     train_mask = df["_is_train"].to_numpy(dtype=bool)
+    # Centering is a change of origin, not a substitute for REML projection.
+    from gp_fixed_effects import met_mean_design, trait_fixed_design
+    compact_means = bool(absorb_means and not len(fixed_effects))
+    mean_design = met_mean_design(env_idx_arr, trait_idx_arr, train_mask, T, trait_env_sds,
+                                  compact=compact_means)
+    X_fixed = mean_design if compact_means else trait_fixed_design(
+        df, fixed_effects, trait_idx_arr, train_mask, T, mean_design)
     test_mask = ~train_mask
 
     return {
@@ -352,7 +347,7 @@ def _estimate_sigma_G_GE_eps_mom(
                     f"n_obs={X_tr.shape[0]}, n_fixed={X_tr.shape[1]}. Use bounded "
                     "varcomp_mode='reml' with a sufficiently estimable training fold."
                 )
-            beta_hat, *_ = np.linalg.lstsq(X_tr, y_tr, rcond=None)
+            beta_hat = X_tr.ols(y_tr) if hasattr(X_tr, 'ols') else np.linalg.lstsq(X_tr, y_tr, rcond=None)[0]
             residual = y_tr - X_tr @ beta_hat
         else:
             beta_hat = np.zeros(0, dtype=np.float64)
@@ -515,7 +510,7 @@ def _estimate_sigma_G_GE_eps_mom(
                 f"MoM balanced sub-grid has too few observations for fixed effects: "
                 f"n_obs={X_full.shape[0]}, n_fixed={X_full.shape[1]}"
             )
-        beta_hat, *_ = np.linalg.lstsq(X_full, y_full, rcond=None)
+        beta_hat = X_full.ols(y_full) if hasattr(X_full, 'ols') else np.linalg.lstsq(X_full, y_full, rcond=None)[0]
         r = y_full - X_full @ beta_hat
     else:
         beta_hat = np.zeros(0, dtype=np.float64)
@@ -629,7 +624,7 @@ def _fit_dense_reml_met_variance(
     Sigma_GE_init: np.ndarray,
     Sigma_eps_init: np.ndarray,
     psd_floor: float = 1e-4,
-    max_iter: int = 30,
+    max_iter: int = 300,
     tol: float = 1e-5,
     device: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -667,6 +662,11 @@ def _fit_dense_reml_met_variance(
     Ke = torch.tensor(K_env, dtype=torch.float64, device=device)
     p = int(X.shape[1])
     jitter_I = 1e-6 * torch.eye(int(y.numel()), dtype=torch.float64, device=device)
+    # These incidence/kernel products do not depend on covariance parameters.
+    Kg_pairs = Kg[g.unsqueeze(1), g.unsqueeze(0)]
+    Ke_pairs = Ke[e.unsqueeze(1), e.unsqueeze(0)]
+    same_cell = ((g.unsqueeze(1) == g.unsqueeze(0)) &
+                 (e.unsqueeze(1) == e.unsqueeze(0))).to(torch.float64)
 
     def _unpack_all(theta_v: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         Lg = _unpack_unstructured(theta_v[:n_par], T)
@@ -679,15 +679,11 @@ def _fit_dense_reml_met_variance(
             Le @ Le.T + floor * eye_T,
         )
 
-    def _nll(theta_v: torch.Tensor) -> torch.Tensor:
-        Sigma_G, Sigma_GE, Sigma_eps = _unpack_all(theta_v)
-        Kg_pairs = Kg[g.unsqueeze(1), g.unsqueeze(0)]
-        Ke_pairs = Ke[e.unsqueeze(1), e.unsqueeze(0)]
+    def _nll_matrices(matrices) -> torch.Tensor:
+        Sigma_G, Sigma_GE, Sigma_eps = matrices
         G_pairs = Sigma_G[t.unsqueeze(1), t.unsqueeze(0)]
         GE_pairs = Sigma_GE[t.unsqueeze(1), t.unsqueeze(0)]
         E_pairs = Sigma_eps[t.unsqueeze(1), t.unsqueeze(0)]
-        same_cell = ((g.unsqueeze(1) == g.unsqueeze(0)) &
-                     (e.unsqueeze(1) == e.unsqueeze(0))).to(torch.float64)
         V = G_pairs * Kg_pairs + GE_pairs * Kg_pairs * Ke_pairs + E_pairs * same_cell + jitter_I
         L = torch.linalg.cholesky(V)
         log_det_V = 2.0 * torch.log(torch.diagonal(L)).sum()
@@ -695,9 +691,7 @@ def _fit_dense_reml_met_variance(
             Vinv_y = torch.cholesky_solve(y.unsqueeze(1), L).squeeze(1)
             Vinv_X = torch.cholesky_solve(X, L)
             Xt_Vinv_X = X.T @ Vinv_X
-            L_xvx = torch.linalg.cholesky(
-                Xt_Vinv_X + 1e-6 * torch.eye(p, dtype=torch.float64, device=device)
-            )
+            L_xvx = torch.linalg.cholesky(Xt_Vinv_X)
             log_det_xvx = 2.0 * torch.log(torch.diagonal(L_xvx)).sum()
             beta_hat = torch.cholesky_solve((X.T @ Vinv_y).unsqueeze(1), L_xvx).squeeze(1)
             r = y - X @ beta_hat
@@ -708,20 +702,35 @@ def _fit_dense_reml_met_variance(
         quad = (r * Vinv_r).sum()
         return 0.5 * (log_det_V + log_det_xvx + quad)
 
+    def _nll(theta_v: torch.Tensor) -> torch.Tensor:
+        return _nll_matrices(_unpack_all(theta_v))
+
     history = []
+    # Optimize the per-residual-degree-of-freedom objective. The tolerance
+    # consequently has the same meaning as the number of observations changes.
+    objective_scale = float(max(1, int(y.numel()) - p))
     optimizer = torch.optim.LBFGS(
         [theta],
         max_iter=int(max_iter),
-        tolerance_grad=float(tol),
-        tolerance_change=float(tol),
+        max_eval=max(1, 3 * int(max_iter)),
+        # Cholesky gradients shrink at a boundary. Finish more tightly than
+        # the public score threshold, which is also checked in covariance space.
+        tolerance_grad=min(float(tol), 1e-7),
+        # Objective change has squared-gradient scale near a solution. Using
+        # the gradient tolerance here stops far short of stationarity.
+        tolerance_change=0.0,
         line_search_fn="strong_wolfe",
     )
 
     def closure():
         optimizer.zero_grad()
-        loss = _nll(theta)
+        loss = _nll(theta) / objective_scale
+        if not bool(torch.isfinite(loss)):
+            raise RuntimeError('MET REML objective is non-finite')
         loss.backward()
-        history.append(float(-loss.detach().item()))
+        if not bool(torch.isfinite(theta.grad).all()):
+            raise RuntimeError('MET REML gradient is non-finite')
+        history.append(float(-loss.detach().item()) * objective_scale)
         return loss
 
     optimizer.step(closure)
@@ -741,9 +750,7 @@ def _fit_dense_reml_met_variance(
             Vinv_y = torch.cholesky_solve(y.unsqueeze(1), L).squeeze(1)
             Vinv_X = torch.cholesky_solve(X, L)
             Xt_Vinv_X = X.T @ Vinv_X
-            L_xvx = torch.linalg.cholesky(
-                Xt_Vinv_X + 1e-6 * torch.eye(p, dtype=torch.float64, device=device)
-            )
+            L_xvx = torch.linalg.cholesky(Xt_Vinv_X)
             beta_hat = torch.cholesky_solve((X.T @ Vinv_y).unsqueeze(1), L_xvx).squeeze(1)
             beta_np = torch_to_numpy(beta_hat)
         else:
@@ -752,16 +759,49 @@ def _fit_dense_reml_met_variance(
     # `history` holds every objective evaluation, including strong-Wolfe
     # line-search trial points, so its last two entries are not consecutive
     # iterates and cannot decide convergence. Use the optimizer's own state:
-    # L-BFGS stopped before max_iter (its gradient/change tolerances were met),
-    # or the gradient at the solution is below tolerance.
+    # Early stopping can also mean max_eval or a stalled line search. Require
+    # stationarity at the returned parameters, independent of the stop reason.
     hist = np.asarray(history, dtype=np.float64)
     lbfgs_state = optimizer.state.get(theta, {})
     n_iter_done = int(lbfgs_state.get("n_iter", 0))
     theta_check = theta.detach().clone().requires_grad_(True)
     grad = torch.autograd.grad(_nll(theta_check), theta_check)[0]
     grad_max = float(grad.abs().max().item())
-    converged = bool(n_iter_done < int(max_iter) or grad_max <= float(tol))
+    scaled_grad_max = grad_max / objective_scale
+    converged = bool(torch.isfinite(nll_final).item() and torch.isfinite(grad).all().item() and scaled_grad_max <= float(tol))
+    boundary = any(float(torch.linalg.eigvalsh(m).min()) <= float(psd_floor) +
+                   1e-6 * max(1., float(torch.linalg.eigvalsh(m).max()))
+                   for m in (Sigma_G, Sigma_GE, Sigma_eps))
+    # A vanishing Cholesky derivative at a singular covariance can conceal a
+    # nonstationary solution. Check the actual PSD-constrained covariance
+    # score before describing a boundary estimate as converged.
+    projected_score = None
+    if boundary:
+        matrices = [m.detach().clone().requires_grad_(True) for m in (Sigma_G, Sigma_GE, Sigma_eps)]
+        scores = torch.autograd.grad(_nll_matrices(matrices)/objective_scale, matrices)
+        projected_score = 0.
+        for matrix, score in zip(matrices, scores):
+            current = matrix.detach()-float(psd_floor)*eye_T
+            score = .5*(score+score.T)
+            eig, vec = torch.linalg.eigh(current-score)
+            projected = (vec*eig.clamp_min(0.))@vec.T
+            projected_score = max(projected_score, float((projected-current).abs().max()))
+        converged = converged and projected_score <= float(tol)
+    convergence_status = ('converged_boundary' if boundary else 'converged_interior') if converged else 'not_converged'
+    from gp_covariance_inference import covariance_inference
+    parameter_inference = covariance_inference(theta, _unpack_all,
+        lambda ms: ms[0][t[:,None],t[None,:]]*Kg_pairs +
+            ms[1][t[:,None],t[None,:]]*Kg_pairs*Ke_pairs +
+            ms[2][t[:,None],t[None,:]]*same_cell + jitter_I,
+        y, X, ['genetic', 'gxe', 'residual'], converged)
+    if converged and boundary:
+        # A constrained point estimate can be valid while interior Wald SEs
+        # are unavailable. Do not relabel this as failure to converge.
+        parameter_inference['inference_available'] = False
+        parameter_inference['inference_status'] = 'unavailable_covariance_boundary'
+        parameter_inference['covariance'][:] = np.nan
     return {
+        "parameter_inference": parameter_inference,
         "Sigma_G": torch_to_numpy(Sigma_G),
         "Sigma_GE": torch_to_numpy(Sigma_GE),
         "Sigma_eps": torch_to_numpy(Sigma_eps),
@@ -770,6 +810,10 @@ def _fit_dense_reml_met_variance(
         "n_iter": n_iter_done,
         "n_function_evals": int(hist.size),
         "grad_max_abs": grad_max,
+        "gradient_scaled_max_abs": scaled_grad_max,
+        "gradient_scale": objective_scale,
+        "convergence_status": convergence_status,
+        "boundary_projected_score": projected_score,
         "converged": converged,
         "neg_reml": float(nll_final.detach().item()),
         "device": str(device),
@@ -795,7 +839,7 @@ def _fit_mt_met_mom_op(
     kernel_weights: Optional[Sequence[float]] = None,
     dense_reml: bool = False,
     dense_reml_max_train: int = 3000,
-    reml_max_iter: int = 30,
+    reml_max_iter: int = 300,
     reml_tol: float = 1e-5,
     device: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -903,7 +947,6 @@ def _fit_mt_met_mom_op(
     Sigma_G = mom_out["Sigma_G"]; Sigma_GE = mom_out["Sigma_GE"]
     Sigma_eps = mom_out["Sigma_eps"]; beta_mom = mom_out["beta"]
     reml_out = None
-    beta_reml = None
     if bool(dense_reml):
         n_train = int(np.asarray(design["train_mask"], dtype=bool).sum())
         if n_train > int(dense_reml_max_train):
@@ -936,7 +979,6 @@ def _fit_mt_met_mom_op(
         Sigma_G = reml_out["Sigma_G"]
         Sigma_GE = reml_out["Sigma_GE"]
         Sigma_eps = reml_out["Sigma_eps"]
-        beta_reml = reml_out["beta"]
     trait_structure = str(trait_structure or "unstructured").lower()
     gxe_trait_structure = str(gxe_trait_structure or trait_structure).lower()
     Lambda_G = psi_G = Lambda_GE = psi_GE = None
@@ -1029,32 +1071,33 @@ def _fit_mt_met_mom_op(
     def M_inv_mv(v):
         return v / diagV.to(device=v.device, dtype=v.dtype)
 
-    # Prediction fixed effects are refit on all training rows. The MoM beta above
-    # is still the beta used to residualize the balanced sub-grid for variance
-    # estimation; this all-train OLS beta avoids throwing away partial training
-    # rows in the posterior mean path while preserving the fast MET v1 contract.
-    if beta_reml is not None:
-        beta = beta_reml
-    elif X_tr.shape[1]:
-        beta, *_ = np.linalg.lstsq(X_tr, y_tr_std, rcond=None)
-    else:
-        beta = np.zeros(0, dtype=np.float64)
-
-    # Residualize
-    r = torch.tensor(y_tr_std - X_tr @ beta, dtype=torch.float64, device=device)
     def A_mv(v):
         return V_op.matvec(v, fold_train_g, ti_train_fold, dtype_compute=torch.float64)
-    pcg_res = pcg_solve(A_mv, r, M_inv_mv=M_inv_mv, tol=pcg_tol, max_iter=pcg_max_iter)
+
+    from gp_pcg_diagnostics import PCGAudit
+    pcg_audit = PCGAudit(pcg_solve)
+    pcg_solve = pcg_audit.solve
+    # Use the covariance actually employed by the predictor for GLS, including
+    # MoM/FA projection. Reuse these solves for fixed-effect uncertainty.
+    y_tr_t = torch.tensor(y_tr_std, dtype=torch.float64, device=device)
+    from gp_absorbed_means import CellMeanDesign, AbsorbedGLS
+    absorbed = None
+    if isinstance(X_tr, CellMeanDesign):
+        absorbed = AbsorbedGLS(X_tr, A_mv, diagV, pcg_solve, tol=pcg_tol, max_iter=pcg_max_iter)
+        pcg_res = absorbed.solve(y_tr_t)
+        beta = torch_to_numpy(absorbed.beta(y_tr_t, pcg_res.x))
+    else:
+        X_tr_t = torch.tensor(X_tr, dtype=torch.float64, device=device)
+        Vinv_y = pcg_solve(A_mv, y_tr_t, M_inv_mv=M_inv_mv, tol=pcg_tol, max_iter=pcg_max_iter).x
+        Vinv_X = torch.stack([
+            pcg_solve(A_mv, column, M_inv_mv=M_inv_mv, tol=pcg_tol, max_iter=pcg_max_iter).x
+            for column in X_tr_t.T
+        ], dim=1) if X_tr.shape[1] else X_tr_t.clone()
+        Var_beta = torch.linalg.pinv(X_tr_t.T @ Vinv_X, hermitian=True)
+        beta = torch_to_numpy(Var_beta @ (X_tr_t.T @ Vinv_y))
+        r = y_tr_t - X_tr_t @ torch.tensor(beta, dtype=torch.float64, device=device)
+        pcg_res = pcg_solve(A_mv, r, M_inv_mv=M_inv_mv, tol=pcg_tol, max_iter=pcg_max_iter)
     alpha = pcg_res.x
-    if not bool(pcg_res.converged):
-        warnings.warn(
-            "fit_multi_trait_gp_met PCG did not converge "
-            f"(rel_resid={pcg_res.rel_resid:.2e}, max_iter={pcg_max_iter}); "
-            "predictions may be unreliable. Increase mom_pcg_max_iter, relax mom_pcg_tol, "
-            "or inspect K_env and variance-component conditioning.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
 
     # Predict at test rows
     test_mask = design["test_mask"]
@@ -1110,6 +1153,7 @@ def _fit_mt_met_mom_op(
         cov_traits_downgrade_reason = str(decision["reason"])
         compute_cov_traits = bool(decision["compute"])
     if compute_cov_traits:
+        total_latent_var = np.zeros(len(g_te), dtype=np.float64)
         unique_cells = np.unique(np.column_stack([g_te, e_te]), axis=0)
         cov_traits = np.zeros((unique_cells.shape[0], T, T), dtype=np.float64)
         cov_trait_cells = pd.DataFrame({
@@ -1141,7 +1185,8 @@ def _fit_mt_met_mom_op(
             alphas = []
             for t in range(T):
                 col_t = (Sigma_G_t[t][t_tr_t] + Sigma_GE_t[t][t_tr_t] * K_env_col) * K_geno_col
-                pcg_t = pcg_solve(A_mv, col_t, M_inv_mv=M_inv_mv, tol=pcg_tol, max_iter=pcg_max_iter)
+                pcg_t = (absorbed.solve(col_t) if absorbed is not None else
+                    pcg_solve(A_mv, col_t, M_inv_mv=M_inv_mv, tol=pcg_tol, max_iter=pcg_max_iter))
                 cols.append(col_t)
                 alphas.append(pcg_t.x)
             # Bilinear Schur: schur[t, t'] = prior[t, t'] - col_t @ alpha_{t'}
@@ -1152,6 +1197,30 @@ def _fit_mt_met_mom_op(
                 )
                 for tp in range(T):
                     schur[t, tp] = prior_row[tp] - float(torch.dot(cols[t], alphas[tp]).item())
+            Q = None if absorbed is not None else torch.stack(cols) @ Vinv_X
+            # Genetic PEV and total prediction variance have different fixed-
+            # effect corrections. Keep both, on the response scale.
+            for row in np.flatnonzero((g_te == gi) & (e_te == ei)):
+                trait = int(t_te[row])
+                if absorbed is not None and return_se:
+                    # Universal prediction PEV with fixed-effect target l:
+                    # K_** - 2 c'u + u'Vu - (c-Vu)' P_V (c-Vu),
+                    # where u=X(X'X)^-1 l. Genetic PEV is K_**-c'P_V c.
+                    u = absorbed.mean_weights(X_te.row(row))
+                    Vu = A_mv(u)
+                    z = cols[trait] - Vu
+                    Pz = absorbed.solve(z).x
+                    prior = (Sigma_G[trait, trait] + Sigma_GE[trait, trait]*K_env_ee)*K_gi_gi
+                    total_var = prior - 2*float(cols[trait]@u) + float(u@Vu) - float(z@Pz)
+                elif absorbed is None:
+                    B = torch.tensor(X_te[row], dtype=torch.float64, device=device) - Q[trait]
+                    total_var = schur[trait, trait] + float((B @ Var_beta @ B).item())
+                if return_se:
+                    total_latent_var[row] = total_var * trait_env_sds[ei, trait] ** 2
+                preds_df.loc[preds_df.index[row], 'Reliability_reference_variance'] = float(
+                    (Sigma_G[trait, trait] + Sigma_GE[trait, trait]*K_env_ee)*K_gi_gi*trait_env_sds[ei, trait]**2)
+            if absorbed is None:
+                schur += torch_to_numpy(Q @ Var_beta @ Q.T)
             schur = 0.5 * (schur + schur.T)  # numerical symmetrization only
             sd = trait_env_sds[ei, :]   # (T,) sd at this env
             cov_traits[s] = (np.outer(sd, sd)) * schur
@@ -1172,11 +1241,15 @@ def _fit_mt_met_mom_op(
         for i, (g, e, t) in enumerate(zip(g_te.tolist(), e_te.tolist(), t_te.tolist())):
             pos = cell_to_pos[(int(g), int(e))]
             lv = float(cov_traits[pos, int(t), int(t)])
-            lat_var[i] = max(lv, 1e-12)
-            obs_var[i] = lat_var[i] + float(Sigma_eps[int(t), int(t)]) * float(trait_env_sds[int(e), int(t)] ** 2)
-        preds_df["SE_latent"] = np.sqrt(lat_var)
-        preds_df["PEV"] = lat_var
+            lat_var[i] = max(lv, 0.)  # genetic PEV
+            obs_var[i] = total_latent_var[i] + float(Sigma_eps[int(t), int(t)]) * float(trait_env_sds[int(e), int(t)] ** 2)
+        preds_df["SE_latent"] = np.sqrt(np.maximum(total_latent_var, 0.))
+        preds_df["PEV"] = np.maximum(total_latent_var, 0.)
+        preds_df["Reliability_variance_input"] = lat_var
+        preds_df['Reliability_basis'] = 'genetic_plus_gxe_prior_variance'
         preds_df["SE"] = np.sqrt(np.maximum(obs_var, 1e-12))
+        preds_df["Prediction_Var_latent"] = np.maximum(total_latent_var, 0.)
+        preds_df["Prediction_Var_observed"] = np.maximum(obs_var, 0.)
         if not return_cov_traits:
             cov_traits = None
             cov_trait_cells = None
@@ -1191,7 +1264,8 @@ def _fit_mt_met_mom_op(
         "psi_GE":             psi_GE,
         "beta":               beta,
         "beta_mom":           beta_mom,
-        "beta_method":        "ols_all_train",
+        "beta_method":        "gls_all_train",
+        "mean_design_method": "absorbed_cell_means" if absorbed is not None else "dense_gls",
         "mom_n_full_gids":    mom_out["mom_n_full_gids"],
         "mom_n_full_envs":    mom_out["mom_n_full_envs"],
         "mom_n_full_cells":   mom_out["mom_n_full_cells"],
@@ -1202,7 +1276,8 @@ def _fit_mt_met_mom_op(
         "pcg_n_iter":         int(pcg_res.iters),
         "pcg_residual_norm":  float(pcg_res.rel_resid),
         "pcg_converged":      bool(pcg_res.converged),
-        "pcg_preconditioner": "diag",
+        **pcg_audit.report(),
+        "pcg_preconditioner": "projected_diag" if absorbed is not None else "diag",
         "kernel_weights":     kernel_weights_arr,
         "cov_traits_downgraded": bool(cov_traits_downgraded),
         "cov_traits_downgrade_reason": cov_traits_downgrade_reason,
@@ -1210,6 +1285,9 @@ def _fit_mt_met_mom_op(
         "reml_loglik_history": (None if reml_out is None else reml_out["loglik_history"]),
         "reml_n_iter":        (None if reml_out is None else reml_out["n_iter"]),
         "reml_converged":     (None if reml_out is None else reml_out["converged"]),
+        "reml_convergence_status": None if reml_out is None else reml_out['convergence_status'],
+        "reml_gradient_scaled_max_abs": None if reml_out is None else reml_out['gradient_scaled_max_abs'],
+        "parameter_inference": None if reml_out is None else reml_out['parameter_inference'],
         "predictions":        preds_df,
         "cov_traits":         cov_traits,
         "cov_trait_cells":    cov_trait_cells,

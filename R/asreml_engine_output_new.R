@@ -313,6 +313,8 @@ asreml_mod_output_new <- function(
       #### Extration of the genetic variance for all omics to calcuate heritability.
       VarG_All <- vector("list", length = length(names_in_inv_list))
       names(VarG_All) <- names_in_inv_list
+      VarG_SE_All <- VarG_All
+      genetic_rownames <- character()
       VarG <- vc[grep(paste("^vm\\(", gen_name, sep = ""), rownames(vc)), drop=FALSE, ]
 
       for (g in seq_along(names_in_inv_list)) {
@@ -322,10 +324,15 @@ asreml_mod_output_new <- function(
           kernel_name = names_in_inv_list[[g]]
         )
         VarG_All[[g]] <- VarG[component_rows, "component"]
+        # ASReml's own SE of each variance component (AI-REML), reported in the variance table
+        VarG_SE_All[[g]] <- if ("std.error" %in% names(VarG)) VarG[component_rows, "std.error"] else NA_real_
+        genetic_rownames <- c(genetic_rownames, rownames(VarG)[component_rows])
 
       }
 #### Residual variance
       VE <- vc[grep("!R", row.names(vc)), "component"]
+      VE_rownames <- rownames(vc)[grep("!R", row.names(vc))]
+      VE_SE <- if ("std.error" %in% names(vc)) vc[VE_rownames, "std.error"] else rep(NA_real_, length(VE))
       varG_matrix <-  unlist(VarG_All)
       H <-  matrix(NA, nrow = 1, ncol = length(VE))
 
@@ -371,14 +378,23 @@ asreml_mod_output_new <- function(
       }
 
       VarG_All <-  as.matrix(unlist(VarG_All))
+      VarG_SE_All <- matrix(suppressWarnings(as.numeric(unlist(VarG_SE_All))), ncol = 1L,
+                            dimnames = dimnames(VarG_All))
 
       #colnames(VarG_All) <- "Variance"
       Total_genetic_var <- sum(VarG_All[, 1])
+      # Delta-method SE of h2 = sum(Vg) / (sum(Vg) + Ve) from asreml::vpredict, one per residual
+      H_SE <- matrix(vapply(VE_rownames, function(e_row) {
+        gp_asreml_heritability_se(mod, vg_rownames = genetic_rownames, ve_rowname = e_row)
+      }, numeric(1)), nrow = 1L)
 #### Single location
       Res_Va_Ve_H2_COV_COR <-  list(Heritability = H,
+                                    Heritability_SE = H_SE,
                                     varG_per_omics = VarG_All,
+                                    varG_per_omics_SE = VarG_SE_All,
                                     Total_genetic_var = Total_genetic_var,
-                                    Residual_Var = VE)
+                                    Residual_Var = VE,
+                                    Residual_Var_SE = VE_SE)
     } ## End
 
 
@@ -483,6 +499,23 @@ asreml_mod_output_new <- function(
     )
   }
   ## sik
+  # Genetic reliability for the single-environment table (1 - genetic PEV / prior
+  # genetic variance, as the GP engine reports). With several environments this
+  # table averages over them and keeps reliability NA; the genotype-by-environment
+  # table below carries it.
+  if (is.null(Zg) && !is.null(result_single_loc$prediction) && !is.null(Res_Va_Ve_H2_COV_COR)) {
+    predicted_value <- asreml_apply_genetic_reliability(
+      pred_df = predicted_value,
+      mod = mod,
+      pheno_data = pheno_data,
+      gen_name = gen_name,
+      classify = gen_name,
+      varG_per_omics = Res_Va_Ve_H2_COV_COR[["varG_per_omics"]],
+      names_in_inv_list = names_in_inv_list,
+      workspace = workspace,
+      pworkspace = pworkspace
+    )
+  }
 
   if(!is.null(Zg)){
     genotype_means <- pheno_data |>
@@ -589,12 +622,32 @@ asreml_mod_output_new <- function(
     # to the public prediction table itself (not only the auxiliary EBV table),
     # so subsequent standardization and CSV output retain the correct
     # numerator, denominator, formula and provenance.
-    across_env_predicted_value <- asreml_apply_met_reliability(
-      ebv_df = across_env_predicted_value,
-      heter_groups = heter_groups,
-      heter_grp = heter_grp,
-      variance_by_env = met_total_genetic_variance
-    )
+    # Genetic PEV (predict(only = genetic terms)) against sum_k sigma2_k(env) * K_ii when
+    # the fitted genotype-by-environment predictions are available; the EBV-table
+    # fallback keeps the coefficient-based environment reliability.
+    met_varG <- asreml_met_varG_matrix(Res_Va_Ve_H2_COV_COR, length(names_in_inv_list), heter_grp)
+    across_env_predicted_value <- if (!is.null(met_varG) &&
+                                      !is.null(result_met$across_env_prediction)) {
+      asreml_apply_genetic_reliability(
+        pred_df = across_env_predicted_value,
+        mod = mod,
+        pheno_data = pheno_data,
+        gen_name = gen_name,
+        classify = rand_term[[inter_gen_pos]],
+        varG_per_omics = met_varG,
+        names_in_inv_list = names_in_inv_list,
+        heter_groups = heter_groups,
+        workspace = workspace,
+        pworkspace = pworkspace
+      )
+    } else {
+      asreml_apply_met_reliability(
+        ebv_df = across_env_predicted_value,
+        heter_groups = heter_groups,
+        heter_grp = heter_grp,
+        variance_by_env = met_total_genetic_variance
+      )
+    }
 
   }
 

@@ -1,3 +1,4 @@
+# Returns the caller's plan, for the caller to put back.
 set_parallel_plan_impute <- function(num_chunks = 1,
                                      num_cores = NULL,
                                      sys_name) {
@@ -112,18 +113,19 @@ handle_large_scale_knn <- function(data, k = 5, chunk_size = 50, num_cores = NUL
   sys_name <- Sys.info()["sysname"]
   if (!is.null(num_cores) && num_cores > 1) {
     #sys_name <- Sys.info()["sysname"]
-    set_parallel_plan_impute(num_chunks = num_chunks,num_cores = num_cores,
-                             sys_name = sys_name)
+    old_plan <- set_parallel_plan_impute(num_chunks = num_chunks,num_cores = num_cores,
+                                         sys_name = sys_name)
   } else {
     # Automatically determine the number of cores and use half of them
     detected_cores <- gp_detect_cores(logical = TRUE)
     # For non-Windows systems, consider physical cores only
     num_cores <- round(detected_cores * 0.5)
 
-    set_parallel_plan_impute(num_chunks = num_chunks,
-                             num_cores = num_cores,
-                             sys_name = sys_name)
+    old_plan <- set_parallel_plan_impute(num_chunks = num_chunks,
+                                         num_cores = num_cores,
+                                         sys_name = sys_name)
   }
+  on.exit(future::plan(old_plan), add = TRUE)
 
   # Perform imputation on each chunk in parallel
   imputed_chunks <- gp_future_lapply_session(chunk_indices, function(indices) {
@@ -143,7 +145,6 @@ handle_large_scale_knn <- function(data, k = 5, chunk_size = 50, num_cores = NUL
     return(imputed_chunk)
   }, future.seed = TRUE)
 
-  future::plan("sequential")
   # Combine all imputed chunks into the final data frame
   imputed_data <- do.call(cbind, imputed_chunks)
 

@@ -88,25 +88,12 @@ expect_hybrid_public_contract <- function(preds, include_env = FALSE, include_tr
   expect_equal(preds$Standard_error^2, preds$PEV, tolerance = 1e-7)
   expect_true(all(is.finite(preds$lower_bound)))
   expect_true(all(is.finite(preds$upper_bound)))
-  expect_true(all(is.finite(preds$Reliability)))
-  expect_true(all(is.finite(preds$Reliability_variance_input)))
-  expect_true(all(is.finite(preds$Reliability_reference_variance)))
-  ratio_fallback <- grepl(
-    "ratio-form fallback used",
-    ifelse(is.na(preds$Reliability_remarks), "", preds$Reliability_remarks),
-    fixed = TRUE
-  )
-  standard_reliability <- pmax(0, pmin(
-    1,
-    1 - preds$Reliability_variance_input / preds$Reliability_reference_variance
-  ))
-  ratio_reliability <- preds$Reliability_reference_variance /
-    (preds$Reliability_reference_variance + preds$Reliability_variance_input)
-  expect_equal(
-    preds$Reliability,
-    ifelse(ratio_fallback, ratio_reliability, standard_reliability),
-    tolerance = 1e-7
-  )
+  expect_true(all(is.na(preds$Reliability)))
+  expect_true(all(is.na(preds$Reliability_variance_input)))
+  expect_true(all(is.na(preds$Reliability_reference_variance)))
+  expect_true(all(grepl("^genetic_prior_variance_unavailable", preds$Reliability_basis)))
+  expect_true(all(preds$Reliability_remarks == "genetic variance not estimated on this route"))
+  expect_true(all(grepl("latent", preds$PEV_basis)))
 }
 
 expect_public_plot_contract <- function(plots) {

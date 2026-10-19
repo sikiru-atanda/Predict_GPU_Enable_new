@@ -7,6 +7,14 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+import predictpror_deps as _deps
+
+# numpy/pandas/scikit-learn are installed on first use; xgboost, catboost and
+# lightgbm when a model needs them (ml_models._lazy_import)
+_deps.ensure_groups(["tabular", "sklearn"])
+
 import numpy as np
 import pandas as pd
 
@@ -33,10 +41,13 @@ def _read_matrix_csv(path: str) -> np.ndarray:
 
 def _read_target_csv(path: str, task: str):
     df = pd.read_csv(path)
-    vals = df.iloc[:, 0].to_numpy()
     if task == "gaussian":
-        return vals.astype(float)
-    return vals.astype(str)
+        if df.shape[1] > 1:
+            return df.to_numpy(dtype=float)
+        return df.iloc[:, 0].to_numpy(dtype=float)
+    if df.shape[1] > 1:
+        raise ValueError("Multi-output target CSVs require the Gaussian task")
+    return df.iloc[:, 0].to_numpy().astype(str)
 
 
 def _read_json(path: Optional[str], default: Any):

@@ -10,7 +10,7 @@ results_handling(GS_model = NULL, res_model_output = NULL, res_summary_stat = NU
     cv_results_raw = NULL, geno_qc_stat = NULL, system_database = TRUE, 
     plot_filename = "trait", plot_extension = "pdf", plot_width = 17, 
     plot_height = 12, plot_units = "in", plot_dpi = 300, feature_selected = NULL, 
-    feature_score_metadata = NULL, run_metadata = NULL) 
+    feature_score_metadata = NULL, run_metadata = NULL, feature_selection_kind = NULL)
 }
 \arguments{
 \item{GS_model}{Genomic selection model identifier.}
@@ -56,6 +56,8 @@ results_handling(GS_model = NULL, res_model_output = NULL, res_summary_stat = NU
 \item{feature_score_metadata}{Feature scoring metadata table returned by \code{feature_score_predictors()}.}
 
 \item{run_metadata}{Parameter passed to the run_metadata workflow option.}
+
+\item{feature_selection_kind}{Selection kind of the fitted markers (\code{"response"}, \code{"supplied_ranking"}, \code{"explicit"} or \code{"none"}). Unless \code{NULL} or \code{"none"}, variance-component, prediction and covariance/correlation tables get a \code{Feature_selection_remark} column, in the exported files as in the returned list.}
 
 }
 \description{

@@ -194,7 +194,7 @@ gp_multitrait_asreml_covariance_outputs <- function(model,
       raw = raw,
       response = response,
       rows = residual_rows,
-      structure = trait_covariance
+      structure = gp_multitrait_asreml_residual_covariance(trait_covariance)
     )
     build_cor <- function(mat) {
       if (all(is.finite(diag(mat))) && all(diag(mat) > 0)) stats::cov2cor(mat) else NULL
@@ -272,7 +272,15 @@ gp_multitrait_asreml_covariance_outputs <- function(model,
 
 gp_multitrait_asreml_variance_components <- function(model,
                                                        response,
-                                                       kernel_specs = NULL) {
+                                                       kernel_specs = NULL,
+                                                       trait_covariance = "us",
+                                                       vpredict_fn = NULL) {
+  fa_rank <- gp_multitrait_asreml_fa_rank(trait_covariance)
+  if (!is.na(fa_rank)) {
+    return(gp_multitrait_asreml_fa_variance_components(
+      model, response, kernel_specs, fa_rank, vpredict_fn
+    ))
+  }
   raw <- tryCatch(asreml_varcomp_table(summary(model)), error = function(e) NULL)
   vc <- gp_format_variance_components(raw, default_estimation_method = "ASReml_REML")
   if (!is.data.frame(vc) || !nrow(vc)) {
@@ -321,6 +329,77 @@ gp_multitrait_asreml_variance_components <- function(model,
   }
   rownames(vc) <- NULL
   vc
+}
+
+# Kernels x traits matrix of each kernel's genetic variances, from the fitted covariance
+# parameters in the variance-component table `raw` (no vpredict, so it cannot fail where
+# the reported table would); rows in kernel_specs order, columns named by trait.
+gp_multitrait_asreml_genetic_variance_matrix <- function(raw, response, kernel_specs,
+                                                          trait_covariance = "us") {
+  out <- matrix(NA_real_, nrow(kernel_specs), length(response),
+                dimnames = list(kernel_specs$Kernel, response))
+  for (k in seq_len(nrow(kernel_specs))) {
+    rows <- which(grepl(kernel_specs$inverse_name[[k]], rownames(raw), fixed = TRUE))
+    out[k, ] <- diag(gp_multitrait_asreml_covariance_from_rows(
+      raw, response, rows, structure = trait_covariance
+    ))
+  }
+  if (any(!is.finite(out))) stop("A kernel's genetic variance is not finite.", call. = FALSE)
+  out
+}
+
+# Variance table of an FA model, in the layout of the us table: per kernel, each trait's genetic
+# variance (specific variance + sum of squared loadings) and each pair's covariance (sum of
+# loading products), with ASReml vpredict SEs; then the us residual rows. The loadings themselves
+# are not reported here: for k > 1 they are one rotation among many.
+gp_multitrait_asreml_fa_variance_components <- function(model, response, kernel_specs, fa_rank,
+                                                        vpredict_fn = NULL,
+                                                        tolerance = 1e-8) {
+  if (is.null(vpredict_fn)) vpredict_fn <- getFromNamespace("vpredict", "asreml")
+  raw <- summary(model)$varcomp
+  component_names <- rownames(raw)
+  term <- grepl("fa(Trait,", gsub("\\s+", "", component_names), fixed = TRUE) &
+    grepl("vm(", component_names, fixed = TRUE)
+  rows <- list()
+  for (k in seq_len(nrow(kernel_specs))) {
+    kernel_rows <- which(term & grepl(kernel_specs$inverse_name[[k]], component_names, fixed = TRUE))
+    fa <- gp_multitrait_asreml_fa_parameters(raw, response, kernel_rows, fa_rank)
+    loading_v <- function(trait) sprintf("V%d", fa$index[trait, -1L])
+    for (i in seq_along(response)) {
+      for (j in i:length(response)) {
+        t1 <- response[[i]]
+        t2 <- response[[j]]
+        rhs <- if (i == j) {
+          paste(c(sprintf("V%d", fa$index[t1, "var"]), paste0(loading_v(t1), "^2")), collapse = " + ")
+        } else {
+          paste(paste0(loading_v(t1), "*", loading_v(t2)), collapse = " + ")
+        }
+        native <- gp_multitrait_asreml_vpredict(model, rhs, vpredict_fn)
+        manual <- fa$covariance[t1, t2]
+        if (!is.finite(native[["estimate"]]) ||
+            abs(native[["estimate"]] - manual) > tolerance * (1 + abs(manual))) {
+          stop("FA genetic covariance reconstruction disagrees with ASReml vpredict for ",
+               t1, " and ", t2, ".", call. = FALSE)
+        }
+        rows[[length(rows) + 1L]] <- data.frame(
+          Trait = if (i == j) t1 else NA_character_,
+          Kernel = kernel_specs$Kernel[[k]],
+          Component = if (i == j) "genetic_variance" else "genetic_covariance",
+          Components = manual,
+          Standard_error = native[["standard_error"]],
+          Estimation_method = "ASReml_REML",
+          stringsAsFactors = FALSE
+        )
+      }
+    }
+  }
+  residual <- gp_multitrait_asreml_variance_components(model, response, kernel_specs, "us")
+  residual <- residual[residual$Component %in% c("residual_variance", "residual_covariance"), ,
+                       drop = FALSE]
+  out <- rbind(do.call(rbind, rows), residual[, c("Trait", "Kernel", "Component", "Components",
+                                                   "Standard_error", "Estimation_method")])
+  rownames(out) <- NULL
+  out
 }
 
 gp_multitrait_asreml_prediction_from_pvals <- function(pred_raw, response, gen_name) {
@@ -414,24 +493,106 @@ gp_multitrait_asreml_aggregate_random <- function(random_df) {
 
 # Shared by true prediction and CV so both accept the same (case-insensitive)
 # single-environment trait covariance structures.
-gp_multitrait_asreml_trait_covariance <- function(var_cov_str) {
-  trait_covariance <- if (is.null(var_cov_str)) "us" else tolower(as.character(var_cov_str)[[1L]])
+# Default single-environment multi-trait ASReml structure when var_cov_str is NULL: us up to 5
+# traits, fa2 from 6. In the 2026-10 trait-count capacity study (300 lines, 10% trait gaps, 30-min
+# cap) us converged conveniently only to 4 traits (at 6 it did not converge), while fa2 did to 10;
+# fa2 is identifiable from 5 traits (Ledermann bound).
+gp_multitrait_asreml_fa_default_traits <- function() 6L
+
+gp_multitrait_asreml_trait_covariance <- function(var_cov_str, n_traits = NULL) {
+  trait_covariance <- if (is.null(var_cov_str)) {
+    n <- suppressWarnings(as.integer(n_traits %||% NA_integer_)[1L])
+    if (!is.na(n) && n >= gp_multitrait_asreml_fa_default_traits()) "fa2" else "us"
+  } else {
+    tolower(gsub("\\s+", "", as.character(var_cov_str)[[1L]]))
+  }
   if (length(var_cov_str %||% trait_covariance) != 1L ||
-      !trait_covariance %in% c("us", "corgh", "diag")) {
-    stop("Single-environment multi-trait ASReml-R var_cov_str must be one of: us, corgh, diag.", call. = FALSE)
+      !(trait_covariance %in% c("us", "corgh", "diag") || grepl("^fa[1-9][0-9]*$", trait_covariance))) {
+    stop("Single-environment multi-trait ASReml-R var_cov_str must be one of: us, corgh, diag, ",
+         "or a factor-analytic fa1, fa2, ...", call. = FALSE)
   }
   trait_covariance
 }
 
-gp_multitrait_asreml_workspace_error <- function(error) {
-  grepl("insufficient workspace|pworkspace", as.character(error), ignore.case = TRUE)
+# Largest FA rank k that n groups identify: an FA(k) covariance has n(k + 1) - k(k - 1)/2
+# free parameters (loadings with the upper triangle fixed, plus n specific variances), which
+# may not exceed the n(n + 1)/2 of an unstructured covariance (Ledermann bound). 0 for n = 2:
+# FA1 over two groups has 4 parameters for 3 covariance entries, so one direction of its
+# likelihood is flat (lambda1 * lambda2 is fixed, the split is not), and REML cannot converge
+# on the parameters or give their SEs (ASReml reports singular average information).
+gp_asreml_fa_max_rank <- function(n) {
+  n <- as.integer(n)[1L]
+  if (is.na(n) || n < 1L) return(0L)
+  k <- 0L
+  while (n * (k + 2L) - (k + 1L) * k / 2 <= n * (n + 1L) / 2) k <- k + 1L
+  k
 }
 
-gp_multitrait_asreml_retry_pworkspace <- function(pworkspace) {
-  value <- as.character(pworkspace %||% "")[[1L]]
-  if (!nzchar(value)) return("1gb")
+gp_asreml_check_fa_rank <- function(rank, n, what) {
+  k_max <- gp_asreml_fa_max_rank(n)
+  if (rank > k_max) {
+    stop(
+      "A rank-", rank, " factor-analytic covariance is not identifiable for ", n, " ", what,
+      ": it has ", n * (rank + 1L) - rank * (rank - 1L) / 2, " parameters, more than the ",
+      n * (n + 1L) / 2, " of an unstructured covariance. ",
+      if (k_max >= 1L) paste0("Use rank ", k_max, " or less, or ") else "Use ",
+      "an unstructured covariance (var_cov_str = \"us\").",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
+# FA rank of a trait covariance token ("fa2" -> 2); NA for us, corgh and diag.
+gp_multitrait_asreml_fa_rank <- function(trait_covariance) {
+  token <- tolower(as.character(trait_covariance %||% "")[[1L]])
+  if (grepl("^fa[1-9][0-9]*$", token)) as.integer(sub("^fa", "", token)) else NA_integer_
+}
+
+# An FA genetic structure models the traits' residuals with an unstructured covariance.
+gp_multitrait_asreml_residual_covariance <- function(trait_covariance) {
+  if (is.na(gp_multitrait_asreml_fa_rank(trait_covariance))) trait_covariance else "us"
+}
+
+# One kernel's fa(Trait, k) genetic term: loadings (traits x k), specific variances, and their
+# row indices in the variance-component table (vpredict's V1, V2, ...). ASReml names them
+# "fa(Trait, k):vm(<gen>, <inverse>)!<trait>!var" and "...!<trait>!fa<j>".
+gp_multitrait_asreml_fa_parameters <- function(raw, response, rows, rank) {
+  component_names <- rownames(raw)
+  types <- c("var", paste0("fa", seq_len(rank)))
+  index <- matrix(NA_integer_, length(response), length(types), dimnames = list(response, types))
+  for (trait in response) {
+    for (type in types) {
+      hit <- rows[endsWith(component_names[rows], paste0("!", trait, "!", type))]
+      if (length(hit) != 1L) {
+        stop("Expected exactly one ASReml FA parameter `", type, "` for trait `", trait,
+             "`; found ", length(hit), ".", call. = FALSE)
+      }
+      index[trait, type] <- hit
+    }
+  }
+  values <- matrix(suppressWarnings(as.numeric(raw[["component"]]))[index],
+                   nrow = length(response), dimnames = dimnames(index))
+  if (any(!is.finite(values))) {
+    stop("ASReml returned a non-finite FA loading or specific variance.", call. = FALSE)
+  }
+  loadings <- values[, -1L, drop = FALSE]
+  covariance <- tcrossprod(loadings) + diag(values[, "var"], nrow = length(response))
+  dimnames(covariance) <- list(response, response)
+  list(index = index, specific = values[, "var"], loadings = loadings, covariance = covariance)
+}
+
+gp_multitrait_asreml_workspace_error <- function(error) {
+  # "Insufficient workspace ...", "Failed ordering equations. Increase workspace", pworkspace
+  grepl("insufficient workspace|increase workspace|pworkspace", as.character(error), ignore.case = TRUE)
+}
+
+# Bytes of an ASReml workspace setting: a bare number is double-precision words (8 bytes
+# each); "800mb", "1gb" are sizes. NA when absent or unreadable.
+gp_multitrait_asreml_workspace_bytes <- function(value) {
+  value <- as.character(value %||% "")[[1L]]
+  if (!nzchar(value)) return(NA_real_)
   token <- tolower(gsub("\\s+", "", value))
-  # ASReml-R reads a bare number as double-precision words (8 bytes each).
   bytes <- suppressWarnings(as.numeric(token)) * 8
   if (!is.finite(bytes)) {
     unit <- sub("^[0-9.]+", "", token)
@@ -439,8 +600,40 @@ gp_multitrait_asreml_retry_pworkspace <- function(pworkspace) {
     multiplier <- switch(unit, kb = 1e3, mb = 1e6, gb = 1e9, NA_real_)
     bytes <- amount * multiplier
   }
-  if (!is.finite(bytes) || bytes >= 1e9) return(NULL)
+  bytes
+}
+
+gp_multitrait_asreml_retry_pworkspace <- function(pworkspace) {
+  bytes <- gp_multitrait_asreml_workspace_bytes(pworkspace)
+  if (is.finite(bytes) && bytes >= 1e9) return(NULL)
   "1gb"
+}
+
+# Fit workspace for one retry after an "Insufficient workspace" error: the default 1e8 words
+# (800 MB) runs out for multi-trait models at about 1,000 lines and 6 traits. NULL when the
+# supplied workspace is already at least 4 GB.
+gp_multitrait_asreml_retry_workspace <- function(workspace) {
+  bytes <- gp_multitrait_asreml_workspace_bytes(workspace)
+  if (is.finite(bytes) && bytes >= 4e9) return(NULL)
+  "4gb"
+}
+
+# asreml() with one retry at a larger workspace when the fit runs out of workspace; the
+# retried model's call carries the larger workspace, so update() keeps it.
+gp_multitrait_asreml_fit <- function(asreml_fn, fit_args, context) {
+  first <- tryCatch(do.call(asreml_fn, fit_args), error = identity)
+  if (!inherits(first, "error")) return(first)
+  retry <- if (gp_multitrait_asreml_workspace_error(conditionMessage(first))) {
+    gp_multitrait_asreml_retry_workspace(fit_args$workspace)
+  }
+  if (is.null(retry)) stop(context, conditionMessage(first), call. = FALSE)
+  fit_args$workspace <- retry
+  second <- tryCatch(do.call(asreml_fn, fit_args), error = identity)
+  if (inherits(second, "error")) {
+    stop(context, "at the supplied workspace and at ", retry, ": ", conditionMessage(second),
+         call. = FALSE)
+  }
+  second
 }
 
 gp_multitrait_asreml_predict_pvals <- function(mod, predict_fn, classify,
@@ -728,26 +921,25 @@ gp_multitrait_asreml_assign_kernel_inverses <- function(kernels,
                                                         prefix,
                                                         inverse,
                                                         epsilon) {
-  inverse_names <- paste0(
-    gp_sanitize_kernel_name(prefix), "_", seq_along(kernels), "_",
-    as.integer(Sys.getpid())
+  # The same names in every run, so the reported components match between
+  # runs. The index has a fixed width: components are matched to kernels
+  # with grepl(name, fixed = TRUE), and pp_mt_inv_1 is inside pp_mt_inv_10.
+  inverse_names <- sprintf(
+    "%s_%0*d", gp_sanitize_kernel_name(prefix),
+    nchar(as.character(length(kernels))), seq_along(kernels)
   )
-  for (i in seq_along(kernels)) {
-    assign(
-      inverse_names[[i]],
-      compute_inverse_and_sparse(
-        kernel = kernels[[i]],
-        epsilon = epsilon,
-        inverse = inverse
-      ),
-      envir = .GlobalEnv
-    )
-  }
-  data.frame(
+  inverses <- lapply(kernels, function(kernel) {
+    compute_inverse_and_sparse(kernel = kernel, epsilon = epsilon, inverse = inverse)
+  })
+  names(inverses) <- inverse_names
+  specs <- data.frame(
     Kernel = names(kernels),
     inverse_name = inverse_names,
     stringsAsFactors = FALSE
   )
+  # removes the inverses again, putting back a user's object of the same name
+  attr(specs, "restore") <- gp_asreml_assign_globals(inverses)
+  specs
 }
 
 gp_multitrait_asreml_random_formula <- function(index_factor,
@@ -784,6 +976,10 @@ gp_multitrait_asreml_covariance_from_rows <- function(raw,
                                                        response,
                                                        rows,
                                                        structure = c("us", "corgh", "diag")) {
+  fa_rank <- gp_multitrait_asreml_fa_rank(structure[[1L]])
+  if (!is.na(fa_rank)) {
+    return(gp_multitrait_asreml_fa_parameters(raw, response, rows, fa_rank)$covariance)
+  }
   structure <- match.arg(structure)
   component_names <- rownames(raw)
   values <- suppressWarnings(as.numeric(raw[["component"]]))
@@ -846,10 +1042,10 @@ gp_multitrait_asreml_gaussian_model <- function(pheno_object,
                                                 extract_variance = TRUE,
                                                 max_stability_updates = 4L,
                                                 require_variance_stability = extract_variance) {
-  if (!engine %in% rownames(installed.packages())) {
-    stop("You need to install asreml-R to use multi-trait ASReml-R.", call. = FALSE)
-  }
-  trait_covariance <- match.arg(trait_covariance)
+  gp_asreml_require_engine(engine, "You need to install asreml-R to use multi-trait ASReml-R.")
+  trait_covariance <- gp_multitrait_asreml_trait_covariance(trait_covariance[[1L]])
+  fa_rank <- gp_multitrait_asreml_fa_rank(trait_covariance)
+  if (!is.na(fa_rank)) gp_asreml_check_fa_rank(fa_rank, length(response), "traits")
 
   pheno_object <- as.data.frame(pheno_object, stringsAsFactors = FALSE)
   long_pheno <- gp_multitrait_asreml_long_data(
@@ -878,9 +1074,8 @@ gp_multitrait_asreml_gaussian_model <- function(pheno_object,
     inverse = inverse,
     epsilon = epsilon
   )
-  on.exit({
-    for (inverse_name in kernel_specs$inverse_name) remove_from_global(inverse_name)
-  }, add = TRUE)
+  restore_inverses <- attr(kernel_specs, "restore")
+  on.exit(restore_inverses(), add = TRUE)
 
   asreml_fn <- getFromNamespace("asreml", engine)
   predict_fn <- getOption("PredictProR.asreml_predict_impl", getFromNamespace("predict.asreml", engine))
@@ -902,11 +1097,13 @@ gp_multitrait_asreml_gaussian_model <- function(pheno_object,
     fixed = stats::as.formula("Observed_value ~ Trait"),
     random = gp_multitrait_asreml_random_formula(
       index_factor = "Trait",
-      covariance = trait_covariance,
+      covariance = if (is.na(fa_rank)) trait_covariance else paste0("fa(Trait, ", fa_rank, ")"),
       gen_name = gen_name,
       kernel_specs = kernel_specs
     ),
-    residual = stats::as.formula(paste0("~ units:", trait_covariance, "(Trait)")),
+    residual = stats::as.formula(paste0(
+      "~ units:", gp_multitrait_asreml_residual_covariance(trait_covariance), "(Trait)"
+    )),
     data = long_pheno,
     asmv = "Trait",
     na.action = list(x = "include", y = "include"),
@@ -915,14 +1112,10 @@ gp_multitrait_asreml_gaussian_model <- function(pheno_object,
     ai.sing = isTRUE(ai_sing)
   )
 
-  mod <- tryCatch(
-    do.call(asreml_fn, fit_args),
-    error = function(e) {
-      stop(paste("Multi-trait ASReml-R fit failed:", conditionMessage(e)), call. = FALSE)
-    }
-  )
+  mod <- gp_multitrait_asreml_fit(asreml_fn, fit_args, "Multi-trait ASReml-R fit failed: ")
 
   convergence_trace <- NULL
+  variance_unstable <- FALSE
   if (nrow(kernel_specs) > 1L) {
     stabilized <- gp_multitrait_asreml_fit_until_stable(
       model = mod,
@@ -939,12 +1132,9 @@ gp_multitrait_asreml_gaussian_model <- function(pheno_object,
       )
     }
     if (isTRUE(require_variance_stability) && !isTRUE(stabilized$stable)) {
-      final <- tail(stabilized$trace, 1L)
-      stop(
-        "Multi-trait multi-kernel ASReml GBLUP did not reach a variance-stable endpoint after ",
-        max_stability_updates, " continuation fits (maximum component change = ",
-        signif(final$maximum_percent_change, 6), "%). Variance output was not promoted.",
-        call. = FALSE
+      variance_unstable <- TRUE
+      gp_multitrait_asreml_warn_variance_unstable(
+        "Multi-trait multi-kernel ASReml GBLUP", stabilized$trace, max_stability_updates
       )
     }
   } else {
@@ -983,16 +1173,43 @@ gp_multitrait_asreml_gaussian_model <- function(pheno_object,
   pred_long$Train_Test_Label <- ifelse(is.na(pred_long$Observed_value), "Test", "Train")
   pred_long <- pred_long[order(match(pred_long[[gen_name]], keep_ids), match(pred_long$Trait, response)), , drop = FALSE]
   rownames(pred_long) <- NULL
-  vc <- if (isTRUE(extract_variance)) {
+  if (variance_unstable) {
+    pred_long <- gp_multitrait_asreml_reliability_unavailable(
+      pred_long, "variance components did not reach a stable endpoint"
+    )
+  } else if (identical(prediction_result$mode, "predict")) {
+    # Genetic reliability, as on the single-trait route and the GP engine:
+    # 1 - Var(ghat - g) / sum_k sigma2_g(trait, k) * K_k,ii.
+    varG <- tryCatch(
+      gp_multitrait_asreml_genetic_variance_matrix(
+        asreml_varcomp_table(summary(mod)), response, kernel_specs, trait_covariance
+      ),
+      error = function(e) NULL
+    )
+    pred_long <- asreml_apply_genetic_reliability(
+      pred_df = pred_long,
+      mod = mod,
+      pheno_data = long_pheno,
+      gen_name = gen_name,
+      classify = paste("Trait", gen_name, sep = ":"),
+      varG_per_omics = varG %||% matrix(NA_real_, nrow(kernel_specs), 1L),
+      names_in_inv_list = kernel_specs$inverse_name,
+      heter_groups = "Trait",
+      pworkspace = pworkspace
+    )
+  }
+  vc <- if (isTRUE(extract_variance) && !variance_unstable) {
     gp_multitrait_asreml_variance_components(
       mod,
       response = response,
-      kernel_specs = kernel_specs
+      kernel_specs = kernel_specs,
+      trait_covariance = trait_covariance,
+      vpredict_fn = getFromNamespace("vpredict", engine)
     )
   } else {
     data.frame()
   }
-  cov_outputs <- if (isTRUE(extract_variance)) {
+  cov_outputs <- if (isTRUE(extract_variance) && !variance_unstable) {
     gp_multitrait_asreml_covariance_outputs(
       mod,
       response = response,
@@ -1015,6 +1232,7 @@ gp_multitrait_asreml_gaussian_model <- function(pheno_object,
     asreml_ai_sing = isTRUE(ai_sing),
     asreml_prediction_mode = prediction_result$mode,
     asreml_convergence_trace = convergence_trace,
+    variance_component_status = if (variance_unstable) "not_promoted_nonconverged" else "promoted",
     kernel_configuration = gp_multitrait_kernel_configuration(kernel_bundle$kernels),
     model_parameters = gp_multi_kernel_parameter_rows(
       kernel_names = kernel_specs$Kernel,
@@ -1073,10 +1291,8 @@ gp_multitrait_asreml_gaussian_cv <- function(pheno_object,
                                              mtry = NULL,
                                              nodesize = NULL,
                                              rf_n_jobs = 1L) {
-  if (!engine %in% rownames(utils::installed.packages())) {
-    stop("You need to install asreml-R to use multi-trait ASReml-R CV.", call. = FALSE)
-  }
-  trait_covariance <- match.arg(trait_covariance)
+  gp_asreml_require_engine(engine, "You need to install asreml-R to use multi-trait ASReml-R CV.")
+  trait_covariance <- gp_multitrait_asreml_trait_covariance(trait_covariance[[1L]])
   cv_token <- normalize_cv_token(cross_validation_meth)
   if (!cv_token %in% c("k_folds", "repeated_k_folds")) {
     stop("Multi-trait ASReml CV currently supports K-Folds only.", call. = FALSE)
@@ -1132,16 +1348,17 @@ gp_multitrait_asreml_gaussian_cv <- function(pheno_object,
       } else {
         NULL
       }
+      ph_masked <- ph
+      ph_masked[test_idx, response] <- NA_real_
       if (isTRUE(feature_active)) {
-        feature_view <- gp_feature_multitrait_view(
+        feature_view <- gp_feature_joint_view(
           predictor_data = feature_predictor_data,
-          pheno_data = ph,
+          pheno_visible = ph_masked,
           response = response,
           gen_name = gen_name,
           k = feature_k,
           selection_mode = feature_scoring_cv,
           feature_score_metadata = feature_score_metadata,
-          test_rows = test_idx,
           scoring_model = feature_scoring_model,
           seed = as.integer((random_seed %||% 123L) + rep_idx * 10000L + fold_idx),
           source_block = feature_source_map,
@@ -1165,11 +1382,9 @@ gp_multitrait_asreml_gaussian_cv <- function(pheno_object,
           context = "Multi-trait ASReml CV"
         )
         kernel_list_fold <- NULL
+        feature_k_actual <- feature_view$feature_k
         feature_records[[length(feature_records) + 1L]] <- feature_view$metadata
       }
-      ph_masked <- ph
-      ph_masked[test_idx, response] <- NA_real_
-
       fold_fit <- tryCatch(
         gp_multitrait_asreml_gaussian_model(
           pheno_object = ph_masked,
@@ -1214,7 +1429,7 @@ gp_multitrait_asreml_gaussian_cv <- function(pheno_object,
           )
           names(pred_blocks[[block_idx]])[1] <- gen_name
           if (isTRUE(feature_active)) {
-            pred_blocks[[block_idx]][["feature_k"]] <- as.integer(feature_k)
+            pred_blocks[[block_idx]][["feature_k"]] <- as.integer(feature_k_actual)
             pred_blocks[[block_idx]][["feature_scoring_model"]] <- feature_scoring_model
             pred_blocks[[block_idx]][["feature_scoring_cv"]] <- feature_scoring_cv
           }
@@ -1245,7 +1460,7 @@ gp_multitrait_asreml_gaussian_cv <- function(pheno_object,
         )
         names(pred_blocks[[block_idx]])[1] <- gen_name
         if (isTRUE(feature_active)) {
-          pred_blocks[[block_idx]][["feature_k"]] <- as.integer(feature_k)
+          pred_blocks[[block_idx]][["feature_k"]] <- as.integer(feature_k_actual)
           pred_blocks[[block_idx]][["feature_scoring_model"]] <- feature_scoring_model
           pred_blocks[[block_idx]][["feature_scoring_cv"]] <- feature_scoring_cv
         }
@@ -1260,7 +1475,7 @@ gp_multitrait_asreml_gaussian_cv <- function(pheno_object,
       rep = rep_idx
     )
     if (isTRUE(feature_active) && nrow(metric_table)) {
-      metric_table[["feature_k"]] <- as.integer(feature_k)
+      metric_table[["feature_k"]] <- as.integer(feature_k_actual)
       metric_table[["feature_scoring_model"]] <- feature_scoring_model
       metric_table[["feature_scoring_cv"]] <- feature_scoring_cv
     }
@@ -1299,7 +1514,7 @@ gp_multitrait_asreml_mtmet_structure <- function(var_cov_str = NULL,
   }
   token <- tolower(gsub("\\s+", "", as.character(var_cov_str %||% "")[[1L]]))
   if (!nzchar(token)) {
-    token <- paste0("fa", min(3L, n_groups - 1L))
+    token <- paste0("fa", max(1L, min(3L, gp_asreml_fa_max_rank(n_groups))))
   }
   rank_text <- if (grepl("^fa[1-9][0-9]*$", token)) {
     sub("^fa", "", token)
@@ -1314,13 +1529,10 @@ gp_multitrait_asreml_mtmet_structure <- function(var_cov_str = NULL,
     )
   }
   rank <- as.integer(rank_text)
-  if (!is.finite(rank) || rank < 1L || rank >= n_groups) {
-    stop(
-      "The MT-MET ASReml FA rank must be at least 1 and smaller than the ",
-      "number of trait-environment groups (", n_groups, ").",
-      call. = FALSE
-    )
+  if (!is.finite(rank) || rank < 1L) {
+    stop("The MT-MET ASReml FA rank must be at least 1.", call. = FALSE)
   }
+  gp_asreml_check_fa_rank(rank, n_groups, "trait-environment groups")
   list(token = paste0("fa", rank), rank = rank)
 }
 
@@ -1414,6 +1626,30 @@ gp_multitrait_asreml_endpoint_diagnostics <- function(model,
     components_above_one_percent = if (length(change)) sum(change > 1) else NA_integer_,
     stringsAsFactors = FALSE
   )
+}
+
+# A converged fit whose variance components still move by more than 1% per continuation update
+# keeps its predictions; only its variance output is withheld (as for a nonconverged GP fit).
+gp_multitrait_asreml_warn_variance_unstable <- function(context, trace, max_updates) {
+  final <- utils::tail(trace, 1L)
+  warning(
+    context, " converged but did not reach a variance-stable endpoint after ", max_updates,
+    " continuation fits (maximum component change = ",
+    signif(final$maximum_percent_change, 6), "%). Predictions are returned; variance ",
+    "components, covariances and reliability were not promoted.",
+    call. = FALSE
+  )
+  invisible(TRUE)
+}
+
+gp_multitrait_asreml_reliability_unavailable <- function(pred, reason) {
+  n <- nrow(pred)
+  pred[["Reliability_variance_input"]] <- rep(NA_real_, n)
+  pred[["Reliability_reference_variance"]] <- rep(NA_real_, n)
+  pred[["Reliability"]] <- rep(NA_real_, n)
+  pred[["Reliability_basis"]] <- rep(paste("unavailable:", reason), n)
+  pred[["Reliability_remarks"]] <- rep(paste("Reliability unavailable:", reason), n)
+  pred
 }
 
 gp_multitrait_asreml_fit_until_stable <- function(model,
@@ -2189,9 +2425,7 @@ gp_multitrait_asreml_mtmet_gaussian_model <- function(pheno_object,
                                                        max_stability_updates = 4L,
                                                        extract_variance = TRUE,
                                                        require_variance_stability = extract_variance) {
-  if (!engine %in% rownames(utils::installed.packages())) {
-    stop("You need to install asreml-R to use grouped MT-MET GBLUP.", call. = FALSE)
-  }
+  gp_asreml_require_engine(engine, "You need to install asreml-R to use grouped MT-MET GBLUP.")
   if (!isTRUE(heter_resid)) {
     stop(
       "Grouped MT-MET ASReml currently requires heter_resid = TRUE so each ",
@@ -2231,9 +2465,8 @@ gp_multitrait_asreml_mtmet_gaussian_model <- function(pheno_object,
     inverse = inverse,
     epsilon = epsilon
   )
-  on.exit({
-    for (inverse_name in kernel_specs$inverse_name) remove_from_global(inverse_name)
-  }, add = TRUE)
+  restore_inverses <- attr(kernel_specs, "restore")
+  on.exit(restore_inverses(), add = TRUE)
 
   asreml_fn <- getFromNamespace("asreml", engine)
   predict_fn <- getOption("PredictProR.asreml_predict_impl", getFromNamespace("predict.asreml", engine))
@@ -2264,12 +2497,7 @@ gp_multitrait_asreml_mtmet_gaussian_model <- function(pheno_object,
     maxit = as.integer(maxit),
     ai.sing = isTRUE(ai_sing)
   )
-  mod <- tryCatch(
-    do.call(asreml_fn, fit_args),
-    error = function(e) {
-      stop("Grouped MT-MET ASReml GBLUP fit failed: ", conditionMessage(e), call. = FALSE)
-    }
-  )
+  mod <- gp_multitrait_asreml_fit(asreml_fn, fit_args, "Grouped MT-MET ASReml GBLUP fit failed: ")
   stabilized <- gp_multitrait_asreml_fit_until_stable(
     model = mod,
     update_fn = update_fn,
@@ -2284,14 +2512,10 @@ gp_multitrait_asreml_mtmet_gaussian_model <- function(pheno_object,
       call. = FALSE
     )
   }
-  if (isTRUE(require_variance_stability) && !isTRUE(stabilized$stable)) {
-    final <- tail(stabilized$trace, 1L)
-    stop(
-      "Grouped MT-MET ASReml GBLUP did not reach a variance-stable endpoint ",
-      "after ", max_stability_updates, " continuation fits (converged = ",
-      final$converged, ", maximum component change = ",
-      signif(final$maximum_percent_change, 6), "%). Variance output was not promoted.",
-      call. = FALSE
+  variance_unstable <- isTRUE(require_variance_stability) && !isTRUE(stabilized$stable)
+  if (variance_unstable) {
+    gp_multitrait_asreml_warn_variance_unstable(
+      "Grouped MT-MET ASReml GBLUP", stabilized$trace, max_stability_updates
     )
   }
 
@@ -2304,7 +2528,7 @@ gp_multitrait_asreml_mtmet_gaussian_model <- function(pheno_object,
     long_bundle = long_bundle,
     gen_name = gen_name
   )
-  variance <- if (isTRUE(extract_variance)) {
+  variance <- if (isTRUE(extract_variance) && !variance_unstable) {
     if (nrow(kernel_specs) > 1L) {
       gp_multitrait_asreml_mtmet_variance_multikernel(
         model = mod,
@@ -2346,6 +2570,7 @@ gp_multitrait_asreml_mtmet_gaussian_model <- function(pheno_object,
     asreml_mtmet_structure = structure_spec$token,
     asreml_prediction_mode = prediction_result$mode,
     asreml_convergence_trace = stabilized$trace,
+    variance_component_status = if (variance_unstable) "not_promoted_nonconverged" else "promoted",
     kernel_configuration = gp_multitrait_kernel_configuration(kernel_bundle$kernels),
     model_parameters = rbind(data.frame(
       stat = c("mode", "model", "genetic_structure", "residual_structure",
@@ -2358,7 +2583,9 @@ gp_multitrait_asreml_mtmet_gaussian_model <- function(pheno_object,
           "):vm(", gen_name, ",Kinv) terms; covariance summed"
         ),
         "dsum(PPUnit:corgh(PPTrait)|PPEnv)",
-        if (isTRUE(extract_variance) && isTRUE(require_variance_stability)) {
+        if (variance_unstable) {
+          "converged_variance_unstable_not_promoted"
+        } else if (isTRUE(extract_variance) && isTRUE(require_variance_stability)) {
           "converged_and_maximum_component_change_le_1_percent"
         } else {
           "converged_prediction_fit_variance_not_extracted"

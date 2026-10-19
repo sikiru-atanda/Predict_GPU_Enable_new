@@ -197,6 +197,7 @@ model_execute(
   ft_dropout = 0.1,
   ft_token_dropout = 0,
   ft_use_cls = TRUE,
+  ft_learning_rate = 3e-04,
   saint_d_model = 128L,
   saint_heads = 8L,
   saint_layers = 3L,
@@ -211,11 +212,12 @@ model_execute(
   max_tokens = 1024,
   kmeans_batch = 4096,
   kmeans_iter = 100,
-  tabnet_steps = 5L,
-  tabnet_feature_dim = 64L,
-  tabnet_output_dim = 64L,
-  tabnet_gamma = 1.5,
-  tabnet_lambda_sparse = 1e-04,
+  tabnet_steps = 3L,
+  tabnet_feature_dim = 8L,
+  tabnet_output_dim = 8L,
+  tabnet_gamma = 1.3,
+  tabnet_lambda_sparse = 0.001,
+  tabnet_learning_rate = 0.02,
   node_trees = 8L,
   node_depth = 3L,
   deepfm_k = 16L,
@@ -242,7 +244,7 @@ model_execute(
   rff_lengthscale = 1,
   rff_deep_hidden = c(128),
   model_type = "resnet",
-  epochs = 10,
+  epochs = "auto",
   batch_size = 64,
   dropout = 0.2,
   l2_weight_decay = 1e-04,
@@ -392,7 +394,7 @@ model_execute(
   feature_scoring_model = "Ridge_Regression",
   feature_k_grid = NULL,
   feature_k = NULL,
-  feature_scoring_cv = "fixed",
+  feature_scoring_cv = "auto",
   feature_score_metadata = NULL,
   feature_scoring_seed = NULL,
   feature_ridge_lambda = 1,
@@ -543,7 +545,14 @@ covariance construction for `GBLUP_BRR` and `RKHS`.}
 \item{hybrid_gp}{Logical. If `TRUE`, enable the dedicated Gaussian hybrid
 GP/KRR path using explicit female GCA, male GCA, and SCA additive kernels.
 Use `response = c(...)` for joint cross-trait multi-trait hybrid GP and
-`heter_groups` for hybrid multi-environment data.}
+`heter_groups` for hybrid multi-environment data.
+Hybrid GP `Standard_error` describes the latent total prediction (fixed mean
+plus hybrid effects), including fixed-effect uncertainty and excluding future
+residual noise; `PEV` is its square. These SEs are conditional on the fitted
+kernel, trait covariance, response standardization and selected lambda; they
+do not include uncertainty from estimating those quantities. Genetic
+reliability and its variance inputs are unavailable because this route does
+not estimate a genetic variance scale.}
 
 \item{hybrid_ml}{Logical. If `TRUE`, enable the dedicated Gaussian hybrid
 machine-learning path using hybrid-level genotype features. Single-environment
@@ -630,7 +639,7 @@ environment column named via `heter_groups`. Genomic side: any of
 `geno_data` (a GRM will be auto-built via `gmatrix_method = "Yang"` if
 no kernel is supplied), `omic1_data`/`omic2_data`/`omic3_data`, a
 precomputed `gmatrix`/`gkernel`/`omic*_kernel`, or a `kernel_list` of
-additional N×N PSD kernels keyed by `gen_name`. Each kernel is eigen-
+additional N x N PSD kernels keyed by `gen_name`. Each kernel is eigen-
 decomposed per-kernel and the top components (controlled by
 `met_kernel_var_explained` / `met_kernel_min_ev` / `met_kernel_max_pcs`)
 are concatenated into the feature matrix the ML/DL model consumes. These
@@ -658,11 +667,11 @@ minimum eigenvalue and maximum number of principal components.}
 \item{bayes_kernel_heter_resid}{Optional override for the kernel-Bayes
 (GBLUP_BRR / RKHS) MET routing decision, independent of
 `heter_resid`. `NULL` (default) inherits from `heter_resid`. `TRUE`
-forces the env-as-trait `BGLR::Multitrait` path (heterogeneous σ²_g
-per env + per-env σ²_e) and requires `weights = NULL` because
+forces the env-as-trait `BGLR::Multitrait` path (heterogeneous sigma2_g
+per env + per-env sigma2_e) and requires `weights = NULL` because
 `BGLR::Multitrait` has no observation-weight argument. `FALSE` forces the
 univariate `BGLR::BGLR`
-path with `~GID + GID:Loc` (single σ²_g, single σ²_gxe, single σ²_e
+path with `~GID + GID:Loc` (single sigma2_g, single sigma2_gxe, single sigma2_e
 -- the BGLR-inherent homogeneous case) and is the RKHS mode that accepts
 Stage 2 observation weights. ASReml and GP families keep following
 `heter_resid` regardless.}
@@ -671,7 +680,14 @@ Stage 2 observation weights. ASReml and GP families keep following
 
 \item{var_cov_str}{User-defined variance-covariance structure. For
 single-environment multi-trait ASReml models, choose \code{"us"},
-\code{"corgh"}, or \code{"diag"}; \code{NULL} defaults to \code{"us"}. For
+\code{"corgh"}, \code{"diag"}, or a factor-analytic genetic structure
+\code{"fa1"}, \code{"fa2"}, ... (rank satisfying the FA parameter-count bound;
+the residual is then unstructured); \code{NULL} selects \code{"us"} for up
+to five traits and \code{"fa2"} from six traits. With many traits FA has far
+fewer genetic parameters than \code{"us"} (six traits: 17 for \code{"fa2"},
+21 for \code{"us"}); in a trait-count study (300 lines, 10\% missing trait
+records) \code{"us"} converged within ten minutes up to four traits and
+\code{"fa2"} up to ten. For
 grouped MT-MET ASReml GBLUP, use a validated factor-analytic structure such
 as \code{"fa1"}, \code{"fa2"}, or \code{"fa3"}; \code{NULL} selects rank up to
 three according to the number of trait-environment groups.}
@@ -899,13 +915,25 @@ normalisation, global pooling and learning rate).}
 \item{ft_d_model, ft_heads, ft_layers, ft_ff_mult, ft_dropout, ft_token_dropout, ft_use_cls}{FT-Transformer hyper-parameters (model dimension, attention heads,
 transformer layers, feed-forward multiplier, dropouts, CLS token).}
 
+\item{ft_learning_rate}{Learning rate of TabTransformer (FT-Transformer).
+Default 3e-4: the 1e-3 used by the other deep-learning models trained it
+less stably and less accurately on panels of up to a few hundred lines.}
+
 \item{saint_d_model, saint_heads, saint_layers, saint_ff_mult, saint_dropout, saint_token_dropout, saint_use_cls}{SAINT hyper-parameters (same layout as the FT-Transformer set).}
 
 \item{use_grouping, group_trigger, group_method, init_group_size, max_tokens, kmeans_batch, kmeans_iter}{Feature-tokenisation / grouping controls for the tabular-Transformer
 models (trigger, method, group size, max tokens, mini-batch K-means
 parameters).}
 
-\item{tabnet_steps, tabnet_feature_dim, tabnet_output_dim, tabnet_gamma, tabnet_lambda_sparse}{TabNet hyper-parameters.}
+\item{tabnet_steps, tabnet_feature_dim, tabnet_output_dim, tabnet_gamma, tabnet_lambda_sparse}{TabNet hyper-parameters: decision steps (default 3), attention width
+(`tabnet_feature_dim`, 8), decision width (`tabnet_output_dim`, 8),
+feature-reuse relaxation `tabnet_gamma` (1.3) and the weight of the mask
+entropy penalty (1e-3), the reference TabNet defaults. TabNet uses dense
+(softmax) feature attention.}
+
+\item{tabnet_learning_rate}{Learning rate of TabNet. Default 2e-2, the
+reference TabNet rate: at the 1e-3 used by the other deep-learning models
+it was undertrained within 20-100 epochs.}
 
 \item{node_trees, node_depth}{NODE (Neural Oblivious Decision Ensembles)
 tree count and depth.}
@@ -926,10 +954,30 @@ Model hidden widths, activation, optional linear term and L1 penalty.}
 `"saint"`, `"tabnet"`, `"node"`, `"deepfm"`, `"dcn"`, `"nam"`, `"moe"`,
 `"gp"`, ...).}
 
-\item{epochs, batch_size}{DL training duration and mini-batch size.}
+\item{epochs, batch_size}{DL training duration and mini-batch size.
+`epochs = "auto"` (default) sizes training to the data: enough epochs
+for about 200 optimizer steps, kept within 20-100 epochs. With the
+default batch of 64 and 20% validation split that is 100 epochs for
+100 lines, 50 for 250, 29 for 500 and 20 for 1000 lines or more (each
+epoch of a larger panel already has more steps). A smaller `batch_size`
+gives more steps per epoch and so fewer epochs. The rule is applied to
+every fit on its own training set (e.g. each cross-validation fold). A
+positive whole number fixes the epochs. In both cases the epoch with the
+lowest validation loss is kept.}
 
 \item{dropout, l2_weight_decay, l2_regularizer_dp, dropout_rate, batch_norm, validation_split, compile_model, deterministic, random_seed, device}{Generic DL controls (regularisation, validation split, model compile,
-determinism, random seed, target device).}
+determinism, random seed, target device). `device = NULL` (default)
+trains every DL model on a CUDA GPU when PyTorch sees one, else Apple MPS,
+else the CPU; `"cuda"` (or `"gpu"`), `"cuda:<index>"`, `"mps"` or
+`"cpu"` names one. A fit that cannot use its GPU (no CUDA GPU for
+`"cuda"`, a CUDA error such as out of memory) continues on the CPU: the
+run then ends with a warning, and `Run_metadata` records the devices the
+fits used (`dl_device`, `dl_device_notes`). Without a GPU,
+TabAttention and TabTransformer are very slow (they attend over all pairs
+of markers; more than 15 minutes per call on 400 markers on a 16-thread
+CPU, about 1 minute on a laptop GPU), while the other DL models are as
+fast or faster on a CPU on small panels. See
+`system.file("predictdl-gpu-runtime-notes.md", package = "PredictProR")`.}
 
 \item{dl_n_seeds}{Optional number of DL training seeds to fit within every
 bootstrap sample for single-trait true prediction. The default is one,
@@ -1080,7 +1128,14 @@ determines the statistically valid route: Gaussian-Process-GBLUP uses
 REML, FA-GBLUP uses factor-analytic REML (or MoM for multi-environment
 data), and Scalable-GBLUP uses operator/MoM.}
 
-\item{gp_fa_rank}{FA rank for GP_FA / FA-GBLUP.}
+\item{gp_fa_rank}{Number of factors (FA rank) for GP_FA / FA-GBLUP; the
+equivalent of ASReml's `"fa1"`, `"fa2"`. Across environments it can be at
+most the parameter-count bound (2 groups: no FA; 3-4: 1; 5: 2;
+6: 3; 8: 4; 10: 6). The same bound applies across traits, including
+the MT-MET MoM route. A rank with more free FA parameters than covariance
+entries stops before fitting. Equality is saturated (FA3 at six traits),
+not a guarantee of identification or convergence on a dataset.
+The rank used is reported in `model_parameters`.}
 
 \item{gp_prediction_output}{Which GP prediction summary to return.}
 
@@ -1094,29 +1149,24 @@ GP backend. `NULL` preserves the Python backend default.}
 `NULL` preserves the Python backend default.}
 
 \item{gp_engine}{Character; which REML engine drives GP variance-component
-estimation. `"auto"` (default) picks the fastest available (currently
-resolves to `"dense_v"`); `"dense_v"` keeps the dense V-formulation
-(Phase 1-2); `"mme"` uses the sparse Mixed Model Equations engine
-(Phase 3.4-3.7, fastest at n_geno = 100 for MET but regresses at
-n_geno >= 300 on GBLUP because G^-1 is dense -- see Phase 3.14 NEWS);
-`"eigen"` (Phase 3.15a, experimental) uses an eigen-projected REML
-formulation that beats ASReml at large n on the standalone validation,
-but production integration is incomplete (Phase 3.15b NEWS) so
-`"eigen"` currently falls back to `"dense_v"`. Requires
-`PREDICTPRO_GP_DISABLE_ENV_MAIN=1` for `"mme"` and `"eigen"` on MET.
-Honors `PREDICTPRO_GP_ENGINE` env var.}
+estimation. `"auto"` and `"dense_v"` use matched dense REML inference;
+GP predictions then use that reported covariance, including heterogeneous
+FA residuals. `"mme"` and `"eigen"` warn and fall back to `"dense_v"`
+until their inference preserves the same model. This does not add dense
+REML work to the operator prediction route. Honors `PREDICTPRO_GP_ENGINE`;
+exact-GP inference also honors positive `PREDICTPRO_GP_MAX_ITER`,
+`PREDICTPRO_GP_TOL_LOGLIK` and `PREDICTPRO_GP_TOL_THETA` overrides.
+`PREDICTPRO_GP_DISABLE_ENV_MAIN` is no longer needed: random terms
+absorbed by fixed effects are fixed at zero and reported explicitly.}
 
 \item{gp_learn_scales}{Optional logical override for GP backend scale
 learning. `NULL` learns scales only when full variance-component output is
 requested.}
 
-\item{gp_exact_fast_cv}{Optional control for exact-GP cross-validation speed.
-`NULL` keeps the backend default, which is exact per-fold refitting unless
-explicitly enabled by environment policy. `TRUE` or `"auto"` enables the
-guarded shared-hyperparameter block-delete shortcut for eligible single-
-environment GP CV; `"force"` skips the self-check and is intended for
-benchmarking only. The shortcut is reported as approximate in result
-metadata.}
+\item{gp_exact_fast_cv}{Deprecated compatibility control. The shared-full-data
+GP CV shortcut was removed in 0.20.221. Enabled values warn and use ordinary
+per-fold refitting. FALSE disables the legacy control; NULL reads its
+environment setting. Every setting uses the per-fold estimator.}
 
 \item{cross_validation}{Logical; route to the cross-validation pipeline
 instead of true prediction.}
@@ -1177,17 +1227,24 @@ trait; a list keyed by `geno_data`, `omic1_data`, `omic2_data`, or
 `omic3_data`; a nested trait/source list in either orientation; or a data
 frame containing `predictor` plus optional `trait`, `source_block`, and
 logical `selected` columns. Sets are applied separately to each trait;
-genuinely joint multi-trait fits use their union. In a source-keyed set,
+joint multi-trait fits require one shared set or identical sets for all traits
+(ignoring order while preserving source identity). Differing or missing trait
+sets stop before fitting. Explicit provenance has NA scores and ranks because
+no scoring was done. In a source-keyed set,
 an omitted source is excluded. Named raw matrices allow PredictProR to
 rebuild marker designs and kernels. With a user-supplied precomputed
 kernel, the package cannot inspect the originating columns and assumes the
 kernel was externally rebuilt from this exact set.}
 
-\item{feature_scoring}{Logical; enable independent predictor scoring and
+\item{feature_scoring}{Logical; enable outcome-based predictor scoring and
 dynamic top-k predictor selection after QC/imputation.}
 
 \item{feature_scoring_model}{Predictor scoring model. One of
-`"Ridge_Regression"`, `"BayesB"`, or `"RandomForest"`.}
+`"Ridge_Regression"`, `"BayesB"`, or `"RandomForest"`. Joint Gaussian routes
+use Multitrait BRR, SpikeSlab or multi-output forest AIR respectively.
+Joint rankings summarize standardized marker effects or forest importance,
+not additive explained variance, heritability or causal effects; see
+`?feature_score_predictors`.}
 
 \item{feature_k_grid}{Integer vector of top-k predictor counts to evaluate in
 cross-validation. `NULL` uses an automatic capped grid. On standard
@@ -1199,22 +1256,39 @@ same CV score as an unbiased final performance estimate is not nested CV.
 Specialized hybrid and joint multi-trait routes require one pre-specified k
 per run and fail rather than pooling several candidates.}
 
-\item{feature_k}{Optional top-k predictor count for final prediction. Scores
-and selected sets are calculated separately for every trait. A genuinely
-joint multi-trait model uses the union of its trait-specific top-k sets and
-records both the individual sets and the union size.}
+\item{feature_k}{Optional positive whole top-k count or `"all"`. Separate
+trait runs keep their own sets; joint multi-trait routes use one joint ranking
+and exactly min(k,p) shared post-QC predictors. All retains p predictors.
+Selected joint TP outputs expose `feature_selection_metadata`,
+`feature_selected` and actual integer `feature_k`, also used in native saving.
+Variance components,
+predictions and their reliabilities, and covariance and correlation tables,
+from a fit on selected markers carry `Feature_selection_remark` (estimates
+conditional on the selection), in the returned tables and in the exported
+files. Its wording distinguishes package-scored rankings, a supplied
+`feature_score_metadata` ranking, and a supplied `feature_selected` set.}
 
-\item{feature_scoring_cv}{Cross-validation scoring policy. `"fixed"` reuses
+\item{feature_scoring_cv}{Cross-validation scoring policy. Default `'auto'`:
+`'fold_internal'` when the package scores the features, `'fixed'` when you
+supply `feature_score_metadata`. `"fixed"` reuses
 one full-training ranking in every fold; it is intended for final fitting or
 externally established rankings and is not leakage-free when the same
 responses are used to assess CV performance. `"fold_internal"` recomputes
-the ranking using only each outer training fold. `"both"` returns fixed and
+the ranking using only each outer training fold. On standard separate-trait
+routes it costs one scoring per trait x replication x fold, shared by all models and `feature_k_grid`
+values (the k covering every predictor is not rescored). `"both"` returns fixed and
 fold-internal tasks separately for standard model routes; their metrics are
 never averaged, and fold-internal results drive automatic model selection.
-Specialized hybrid/joint routes require choosing one policy per run.}
+Specialized hybrid/joint routes require choosing one policy per run. Joint
+ML masks only the target trait on test lines and retains observed auxiliary
+traits; joint ASReml/DL mask every response on test lines before scoring.
+Scored joint GP/Bayes CV and grouped MT-MET ASReml CV selection remain
+unsupported. The training-record hash is not a trait-cell visibility hash.}
 
 \item{feature_score_metadata}{Optional reusable metadata from
-`feature_score_predictors()`. Automatic selection rebuilds marker designs and
+`feature_score_predictors()`. Joint routes require one complete `"joint"`
+ranking with a matching trait set, unique predictors and valid ranks/scores;
+generate it with `joint = TRUE`. Automatic selection rebuilds marker designs and
 kernels from named raw marker/omics columns. Precomputed kernels cannot be
 subset by feature name and therefore fail loudly unless the user supplies an
 externally rebuilt kernel matching `feature_selected`.}
@@ -1222,10 +1296,13 @@ externally rebuilt kernel matching `feature_selected`.}
 \item{feature_scoring_seed}{Random seed for the feature-scoring pipeline.}
 
 \item{feature_ridge_lambda}{Ridge penalty used by the feature-scoring
-ridge engine.}
+single-trait ridge engine; ignored by joint BRR, which estimates shrinkage.}
 
 \item{feature_bayes_nIter, feature_bayes_burnIn, feature_bayes_thin}{BGLR
-MCMC controls used by the Bayesian feature-scoring engine.}
+MCMC controls for BayesB and joint BRR/SpikeSlab scoring. Defaults do not
+certify convergence or stable cut-off ranks; compare seeds and diagnose
+mixing. Longer chains may help, but thinning does not establish independence.
+See `?feature_score_predictors`.}
 
 \item{globals_max_GB}{Maximum exported-globals size (GB) used by the
 parallel-policy scorer.}
@@ -1243,14 +1320,21 @@ falling back to 0.75 GiB. The value and its source are recorded in
 use. `NULL` (default) uses `GP_PAR_MEMORY_BUDGET_GB` if set, otherwise
 `GP_PAR_MEMORY_FRACTION` (default 0.7) of the currently available memory.}
 
-\item{parallel_mode}{Backend selection. One of `"auto"` (default;
-score-based — the engine picks among mirai / future / base_parallel /
-foreach / sequential based on object size, fanout, OS, GPU
-availability, and per-model gates), or one of `"mirai"`, `"future"`,
+\item{parallel_mode}{Backend selection. One of `"auto"` (default: the
+engine decides whether the tasks run sequentially or in parallel, from
+the expected work against worker start-up, object size, OS and
+per-model gates; in parallel it uses `"base_parallel"`, the fastest
+backend measured on Windows and Linux, or `"mirai"` when GPU models run
+on several GPUs, one worker per GPU), or one of `"mirai"`, `"future"`,
 `"base_parallel"`, `"foreach"`, `"sequential"` to force a backend.
 The chosen backend and the contributing reason codes are recorded
 in `policy_decision_reason` in the exported `Run_metadata.csv`;
 decode them with \code{\link{gp_policy_decision_reason_glossary}}.
+When cross-validation is followed by the refit of the best models
+(`cv_evaluation_only = FALSE`), `policy_*` describe the refit
+(`policy_stage = "best_model_refit"`) and `cv_policy_backend`,
+`cv_policy_workers`, `cv_policy_decision_reason`, ... the
+cross-validation.
 Tuning is via the env vars / options enumerated by
 \code{\link{gp_parallel_policy_knobs}} and described in
 `inst/parallel-policy-knobs.md`.}
@@ -1294,10 +1378,24 @@ A nested list of per-trait model results. The prediction table
   includes `Predicted_value`, `Standard_error`, `PEV`,
   `lower_bound`/`upper_bound`, and `Reliability`, plus model-specific
   variance metadata.
+  GP REML results may additionally contain `covariance_parameters`,
+  `correlation_parameters`, and `inference_summary` with parameter SEs and
+  availability/conditioning status. `Run_metadata` includes the
+  `gp_krr_lambda*` fields describing the selected penalty, selection method,
+  training selection size and grid-edge status where available.
+  Fixed-scale GP routes without an estimated genetic variance report
+  unavailable reliability with a reason; their SEs are conditional on the
+  fixed covariance. CV0 SEs exclude the new environment's unobserved
+  deviation and describe only uncertainty in the transferable component.
 
-  For genetic mixed models, inspect `Reliability_basis`: the reference
-  variance is an estimated genetic variance and PEV has breeding-value
-  semantics. ML/DL models do not estimate that decomposition, so
+  `PEV` is `Standard_error^2`, the prediction-error variance of the reported
+  value (including the estimated fixed effects, such as the overall and
+  environment means). For genetic mixed models (ASReml, GP), `Reliability`
+  is genetic: `1 - Reliability_variance_input / Reliability_reference_variance`,
+  where `Reliability_variance_input` is the genetic prediction-error variance
+  `Var(ghat - g)` and `Reliability_reference_variance` the line's prior
+  genetic variance `sigma2_g * K_ii` (summed over kernels; per environment for
+  multi-environment models); `Reliability_basis` records it. ML/DL models do not estimate that decomposition, so
   `Genetic_variance` remains unavailable. Their plotting-compatible
   `Reliability` field equals `Prediction_stability` and is calculated as
   `max(0, min(1, 1 - U_i / V_yhat))`, where `V_yhat` is the fitted-value

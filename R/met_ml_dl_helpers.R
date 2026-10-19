@@ -70,7 +70,7 @@ gp_met_dl_model_params <- function(model, params = list()) {
       use_amp = params$use_amp %||% FALSE,
       batch_norm = params$batch_norm %||% FALSE,
       validation_split = params$validation_split %||% 0.2,
-      epochs = params$epochs %||% 30L,
+      epochs = params$epochs %||% "auto",
       batch_size = params$batch_size %||% 64L,
       mlp_neurons_per_layer = params$mlp_neurons_per_layer %||% as.integer(c(128L, 64L)),
       mlp_learning_rate = params$mlp_learning_rate %||% 1e-3,
@@ -94,7 +94,7 @@ gp_met_dl_model_params <- function(model, params = list()) {
       use_amp = params$use_amp %||% FALSE,
       batch_norm = params$batch_norm %||% FALSE,
       validation_split = params$validation_split %||% 0.2,
-      epochs = params$epochs %||% 30L,
+      epochs = params$epochs %||% "auto",
       batch_size = params$batch_size %||% 64L,
       ft_d_model = params$ft_d_model %||% 64L,
       ft_heads = params$ft_heads %||% 4L,
@@ -102,6 +102,7 @@ gp_met_dl_model_params <- function(model, params = list()) {
       ft_ff_mult = params$ft_ff_mult %||% 2L,
       ft_dropout = params$ft_dropout %||% 0.1,
       ft_token_dropout = params$ft_token_dropout %||% 0.1,
+      ft_learning_rate = params$ft_learning_rate %||% 3e-4,
       ft_use_cls = params$ft_use_cls %||% TRUE,
       dropout = params$dropout %||% 0.1,
       dropout_rate = params$dropout_rate %||% (params$dropout %||% 0.1),
@@ -121,7 +122,7 @@ gp_met_dl_model_params <- function(model, params = list()) {
       use_amp = params$use_amp %||% FALSE,
       batch_norm = params$batch_norm %||% FALSE,
       validation_split = params$validation_split %||% 0.2,
-      epochs = params$epochs %||% 30L,
+      epochs = params$epochs %||% "auto",
       batch_size = params$batch_size %||% 64L,
       saint_d_model = params$saint_d_model %||% 64L,
       saint_heads = params$saint_heads %||% 4L,
@@ -148,13 +149,14 @@ gp_met_dl_model_params <- function(model, params = list()) {
       use_amp = params$use_amp %||% FALSE,
       batch_norm = params$batch_norm %||% FALSE,
       validation_split = params$validation_split %||% 0.2,
-      epochs = params$epochs %||% 30L,
+      epochs = params$epochs %||% "auto",
       batch_size = params$batch_size %||% 64L,
       tabnet_steps = params$tabnet_steps %||% 3L,
-      tabnet_feature_dim = params$tabnet_feature_dim %||% 16L,
-      tabnet_output_dim = params$tabnet_output_dim %||% 16L,
+      tabnet_feature_dim = params$tabnet_feature_dim %||% 8L,
+      tabnet_output_dim = params$tabnet_output_dim %||% 8L,
       tabnet_gamma = params$tabnet_gamma %||% 1.3,
-      tabnet_lambda_sparse = params$tabnet_lambda_sparse %||% 1e-4,
+      tabnet_lambda_sparse = params$tabnet_lambda_sparse %||% 1e-3,
+      tabnet_learning_rate = params$tabnet_learning_rate %||% 2e-2,
       dropout = params$dropout %||% 0.1,
       dropout_rate = params$dropout_rate %||% (params$dropout %||% 0.1),
       l2_weight_decay = params$l2_weight_decay %||% 1e-4,
@@ -173,7 +175,7 @@ gp_met_dl_model_params <- function(model, params = list()) {
       use_amp = params$use_amp %||% FALSE,
       batch_norm = params$batch_norm %||% FALSE,
       validation_split = params$validation_split %||% 0.2,
-      epochs = params$epochs %||% 30L,
+      epochs = params$epochs %||% "auto",
       batch_size = params$batch_size %||% 64L,
       moe_n_experts = params$moe_n_experts %||% 4L,
       moe_expert_hidden = params$moe_expert_hidden %||% as.integer(c(128L, 64L)),
@@ -695,6 +697,7 @@ gp_met_add_gaussian_uncertainty <- function(pred_obs,
   } else {
     rep(NA_character_, nrow(out))
   }
+  genetic_prior_rows <- grepl("^genetic_(plus_gxe_)?prior_variance", existing_reliability_basis)
   existing_pev_basis <- if ("PEV_basis" %in% names(out)) {
     as.character(out[["PEV_basis"]])
   } else {
@@ -726,7 +729,7 @@ gp_met_add_gaussian_uncertainty <- function(pred_obs,
     0,
     pmin(
       1,
-      1 - pev[model_based_formula] / existing_ref_var[model_based_formula]
+      1 - ifelse(genetic_prior_rows, existing_reliability_variance, pev)[model_based_formula] / existing_ref_var[model_based_formula]
     )
   )
   preserve_reliability <- is.finite(existing_reliability) &
@@ -831,6 +834,15 @@ gp_met_add_gaussian_uncertainty <- function(pred_obs,
       )
     )
   )
+  out$Reliability_variance_input[genetic_prior_rows] <- existing_reliability_variance[genetic_prior_rows]
+  out$Reliability_basis[genetic_prior_rows] <- existing_reliability_basis[genetic_prior_rows]
+  out$Reliability[genetic_prior_rows] <- NA_real_
+  genetic_ok <- genetic_prior_rows & is.finite(existing_reliability_variance) &
+    existing_reliability_variance >= 0 & existing_ref_ok
+  out$Reliability[genetic_ok] <- pmax(0, pmin(1,
+    1 - existing_reliability_variance[genetic_ok] / existing_ref_var[genetic_ok]))
+  out$Reliability_percentage[genetic_prior_rows] <- 100 * out$Reliability[genetic_prior_rows]
+  out$Reliability_remarks[genetic_prior_rows & !genetic_ok] <- "genetic PEV or row prior unavailable"
   out[["Prediction_uncertainty_source"]] <- ifelse(
     validated_or_model_based,
     ifelse(is.na(existing_source) | !nzchar(existing_source),

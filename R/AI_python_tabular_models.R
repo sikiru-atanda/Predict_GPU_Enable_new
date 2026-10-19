@@ -88,8 +88,8 @@ gp_python_tabular_model <- function(pheno_object = NULL,
     y_train_processed <- as.character(y_train)
     y_scaler <- NULL
   } else {
-    y_scaler <- caret::preProcess(as.data.frame(as.matrix(y_train)), method = c("center", "scale"))
-    y_train_processed <- stats::predict(y_scaler, as.data.frame(as.matrix(y_train)))[, 1]
+    y_scaler <- gp_center_scale_fit(as.data.frame(as.matrix(y_train)))
+    y_train_processed <- gp_center_scale_apply(y_scaler, as.data.frame(as.matrix(y_train)))[, 1]
     class_levels <- NULL
   }
 

@@ -37,21 +37,97 @@ test_that("fold-level CV tasks reproduce unsplit CV exactly (K-Folds)", {
   withr::local_envvar(GP_CV_FOLD_TASKS = "true", GP_PAR_WORKER_OVERHEAD_GB = "0.5")
   dat <- mk_fold_task_data()
   seq_out <- run_fold_task_cv(dat, "sequential", cross_validation_meth = "K-Folds", nfolds = 3L, replication = 2L)
-  # "auto" splits into fold tasks; on this tiny data the cost model runs them
-  # in-process, so this checks the split + merge path itself.
+  # A forced backend splits into fold tasks and runs them in workers: the
+  # split + merge path. "auto" also splits, but on this tiny data the cost
+  # model runs nothing in parallel, so the tasks run unsplit.
+  par_out <- run_fold_task_cv(dat, "base_parallel", num_cores = 2L, cross_validation_meth = "K-Folds",
+                              nfolds = 3L, replication = 2L)
   auto_out <- run_fold_task_cv(dat, "auto", cross_validation_meth = "K-Folds", nfolds = 3L, replication = 2L)
-  expect_identical(length(auto_out$cv_results_raw), length(seq_out$cv_results_raw))
-  a <- oof_table(seq_out); b <- oof_table(auto_out)
-  m <- merge(a, b, by = c("model", "rep", "row"))
-  expect_equal(nrow(m), nrow(a))
-  expect_identical(m$role.x, m$role.y)
-  expect_equal(m$yhat.x, m$yhat.y, tolerance = 1e-10)
-  agg_a <- seq_out$cv_results_processed$aggregated_data_list$aggregated_across_reps
-  agg_b <- auto_out$cv_results_processed$aggregated_data_list$aggregated_across_reps
-  agg_b <- agg_b[match(paste(agg_a$model, agg_a$Rep), paste(agg_b$model, agg_b$Rep)), ]
-  expect_equal(agg_b$accuracy, agg_a$accuracy, tolerance = 1e-10)
+  for (out in list(par_out, auto_out)) {
+    expect_identical(length(out$cv_results_raw), length(seq_out$cv_results_raw))
+    a <- oof_table(seq_out); b <- oof_table(out)
+    m <- merge(a, b, by = c("model", "rep", "row"))
+    expect_equal(nrow(m), nrow(a))
+    expect_identical(m$role.x, m$role.y)
+    expect_equal(m$yhat.x, m$yhat.y, tolerance = 1e-10)
+    agg_a <- seq_out$cv_results_processed$aggregated_data_list$aggregated_across_reps
+    agg_b <- out$cv_results_processed$aggregated_data_list$aggregated_across_reps
+    agg_b <- agg_b[match(paste(agg_a$model, agg_a$Rep), paste(agg_b$model, agg_b$Rep)), ]
+    expect_equal(agg_b$accuracy, agg_a$accuracy, tolerance = 1e-10)
+  }
+  par_meta <- par_out$cv_results_processed$run_metadata
+  expect_identical(par_meta$value[par_meta$key == "policy_backend"], "base_parallel")
+  expect_identical(par_meta$value[par_meta$key == "policy_parallel_count"], "12")
   meta <- auto_out$cv_results_processed$run_metadata
-  expect_match(meta$value[meta$key == "policy_decision_reason"], "cost_model_")
+  expect_match(meta$value[meta$key == "policy_decision_reason"], "^cost_model_sequential.*fold_tasks_merged")
+})
+
+test_that("with nothing in parallel, the scheduler runs the unsplit tasks instead of the fold tasks", {
+  ran <- character()
+  local_mocked_bindings(
+    sp_decide_policy = function(models, n_tasks, ...) {
+      list(backend = "sequential", workers = 1L, decision_reason = "cost_model_sequential(est_seq=1s,est_par=9s)",
+           internal_flags = rep(TRUE, n_tasks), num_gpus = 0L)
+    },
+    .package = "PredictProR"
+  )
+  out <- PredictProR:::gp_execute_partitioned_tasks(
+    model_ids = rep(c("BRR", "GBLUP_BRR"), each = 3L),
+    run_task = function(i) { ran <<- c(ran, paste0("fold", i)); i },
+    sequential_models = "GBLUP_BRR",
+    decision_args = list(payload_gb = 0),
+    unsplit = list(model_ids = c("BRR", "GBLUP_BRR"),
+                   run_task = function(i) { ran <<- c(ran, paste0("model", i)); i * 10 })
+  )
+  expect_identical(ran, c("model1", "model2"))
+  expect_identical(unlist(out), c(10, 20))
+  expect_true(isTRUE(attr(out, "gp_unsplit")))
+  policy <- attr(out, "gp_execution_policy")
+  expect_match(policy$decision_reason, "fold_tasks_merged$")
+  expect_identical(policy$parallel_count, 0L)
+
+  # the cost model's sequential choice keeps the tasks parallel-eligible but
+  # picks the sequential backend: also nothing in parallel
+  ran <- character()
+  local_mocked_bindings(
+    sp_decide_policy = function(models, n_tasks, ...) {
+      list(backend = "sequential", workers = 4L, decision_reason = "cost_model_sequential(est_seq=1s,est_par=9s)",
+           internal_flags = rep(FALSE, n_tasks), num_gpus = 0L)
+    },
+    .package = "PredictProR"
+  )
+  out <- PredictProR:::gp_execute_partitioned_tasks(
+    model_ids = rep(c("BRR", "GBLUP_BRR"), each = 3L),
+    run_task = function(i) { ran <<- c(ran, paste0("fold", i)); i },
+    decision_args = list(payload_gb = 0),
+    unsplit = list(model_ids = c("BRR", "GBLUP_BRR"),
+                   run_task = function(i) { ran <<- c(ran, paste0("model", i)); i * 10 })
+  )
+  expect_identical(ran, c("model1", "model2"))
+  expect_true(isTRUE(attr(out, "gp_unsplit")))
+
+  # with tasks in parallel, the fold tasks run (user-sequential ones too)
+  ran <- character()
+  local_mocked_bindings(
+    sp_decide_policy = function(models, n_tasks, ...) {
+      list(backend = "mirai", workers = 2L, decision_reason = "x", internal_flags = rep(FALSE, n_tasks), num_gpus = 0L)
+    },
+    sp_apply = function(X, FUN, ...) lapply(X, FUN),
+    .package = "PredictProR"
+  )
+  out <- PredictProR:::gp_execute_partitioned_tasks(
+    model_ids = rep(c("BRR", "GBLUP_BRR"), each = 3L),
+    run_task = function(i) { ran <<- c(ran, paste0("fold", i)); i },
+    sequential_models = "GBLUP_BRR",
+    decision_args = list(payload_gb = 0),
+    unsplit = list(model_ids = c("BRR", "GBLUP_BRR"), run_task = function(i) stop("must not run"))
+  )
+  # The user-sequential ones (GBLUP_BRR) run here. The parallel ones get a
+  # copy of the task's frame (gp_share_repeated_objects()), as a worker
+  # would, so their `<<-` stays in that copy: they show in their results.
+  expect_identical(sort(ran), paste0("fold", 4:6))
+  expect_equal(unlist(out), 1:6)
+  expect_null(attr(out, "gp_unsplit"))
 })
 
 test_that("fold-level CV tasks reproduce unsplit MET CV1 exactly", {

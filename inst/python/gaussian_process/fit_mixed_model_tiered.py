@@ -290,6 +290,9 @@ def _run_single_fit(
     lanczos_theta_floor: float = 1e-8,
     env_resid_robust: str = "none",
     env_resid_shrink_tau: float = 0.0,
+    krr_lam: float = 1e-3,
+    krr_lams: Optional[Sequence[float]] = (0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10),
+    lam_select: str = 'gcv',
 ) -> Dict[str, Any]:
     extra_kwargs: Dict[str, Any] = {}
     if return_se:
@@ -315,7 +318,9 @@ def _run_single_fit(
     extra_kwargs["env_resid_shrink_tau"] = float(env_resid_shrink_tau)
     output_level = "predict_with_se" if bool(return_se) else "predict_only"
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+        # Keep statistical diagnostics (GCV grid edges, unavailable inference)
+        # visible on the tiered route too.
+        warnings.simplefilter("default")
         res = fw.fit_mixed_model(
             pheno_df=pheno_df,
             gid_col=gid_col, env_col=env_col, y_col=y_col,
@@ -324,6 +329,7 @@ def _run_single_fit(
             include_components=tuple(include_components),
             w_g=w_g, w_ge=w_ge, w_e=w_e,
             fixed_effects=[], method=method,
+            krr_lam=krr_lam, krr_lams=krr_lams, lam_select=lam_select,
             env_structure=env_structure, varcomp_mode=varcomp_mode,
             output_level=output_level, point_predictions_only=(not bool(return_se)),
             return_se=bool(return_se),
@@ -408,6 +414,9 @@ def fit_mixed_model_tiered(
     lanczos_theta_floor: float = 1e-8,
     # --- diagnostics ---
     verbose: bool = True,
+    krr_lam: float = 1e-3,
+    krr_lams: Optional[Sequence[float]] = (0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10),
+    lam_select: str = 'gcv',
 ) -> Dict[str, Any]:
     """Connectivity-aware per-tier mixed model.
 
@@ -575,6 +584,7 @@ def fit_mixed_model_tiered(
             seed=seed,
             env_resid_robust=env_resid_robust,
             env_resid_shrink_tau=env_resid_shrink_tau,
+            krr_lam=krr_lam, krr_lams=krr_lams, lam_select=lam_select,
         )
         wall["mom_aux"] = time.perf_counter() - t0
         if "env_covariance_fa" not in res_mom_aux:
@@ -629,6 +639,7 @@ def fit_mixed_model_tiered(
             lanczos_theta_floor=lanczos_theta_floor,
             env_resid_robust=env_resid_robust,
             env_resid_shrink_tau=env_resid_shrink_tau,
+            krr_lam=krr_lam, krr_lams=krr_lams, lam_select=lam_select,
         )
         wall["fit_K_env"] = time.perf_counter() - t0
         if verbose:
@@ -670,6 +681,7 @@ def fit_mixed_model_tiered(
             lanczos_theta_floor=lanczos_theta_floor,
             env_resid_robust=env_resid_robust,
             env_resid_shrink_tau=env_resid_shrink_tau,
+            krr_lam=krr_lam, krr_lams=krr_lams, lam_select=lam_select,
         )
         wall["fit_Sigma_g_mom"] = time.perf_counter() - t0
         if verbose:
@@ -688,6 +700,8 @@ def fit_mixed_model_tiered(
     se_lat_vec = np.full(len(test_frame), np.nan, dtype=float) if return_se else None
     var_obs_vec = np.full(len(test_frame), np.nan, dtype=float) if return_se else None
     var_lat_vec = np.full(len(test_frame), np.nan, dtype=float) if return_se else None
+    genetic_pev_vec = np.full(len(test_frame), np.nan)
+    genetic_prior_vec = np.full(len(test_frame), np.nan)
 
     def _merge_tier(res_tier, tier_name: str, is_tier_mask: np.ndarray) -> None:
         p = _extract_preds(res_tier, gid_col, env_col)
@@ -703,7 +717,9 @@ def fit_mixed_model_tiered(
             se_obs_col = _first_present(("SE", "SE_observed", "Prediction_SE_observed", "Prediction_SE"))
             se_lat_col = _first_present(("SE_latent", "Prediction_SE_latent"))
             var_obs_col = _first_present(("Prediction_Var_observed", "Prediction_variance"))
-            var_lat_col = _first_present(("PEV", "Prediction_Var_latent"))
+            var_lat_col = _first_present(("Prediction_Var_latent", "PEV"))
+            for col in ('Reliability_variance_input', 'Reliability_reference_variance'):
+                if col in p: wanted.append(col)
             if se_obs_col is None and var_obs_col is not None:
                 p["SE"] = np.sqrt(np.maximum(pd.to_numeric(p[var_obs_col], errors="coerce"), 0.0))
                 se_obs_col = "SE"
@@ -740,6 +756,10 @@ def fit_mixed_model_tiered(
             var_obs_vec[is_tier_mask] = m["Prediction_Var_observed"].to_numpy()[is_tier_mask]
         if return_se and ("PEV" in m.columns):
             var_lat_vec[is_tier_mask] = m["PEV"].to_numpy()[is_tier_mask]
+        for col, target in [('Reliability_variance_input', genetic_pev_vec),
+                            ('Reliability_reference_variance', genetic_prior_vec)]:
+            if col in m:
+                target[is_tier_mask] = m[col].to_numpy()[is_tier_mask]
 
     if res_K_env is not None:
         is_cv0 = (test_frame["tier"] == "cv0").to_numpy()
@@ -774,6 +794,12 @@ def fit_mixed_model_tiered(
         predictions["Prediction_Var_observed"] = var_obs_vec
         predictions["Prediction_SE_latent"] = se_lat_vec
         predictions["Prediction_Var_latent"] = var_lat_vec
+        predictions['Reliability_variance_input'] = genetic_pev_vec
+        predictions['Reliability_reference_variance'] = genetic_prior_vec
+        predictions['Reliability_basis'] = 'genetic_plus_gxe_prior_variance'
+        predictions['Reliability_remarks'] = np.where(
+            np.isfinite(genetic_pev_vec) & np.isfinite(genetic_prior_vec),
+            '', 'genetic PEV or row prior unavailable')
     wall["glue"] = time.perf_counter() - t0
 
     wall["total"] = sum(v for v in wall.values())

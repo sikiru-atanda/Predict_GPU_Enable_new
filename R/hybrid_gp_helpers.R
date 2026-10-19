@@ -873,6 +873,18 @@ gp_hybrid_gp_effect_tables <- function(pred_df,
   )
 }
 
+# This route standardizes y and selects a kernel/noise ratio; it does not
+# estimate a genetic variance scale. Neither total latent PEV nor the sample
+# variance of fitted components supplies a genetic-reliability estimand.
+gp_hybrid_gp_unestimated_reliability <- function(out) {
+  out$Reliability <- NA_real_
+  out$Reliability_variance_input <- NA_real_
+  out$Reliability_reference_variance <- NA_real_
+  out$Reliability_basis <- "genetic_prior_variance_unavailable_hybrid_gp_fixed_scale"
+  out$Reliability_remarks <- "genetic variance not estimated on this route"
+  out
+}
+
 gp_hybrid_gp_prediction_frame <- function(ph,
                                           response,
                                           gen_name,
@@ -908,15 +920,17 @@ gp_hybrid_gp_prediction_frame <- function(ph,
     "fixed mean/env effect + female GCA kernel + male GCA kernel + SCA kernel + optional hybrid-by-environment kernel = predicted value"
   )
   out$Predicted_value <- as.numeric(fit$prediction)
-  out$Standard_error <- sqrt(pmax(as.numeric(fit$observed_var), 0))
-  out$Prediction_error_variance <- pmax(as.numeric(fit$observed_var), 0)
+  out$Standard_error <- sqrt(pmax(as.numeric(fit$latent_var), 0))
+  out$Prediction_error_variance <- out$Standard_error^2
   out$Prediction_SE_latent <- sqrt(pmax(as.numeric(fit$latent_var), 0))
   out$Prediction_Var_latent <- pmax(as.numeric(fit$latent_var), 0)
+  out$PEV_basis <- "latent total prediction error (fixed mean + hybrid effects); conditional on fitted kernel and lambda"
+  out$Prediction_uncertainty_source <- "hybrid_gp_conditional_latent"
   out$hybrid_gp_model <- model_type
   out$hybrid_gp_lambda <- fit$lambda
   out$hybrid_gp_backend <- as.character(fit$backend_runtime %||% "R")[1L]
   out$hybrid_gp_device <- as.character(fit$backend_device %||% "cpu")[1L]
-  out
+  gp_hybrid_gp_unestimated_reliability(out)
 }
 
 gp_hybrid_gp_variance_components <- function(pred_df,
@@ -1907,10 +1921,12 @@ gp_hybrid_gp_joint_prediction_frame <- function(ph,
     "cross-trait covariance x additive female GCA, male GCA, SCA, and optional hybrid-by-environment kernels = predicted value"
   )
   out$Predicted_value <- center + scale * as.numeric(fit$prediction_std)
-  out$Standard_error <- sqrt(pmax(as.numeric(fit$observed_var_std) * scale^2, 0))
-  out$Prediction_error_variance <- pmax(as.numeric(fit$observed_var_std) * scale^2, 0)
+  out$Standard_error <- sqrt(pmax(as.numeric(fit$latent_var_std) * scale^2, 0))
+  out$Prediction_error_variance <- out$Standard_error^2
   out$Prediction_SE_latent <- sqrt(pmax(as.numeric(fit$latent_var_std) * scale^2, 0))
   out$Prediction_Var_latent <- pmax(as.numeric(fit$latent_var_std) * scale^2, 0)
+  out$PEV_basis <- "latent total prediction error (fixed mean + hybrid effects); conditional on fitted kernel and lambda"
+  out$Prediction_uncertainty_source <- "hybrid_gp_conditional_latent"
   out$hybrid_gp_model <- model_type
   out$hybrid_gp_lambda <- fit$lambda
   out$hybrid_gp_backend <- as.character(fit$backend_runtime %||% "R")[1L]
@@ -1919,7 +1935,9 @@ gp_hybrid_gp_joint_prediction_frame <- function(ph,
   if (!is.null(heter_groups) && nzchar(heter_groups)) {
     first_cols <- c(first_cols, heter_groups)
   }
-  out[, c(first_cols, setdiff(names(out), first_cols)), drop = FALSE]
+  gp_hybrid_gp_unestimated_reliability(
+    out[, c(first_cols, setdiff(names(out), first_cols)), drop = FALSE]
+  )
 }
 
 gp_hybrid_gp_joint_variance_components <- function(pred_df,

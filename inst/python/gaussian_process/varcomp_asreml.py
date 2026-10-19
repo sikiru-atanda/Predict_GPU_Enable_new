@@ -34,7 +34,7 @@ import pandas as pd
 # Parameter spec
 # ---------------------------------------------------------------------------
 
-ParamKind = Literal["fa_psi", "fa_lambda", "resid_env", "var_kernel", "cor", "fixed"]
+ParamKind = Literal["fa_psi", "fa_lambda", "resid_env", "var_kernel", "var_random", "cor", "fixed"]
 BoundFlag = Literal["P", "B", "F", "U"]
 
 
@@ -69,7 +69,7 @@ class ParamSpec:
     def default_bound(self) -> BoundFlag:
         if self.fixed:
             return "F"
-        if self.lower > -math.inf and self.kind in ("fa_psi", "resid_env", "var_kernel"):
+        if self.lower > -math.inf and self.kind in ("fa_psi", "resid_env", "var_kernel", "var_random"):
             return "P"
         return "U"
 
@@ -99,7 +99,7 @@ class EnvScales:
             if spec.env_label is None
             else float(self.s.get(str(spec.env_label), self.global_s))
         )
-        if spec.kind in ("fa_psi", "resid_env", "var_kernel"):
+        if spec.kind in ("fa_psi", "resid_env", "var_kernel", "var_random"):
             return s * s
         if spec.kind == "fa_lambda":
             return s
@@ -109,6 +109,44 @@ class EnvScales:
 # ---------------------------------------------------------------------------
 # Active set / AI inversion
 # ---------------------------------------------------------------------------
+
+def estimable_contrast_covariance(ai, bounds, jacobian):
+    """Conditional AI covariance for estimable functions, without a ridge.
+
+    Equilibrate information before rank detection. A gradient must be
+    orthogonal to its null space: a generalized inverse alone would assign
+    spurious finite precision to an arbitrary split of aliased components.
+    Boundary/fixed coordinates are held fixed, as in active-set inference.
+    """
+    ai = np.asarray(ai, dtype=np.float64)
+    J = np.atleast_2d(np.asarray(jacobian, dtype=np.float64))
+    active = np.flatnonzero([b not in ('B', 'F') for b in bounds])
+    out = np.full((len(J), len(J)), np.nan)
+    if not len(active):
+        return out
+    sub = ai[np.ix_(active, active)]
+    sub = .5 * (sub + sub.T)
+    if not np.isfinite(sub).all() or np.any(np.diag(sub) < 0):
+        return out
+    scale = np.sqrt(np.diag(sub))
+    scale[scale == 0] = 1.
+    corr = sub / np.outer(scale, scale)
+    eigenvalues, vectors = np.linalg.eigh(corr)
+    threshold = np.finfo(float).eps * len(active) * max(float(eigenvalues[-1]), 0.)
+    if eigenvalues[0] < -threshold:
+        return out  # indefinite information is not a covariance
+    kept = eigenvalues > threshold
+    gradients = J[:, active] / scale
+    norms = np.linalg.norm(gradients, axis=1)
+    null_projection = gradients @ vectors[:, ~kept]
+    estimable = (np.isfinite(gradients).all(axis=1) & (norms > 0) &
+                 (np.linalg.norm(null_projection, axis=1) <= 1e-8 * norms))
+    indices = np.flatnonzero(estimable)
+    if len(indices) and kept.any():
+        contrasts = (gradients[indices] @ vectors[:, kept]) / np.sqrt(eigenvalues[kept])
+        out[np.ix_(indices, indices)] = contrasts @ contrasts.T
+    return out
+
 
 def active_set_inverse(
     ai: np.ndarray,
@@ -121,32 +159,29 @@ def active_set_inverse(
     ----------
     ai : (p, p) AI matrix in natural parameter ordering.
     bounds : length-p flags. "B" and "F" are inactive; SE for those rows is NaN.
-    jitter : ridge added before Cholesky if the active block is ill-conditioned.
+    jitter : retained for compatibility; inference never adds information by ridge.
 
     Returns
     -------
-    cov : (p, p) with NaN in rows/cols for inactive params, inverse AI in the
-          active sub-block embedded in its original positions.
+    cov : (p, p) with NaN in rows/cols for inactive or aliased parameters.
+          Estimable individual coordinates retain their covariance even when
+          other active coordinates are aliased.
     """
     p = int(ai.shape[0])
-    active = np.array([b not in ("B", "F") for b in bounds], dtype=bool)
-    cov = np.full((p, p), np.nan, dtype=np.float64)
-    if not active.any():
-        return cov
-    idx = np.where(active)[0]
-    sub = np.asarray(ai[np.ix_(idx, idx)], dtype=np.float64)
-    sub = 0.5 * (sub + sub.T)
-    for tries in range(6):
-        try:
-            L = np.linalg.cholesky(sub + (jitter * (10.0 ** tries)) * np.eye(sub.shape[0]))
-            inv = np.linalg.solve(L.T, np.linalg.solve(L, np.eye(sub.shape[0])))
-            break
-        except np.linalg.LinAlgError:
-            inv = None
-    if inv is None:
-        inv = np.linalg.pinv(sub)
-    cov[np.ix_(idx, idx)] = inv
-    return cov
+    return estimable_contrast_covariance(ai, bounds, np.eye(p))
+
+
+def inference_status(ai, bounds, converged):
+    active = np.array([b not in ('B', 'F') for b in bounds])
+    covariance = active_set_inverse(np.asarray(ai), bounds)
+    identified = bool(np.isfinite(covariance[np.ix_(active, active)]).all())
+    partial = bool(np.isfinite(np.diag(covariance)).any())
+    reason = 'available' if converged and identified else (
+        'unavailable_nonconverged' if not converged else (
+            'available_estimable_functions_only' if partial else 'unavailable_singular_information'))
+    return {'inference_available': bool(converged and identified), 'inference_status': reason,
+            'variance_parameter_se_method': 'active_set_average_information',
+            'boundary_parameters': int(sum(b == 'B' for b in bounds))}
 
 
 def apply_boundary_projection(
@@ -171,7 +206,7 @@ def apply_boundary_projection(
         if out[i] > sp.upper:
             out[i] = sp.upper
         if (sp.lower > -math.inf) and (out[i] - sp.lower <= floor_eps) and sp.kind in (
-            "fa_psi", "resid_env", "var_kernel"
+            "fa_psi", "resid_env", "var_kernel", "var_random"
         ):
             bounds.append("B")
         else:
@@ -236,18 +271,11 @@ def build_asreml_varcomp_table(
     est_out = np.asarray(theta, dtype=np.float64) * scales
     se_out = se * scales  # linear back-transform
 
-    # A near-singular active AI block makes sqrt(diag(AI^-1)) explode, giving a
-    # huge, meaningless SE (z-ratio ~ 0). Treat such components as not estimable
-    # and report NaN rather than a misleading number. z_floor = 1e-3 means an SE
-    # more than ~1000x the estimate is considered non-informative.
-    z_floor = 1e-3
     rows = []
     for i, sp in enumerate(specs):
         b = bounds[i]
         est = float(est_out[i])
         s = float(se_out[i]) if (b not in ("B", "F") and np.isfinite(se_out[i])) else float("nan")
-        if np.isfinite(s) and s > 0.0 and abs(est) > 0.0 and (abs(est) / s) < z_floor:
-            s = float("nan")
         z = (est / s) if (s == s and s > 0.0) else float("nan")
         pc = float(pct_change[i]) if np.isfinite(pct_change[i]) else float("nan")
         rows.append({
@@ -354,8 +382,8 @@ def compute_fa_derived_summary(
     theta_np = np.asarray(theta, dtype=np.float64)
     est_scaled = theta_np * scales
 
-    # Active-set AI inverse: rows/cols of bound params are NaN-filled, which
-    # propagates to any derived SE that depends on them.
+    # Derived inference is conditional on the selected active model: a bound
+    # uniqueness does not remove uncertainty in its environment's free loadings.
     ai_inv = active_set_inverse(np.asarray(ai, dtype=np.float64), bounds)
 
     # Index psi and residual rows by env_label for O(1) lookup; lambda indices
@@ -368,25 +396,10 @@ def compute_fa_derived_summary(
         if lbl in lambda_idxs_by_env:
             lambda_idxs_by_env[lbl].append(i)
 
-    # z-floor for derived SE matches build_asreml_varcomp_table convention:
-    # an SE so large that |est|/SE < 1e-3 is statistically meaningless, and
-    # the table-level convention is to report NaN rather than the absurd
-    # number. The same convention applies to delta-method-derived SE.
-    _Z_FLOOR = 1e-3
-
     def _delta_se(J: np.ndarray, est: float = float("nan")) -> float:
-        """SE(derived) = sqrt(J^T Sigma_theta J), NaN if any contributing entry
-        of J hits an inactive (NaN) row of the AI inverse OR if the resulting
-        z-ratio is below the global z-floor (1e-3).
-
-        Restrict the bilinear form to the contributing index set so that NaN
-        entries in `ai_inv` from bound (inactive) parameters do NOT propagate
-        through `0 * NaN = NaN` for indices where J is zero.
-
-        `est` is the corresponding point estimate; when supplied and finite,
-        the z-floor is applied (matching `build_asreml_varcomp_table`).
-        """
-        contributing = np.where(J != 0.0)[0]
+        """Delta-method SE conditional on free parameters; no Wald-z censoring."""
+        active = np.array([b not in ('B', 'F') for b in bounds])
+        contributing = np.where((J != 0.0) & active)[0]
         if contributing.size == 0:
             return float("nan")
         sub = ai_inv[contributing, :][:, contributing]
@@ -397,8 +410,6 @@ def compute_fa_derived_summary(
         if not np.isfinite(V) or V <= 0.0:
             return float("nan")
         se = float(np.sqrt(V))
-        if np.isfinite(est) and abs(est) > 0.0 and (abs(est) / se) < _Z_FLOOR:
-            return float("nan")
         return se
 
     sigma2_g_per_env: List[float] = []
@@ -479,6 +490,7 @@ def compute_fa_derived_summary(
         "h2_average": h2_average,
         "h2_average_se": h2_average_se,
         "kernel_weight_total": kernel_weight_total,
+        "inference_basis": "delta_method_conditional_on_active_set_and_kernel_weights",
     }
 
 
@@ -489,7 +501,7 @@ def compute_genetic_residual_covariance(
     bounds: Sequence[BoundFlag],
     env_scales: Optional[EnvScales] = None,
 ) -> Optional[Dict[str, object]]:
-    """Active-set AI inverse off-diagonal for non-FA models.
+    """Active-set AI covariance of estimable genetic/residual totals.
 
     For models where sigma2_g and sigma2_e are BOTH direct REML parameters
     (`var_kernel` specs for genetic, `resid_env` specs for residual), the
@@ -500,6 +512,10 @@ def compute_genetic_residual_covariance(
 
         Var(h2) = (dh2/dg)^2 Var(g) + (dh2/de)^2 Var(e)
                   + 2 (dh2/dg)(dh2/de) Cov(g, e)
+
+    With aliased kernels, gradients of these totals are checked against the
+    information null space before evaluating a generalized inverse. Finite
+    precision for a total does not imply that its component split is estimable.
 
     Returns `None` if `specs` does not contain at least one `var_kernel`
     and one `resid_env` (e.g. FA models -- those use
@@ -529,47 +545,24 @@ def compute_genetic_residual_covariance(
         dtype=np.float64,
     )
     theta_np = np.asarray(theta, dtype=np.float64)
-    ai_inv = active_set_inverse(np.asarray(ai, dtype=np.float64), bounds)
-
     # Genetic: if multiple var_kernel rows (multi-kernel main term), aggregate
     # the variance contributions. For the standard single-kernel case this is
     # just the one row.
     g_indices = np.asarray(var_kernel_idx, dtype=np.int64)
     g_scales = scales[g_indices]
     sigma2_g = float(np.nansum(theta_np[g_indices] * g_scales))
-    # Var(sum) = sum_i sum_j scale_i * scale_j * AI_inv[i, j]
-    g_sub = ai_inv[g_indices, :][:, g_indices]
-    if np.any(np.isnan(g_sub)):
-        var_g = float("nan")
-    else:
-        var_g = float((g_scales[:, None] * g_scales[None, :] * g_sub).sum())
-        if not np.isfinite(var_g) or var_g < 0.0:
-            var_g = float("nan")
-
     # Residual: report the mean across env-specific residuals
     r_indices = np.asarray(resid_idx, dtype=np.int64)
     r_scales = scales[r_indices]
     sigma2_e_per = theta_np[r_indices] * r_scales
     sigma2_e = float(np.nanmean(sigma2_e_per))
-    # Var(mean) = (1/n^2) * sum_i sum_j scale_i * scale_j * AI_inv[i, j]
-    r_sub = ai_inv[r_indices, :][:, r_indices]
-    if np.any(np.isnan(r_sub)):
-        var_e = float("nan")
-    else:
-        n_r = float(len(r_indices))
-        var_e = float((r_scales[:, None] * r_scales[None, :] * r_sub).sum()) / (n_r ** 2)
-        if not np.isfinite(var_e) or var_e < 0.0:
-            var_e = float("nan")
-
-    # Cov(sigma2_g_sum, sigma2_e_mean) = (1/n_r) * sum_i sum_j scale_i_g * scale_j_e * AI_inv[i, j]
-    cross = ai_inv[g_indices, :][:, r_indices]
-    if np.any(np.isnan(cross)):
-        cov_g_e = float("nan")
-    else:
-        n_r = float(len(r_indices))
-        cov_g_e = float((g_scales[:, None] * r_scales[None, :] * cross).sum()) / n_r
-        if not np.isfinite(cov_g_e):
-            cov_g_e = float("nan")
+    # Test estimability of the totals themselves, not of every individual
+    # kernel coordinate. Duplicate kernels identify their sum, not their split.
+    J = np.zeros((2, len(specs)))
+    J[0, g_indices] = g_scales
+    J[1, r_indices] = r_scales / len(r_indices)
+    covariance = estimable_contrast_covariance(ai, bounds, J)
+    var_g, var_e, cov_g_e = covariance[0, 0], covariance[1, 1], covariance[0, 1]
 
     return {
         "sigma2_g": sigma2_g,
@@ -707,6 +700,7 @@ def ai_reml_optimize(
     damping: float = 1.0,
     max_halvings: int = 8,
     verbose: bool = False,
+    tol_score: float = 1e-4,
 ) -> AIRemlResult:
     """Boundary-aware AI-Newton with adaptive trust-region damping.
 
@@ -714,25 +708,62 @@ def ai_reml_optimize(
       rho = actual_improvement / predicted_improvement
     where predicted_improvement accounts for the damped step size.
 
-    Damping policy (matches ASReml-R / reference Mixed_Model_Project):
+    Damping policy:
       rho > 0.75  -> expand trust region (mu *= 2, capped at 1.0)
       0.25 < rho <= 0.75 -> keep current mu
       0 < rho <= 0.25 -> shrink (mu /= 2)
       rho <= 0 -> reject step, shrink hard (mu /= 4)
 
-    Falls back to steepest-ascent after 10 consecutive rejections to escape
+    Falls back to steepest-ascent after 5 consecutive rejections to escape
     pathological curvature regions.
     """
     specs = backend.param_specs()
     theta = np.asarray(theta0, dtype=np.float64).copy()
     theta, bounds = apply_boundary_projection(theta, specs)
     last_ll = backend.loglik(theta)
+    if not np.isfinite(theta).all() or not np.isfinite(last_ll):
+        raise ValueError('AI-REML requires a finite initial parameter vector and likelihood')
+    if not np.isfinite(damping) or damping <= 0:
+        raise ValueError('AI-REML damping must be finite and positive')
     last_theta = theta.copy()
     pct = np.full_like(theta, np.nan)
     ai_final = np.zeros((theta.size, theta.size), dtype=np.float64)
     converged = False
     mu = float(damping)
     consecutive_rejects = 0
+    it = -1
+
+    def projected_score(theta_v, score_v):
+        """Maximization KKT residual, including both lower and upper bounds."""
+        result = np.asarray(score_v, dtype=float).copy()
+        for j, spec in enumerate(specs):
+            if spec.fixed:
+                result[j] = 0.
+            elif theta_v[j] <= spec.lower + 1e-12:
+                result[j] = max(result[j], 0.)
+            elif theta_v[j] >= spec.upper - 1e-12:
+                result[j] = min(result[j], 0.)
+        return result
+
+    def stationary(theta_v, score_v, ai_v):
+        if not np.isfinite(score_v).all() or not np.isfinite(ai_v).all():
+            return False
+        scaled = projected_score(theta_v, score_v) / np.sqrt(np.maximum(np.abs(np.diag(ai_v)), 1e-20))
+        return bool(np.max(np.abs(scaled), initial=0.) <= tol_score)
+
+    def trial_loglik(theta_v):
+        if not np.isfinite(theta_v).all():
+            return -np.inf
+        try:
+            value = float(backend.loglik(theta_v))
+        except np.linalg.LinAlgError:
+            return -np.inf
+        except RuntimeError as error:
+            message = str(error).lower()
+            if 'cholesky' not in message or not any(s in message for s in ('positive-definite', 'positive definite', 'not positive')):
+                raise
+            return -np.inf
+        return value if np.isfinite(value) else -np.inf
 
     # Optional one-shot finite-difference check at theta0.
     # Separate env var from AIREML_VERBOSE since it costs 3*q extra loglik
@@ -761,7 +792,12 @@ def ai_reml_optimize(
     for it in range(max_iter):
         ai = backend.ai(theta)
         s = backend.score(theta)
+        if not np.isfinite(ai).all() or not np.isfinite(s).all():
+            raise ValueError('AI-REML encountered non-finite derivatives at an accepted state')
         ai_final = ai.copy()
+        if stationary(theta, s, ai):
+            converged = True
+            break
 
         # A projected lower-bound parameter is inactive only when its score
         # satisfies the maximisation KKT condition (score <= 0).  A positive
@@ -771,6 +807,9 @@ def ai_reml_optimize(
         # permanently inactive can trap AI-REML at the all-residual solution
         # after one over-sized projected step.
         active = _optimization_active_set(bounds, s)
+        for j, spec in enumerate(specs):
+            if theta[j] >= spec.upper - 1e-12 and s[j] >= 0:
+                active[j] = False
         if not active.any():
             converged = True
             break
@@ -782,10 +821,10 @@ def ai_reml_optimize(
 
         # LM ridge for ill-conditioned AI
         diag_A = np.diag(A).copy()
-        pos_diag = np.abs(diag_A[diag_A != 0])
-        cond_est = (np.max(pos_diag) / np.min(pos_diag)) if pos_diag.size > 0 else 1.0
-        if cond_est > 1e8 or np.any(diag_A <= 0):
-            ridge = max(1e-6 * np.max(np.abs(diag_A)), 1e-10)
+        eigenvalues = np.linalg.eigvalsh(A)
+        spectral_scale = max(float(np.max(np.abs(eigenvalues))), 1e-12)
+        if float(eigenvalues.min()) <= spectral_scale / 1e8:
+            ridge = max(1e-6 * float(np.max(np.abs(diag_A))), -float(eigenvalues.min()) + 1e-10, 1e-10)
         else:
             ridge = 1e-10
 
@@ -795,19 +834,35 @@ def ai_reml_optimize(
         except np.linalg.LinAlgError:
             delta_active = np.linalg.lstsq(A, s_active, rcond=None)[0]
 
-        # Predicted improvement from full Newton step
-        predicted_full = float(s_active @ delta_active
-                               - 0.5 * delta_active @ A @ delta_active)
-
         # Apply damped step
         trial = theta.copy()
         trial[idx] = theta[idx] + mu * delta_active
         trial, trial_bounds = apply_boundary_projection(trial, specs)
-        trial_ll = backend.loglik(trial)
-        actual = trial_ll - last_ll
+        displacement = trial[idx] - theta[idx]
+        predicted_damped = float(s_active @ displacement - .5 * displacement @ A @ displacement)
+        if not np.isfinite(predicted_damped) or predicted_damped <= 0:
+            # Projection can turn an unconstrained Newton direction into a
+            # non-ascent step. Use a bounded diagonal-metric gradient direction
+            # instead of trusting the unprojected quadratic prediction.
+            delta_active = s_active / np.maximum(np.abs(diag_A), 1e-10)
+            relative_scale = np.maximum(np.abs(theta[idx]), 1e-3)
+            delta_active /= max(1., float(np.max(np.abs(delta_active) / relative_scale)))
+        # Reject invalid/decreasing candidates within this iteration's bounded
+        # line-search budget. Every prediction uses the actual projected step.
+        for backtrack in range(max(0, int(max_halvings)) + 1):
+            trial = theta.copy()
+            trial[idx] += mu * delta_active
+            trial, trial_bounds = apply_boundary_projection(trial, specs)
+            displacement = trial[idx] - theta[idx]
+            predicted_damped = float(s_active @ displacement - .5 * displacement @ A @ displacement)
+            trial_ll = trial_loglik(trial)
+            actual = trial_ll - last_ll
+            if np.isfinite(trial_ll) and actual >= 0 and predicted_damped > 0:
+                break
+            if backtrack < max(0, int(max_halvings)):
+                mu *= .5
 
-        # Rho ratio: actual / predicted for the damped step
-        predicted_damped = predicted_full * mu * (2.0 - mu)
+        # Rho ratio for the feasible damped step.
         if abs(predicted_damped) > 1e-15:
             rho = actual / predicted_damped
         else:
@@ -815,7 +870,7 @@ def ai_reml_optimize(
 
         # Trust-region update
         accepted = False
-        if rho < 0:
+        if not np.isfinite(trial_ll) or not np.isfinite(rho) or actual < 0 or rho <= 0:
             # Reject step, shrink trust region hard
             mu = max(mu / 4.0, 1e-4)
             consecutive_rejects += 1
@@ -853,8 +908,8 @@ def ai_reml_optimize(
                 trial_sa = theta.copy()
                 trial_sa[idx] += 0.01 * grad_step
                 trial_sa, trial_sa_bounds = apply_boundary_projection(trial_sa, specs)
-                trial_sa_ll = backend.loglik(trial_sa)
-                if trial_sa_ll > last_ll:
+                trial_sa_ll = trial_loglik(trial_sa)
+                if np.isfinite(trial_sa_ll) and trial_sa_ll > last_ll:
                     theta = trial_sa
                     bounds = trial_sa_bounds
                     last_theta = theta.copy()
@@ -875,11 +930,14 @@ def ai_reml_optimize(
         if accepted:
             finite_pct = pct[np.isfinite(pct)]
             max_pct = float(np.nanmax(np.abs(finite_pct))) if finite_pct.size > 0 else 0.0
-            if abs(actual) < tol_loglik and max_pct < 100.0 * tol_theta:
+            if (abs(actual) < tol_loglik and max_pct < 100.0 * tol_theta
+                    and stationary(theta, backend.score(theta), backend.ai(theta))):
                 converged = True
                 break
 
     ai_final = backend.ai(theta)
+    # Certify the returned point, including the last allowed update.
+    converged = stationary(theta, backend.score(theta), ai_final)
     return AIRemlResult(
         theta=theta,
         ai=ai_final,

@@ -108,6 +108,7 @@ prediction_output_standard <- function(response_family = c("gaussian", "classifi
       "Genetic_covariance_trait_environment",
       "Genetic_correlation_trait_environment",
       "variance_component_intervals",
+      "covariance_parameters", "correlation_parameters", "inference_summary",
       "prediction_uncertainty_source",
       "predictive_covariance_basis",
       "multitrait_prediction_wide", "multitrait_trait_counts"
@@ -297,6 +298,30 @@ gp_output_contract_validate_one <- function(result,
     reliability <- pred$Reliability[is.finite(pred$Reliability)]
     if (length(reliability) && any(reliability < -tolerance | reliability > 1 + tolerance)) {
       issues <- c(issues, "Reliability must be in [0, 1]")
+    }
+  }
+  # Genetic reliability (ASReml, GP): PEV stays Standard_error^2, the total prediction-error
+  # variance of the reported value; Reliability_variance_input is the genetic PEV Var(ghat - g)
+  # and Reliability_reference_variance the line's prior genetic variance sigma2_g * K_ii.
+  if (identical(family, "gaussian") && all(c(
+    "Reliability", "Reliability_variance_input",
+    "Reliability_reference_variance", "Reliability_basis"
+  ) %in% names(pred))) {
+    genetic_basis <- grepl("^genetic_(plus_gxe_)?prior_variance",
+                           ifelse(is.na(pred[["Reliability_basis"]]), "", pred[["Reliability_basis"]]))
+    rel_idx <- genetic_basis & is.finite(pred[["Reliability"]])
+    if (any(rel_idx)) {
+      input <- pred[["Reliability_variance_input"]][rel_idx]
+      reference <- pred[["Reliability_reference_variance"]][rel_idx]
+      if (any(!is.finite(input) | input < 0 | !is.finite(reference) | reference <= 0)) {
+        issues <- c(issues, "genetic Reliability needs a finite genetic PEV and a positive prior genetic variance")
+      } else {
+        expected_reliability <- pmax(0, pmin(1, 1 - input / reference))
+        if (any(abs(pred[["Reliability"]][rel_idx] - expected_reliability) >
+                tolerance * (1 + abs(expected_reliability)))) {
+          issues <- c(issues, "genetic Reliability must equal clipped 1 - Reliability_variance_input / Reliability_reference_variance")
+        }
+      }
     }
   }
   if (identical(family, "gaussian") && all(c(

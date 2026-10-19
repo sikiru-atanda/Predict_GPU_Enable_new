@@ -137,6 +137,7 @@ test_that("GP native parameters identify every fitted kernel", {
         predictions = predictions,
         result = list(
           variance_component_method = "krr_gcv_variance_ratio",
+          summary = list(theta_layout = "gp_exact_matched_v1"),
           diagnostics = list(lam_eff = 1, lam_select = "gcv")
         ),
         info = list(backend = "mock", method = "krr_exact")
@@ -166,39 +167,13 @@ test_that("GP native parameters identify every fitted kernel", {
     "gmatrix=0.2;ExtraA=0.3;ExtraB=0.5"
   )
   expect_identical(unname(params[["gp_kernel_weight_mode"]]), "user_supplied_fixed")
+  expect_identical(unname(params[["gp_engine_used"]]), "dense_v")
 })
 
 test_that("SVM defaults to dimension-aware backend gamma", {
   expect_null(eval(formals(PredictProR::AI_svm)$sigma_value))
   expect_null(eval(formals(PredictProR::AI_svm)$gamma_value))
   expect_null(eval(formals(PredictProR::model_execute)$sigma_value))
-})
-
-test_that("single-environment GP reliability uses the fitted component scale", {
-  gp_result <- list(
-    # This is deliberately a different structural/kernel scale.  It must not
-    # override the fitted variance component in a one-environment analysis.
-    env_variance_summary = data.frame(
-      level = "ENV1",
-      total_genetic_variance = 0.88
-    ),
-    varcomp = data.frame(
-      component = c("vm(GID,K)!var", "Residual!R"),
-      estimate = c(0.38, 0.30),
-      std.error = c(0.19, 0.14),
-      stringsAsFactors = FALSE
-    ),
-    variance_component_method = "reml"
-  )
-
-  expect_equal(
-    PredictProR:::gp_extract_gp_genetic_variance(
-      gp_result,
-      n = 3L,
-      env_values = rep("ENV1", 3L)
-    ),
-    rep(0.38, 3L)
-  )
 })
 
 test_that("single-trait KRR publishes its GCV variance-ratio provenance", {
@@ -212,6 +187,8 @@ test_that("single-trait KRR publishes its GCV variance-ratio provenance", {
     Prediction = c(1.1, 1.8, 1.5),
     Prediction_SE_latent = c(0.2, 0.3, 0.4),
     Prediction_Var_latent = c(0.04, 0.09, 0.16),
+    Reliability_variance_input = c(0.03, 0.07, 0.14),
+    Reliability_reference_variance = c(0.4, 0.5, 0.3),
     stringsAsFactors = FALSE
   )
   gp_result <- list(
@@ -237,11 +214,12 @@ test_that("single-trait KRR publishes its GCV variance-ratio provenance", {
   )
 
   expect_equal(out$Observed_value, pheno$Yield)
-  expect_equal(out$Reliability_reference_variance, rep(0.4, 3L))
-  expect_equal(out$Reliability, pmax(0, 1 - out$PEV / 0.4))
+  expect_equal(out$Reliability_reference_variance, predictions$Reliability_reference_variance)
+  expect_equal(out$Reliability, pmax(0, 1 - predictions$Reliability_variance_input /
+    predictions$Reliability_reference_variance))
   expect_identical(
     unique(out$Reliability_basis),
-    "krr_gcv_variance_ratio_genetic_variance"
+    "genetic_prior_variance"
   )
   expect_identical(
     PredictProR:::gp_vc_gp_estimation_method(

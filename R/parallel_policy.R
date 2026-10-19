@@ -19,6 +19,38 @@ init_single_thread_blas <- function() {
   }
 }
 
+# This process's thread settings (the variables init_single_thread_blas() sets,
+# the worker marker of gp_parallel_init_worker_runtime(), the BLAS and OpenMP
+# thread counts), as a function that puts them back. sp_apply() runs tasks in
+# the caller's process too (the sequential backend, a future backend with a
+# sequential plan), with the initializer or worker set-up it was given: their
+# pin to one thread stayed in the user's session, and later Python fits
+# inherited it (XGBoost predictions changed).
+gp_thread_settings_restorer <- function() {
+  vars <- c("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "BLIS_NUM_THREADS",
+            "VECLIB_MAXIMUM_THREADS", "PREDICTPRO_IN_PARALLEL_WORKER")
+  old_env <- Sys.getenv(vars, unset = NA_character_)
+  has_ctl <- requireNamespace("RhpcBLASctl", quietly = TRUE)
+  counts <- function() {
+    c(blas = tryCatch(RhpcBLASctl::blas_get_num_procs(), error = function(e) NA_integer_),
+      omp = tryCatch(RhpcBLASctl::omp_get_max_threads(), error = function(e) NA_integer_))
+  }
+  old_counts <- if (has_ctl) counts() else NULL
+  function() {
+    gp_parallel_restore_runtime_env(old_env)
+    if (has_ctl) {
+      now <- counts()
+      if (is.finite(old_counts[["blas"]]) && !identical(now[["blas"]], old_counts[["blas"]])) {
+        try(RhpcBLASctl::blas_set_num_threads(old_counts[["blas"]]), silent = TRUE)
+      }
+      if (is.finite(old_counts[["omp"]]) && !identical(now[["omp"]], old_counts[["omp"]])) {
+        try(RhpcBLASctl::omp_set_num_threads(old_counts[["omp"]]), silent = TRUE)
+      }
+    }
+    invisible(NULL)
+  }
+}
+
 # Detect hidden threads
 detect_hidden_threads <- function() {
   vals <- c(
@@ -112,43 +144,68 @@ gp_parallel_memory_worker_cap <- function(globals_gb, memory_budget_gb, worker_o
   max(1L, as.integer(floor(memory_budget_gb / per_worker_gb)))
 }
 
-# Models fitted in R (BGLR / ASReml) need no Python child process per worker.
+# Models fitted in R (BGLR / ASReml / glmnet) need no Python child process per
+# worker. Lasso is fitted by glmnet (fit, penalty search, bootstrap).
 gp_parallel_r_only_models <- function() {
-  c("BayesA", "BayesB", "BayesC", "BL", "BRR", "GBLUP_BRR", "RKHS", "GBLUP")
+  c("BayesA", "BayesB", "BayesC", "BL", "BRR", "GBLUP_BRR", "RKHS", "GBLUP", "Lasso")
 }
 
 # Measured memory of one idle parallel worker (R + PredictProR loaded) plus,
 # when Python-backed models run, one Python child with numpy/sklearn loaded.
-# Measured once per session; NULL when it cannot be measured.
+# NULL when it cannot be measured. Measuring starts a worker (2.3-2.6 s on a
+# Windows test machine), so the result is kept on disk with the interpreter
+# checks (gp_python_discovery_cache_get()) until PredictProR or an import is
+# reinstalled, R or the ML interpreter changes, for at most 30 days; a
+# failed measurement is kept for the session only.
 gp_parallel_measure_worker_gb <- function(python_models = TRUE) {
   key <- paste0("worker_memory_measured::python=", isTRUE(python_models))
   if (exists(key, envir = PredictProR_runtime_cache, inherits = FALSE)) {
     return(get(key, envir = PredictProR_runtime_cache, inherits = FALSE))
   }
-  if (!requireNamespace("ps", quietly = TRUE)) {
-    return(NULL)
+  py_bin <- if (isTRUE(python_models)) tryCatch(gp_detect_ml_python(), error = function(e) NULL)
+  disk_key <- paste0("worker_memory::python=", isTRUE(python_models))
+  paths <- gp_parallel_worker_memory_paths(py_bin)
+  # the paths as well: another library may resolve to other installs
+  extra <- list(r = R.version.string, paths = paths)
+  measured <- gp_python_discovery_cache_get(disk_key, extra)
+  if (is.null(measured)) {
+    measured <- gp_parallel_measure_worker_gb_run(python_models, py_bin)
+    if (!is.null(measured)) {
+      gp_python_discovery_cache_set(disk_key, measured, paths = paths, extra = extra, max_age_days = 30)
+    }
   }
-  # A working worker has PredictProR's imports loaded (BGLR, Matrix,
-  # data.table, dplyr, ...), so load the same set before measuring.
-  imports <- tryCatch({
+  assign(key, measured, envir = PredictProR_runtime_cache)
+  measured
+}
+
+# PredictProR's imports: a working worker has them loaded (BGLR, Matrix,
+# data.table, dplyr, ...), so the measurement loads the same set.
+gp_parallel_worker_imports <- function() {
+  tryCatch({
     raw <- utils::packageDescription("PredictProR")[["Imports"]] %||% ""
     pkgs <- trimws(sub("\\(.*$", "", strsplit(raw, ",")[[1L]]))
     pkgs[nzchar(pkgs)]
   }, error = function(e) character())
+}
+
+# The files a measurement depends on: the DESCRIPTION of PredictProR and of
+# each import (reinstalling a package rewrites it), and the ML interpreter.
+gp_parallel_worker_memory_paths <- function(py_bin = NULL) {
+  dirs <- find.package(c("PredictProR", gp_parallel_worker_imports()), quiet = TRUE)
+  c(file.path(normalizePath(dirs, winslash = "/", mustWork = FALSE), "DESCRIPTION"),
+    if (length(py_bin) && nzchar(py_bin)) gp_python_path(py_bin, mustWork = FALSE))
+}
+
+gp_parallel_measure_worker_gb_run <- function(python_models, py_bin = NULL) {
+  if (!requireNamespace("ps", quietly = TRUE)) {
+    return(NULL)
+  }
+  imports <- gp_parallel_worker_imports()
   r_gb <- tryCatch({
     cl <- parallel::makePSOCKcluster(1L)
     on.exit(parallel::stopCluster(cl), add = TRUE)
-    mem <- parallel::clusterCall(cl, function(libs, pkgs) {
-      .libPaths(unique(c(libs, .libPaths())))
-      suppressMessages(suppressWarnings(
-        for (p in unique(c("PredictProR", pkgs))) requireNamespace(p, quietly = TRUE)
-      ))
-      invisible(gc())
-      if (!requireNamespace("ps", quietly = TRUE)) return(NA_real_)
-      info <- ps::ps_memory_info()
-      # private bytes on Windows (committed memory), RSS elsewhere
-      as.numeric(info[["mem_private"]] %||% info[["rss"]])
-    }, unique(c(gp_predictpror_loaded_lib(), .libPaths())), imports)[[1L]]
+    mem <- parallel::clusterCall(cl, gp_parallel_worker_memory_task,
+                                 unique(c(gp_predictpror_loaded_lib(), .libPaths())), imports)[[1L]]$mem
     as.numeric(mem) / 1024^3
   }, error = function(e) NA_real_)
   if (!is.finite(r_gb) || r_gb <= 0) {
@@ -156,7 +213,6 @@ gp_parallel_measure_worker_gb <- function(python_models = TRUE) {
   }
   py_gb <- 0
   if (isTRUE(python_models)) {
-    py_bin <- tryCatch(gp_detect_ml_python(), error = function(e) NULL)
     py_gb <- 0.5
     if (!is.null(py_bin) && file.exists(py_bin)) {
       out <- tryCatch(suppressWarnings(system2(
@@ -173,10 +229,31 @@ gp_parallel_measure_worker_gb <- function(python_models = TRUE) {
     }
   }
   # 25% headroom for transient allocations during a fit.
-  measured <- (r_gb + py_gb) * 1.25
-  assign(key, measured, envir = PredictProR_runtime_cache)
-  measured
+  (r_gb + py_gb) * 1.25
 }
+
+# Runs on the measuring worker: loads PredictProR and its imports from the
+# session's libraries, then reports the worker's memory. Its environment is
+# the base environment: a namespace closure made the worker load PredictProR
+# while reading it, before the session's libraries were set (the user
+# library's 0.20.152 on the Windows test machine).
+gp_parallel_worker_memory_task <- local(function(libs, pkgs) {
+  .libPaths(unique(c(libs, .libPaths())))
+  suppressMessages(suppressWarnings(
+    for (p in unique(c("PredictProR", pkgs))) requireNamespace(p, quietly = TRUE)
+  ))
+  invisible(gc())
+  lib <- if (isNamespaceLoaded("PredictProR")) {
+    normalizePath(dirname(getNamespaceInfo("PredictProR", "path")), winslash = "/")
+  } else NA_character_
+  if (!requireNamespace("ps", quietly = TRUE)) return(list(mem = NA_real_, lib = lib))
+  info <- ps::ps_memory_info()
+  # private bytes on Windows (committed memory), RSS elsewhere; a named
+  # vector, so info[["mem_private"]] fails where there is none (it did on
+  # Linux and macOS, which therefore always used the 0.75 GB default)
+  key <- if ("mem_private" %in% names(info)) "mem_private" else "rss"
+  list(mem = as.numeric(info[[key]]), lib = lib)
+}, envir = baseenv())
 
 # Per-worker memory allowance, in order of precedence:
 #   1. worker_memory_gb supplied by the user (model_execute argument);
@@ -305,6 +382,20 @@ parallel_memory_plan <- function(objects,
 gp_parallel_deep_models <- function() {
   c("cnn", "resnet", "ft_transformer", "saint", "tabnet", "node",
     "deepfm", "dcnv2", "nam", "moe", "gp_dkl", "mlp_with_attention", "mlp")
+}
+
+# GPU count for a policy decision. Without nvidia-smi, detect_num_gpus() asks
+# torch, which means finding a Python interpreter (every candidate is started:
+# 13.8 s for 13 on a Windows test machine) and starting embedded Python. Only
+# GPU-capable models (deep learning, Gaussian process, XGBoost) need it; for
+# the others nvidia-smi alone is enough.
+gp_parallel_num_gpus <- function(models) {
+  models <- as.character(models)
+  if (any(models %in% c(gp_parallel_deep_models(), gp_parallel_gp_models(), "Xgboost"))) {
+    return(detect_num_gpus())
+  }
+  n <- suppressWarnings(as.integer(detect_physical_num_gpus())[1L])
+  if (length(n) && is.finite(n) && n > 0L) n else 0L
 }
 
 gp_parallel_gp_models <- function() {
@@ -508,17 +599,15 @@ gp_parallel_model_capability_table <- function(models,
   do.call(rbind, out)
 }
 
+# Auto mode scores only sequential against one parallel backend (see
+# gp_parallel_auto_backend); the mirai, future and foreach weights were
+# retired in 0.20.201.
 gp_parallel_score_weights <- function() {
   list(
     tasks = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_TASKS", "0.9"))),
     workers = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_WORKERS", "0.5"))),
     globals = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_GLOBALS", "0.35"))),
-    windows_future = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_WINDOWS_FUTURE", "0.9"))),
-    windows_future_startup = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_WINDOWS_FUTURE_STARTUP", "2.0"))),
-    windows_mirai_penalty = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_WINDOWS_MIRAI_PENALTY", "0.45"))),
-    mirai_worker_pool = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_MIRAI_WORKER_POOL", "0.8"))),
     gpu_mirai = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_GPU_MIRAI", "3.0"))),
-    gpu_future_penalty = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_GPU_FUTURE_PENALTY", "1.75"))),
     hidden_threads = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_HIDDEN_THREADS", "0.4"))),
     mori = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_MORI", "0.6"))),
     tiny_seq = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_TINY_SEQ", "2.2"))),
@@ -527,9 +616,32 @@ gp_parallel_score_weights <- function() {
     worker_startup = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_WORKER_STARTUP", "3.0"))),
     fork_worker_startup = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_FORK_WORKER_STARTUP", "1.2"))),
     windows_worker_startup = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_WINDOWS_WORKER_STARTUP", "3.0"))),
-    base_parallel_unix = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_BASE_PARALLEL_UNIX", "0.9"))),
-    foreach_penalty = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_FOREACH_PENALTY", "0.35")))
+    base_parallel_unix = suppressWarnings(as.numeric(Sys.getenv("GP_PAR_SCORE_BASE_PARALLEL_UNIX", "0.9")))
   )
+}
+
+# The parallel backend auto mode uses. base_parallel was the fastest parallel
+# backend on Windows in every measured shape and on Linux in 10 of 12 (the
+# other two within 0.3 s), and in every real CV (0.20.200 timings,
+# inst/parallel-policy-knobs.md). With GPU models on several GPUs, mirai: the
+# only backend that gives each worker its own GPU (one daemon per device);
+# base_parallel workers would all use the default device.
+gp_parallel_auto_backend <- function(multi_gpu = FALSE) {
+  if (isTRUE(multi_gpu) && isTRUE(gp_parallel_backend_available("mirai"))) "mirai" else "base_parallel"
+}
+
+# CUDA device ids for the GPU workers, one worker per id: GP_CUDA_VISIBLE_DEVICES
+# (colon-separated, e.g. "2:3"), else every GPU. The default used to be the
+# string "0:<n-1>" split on ":", which left out the middle GPUs.
+gp_parallel_gpu_ids <- function(num_gpus) {
+  configured <- trimws(Sys.getenv("GP_CUDA_VISIBLE_DEVICES", ""))
+  if (nzchar(configured)) {
+    ids <- trimws(strsplit(configured, ":", fixed = TRUE)[[1L]])
+    return(ids[nzchar(ids)])
+  }
+  n <- suppressWarnings(as.integer(num_gpus)[1L])
+  if (!length(n) || !is.finite(n) || n < 1L) n <- 1L
+  as.character(seq_len(n) - 1L)
 }
 
 gp_parallel_backend_available <- function(backend, plan = NULL) {
@@ -568,8 +680,7 @@ gp_parallel_worker_startup_penalty <- function(backend, plan, signals, weights) 
   if (isTRUE(signals$is_windows)) {
     return(weights$windows_worker_startup)
   }
-  future_multicore <- requireNamespace("future", quietly = TRUE) && identical(plan, future::multicore)
-  fork_style <- isTRUE(future_multicore) || identical(backend, "base_parallel")
+  fork_style <- identical(backend, "base_parallel") && !identical(signals$prefer_fork, FALSE)
   if (isTRUE(fork_style)) {
     return(weights$fork_worker_startup)
   }
@@ -622,17 +733,30 @@ gp_parallel_mori_signal <- function(backend,
 # close proxy (mice CV: 1.81 GB vs 1.79 GB serialised).
 gp_parallel_closure_payload_gb <- function(fun) {
   if (!is.function(fun)) return(NA_real_)
-  env <- environment(fun)
+  # A function in a frame sends its own frame too (gp_routed_task() holds the
+  # task; a shared copy's entry holds the copied task): those count, each
+  # environment once.
+  visited <- list()
+  queue <- list(environment(fun))
   total <- 0
-  seen <- 0L
-  while (!is.null(env) && !identical(env, globalenv()) && !identical(env, emptyenv()) &&
-         !isNamespace(env) && !identical(env, baseenv()) && seen < 50L) {
+  while (length(queue) && length(visited) < 200L) {
+    env <- queue[[1L]]
+    queue <- queue[-1L]
+    if (is.null(env) || identical(env, globalenv()) || identical(env, emptyenv()) ||
+        isNamespace(env) || identical(env, baseenv()) ||
+        any(vapply(visited, identical, logical(1L), env))) {
+      next
+    }
+    visited[[length(visited) + 1L]] <- env
     for (nm in ls(env, all.names = TRUE)) {
       obj <- get(nm, envir = env, inherits = FALSE)
-      if (!is.function(obj)) total <- total + as.numeric(utils::object.size(obj))
+      if (is.function(obj)) {
+        queue[[length(queue) + 1L]] <- environment(obj)
+      } else {
+        total <- total + as.numeric(utils::object.size(obj))
+      }
     }
-    env <- parent.env(env)
-    seen <- seen + 1L
+    queue[[length(queue) + 1L]] <- parent.env(env)
   }
   total / 1024^3
 }
@@ -679,12 +803,12 @@ gp_parallel_cost_estimate <- function(models, task_cost, workers, globals_gb, is
   list(est_seq = est_seq, est_par = est_par, task_seconds = secs)
 }
 
-gp_parallel_candidate_backends <- function(user_mode = "auto") {
+gp_parallel_candidate_backends <- function(user_mode = "auto", multi_gpu = FALSE) {
   user_mode <- match.arg(user_mode, c("auto", "future", "sequential", "base_parallel", "foreach", "mirai"))
   if (!identical(user_mode, "auto")) {
     return(user_mode)
   }
-  c("sequential", "future", "mirai", "base_parallel", "foreach")
+  c("sequential", gp_parallel_auto_backend(multi_gpu))
 }
 
 gp_parallel_score_backend <- function(backend, signals, weights) {
@@ -756,30 +880,11 @@ gp_parallel_score_backend <- function(backend, signals, weights) {
     reasons <- c(reasons, "mori_shared_globals")
   }
 
-  if (identical(backend, "future")) {
-    reasons <- c(reasons, "general_psock_backend")
-    if (signals$is_windows) {
-      score <- score + weights$windows_future - weights$windows_future_startup
-      reasons <- c(reasons, "windows_psock", "windows_future_startup_penalty")
-    }
-    if (signals$any_gpu_selected && signals$num_gpus > 1L) {
-      score <- score - weights$gpu_future_penalty
-      reasons <- c(reasons, "gpu_penalty")
-    }
-    if (signals$thread_sensitive_parallel) {
-      score <- score - (weights$hidden_threads * hidden_signal * 0.5)
-      reasons <- c(reasons, "thread_sensitive_penalty")
-    }
-  } else if (identical(backend, "mirai")) {
-    reasons <- c(reasons, "low_overhead_worker_pool")
-    if (!small_cpu_queue && !signals$any_gpu_selected) {
-      score <- score + weights$mirai_worker_pool
-      reasons <- c(reasons, "reusable_worker_pool")
-    }
-    if (signals$is_windows) {
-      score <- score - weights$windows_mirai_penalty
-      reasons <- c(reasons, "windows_socket_penalty")
-    }
+  # Auto mode scores one parallel backend against sequential
+  # (gp_parallel_auto_backend): mirai for GPU models on several GPUs,
+  # base_parallel otherwise.
+  if (identical(backend, "mirai")) {
+    reasons <- c(reasons, "multi_gpu_mirai")
     if (signals$any_gpu_selected && signals$num_gpus > 1L) {
       score <- score + weights$gpu_mirai
       reasons <- c(reasons, "multi_gpu_model_bonus")
@@ -789,17 +894,12 @@ gp_parallel_score_backend <- function(backend, signals, weights) {
       reasons <- c(reasons, "small_queue_penalty")
     }
   } else if (identical(backend, "base_parallel")) {
-    reasons <- c(reasons, "base_parallel_fallback")
+    reasons <- c(reasons, "base_parallel_preferred")
+    # workers start cheaper on Unix: forked, 0.1-0.25 s for 2-8 workers
     if (!signals$is_windows) {
       score <- score + weights$base_parallel_unix
       reasons <- c(reasons, "unix_fork_bonus")
-    } else {
-      score <- score - weights$overhead
-      reasons <- c(reasons, "windows_psock_penalty")
     }
-  } else if (identical(backend, "foreach")) {
-    reasons <- c(reasons, "foreach_fallback")
-    score <- score - weights$foreach_penalty
   }
 
   startup_penalty <- gp_parallel_worker_startup_penalty(backend, plan, signals, weights)
@@ -828,7 +928,8 @@ gp_parallel_choose_backend <- function(user_mode = "auto",
                                        signals,
                                        prefer_fork = TRUE,
                                        exclude = character()) {
-  candidates <- setdiff(gp_parallel_candidate_backends(user_mode = user_mode), exclude)
+  multi_gpu <- isTRUE(signals$any_gpu_selected) && isTRUE(signals$num_gpus > 1L)
+  candidates <- setdiff(gp_parallel_candidate_backends(user_mode = user_mode, multi_gpu = multi_gpu), exclude)
   plans <- lapply(candidates, function(backend) {
     gp_parallel_backend_plan(
       backend = backend,
@@ -843,6 +944,7 @@ gp_parallel_choose_backend <- function(user_mode = "auto",
 
   signals$plans <- plans
   signals$available <- available
+  signals$prefer_fork <- isTRUE(prefer_fork)
   weights <- gp_parallel_score_weights()
   scored <- lapply(candidates, function(backend) gp_parallel_score_backend(backend, signals, weights))
 
@@ -928,7 +1030,7 @@ sp_decide_policy <- function(models,
   }
 
   deep_models <- gp_parallel_deep_models()
-  num_gpus <- detect_num_gpus()
+  num_gpus <- gp_parallel_num_gpus(models)
   gpu_usage <- tryCatch(get_gpu_usage(), error = function(e) NA_real_)
   gpu_busy_threshold <- gp_gpu_busy_threshold()
   has_asreml_prep <- gp_parallel_has_nonnull_global(globals, "asreml")
@@ -991,11 +1093,22 @@ sp_decide_policy <- function(models,
     gp_parallel_memory_budget_gb()
   }
   # Measure the real worker footprint only when more than one worker could
-  # run, so sequential runs never pay for starting a probe worker.
+  # run, so sequential runs never pay for starting a probe worker. In auto
+  # mode the cost model is asked first with every worker: if even that stays
+  # sequential, fewer workers (the memory cap) cannot change it, so the probe
+  # is skipped too (3 s for an R worker, up to 24 s with its Python child,
+  # measured 2026-10-10; that was most of a small CV's auto-mode overhead).
+  cost_model_on <- !is.null(task_cost) &&
+    !tolower(Sys.getenv("GP_PAR_COST_MODEL", "true")) %in% c("false", "0", "no")
+  cost_says_sequential <- identical(user_mode, "auto") && isTRUE(cost_model_on) && n_par_tasks > 0L &&
+    local({
+      early <- gp_parallel_cost_estimate(models[!internal_flags], task_cost, workers, tot_GB, is_windows)
+      !(early$est_par < 0.75 * early$est_seq)
+    })
   worker_memory <- gp_parallel_resolve_worker_memory_gb(
     models = models[!internal_flags],
     worker_memory_gb = worker_memory_gb,
-    measure = workers > 1L
+    measure = workers > 1L && !isTRUE(cost_says_sequential)
   )
   # Per-worker memory = overhead + GP_PAR_PAYLOAD_MULTIPLIER (default 4) x the
   # payload each worker receives. Calibrated on system-level memory, mice CV
@@ -1017,7 +1130,7 @@ sp_decide_policy <- function(models,
     workers <- 1L
   }
 
-  gpu_ids <- strsplit(Sys.getenv("GP_CUDA_VISIBLE_DEVICES", paste0("0:", max(0, num_gpus - 1))), ":")[[1]]
+  gpu_ids <- gp_parallel_gpu_ids(num_gpus)
   if (num_gpus > 1L && any(capability_table$gpu_selected, na.rm = TRUE)) {
     workers <- max(1L, min(workers, length(gpu_ids)))
   }
@@ -1118,27 +1231,19 @@ sp_decide_policy <- function(models,
       )
     }
     if (!is.null(cost) && cost$est_par < 0.75 * cost$est_seq) {
-      # Expected work clearly outweighs worker start-up. Prefer base_parallel:
-      # it ships the shared data once per worker (mirai ships it once per
-      # task; future duplicated closure data and hit its globals limit) and
-      # forks on Unix. Users can still force future/mirai/foreach.
-      backend_choice <- if (gp_parallel_backend_available(
-        "base_parallel", plan = gp_parallel_backend_plan("base_parallel", sys_name = sys_name, prefer_fork = prefer_fork)
-      )) {
-        list(
-          backend = "base_parallel",
-          plan = gp_parallel_backend_plan("base_parallel", sys_name = sys_name, prefer_fork = prefer_fork),
-          backend_score = Inf,
-          decision_reason = "base_parallel_preferred",
-          score_table = data.frame(backend = "base_parallel", eligible = TRUE, score = Inf, plan = "NA",
-                                   reasons = "base_parallel_preferred", stringsAsFactors = FALSE)
-        )
-      } else {
-        gp_parallel_choose_backend(
-          user_mode = user_mode, signals = signals, prefer_fork = prefer_fork,
-          exclude = "sequential"
-        )
-      }
+      # Expected work clearly outweighs worker start-up: auto mode's parallel
+      # backend (gp_parallel_auto_backend). Users can still force
+      # future/mirai/foreach.
+      auto_backend <- gp_parallel_auto_backend(signals$any_gpu_selected && num_gpus > 1L)
+      auto_reason <- if (identical(auto_backend, "mirai")) "multi_gpu_mirai" else "base_parallel_preferred"
+      backend_choice <- list(
+        backend = auto_backend,
+        plan = NULL,
+        backend_score = Inf,
+        decision_reason = auto_reason,
+        score_table = data.frame(backend = auto_backend, eligible = TRUE, score = Inf, plan = "NA",
+                                 reasons = auto_reason, stringsAsFactors = FALSE)
+      )
       backend_choice$decision_reason <- paste0(
         sprintf("cost_model_parallel(est_seq=%.0fs,est_par=%.0fs)", cost$est_seq, cost$est_par),
         ";", backend_choice$decision_reason %||% ""

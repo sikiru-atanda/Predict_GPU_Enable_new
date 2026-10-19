@@ -1,5 +1,7 @@
 test_that("setup_predictgp_env provisions through subprocess without switching reticulate", {
   skip_if_not_installed("reticulate")
+  # the helper sets these for the session; keep the stand-in path out of later tests
+  withr::local_envvar(c(PREDICTPRO_GP_PYTHON = NA))
 
   conda_envs <- data.frame(
     name = "predictgp",
@@ -37,6 +39,7 @@ test_that("setup_predictgp_env provisions through subprocess without switching r
 
 test_that("setup_predictdl_env provisions through subprocess without switching reticulate", {
   skip_if_not_installed("reticulate")
+  withr::local_envvar(c(PREDICTPRO_DL_PYTHON = NA, PREDICTPRO_PYTHON_DL = NA))
 
   conda_envs <- data.frame(
     name = "predictdl",

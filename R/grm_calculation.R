@@ -15,7 +15,14 @@ gp_grm_backend <- function(backend = NULL, method = NULL) {
   }
   if (identical(backend, "auto") && gp_grm_dense_cpp_available()) {
     method <- if (is.null(method)) "" else as.character(method)
+    # The native backend builds the covariates in one pass and forms the
+    # product with BLAS dsyrk: as fast as R for VanRaden, 0.3-1.1 s faster for
+    # the others at 1,000 x 10,000, without R's temporaries (0.20.211).
     native_auto_methods <- c(
+      "VanRaden",
+      "Weighted_VanRaden",
+      "Epistasis",
+      "Yang",
       "Dominance",
       "Dominance_Vitezica",
       "Dominance_Su",
@@ -61,8 +68,8 @@ gp_grm_backend <- function(backend = NULL, method = NULL) {
 #'   `"Dominance_Su"`.
 #' @param backend Backend selector. One of `"auto"`, `"cpp"`, or `"r"`. `NULL`
 #'   uses `PREDICTPRO_GRM_BACKEND`, `PREDICTPRO_KERNEL_BACKEND`, or `"auto"`.
-#'   The automatic route is performance-aware and keeps current dense methods
-#'   on the R/BLAS path in this phase.
+#'   The automatic route uses the native backend, which forms each product
+#'   with BLAS dsyrk for every ploidy the method allows.
 #'
 #' @return A matrix representing the genomic relationship matrix calculated
 #'   based on the specified method.
@@ -134,8 +141,10 @@ grm_calculation <- function(
   storage.mode(geno_clean) <- "double"
   pre_marker_names <- colnames(geno_clean)
   marker_has_missing <- colSums(is.na(geno_clean)) > 0
-  marker_unique_counts <- apply(geno_clean, 2, function(x) length(unique(x[!is.na(x)])))
-  keep_markers <- !marker_has_missing & marker_unique_counts > 1
+  # a marker varies when any line differs from the first line (vectorised;
+  # replaces a per-marker unique() scan, same result)
+  marker_varies <- colSums(geno_clean != rep(geno_clean[1L, ], each = nrow(geno_clean)), na.rm = TRUE) > 0
+  keep_markers <- !marker_has_missing & marker_varies
   if (!all(keep_markers)) {
     geno_clean <- geno_clean[, keep_markers, drop = FALSE]
   }
@@ -201,8 +210,19 @@ grm_calculation <- function(
     stop(paste(msg, "GRM denominator must be positive after genotype cleanup."), call. = FALSE)
   }
 
-  centered <- scale(geno_clean, center = TRUE, scale = FALSE)
-  base_grm <- tcrossprod(centered) / denom
+  # Computed only for the methods that use them: the additive product was
+  # formed for every method (dominance, weighted and Yang then formed their
+  # own; the native backend used neither): 8 s wasted at 1,000 x 10,000.
+  centered_cache <- NULL
+  base_cache <- NULL
+  centered_markers <- function() {
+    if (is.null(centered_cache)) centered_cache <<- scale(geno_clean, center = TRUE, scale = FALSE)
+    centered_cache
+  }
+  base_grm <- function() {
+    if (is.null(base_cache)) base_cache <<- tcrossprod(centered_markers()) / denom
+    base_cache
+  }
   q <- 1 - freq
 
   dominance_vitezica_grm <- function() {
@@ -238,16 +258,13 @@ grm_calculation <- function(
 
   calculate_one_grm <- function(method_one) {
     selected_backend <- gp_grm_backend(backend, method_one)
-    if (ploidy != 2L && identical(selected_backend, "cpp")) {
-      stop("The native C++ GRM backend is currently diploid-only; use backend = 'r' for polyploid dosage.", call. = FALSE)
-    }
     if (identical(selected_backend, "cpp")) {
       Ga <- .Call(
         "predictpror_grm_dense",
         geno_clean,
         as.character(method_one),
         weights_vec,
-        list(),
+        list(ploidy = ploidy),
         PACKAGE = "PredictProR"
       )
       rownames(Ga) <- rownames(geno_clean)
@@ -256,19 +273,20 @@ grm_calculation <- function(
       return(Ga)
     }
 
+    # one-argument tcrossprod() is a BLAS dsyrk; with two arguments it is a
+    # dgemm over both triangles (12.4 s vs 5-8 s at 1,000 x 10,000)
     Ga <- switch(
       method_one,
-      VanRaden = base_grm,
+      VanRaden = base_grm(),
       Weighted_VanRaden = {
-        weighted_centered <- sweep(centered, 2, weights_vec, `*`)
-        tcrossprod(weighted_centered, centered) / denom
+        tcrossprod(sweep(centered_markers(), 2, sqrt(weights_vec), `*`)) / denom
       },
-      Epistasis = base_grm * base_grm,
+      Epistasis = base_grm() * base_grm(),
       Yang = {
         n_marker <- ncol(geno_clean)
         n_individuals <- nrow(geno_clean)
         inv_var <- 1 / (2 * freq * (1 - freq))
-        locus <- (1 / n_marker) * (centered %*% (t(centered) * inv_var))
+        locus <- (1 / n_marker) * tcrossprod(sweep(centered_markers(), 2, sqrt(inv_var), `*`))
         locus[lower.tri(locus, diag = TRUE)] <- 0
         locus <- locus + t(locus)
         multiplier <- geno_clean^2 -

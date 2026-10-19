@@ -62,8 +62,8 @@ gp_multitrait_ml_fit_trait <- function(model_type,
                                        return_job = FALSE) {
   model_type <- as.character(model_type[[1]])
 
-  y_scaler <- caret::preProcess(as.data.frame(as.matrix(y_train)), method = c("center", "scale"))
-  y_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y_train)))[, 1]
+  y_scaler <- gp_center_scale_fit(as.data.frame(as.matrix(y_train)))
+  y_fit <- gp_center_scale_apply(y_scaler, as.data.frame(as.matrix(y_train)))[, 1]
   model_key <- gp_multitrait_ml_python_model_key(model_type)
   model_params <- switch(
     model_type,
@@ -775,15 +775,16 @@ gp_multitrait_ml_gaussian_cv <- function(model_type = c("RandomForest", "Ridge_R
         train_idx <- setdiff(obs_idx, test_idx)
         x_feature <- x_base
         if (isTRUE(feature_active)) {
-          feature_view <- gp_feature_multitrait_view(
+          ph_visible <- ph
+          ph_visible[test_idx, tr] <- NA_real_
+          feature_view <- gp_feature_joint_view(
             predictor_data = x_base,
-            pheno_data = ph,
-            response = tr,
+            pheno_visible = ph_visible,
+            response = response,
             gen_name = gen_name,
             k = feature_k,
             selection_mode = feature_scoring_cv,
             feature_score_metadata = feature_score_metadata,
-            test_rows = test_idx,
             scoring_model = feature_scoring_model,
             seed = as.integer((random_seed %||% 123L) + rep_idx * 10000L + fold_idx),
             source_block = feature_source_map,
@@ -797,9 +798,11 @@ gp_multitrait_ml_gaussian_cv <- function(model_type = c("RandomForest", "Ridge_R
             ntree = ntree,
             mtry = mtry,
             nodesize = nodesize,
-            rf_n_jobs = rf_n_jobs
+            rf_n_jobs = rf_n_jobs,
+            held_out_trait = tr
           )
           x_feature <- feature_view$predictor_data
+          feature_k_actual <- feature_view$feature_k
           feature_records[[length(feature_records) + 1L]] <- feature_view$metadata
         }
         aux_traits <- setdiff(response, tr)
@@ -885,7 +888,7 @@ gp_multitrait_ml_gaussian_cv <- function(model_type = c("RandomForest", "Ridge_R
         )
         names(pred_blocks[[block_idx]])[1] <- gen_name
         if (isTRUE(feature_active)) {
-          pred_blocks[[block_idx]][["feature_k"]] <- as.integer(feature_k)
+          pred_blocks[[block_idx]][["feature_k"]] <- as.integer(feature_k_actual)
           pred_blocks[[block_idx]][["feature_scoring_model"]] <- feature_scoring_model
           pred_blocks[[block_idx]][["feature_scoring_cv"]] <- feature_scoring_cv
         }
@@ -916,7 +919,7 @@ gp_multitrait_ml_gaussian_cv <- function(model_type = c("RandomForest", "Ridge_R
       rep = rep_idx
     )
     if (isTRUE(feature_active) && nrow(metric_table)) {
-      metric_table[["feature_k"]] <- as.integer(feature_k)
+      metric_table[["feature_k"]] <- as.integer(feature_k_actual)
       metric_table[["feature_scoring_model"]] <- feature_scoring_model
       metric_table[["feature_scoring_cv"]] <- feature_scoring_cv
     }

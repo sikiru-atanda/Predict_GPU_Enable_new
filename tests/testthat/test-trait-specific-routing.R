@@ -1287,6 +1287,8 @@ test_that("public model_execute keeps ML task context and returns prediction_sta
     summary_statistics_AI = function(...) {
       list(summary_statistics = data.frame(stat = "ok", summary = "ok"))
     },
+    # no model is fitted here, so no Python packages are needed
+    gp_python_prepare_runtimes = function(...) invisible(character()),
     .package = "PredictProR"
   )
 

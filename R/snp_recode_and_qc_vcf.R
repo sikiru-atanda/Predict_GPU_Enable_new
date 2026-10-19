@@ -224,7 +224,8 @@ process_vcf_in_batches_parallel <- function(vcf_file_name_qc_plink,
       num_cores <- gp_detect_cores()
         num_cores <- num_cores*0.7
       }
-      future::plan(plan_type, workers = num_cores)
+      old_plan <- future::plan(plan_type, workers = num_cores)
+      on.exit(future::plan(old_plan), add = TRUE)
     }
 
     # Parallel processing
@@ -258,8 +259,6 @@ process_vcf_in_batches_parallel <- function(vcf_file_name_qc_plink,
 
       return(batch_process)
     }, future.seed = TRUE)
-
-    future::plan("sequential")
 
     # Combine all processed batches
     #results <- Filter(function(df) nrow(df) > 0, results)

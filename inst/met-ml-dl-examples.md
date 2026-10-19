@@ -190,7 +190,8 @@ cv_out <- PredictProR::model_execute(
   ft_ff_mult = 2L,
   ft_dropout = 0.1,
   ft_token_dropout = 0.1,
-  ft_use_cls = TRUE
+  ft_use_cls = TRUE,
+  ft_learning_rate = 3e-4
 )
 ```
 

@@ -69,8 +69,8 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
     model_public <- gp_public_model_label(model_canonical)[1L]
     cv_run_metadata <- gp_runtime_metadata(
       execution_policy = NULL,
-      python_path = gp_detect_python(),
-      preferred_python = gp_preferred_python(purpose = "gp"),
+      python_path = gp_known_python(),
+      preferred_python = gp_known_preferred_python("gp"),
       context = if (isTRUE(mt_gp_is_met)) {
         "cross_validation_multi_trait_multi_environment_gp"
       } else {
@@ -104,7 +104,8 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
       plot_units = plot_units,
       plot_dpi = plot_dpi,
       feature_selected = feature_selected,
-      feature_score_metadata = feature_score_metadata
+      feature_score_metadata = feature_score_metadata,
+      feature_selection_kind = feature_selection_kind
     ))
   }
   if (isTRUE(multi_trait_bayes)) {
@@ -206,7 +207,8 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
       plot_units = plot_units,
       plot_dpi = plot_dpi,
       feature_selected = feature_selected,
-      feature_score_metadata = feature_score_metadata
+      feature_score_metadata = feature_score_metadata,
+      feature_selection_kind = feature_selection_kind
     ))
   }
   if (isTRUE(hybrid_dl)) {
@@ -276,6 +278,7 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
       ft_ff_mult = ft_ff_mult,
       ft_dropout = ft_dropout,
       ft_token_dropout = ft_token_dropout,
+      ft_learning_rate = ft_learning_rate,
       ft_use_cls = ft_use_cls,
       dropout = dropout,
       l2_weight_decay = l2_weight_decay,
@@ -299,8 +302,8 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
     cv_results_processed <- cv_pipeline[["cv_results_processed"]]
     cv_run_metadata <- gp_runtime_metadata(
       execution_policy = NULL,
-      python_path = gp_detect_python(),
-      preferred_python = gp_preferred_python(purpose = "dl"),
+      python_path = gp_known_python(),
+      preferred_python = gp_known_preferred_python("dl"),
       context = "cross_validation_hybrid_dl"
     )
     return(results_handling(
@@ -325,7 +328,8 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
       plot_units = plot_units,
       plot_dpi = plot_dpi,
       feature_selected = feature_selected,
-      feature_score_metadata = feature_score_metadata
+      feature_score_metadata = feature_score_metadata,
+      feature_selection_kind = feature_selection_kind
     ))
   }
   if (isTRUE(hybrid_ml)) {
@@ -448,7 +452,8 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
       plot_units = plot_units,
       plot_dpi = plot_dpi,
       feature_selected = feature_selected,
-      feature_score_metadata = feature_score_metadata
+      feature_score_metadata = feature_score_metadata,
+      feature_selection_kind = feature_selection_kind
     ))
   }
   if (isTRUE(multi_trait_ml)) {
@@ -562,7 +567,8 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
       plot_units = plot_units,
       plot_dpi = plot_dpi,
       feature_selected = feature_selected,
-      feature_score_metadata = feature_score_metadata
+      feature_score_metadata = feature_score_metadata,
+      feature_selection_kind = feature_selection_kind
     ))
   }
   if (isTRUE(multi_trait_asreml)) {
@@ -652,7 +658,7 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
         nfolds = nfolds,
         replication = replication,
         eval_metrics = eval_metrics,
-        trait_covariance = gp_multitrait_asreml_trait_covariance(var_cov_str),
+        trait_covariance = gp_multitrait_asreml_trait_covariance(var_cov_str, length(response)),
         workspace = workspace %||% 1e08,
         pworkspace = ctx$pworkspace %||% 1e06,
         maxit = maxit %||% 50L,
@@ -714,7 +720,8 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
       plot_units = plot_units,
       plot_dpi = plot_dpi,
       feature_selected = feature_selected,
-      feature_score_metadata = feature_score_metadata
+      feature_score_metadata = feature_score_metadata,
+      feature_selection_kind = feature_selection_kind
     ))
   }
   if (isTRUE(multi_trait_dl)) {
@@ -775,6 +782,7 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
       ft_ff_mult = ft_ff_mult,
       ft_dropout = ft_dropout,
       ft_token_dropout = ft_token_dropout,
+      ft_learning_rate = ft_learning_rate,
       ft_use_cls = ft_use_cls,
       dropout = dropout,
       l2_weight_decay = l2_weight_decay,
@@ -800,8 +808,8 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
     cv_results_processed <- cv_pipeline[["cv_results_processed"]]
     cv_run_metadata <- gp_runtime_metadata(
       execution_policy = NULL,
-      python_path = gp_detect_python(),
-      preferred_python = gp_preferred_python(purpose = "dl"),
+      python_path = gp_known_python(),
+      preferred_python = gp_known_preferred_python("dl"),
       context = "cross_validation_multi_trait_dl"
     )
     return(results_handling(
@@ -826,7 +834,8 @@ gp_route_cross_validation_specialized_models <- function(ctx) {
       plot_units = plot_units,
       plot_dpi = plot_dpi,
       feature_selected = feature_selected,
-      feature_score_metadata = feature_score_metadata
+      feature_score_metadata = feature_score_metadata,
+      feature_selection_kind = feature_selection_kind
     ))
   }
 

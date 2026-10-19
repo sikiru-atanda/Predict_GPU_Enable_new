@@ -113,7 +113,7 @@ for (cfg in hybrid_models) {
       hybrid_gp_lambda = "auto",
 
       # Deep-learning controls
-      epochs = 100L,
+      epochs = "auto",
       batch_size = 16L,
       deterministic = TRUE,
       random_seed = 20260903L,

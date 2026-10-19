@@ -358,6 +358,15 @@ gp_single_trait_auto_policy <- function(pheno_df,
     )
   }
   decisions <- character()
+  # Disabling automatic tuning/routing must not remove the genetic model.
+  include_eff <- include_components
+  if (is.null(include_eff)) {
+    include_eff <- if (isTRUE(profile$is_met) && isTRUE(profile$has_env_kernel)) {
+      c("g", "ge", "e")
+    } else {
+      "g"
+    }
+  }
   if (!isTRUE(enabled)) {
     if (gp_policy_is_auto(tune_gp)) {
       tune_mode <- FALSE
@@ -378,7 +387,7 @@ gp_single_trait_auto_policy <- function(pheno_df,
       operator_dtype_compute = operator_dtype_compute,
       tune_gp = isTRUE(tune_mode),
       tuning_objective = requested_objective,
-      include_components = include_components
+      include_components = include_eff
     ))
   }
 
@@ -507,15 +516,6 @@ gp_single_trait_auto_policy <- function(pheno_df,
     decisions <- c(decisions, paste0("auto_tuning_objective_", tuning_objective_eff))
   }
 
-  include_eff <- include_components
-  if (is.null(include_eff)) {
-    include_eff <- if (isTRUE(profile$is_met) && isTRUE(profile$has_env_kernel)) {
-      c("g", "ge", "e")
-    } else {
-      "g"
-    }
-  }
-
   list(
     enabled = TRUE,
     profile = profile,
@@ -595,7 +595,7 @@ gp_project_root <- function() {
 gp_python_candidates_bridge <- function() {
   explicit_gp <- Sys.getenv("PREDICTPRO_GP_PYTHON", unset = "")
   if (nzchar(explicit_gp) && file.exists(explicit_gp)) {
-    return(normalizePath(explicit_gp, winslash = "/", mustWork = TRUE))
+    return(gp_python_path(explicit_gp, mustWork = TRUE))
   }
   root <- tryCatch(gp_project_root(), error = function(e) NULL)
   home <- normalizePath(path.expand("~"), winslash = "/", mustWork = FALSE)
@@ -619,11 +619,17 @@ gp_python_candidates_bridge <- function() {
 }
 
 gp_detect_gp_python <- function() {
+  # an explicitly configured interpreter wins (as for ML and DL); scoring the
+  # candidates could otherwise pick another environment over it
+  explicit <- Sys.getenv("PREDICTPRO_GP_PYTHON", unset = "")
+  if (nzchar(explicit) && file.exists(explicit)) {
+    return(gp_python_path(explicit, mustWork = TRUE))
+  }
   cand <- gp_python_candidates_bridge()
   if (!length(cand)) {
     return(NULL)
   }
-  normalizePath(cand[[1]], winslash = "/", mustWork = TRUE)
+  gp_python_path(cand[[1]], mustWork = TRUE)
 }
 
 gp_bridge_script_path <- function() {
@@ -803,7 +809,7 @@ gp_bridge_prepare_bundle <- function(pheno_df, gmatrix, train_idx0, test_idx0, d
 
 gp_bridge_write_json <- function(x, path) {
   writeLines(
-    jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", pretty = TRUE, na = "null"),
+    jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", pretty = TRUE, na = "null", digits = NA),
     con = path,
     useBytes = TRUE
   )
@@ -972,6 +978,10 @@ gp_bridge_reticulate_fallback_enabled <- function() {
 
 gp_bridge_run_cli <- function(command, args, python_bin = NULL) {
   python_bin <- python_bin %||% gp_detect_gp_python()
+  if (!identical(command, "setup-deps")) {
+    # installs PyTorch, GPyTorch, linear_operator, scipy, zarr if missing
+    python_bin <- gp_python_ready("gp", python_bin)
+  }
   if (is.null(python_bin) || !nzchar(python_bin)) {
     stop(
       "No configured Python runtime was found for Gaussian-process models.\n",
@@ -1148,7 +1158,7 @@ gp_bridge_fit_mixed_model_direct <- function(args,
       gp_execution = "python_subprocess",
       bridge_command = "fit-predict-spec",
       bridge_dir = spec$bridge_dir,
-      python = normalizePath(python_bin, winslash = "/", mustWork = FALSE)
+      python = gp_python_path(python_bin, mustWork = FALSE)
     ),
     meta,
     info
@@ -1359,7 +1369,7 @@ gp_bridge_fit_mixed_model_cv_direct <- function(args,
       package_cv_batch = TRUE,
       bridge_command = "fit-predict-cv-spec",
       bridge_dir = spec$bridge_dir,
-      python = normalizePath(python_bin, winslash = "/", mustWork = FALSE)
+      python = gp_python_path(python_bin, mustWork = FALSE)
     ),
     meta
   )
@@ -1479,7 +1489,7 @@ gp_bridge_public_result_from_dir <- function(out_dir,
       gp_execution = "python_subprocess",
       bridge_command = command,
       bridge_dir = bridge_dir,
-      python = normalizePath(python_bin %||% gp_detect_gp_python(), winslash = "/", mustWork = FALSE)
+      python = gp_python_path(python_bin %||% gp_detect_gp_python(), mustWork = FALSE)
     ),
     if (is.list(meta)) meta else list(),
     if (is.list(info)) info else list()
@@ -1556,7 +1566,7 @@ gp_framework_module_name <- function() {
 
 gp_framework_module_key <- function(python_bin, project_root) {
   paste(
-    normalizePath(python_bin, winslash = "/", mustWork = FALSE),
+    gp_python_path(python_bin, mustWork = FALSE),
     normalizePath(project_root, winslash = "/", mustWork = FALSE),
     sep = "::"
   )
@@ -1691,7 +1701,7 @@ gp_bridge_worker_enabled <- function() {
 }
 
 gp_bridge_worker_key <- function(python_bin, project_root) {
-  paste(normalizePath(python_bin, winslash = "/", mustWork = FALSE),
+  paste(gp_python_path(python_bin, mustWork = FALSE),
         normalizePath(project_root, winslash = "/", mustWork = FALSE),
         sep = "::")
 }
@@ -1815,7 +1825,7 @@ gp_bridge_worker_request <- function(command, args, python_bin = NULL, project_r
     stop("Could not connect to warm GP bridge worker.\n", log_txt, call. = FALSE)
   }
   on.exit(try(close(con), silent = TRUE), add = TRUE)
-  payload <- jsonlite::toJSON(list(cmd = command, args = args), auto_unbox = TRUE, null = "null")
+  payload <- jsonlite::toJSON(list(cmd = command, args = args), auto_unbox = TRUE, null = "null", digits = NA)
   writeBin(charToRaw(paste0(payload, "\n")), con)
   flush(con)
   line <- readLines(con, n = 1L, warn = FALSE)
@@ -2239,7 +2249,7 @@ gp_cv_align_public_predictions <- function(predictions,
     return(pred)
   }
 
-  gid_col <- c("GID", "gid", gen_name, "Name", "name")
+  gid_col <- c("GID", "gid", gen_name, "Name", "name", "Genotype")
   gid_col <- gid_col[gid_col %in% names(pred)][1L]
   if (is.na(gid_col) || !nzchar(gid_col)) {
     return(pred[seq_len(min(nrow(pred), length(tst))), , drop = FALSE])
@@ -2347,7 +2357,14 @@ gp_bridge_cv_predict <- function(model_name,
     gp_return_se = FALSE,
     gp_uncertainty_calibration = "none",
     gp_full_vc = FALSE,
+    gp_fit_reml = gp_backend_method_map(model_name) %in% c("gp_exact", "gp_icm_fa") &&
+      identical(tolower(params$gp_varcomp_mode %||% "reml"), "reml"),
+    gp_learn_scales = params$gp_learn_scales %||% (
+      gp_backend_method_map(model_name) %in% c("gp_exact", "gp_icm_fa") &&
+        identical(tolower(params$gp_varcomp_mode %||% "reml"), "reml")),
     gp_factor_cache = params$gp_factor_cache %||% NULL,
+    large_n_threshold = params$large_n_threshold %||% 50000L,
+    gp_auto_policy = params$gp_auto_policy %||% TRUE,
     gp_varcomp_mode = params$gp_varcomp_mode %||% "reml",
     gp_fa_rank = params$gp_fa_rank %||% 1L,
     gp_prediction_output = params$gp_prediction_output %||% "test_only",
@@ -2521,6 +2538,17 @@ gp_backend_cv_predict_batch <- function(model_name,
     resolve_device = FALSE
   )
 
+  cv_fit_reml <- gp_backend_method_map(model_name) %in% c("gp_exact", "gp_icm_fa") &&
+    identical(tolower(params$gp_varcomp_mode %||% "reml"), "reml")
+  cv_varcomp_mode <- params$gp_varcomp_mode %||% "reml"
+  if (cv_fit_reml && isTRUE(policy$profile$large_fit)) {
+    message("GP large-fit REML CV uses the operator MoM prediction route; dense REML per fold is disabled.")
+    cv_fit_reml <- FALSE
+    cv_varcomp_mode <- "mom"
+    policy$gp_backend <- "operator"
+    policy$decisions <- c(policy$decisions, "large_reml_cv_to_operator_mom")
+  }
+
   fixed_effects <- params$fixed_effects %||% NULL
   if (is.null(fixed_effects) && !is.null(heter_groups)) {
     all_envs <- unique(as.character(pheno_df[[backend_env_col]]))
@@ -2554,10 +2582,14 @@ gp_backend_cv_predict_batch <- function(model_name,
     return_se = FALSE,
     compute_ai_se = FALSE,
     standardize = "global",
-    varcomp_mode = params$gp_varcomp_mode %||% "reml",
+    fit_reml = cv_fit_reml,
+    learn_scales = if (is.null(params$gp_learn_scales)) {
+      cv_fit_reml
+    } else isTRUE(params$gp_learn_scales),
+    varcomp_mode = cv_varcomp_mode,
     krr_lam = as.numeric(params$krr_lam %||% 1e-3)[1L],
-    krr_lams = params$krr_lams %||% "none",
-    lam_select = as.character(params$lam_select %||% "fixed")[1L],
+    krr_lams = params$krr_lams %||% c(0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10),
+    lam_select = as.character(params$lam_select %||% "gcv")[1L],
     dtype = policy$gp_dtype,
     seed = as.integer(params$random_state %||% 12345L),
     large_n_threshold = as.integer(large_n_threshold),
@@ -2792,6 +2824,7 @@ gp_backend_gaussian_model <- function(model_name,
       )
     }
   }
+  gp_validate_fa_rank_for_environments(model_name,gp_fa_rank,pheno_data,heter_groups)
   return_se <- gp_output_level %in% c("predict_with_se", "full_vc")
 
   # Phase 2.1 Stage C: auto-warm-start from the session theta cache. Default
@@ -2870,18 +2903,18 @@ gp_backend_gaussian_model <- function(model_name,
       gp_warm_start_save(warm_key, fit_theta, layout = fit_layout)
     }
   }
-  # gp_engine_used: which REML engine actually ran. Sourced from the Python
-  # summary's theta_layout tag ("gp_exact" -> dense_v, "gp_exact_mme" -> mme,
-  # "fa_icm" -> dense_v FA). This lets users verify their gp_engine request
-  # was honoured rather than silently downgraded by NotImplementedError
-  # fallback inside gp_framework.py:gp_exact_with_X.
-  gp_engine_used <- if (is.null(fit_layout) || is.na(fit_layout)) {
+  # Record the solver actually used, including KRR (which has no GP theta).
+  # A dense KRR solver does not imply that a separate GP REML engine ran.
+  solver_used <- public_fit[["result"]][["diagnostics"]][["engine_used"]]
+  gp_engine_used <- if (length(solver_used) == 1L && !is.na(solver_used)) {
+    as.character(solver_used)
+  } else if (is.null(fit_layout) || is.na(fit_layout)) {
     NA_character_
   } else if (identical(as.character(fit_layout), "gp_exact_eigen")) {
     "eigen"
   } else if (identical(as.character(fit_layout), "gp_exact_mme")) {
     "mme"
-  } else if (identical(as.character(fit_layout), "gp_exact") ||
+  } else if (as.character(fit_layout) %in% c("gp_exact", "gp_exact_matched_v1") ||
              identical(as.character(fit_layout), "fa_icm")) {
     "dense_v"
   } else {
@@ -2918,12 +2951,13 @@ gp_backend_gaussian_model <- function(model_name,
       public_fit[["info"]][["varcomp_mode"]] %||%
       gp_varcomp_mode
   )[1L]
+  regularization <- public_fit[["result"]][["diagnostics"]][["regularization"]] %||% list()
   krr_lambda <- tryCatch(
-    as.numeric(public_fit[["result"]][["diagnostics"]][["lam_eff"]])[1L],
+    as.numeric(regularization$selected_lambda %||% public_fit[["result"]][["diagnostics"]][["lam_eff"]])[1L],
     error = function(e) NA_real_
   )
   krr_lambda_selection <- tryCatch(
-    as.character(public_fit[["result"]][["diagnostics"]][["lam_select"]])[1L],
+    as.character(regularization$method %||% public_fit[["result"]][["diagnostics"]][["lam_select"]])[1L],
     error = function(e) NA_character_
   )
   gp_kernel_names <- names(kernel_inputs)
@@ -2942,7 +2976,7 @@ gp_backend_gaussian_model <- function(model_name,
     NA_character_
   }
   gp_learns_kernel_scales <- gp_backend_method_map(model_name) %in% c("gp_exact", "gp_icm_fa") &&
-    if (is.null(gp_learn_scales)) identical(gp_output_level, "full_vc") else isTRUE(gp_learn_scales)
+    if (is.null(gp_learn_scales)) gp_output_level %in% c("predict_with_se", "full_vc") else isTRUE(gp_learn_scales)
   gp_kernel_weight_mode <- if (is.null(lowrank_kernel_weights)) {
     "equal_default"
   } else {
@@ -3026,11 +3060,22 @@ gp_backend_gaussian_model <- function(model_name,
   )
   model_parameters <- rbind(
     model_parameters,
+    data.frame(stat = c("gp_krr_lambda_selection_n", "gp_krr_lambda_at_grid_edge"),
+      summary = c(as.character(regularization$n_selection %||% NA_integer_),
+                  as.character(regularization$selected_at_grid_edge %||% NA)),
+      stringsAsFactors = FALSE),
     gp_multi_kernel_parameter_rows(
       kernel_names = gp_kernel_names,
       strategy = paste0("GP_backend_", gp_prediction_method)
     )
   )
+  if (identical(gp_backend_resolve_model(model_name), "GP_FA")) {
+    model_parameters <- rbind(
+      model_parameters,
+      data.frame(stat = "gp_fa_rank", summary = as.character(as.integer(gp_fa_rank %||% 1L)),
+                 stringsAsFactors = FALSE)
+    )
+  }
   list(
     model_parameters = model_parameters,
     predicted_values = predicted_values,
@@ -3556,7 +3601,7 @@ gp_public_joint_multikernel_contract <- function(out, kernel, kernel_weights,
     independent_kernel_covariances_estimated = FALSE
   )
   out$result$variance_component_status <- if (isTRUE(variance_promotable)) {
-    "promoted"
+    if (identical(out$fit$reml_convergence_status, "converged_boundary")) "promoted_boundary" else "promoted"
   } else {
     "not_promoted_nonconverged"
   }
@@ -3772,6 +3817,13 @@ gp_public_factor_cache_kernel <- function(gp_factor_cache,
 }
 
 gp_public_normalize_multitrait_uncertainty <- function(out) {
+  if (is.list(out$result)) {
+    out$result$covariance_parameters <- gp_result_as_data_frame(out$result$varcomp)
+    out$result$correlation_parameters <- gp_result_as_data_frame(out$result$correlation_parameters)
+    out$covariance_parameters <- out$result$covariance_parameters
+    out$correlation_parameters <- gp_result_as_data_frame(out$result$correlation_parameters)
+    out$inference_summary <- out$result$inference_summary
+  }
   normalize_pred <- function(pred) {
     if (is.null(pred)) {
       return(pred)
@@ -3823,7 +3875,7 @@ gp_model_execute_multitrait_predicted_values <- function(predictions,
                                                          gen_name,
                                                          heter_groups = NULL) {
   pred <- as.data.frame(predictions, stringsAsFactors = FALSE)
-  gid_col <- c("GID", "gid", gen_name, "Name", "name")
+  gid_col <- c("GID", "gid", gen_name, "Name", "name", "Genotype")
   gid_col <- gid_col[gid_col %in% names(pred)][1L]
   trait_col <- c("Trait", "trait")
   trait_col <- trait_col[trait_col %in% names(pred)][1L]
@@ -3850,13 +3902,11 @@ gp_model_execute_multitrait_predicted_values <- function(predictions,
   )
   pev <- gp_cv_pick_numeric_column(
     pred,
-    c("Prediction_Var_latent", "PEV", "Prediction_error_variance", "Prediction_Var_observed")
+    "Reliability_variance_input"
   )
-  if (is.null(pev) && !is.null(se)) {
-    pev <- se^2
-  }
   out$Standard_error <- se %||% rep(NA_real_, nrow(out))
-  out$PEV <- pev %||% rep(NA_real_, nrow(out))
+  out$PEV <- out$Standard_error^2
+  out$Reliability_variance_input <- pev %||% rep(NA_real_, nrow(out))
 
   key <- paste(out$GID, out$Trait, sep = "\r")
   ph_long <- gp_public_long_traits(
@@ -3896,29 +3946,20 @@ gp_model_execute_multitrait_predicted_values <- function(predictions,
     NA_character_
   )
 
-  finite_y <- is.finite(ph_long$y)
-  trait_reference <- stats::setNames(rep(NA_real_, length(response)), response)
-  for (trait in response) {
-    trait_y <- suppressWarnings(as.numeric(ph_long$y[ph_long$trait == trait & finite_y]))
-    trait_var <- suppressWarnings(stats::var(trait_y, na.rm = TRUE))
-    if (is.finite(trait_var) && trait_var > 0) {
-      trait_reference[[trait]] <- trait_var
-    }
+  reference_variance <- gp_cv_pick_numeric_column(pred, "Reliability_reference_variance") %||%
+    rep(NA_real_, nrow(out))
+  out$Reliability_basis <- if ("Reliability_basis" %in% names(pred)) {
+    as.character(pred$Reliability_basis)
+  } else {
+    rep("genetic_prior_variance_unavailable", nrow(out))
   }
-  global_reference <- suppressWarnings(stats::var(ph_long$y[finite_y], na.rm = TRUE))
-  if (!is.finite(global_reference) || global_reference <= 0) {
-    global_reference <- NA_real_
-  }
-  reference_variance <- as.numeric(trait_reference[out$Trait])
-  missing_reference <- !is.finite(reference_variance) | reference_variance <= 0
-  reference_variance[missing_reference] <- global_reference
   out$Reliability <- rep(NA_real_, nrow(out))
-  rel_ok <- is.finite(out$PEV) & is.finite(reference_variance) & reference_variance > 0
-  out$Reliability[rel_ok] <- pmax(0, pmin(1, 1 - (out$PEV[rel_ok] / reference_variance[rel_ok])))
+  rel_ok <- is.finite(out$Reliability_variance_input) & is.finite(reference_variance) & reference_variance > 0
+  out$Reliability[rel_ok] <- pmax(0, pmin(1, 1 - (out$Reliability_variance_input[rel_ok] / reference_variance[rel_ok])))
   out$Reliability_reference_variance <- reference_variance
   out$Reliability_remarks <- ifelse(
     is.na(out$Reliability),
-    NA_character_,
+    "genetic PEV or row prior unavailable",
     ifelse(out$Reliability >= 0.6, "Reliable", ifelse(out$Reliability <= 0.2, "Unreliable", "Acceptable"))
   )
 
@@ -3936,6 +3977,9 @@ gp_model_execute_multitrait_predicted_values <- function(predictions,
     "Uncertainty",
     "Uncertainty_remarks",
     "Reliability",
+    "Reliability_variance_input",
+    "Reliability_reference_variance",
+    "Reliability_basis",
     "Reliability_remarks"
   )
   out[, cols, drop = FALSE]
@@ -4274,87 +4318,6 @@ gp_extract_gp_component_genetic_variance <- function(gp_result, n) {
   NULL
 }
 
-# Genetic variance used as the reliability denominator. Where the residual was
-# estimated at zero, genetic and residual variance are not separable, so the
-# genetic variance (and therefore reliability) is not estimable: NA for the
-# whole trait (one environment) or for the affected environments (MET).
-gp_extract_gp_genetic_variance <- function(gp_result, n, env_values = NULL) {
-  out <- gp_extract_gp_genetic_variance_raw(gp_result, n, env_values)
-  if (!length(out) || is.null(gp_result) || !is.list(gp_result)) {
-    return(out)
-  }
-  varcomp <- tryCatch(gp_vc_find_named_data_frame(gp_result, c("varcomp", "var_components_ai")),
-                      error = function(e) NULL)
-  at_zero <- if (is.data.frame(varcomp) && nrow(varcomp)) gp_vc_residual_at_zero(varcomp) else logical(0L)
-  if (!any(at_zero)) {
-    return(out)
-  }
-  single_environment <- is.null(env_values) ||
-    length(unique(as.character(env_values[!is.na(env_values)]))) <= 1L
-  if (isTRUE(single_environment)) {
-    out[] <- NA_real_
-    return(out)
-  }
-  comp_col <- gp_contract_first_name(names(varcomp), c("Component", "component", "term", "source"))
-  labels <- if (!is.na(comp_col)) as.character(varcomp[[comp_col]]) else rownames(varcomp)
-  not_estimable_env <- sub("^Env_", "", sub("!R$", "", labels[at_zero]))
-  out[as.character(env_values) %in% not_estimable_env] <- NA_real_
-  out
-}
-
-gp_extract_gp_genetic_variance_raw <- function(gp_result, n, env_values = NULL) {
-  n <- as.integer(n %||% 0L)[1L]
-  if (!is.finite(n) || is.na(n) || n < 1L) {
-    return(numeric())
-  }
-  if (is.null(gp_result) || !is.list(gp_result)) {
-    return(rep(NA_real_, n))
-  }
-  # For one environment, prefer the fitted component table.  The reporting
-  # bundle can also contain the unit-scale kernel diagonal, which is useful
-  # structural metadata but is not the fitted genetic variance and must not be
-  # used as the reliability denominator.  Multi-environment fits still prefer
-  # their environment-specific fitted summaries.
-  single_environment <- is.null(env_values) ||
-    length(unique(as.character(env_values[!is.na(env_values)]))) <= 1L
-  # Keep the reliability denominator exactly aligned with the public
-  # variance-components table. That formatter deliberately prefers the REML
-  # varcomp total when a nearby component-summary estimate lacks its own SE,
-  # while FA delta-method summaries with a finite SE remain authoritative.
-  # Reading the same formatted row here prevents tiny but user-visible
-  # discrepancies between Reliability_reference_variance and the exported
-  # genetic_variance component.
-  if (isTRUE(single_environment) &&
-      exists("gp_format_gp_single_env_variance_components", mode = "function")) {
-    public_vc <- tryCatch(
-      gp_format_gp_single_env_variance_components(gp_result),
-      error = function(e) NULL
-    )
-    if (is.data.frame(public_vc) && nrow(public_vc) > 0L &&
-        all(c("Component", "Components") %in% names(public_vc))) {
-      public_genetic <- suppressWarnings(as.numeric(
-        public_vc[["Components"]][match("genetic_variance", public_vc[["Component"]])]
-      ))
-      if (length(public_genetic) == 1L && is.finite(public_genetic) &&
-          public_genetic > 0) {
-        return(rep(public_genetic, n))
-      }
-    }
-  }
-  component_gvar <- gp_extract_gp_component_genetic_variance(gp_result, n)
-  env_gvar <- gp_extract_gp_env_genetic_variance(gp_result, n, env_values)
-  if (isTRUE(single_environment) && !is.null(component_gvar)) {
-    return(as.numeric(component_gvar))
-  }
-  if (!is.null(env_gvar)) {
-    return(as.numeric(env_gvar))
-  }
-  if (!is.null(component_gvar)) {
-    return(as.numeric(component_gvar))
-  }
-  rep(NA_real_, n)
-}
-
 gp_model_execute_single_trait_predicted_values <- function(predictions,
                                                            pheno_data,
                                                            response,
@@ -4364,7 +4327,7 @@ gp_model_execute_single_trait_predicted_values <- function(predictions,
                                                            test_set_source = NULL,
                                                            gp_result = NULL) {
   pred <- as.data.frame(predictions, stringsAsFactors = FALSE)
-  gid_col <- c("GID", "gid", gen_name, "Name", "name")
+  gid_col <- c("GID", "gid", gen_name, "Name", "name", "Genotype")
   gid_col <- gid_col[gid_col %in% names(pred)][1L]
   pred_col <- c("Predicted_value", "Prediction", "prediction", "yhat")
   pred_col <- pred_col[pred_col %in% names(pred)][1L]
@@ -4399,16 +4362,14 @@ gp_model_execute_single_trait_predicted_values <- function(predictions,
   )
   pev <- gp_cv_pick_numeric_column(
     pred,
-    c("Prediction_Var_latent", "PEV", "Prediction_error_variance", "Prediction_Var_observed")
+    "Reliability_variance_input"
   )
-  if (is.null(pev) && !is.null(se)) {
-    pev <- se^2
-  }
   ids <- as.character(pred[[gid_col]])
   response_y <- response_y_full[target_rows]
   test_mask <- test_mask_full[target_rows]
   se_out <- se %||% rep(NA_real_, length(ids))
-  pev_out <- pev %||% rep(NA_real_, length(ids))
+  pev_out <- se_out^2
+  genetic_pev_out <- pev %||% rep(NA_real_, length(ids))
   env_values <- if (!is.null(heter_groups) && heter_groups %in% names(pheno_data)) {
     as.character(pheno_data[[heter_groups]][target_rows])
   } else {
@@ -4416,11 +4377,9 @@ gp_model_execute_single_trait_predicted_values <- function(predictions,
     pred_env_col <- pred_env_col[pred_env_col %in% names(pred)][1L]
     if (!is.na(pred_env_col)) as.character(pred[[pred_env_col]]) else rep("ENV1", length(ids))
   }
-  genetic_variance_out <- gp_extract_gp_genetic_variance(
-    gp_result = gp_result,
-    n = length(ids),
-    env_values = env_values
-  )
+  row_genetic_variance <- gp_cv_pick_numeric_column(pred, "Reliability_reference_variance")
+  genetic_variance_out <- row_genetic_variance %||% rep(NA_real_, length(ids))
+
 
   has_genetic_variance <- any(is.finite(genetic_variance_out) & genetic_variance_out > 0)
   reference_variance_out <- if (isTRUE(has_genetic_variance)) {
@@ -4429,16 +4388,16 @@ gp_model_execute_single_trait_predicted_values <- function(predictions,
     rep(NA_real_, length(ids))
   }
   reliability <- rep(NA_real_, length(ids))
-  rel_valid <- is.finite(pev_out) & is.finite(reference_variance_out) & reference_variance_out > 0
-  reliability[rel_valid] <- pmax(0, pmin(1, 1 - (pev_out[rel_valid] / reference_variance_out[rel_valid])))
+  rel_valid <- is.finite(genetic_pev_out) & is.finite(reference_variance_out) & reference_variance_out > 0
+  reliability[rel_valid] <- pmax(0, pmin(1, 1 - (genetic_pev_out[rel_valid] / reference_variance_out[rel_valid])))
   reliability_remarks <- if (isTRUE(has_genetic_variance)) {
     ifelse(
       is.na(reliability),
-      ifelse(is.finite(genetic_variance_out), NA_character_, "sigma2_g not estimable"),
+      "genetic PEV or row prior unavailable",
       ifelse(reliability >= 0.6, "Reliable", ifelse(reliability <= 0.2, "Unreliable", "Acceptable"))
     )
   } else {
-    rep("sigma2_g not estimable", length(ids))
+    rep("genetic PEV or row prior unavailable", length(ids))
   }
   reliability_percentage <- if (any(is.finite(reliability))) {
     mean(reliability[is.finite(reliability)] > 0.2) * 100
@@ -4457,13 +4416,14 @@ gp_model_execute_single_trait_predicted_values <- function(predictions,
       gp_result[["diagnostics"]][["variance_component_method"]] %||%
       "reml"
   )[1L]
-  reliability_basis <- if (identical(
-    variance_component_method,
-    "krr_gcv_variance_ratio"
-  )) {
-    "krr_gcv_variance_ratio_genetic_variance"
-  } else {
-    "reml_genetic_variance"
+  reliability_basis <- if ("Reliability_basis" %in% names(pred)) {
+    as.character(pred$Reliability_basis)
+  } else rep("genetic_prior_variance", length(ids))
+  reliability_basis[!rel_valid] <- paste0(reliability_basis[!rel_valid], "_not_estimable")
+  if ("Reliability_missing_reason" %in% names(pred)) {
+    missing_reason <- as.character(pred$Reliability_missing_reason)
+    use_reason <- !rel_valid & !is.na(missing_reason) & nzchar(missing_reason)
+    reliability_remarks[use_reason] <- missing_reason[use_reason]
   }
 
   out <- data.frame(
@@ -4472,19 +4432,13 @@ gp_model_execute_single_trait_predicted_values <- function(predictions,
     Train_Test_Label = ifelse(test_mask, "Test", "Train"),
     Standard_error = se_out,
     PEV = pev_out,
+    Reliability_variance_input = genetic_pev_out,
     Genetic_variance = genetic_variance_out,
     Reliability_reference_variance = reference_variance_out,
     Reliability = reliability,
     Reliability_remarks = reliability_remarks,
     Reliability_percentage = rep(reliability_percentage, length(ids)),
-    Reliability_basis = rep(
-      if (isTRUE(has_genetic_variance)) {
-        reliability_basis
-      } else {
-        paste0(reliability_basis, "_not_estimable")
-      },
-      length(ids)
-    ),
+    Reliability_basis = reliability_basis,
     Uncertainty_remarks = uncertainty_remarks_out,
     Observed_value = response_y,
     Train_Test = ifelse(test_mask, "Test", "Train"),
@@ -5114,9 +5068,6 @@ gp_public_result_to_r <- function(py_out) {
 #' @param kernel_list Optional named list of additional relationship/kernel
 #' matrices. When supplied, GP fits pass all matrices as backend
 #' \code{geno_kernels}.
-#' @param kernel_weights Optional non-negative weights for the aligned genomic
-#' kernels. Named weights are reordered to the aligned kernel names. The
-#' default assigns weight one to every kernel.
 #' @param fixed_effects Optional fixed-effect columns passed to the backend.
 #' When \code{NULL}, multi-environment fits use the environment column as a
 #' fixed effect if all environments are represented in the training rows.
@@ -5145,6 +5096,11 @@ gp_public_result_to_r <- function(py_out) {
 #' operator-backend fits. When supplied with \code{geno_ids}, \code{gmatrix}
 #' may be \code{NULL}; the backend uses the factor cache instead of a dense
 #' genomic relationship matrix.
+#' Float32 operator solves are checked by applying the represented covariance
+#' in float64. A failed residual check retries the complete fit in float64
+#' with the same tolerances and iteration limits. The native \code{pcg_info}
+#' records requested/effective precision and the retry reason. This can use
+#' more memory and time; it cannot recover precision lost when storing factors.
 #' @param gp_tiered_dispatch Logical; route MET predictions by environment
 #' connectivity. This is intended for large prospective MET exercises where
 #' all-new test environments should be served by the covariate-derived
@@ -5160,33 +5116,84 @@ gp_public_result_to_r <- function(py_out) {
 #' @param krr_lam Numeric KRR/GP ridge parameter used when
 #' \code{lam_select = "fixed"}.
 #' @param krr_lams Numeric candidate residual-to-genetic variance ratios used by
-#' the KRR backend when \code{lam_select} requests automatic selection. The
+#' the KRR or operator backend when \code{lam_select} requests automatic selection. The
 #' default spans 0.001 through 10.
-#' @param lam_select KRR lambda selection mode. The default \code{"gcv"} uses
-#' deterministic exact generalized cross-validation for dense fits up to 2,048
-#' training rows; \code{"fixed"} uses \code{krr_lam}.
+#' @param operator_gcv_max_rows Maximum dense training subset size for operator
+#' GCV. A genotype-only kernel can use full-training feature GCV when its rank
+#' fits this budget and the feature matrix has at most four million entries.
+#' This prediction-penalty selection does not perform REML.
+#' @param dense_cholesky_max_size Maximum matrix size for deterministic Cholesky
+#' in the dense exact GP route. Larger fits retain the iterative backend.
+#' @param lam_select Prediction penalty selection for KRR and operator GP.
+#' The default \code{"gcv"} uses training-only generalized cross-validation:
+#' exact dense traces up to 2,048 training rows, stochastic traces for larger
+#' dense KRR fits, and bounded subset or feature GCV for operator fits (see
+#' \code{operator_gcv_max_rows}). Batched CV and refits use the same rule and
+#' candidate grid. \code{"fixed"} uses \code{krr_lam}. Dense REML GP estimates
+#' its covariance parameters instead of using this prediction penalty.
+#' Dense KRR with supplied Stage-2 residual variances holds those variances
+#' fixed and estimates a nonnegative kernel multiplier by scalar REML;
+#' lambda is unused. Its SEs condition on that fitted covariance. Such CV
+#' folds estimate the multiplier independently, without block-deletion reuse.
 #' @param gp_iters Optional positive integer optimizer iterations for the
 #' exact GP backend. \code{NULL} preserves the Python backend default.
 #' @param gp_lr Optional positive learning rate for the exact GP backend.
 #' \code{NULL} preserves the Python backend default.
 #' @param gp_learn_scales Optional logical override for backend scale learning.
-#' When \code{NULL}, scales are learned only for full variance-component output.
+#' When \code{NULL}, scales are learned whenever prediction SEs or full
+#' variance-component output are requested, or \code{gp_fit_reml = TRUE}.
+#' Explicit \code{FALSE} retains fixed-scale conditional SEs and unavailable
+#' genetic reliability on the dense GP route.
 #' @param gp_theta0_warm Optional numeric starting values for the GP
 #' variance-component optimizer. Intended for compatible warm-started fits.
 #' @param gp_engine Character; which REML engine drives GP variance-component
-#' estimation. \code{"auto"} (default) picks the fastest available
-#' (currently resolves to \code{"dense_v"}); \code{"dense_v"} keeps the
-#' dense V-formulation (Phase 1-2); \code{"mme"} uses the sparse Mixed
-#' Model Equations engine (Phase 3.4-3.7, fastest at n_geno = 100 for MET
-#' but regresses at n_geno >= 300 on GBLUP because G^-1 is dense -- see
-#' Phase 3.14 NEWS); \code{"eigen"} (Phase 3.15a, experimental) uses an
-#' eigen-projected REML formulation that would beat ASReml at large n on
-#' the standalone validation, but the production integration is incomplete
-#' (Phase 3.15b NEWS) so \code{"eigen"} currently falls back to dense_v.
-#' Requires \code{PREDICTPRO_GP_DISABLE_ENV_MAIN=1} for \code{"mme"} and
-#' \code{"eigen"} on MET. Honors \code{PREDICTPRO_GP_ENGINE} env var.
+#' estimation. Matched exact-GP inference currently uses \code{"dense_v"}:
+#' the requested random terms and residual structure are preserved, and GP
+#' predictions use the reported REML covariance. Requests for \code{"mme"}
+#' or \code{"eigen"} warn and fall back to \code{"dense_v"} until those
+#' reporting engines preserve the same model contract. This applies only to
+#' requested REML inference, not the operator/MoM prediction route.
+#' Honors \code{PREDICTPRO_GP_ENGINE} env var.
+#' Exact-GP inference also honors positive \code{PREDICTPRO_GP_MAX_ITER},
+#' \code{PREDICTPRO_GP_TOL_LOGLIK}, and \code{PREDICTPRO_GP_TOL_THETA} overrides.
 #' @return A list with \code{predictions}, \code{result}, \code{fit}, and
-#' \code{info}.
+#' \code{info}. Prediction \code{PEV} equals the squared latent standard
+#' error. \code{Reliability_variance_input} is genetic PEV, and
+#' \code{Reliability_reference_variance} is the row genetic prior (including
+#' the kernel diagonal and GxE where present). Public \code{Genetic_variance}
+#' has this row-prior meaning. Reliability is unavailable when either input
+#' is unavailable; it never uses phenotypic variance as a substitute.
+#' On fixed-scale routes, the genetic prior and reliability are unavailable
+#' with the reason \code{genetic variance not estimated on this route}; SEs
+#' remain conditional on the fixed covariance. KRR/operator ratio routes
+#' profile a response-scale multiplier without a dense REML post-pass.
+#' CV0 SEs exclude the new environment's unobserved deviation.
+#' @param gp_fit_reml Logical; fit the matched REML estimator even for
+#' means-only output. Used internally to keep CV and REML refits aligned.
+#' For large fits (a supplied factor cache or the configured large-fit
+#' threshold), this request switches to operator/MoM prediction with a message
+#' instead of fitting dense REML per fold. Full variance-component inference
+#' remains a separate request and is not made scalable by this CV safeguard.
+#' @param env_ids Optional environment IDs for \code{env_similarity}.
+#' @param include_components Optional GP components, for example \code{c("g", "ge", "e")}.
+#' @param gp_backend Python GP backend selection.
+#' @param gp_output_level One of \code{"predict_only"}, \code{"predict_with_se"}, or \code{"full_vc"}.
+#' @param gp_tiered_verbose Logical; request verbose tiered-dispatch backend messages.
+#' @param gp_dtype Floating-point dtype passed to the Python backend.
+#' @param large_n_threshold Training-row threshold used by the automatic
+#'   operator backend policy.
+#' @param operator_tol PCG/operator solve tolerance for large operator fits.
+#' @param operator_max_iter Maximum PCG/operator iterations for large operator fits.
+#' @param operator_dtype_compute Compute dtype for operator-backend matrix-vector
+#'   work.
+#' @param gp_fa_rank Factor-analytic rank for compatible GP backends.
+#' @param gp_prediction_output Prediction output scope passed to the backend.
+#' @param w_g Optional genomic-kernel component weights.
+#' @param w_ge Optional genotype-by-environment component weights.
+#' @param w_e Optional environment component weight.
+#' @param seed Integer random seed.
+#' @param python_bin Optional Python executable for the GP runtime.
+#' @param project_root Optional path to the vendored GP Python module directory.
 #' @export
 gp_single_trait_model <- function(pheno_data,
                                   gmatrix = NULL,
@@ -5253,8 +5260,12 @@ gp_single_trait_model <- function(pheno_data,
                                   python_bin = NULL,
                                   project_root = NULL,
                                   gp_theta0_warm = NULL,
-                                  gp_engine = "auto") {
+                                  gp_engine = "auto",
+                                  operator_gcv_max_rows = 512L,
+                                  dense_cholesky_max_size = 2048L,
+                                  gp_fit_reml = FALSE) {
   gp_validate_single_trait_gp_model_scope(GS_model = model_name)
+  gp_validate_fa_rank_for_environments(model_name,gp_fa_rank,pheno_data,heter_groups)
   if (!is.null(env_similarity) && !is.null(env_covariates)) {
     stop("Pass exactly one of `env_similarity` or `env_covariates`.", call. = FALSE)
   }
@@ -5391,6 +5402,14 @@ gp_single_trait_model <- function(pheno_data,
     enabled = isTRUE(gp_auto_policy)
   )
   gp_backend <- policy$gp_backend
+  if (isTRUE(gp_fit_reml) && isTRUE(policy$profile$large_fit) && !identical(output_level, "full_vc")) {
+    message("GP large-fit REML CV uses the operator MoM prediction route; dense REML per fold is disabled.")
+    gp_fit_reml <- FALSE
+    gp_varcomp_mode <- "mom"
+    gp_backend <- "operator"
+    policy$gp_backend <- "operator"
+    policy$decisions <- c(policy$decisions, "large_reml_cv_to_operator_mom")
+  }
   gp_tiered_dispatch <- policy$gp_tiered_dispatch
   gp_dtype <- policy$gp_dtype
   operator_tol <- policy$operator_tol
@@ -5545,6 +5564,7 @@ gp_single_trait_model <- function(pheno_data,
     point_predictions_only = identical(output_level, "predict_only"),
     return_se = output_level %in% c("predict_with_se", "full_vc"),
     compute_ai_se = identical(output_level, "full_vc"),
+    fit_reml = isTRUE(gp_fit_reml),
     standardize = "global",
     varcomp_mode = gp_varcomp_mode,
     krr_lam = as.numeric(krr_lam)[1L],
@@ -5564,7 +5584,7 @@ gp_single_trait_model <- function(pheno_data,
     tiered_dispatch = isTRUE(gp_tiered_dispatch),
     tiered_verbose = isTRUE(gp_tiered_verbose),
     learn_scales = if (is.null(gp_learn_scales)) {
-      identical(output_level, "full_vc")
+      output_level %in% c("predict_with_se", "full_vc") || isTRUE(gp_fit_reml)
     } else {
       isTRUE(gp_learn_scales)
     }
@@ -5575,6 +5595,8 @@ gp_single_trait_model <- function(pheno_data,
     args$obs_weight_global_scale <- 1
   }
   args$gp_engine <- as.character(gp_engine)[1L]
+  args$operator_gcv_max_rows <- as.integer(operator_gcv_max_rows)[1L]
+  args$dense_cholesky_max_size <- as.integer(dense_cholesky_max_size)[1L]
   args <- gp_bridge_add_gp_exact_controls(args, list(gp_iters = gp_iters, gp_lr = gp_lr))
   if (!is.null(gp_factor_cache)) {
     args$grm_factor_cache <- gp_factor_cache
@@ -5657,10 +5679,9 @@ gp_single_trait_model <- function(pheno_data,
     )[1L],
     error = function(e) NA_character_
   )
-  if (identical(variance_component_method, "krr_gcv_variance_ratio")) {
-    # KRR estimates a GCV-selected residual/genetic variance ratio; it is not
-    # the REML post-fit used by Gaussian-Process-GBLUP.  Surface the effective
-    # method so the public variance formatter cannot relabel it as REML.
+  if (variance_component_method %in% c("krr_gcv_variance_ratio", "krr_profiled_variance_ratio", "krr_fixed_residual_reml")) {
+    # Preserve KRR's own ratio fit or fixed-residual scalar REML method;
+    # neither is the separate GP variance-component post-fit.
     out$info$varcomp_mode <- variance_component_method
     if (is.list(out$fit)) {
       out$fit$varcomp_mode <- variance_component_method
@@ -5835,13 +5856,79 @@ gp_single_trait_model <- function(pheno_data,
 #' @param tuning_max_validation_rows Optional row cap for internal validation
 #' predictions.
 #' @param trait_fa_rank Optional factor-analytic rank when
-#' \code{trait_structure = "fa"}.
+#' \code{trait_structure = "fa"}. For \eqn{n} traits and rank \eqn{k},
+#' requires \eqn{n(k+1)-k(k-1)/2 \le n(n+1)/2}. Equality is saturated;
+#' passing this necessary bound does not guarantee identification on a dataset.
 #' @param residual_fa_rank Optional factor-analytic rank when
-#' \code{residual_structure = "fa"}.
+#' \code{residual_structure = "fa"}; subject to the same count bound.
+#' @param geno_ids Optional genotype IDs matching the rows and columns of
+#'   \code{gmatrix}, or the rows represented by \code{gp_factor_cache} when
+#'   \code{gmatrix} is omitted.
+#' @param estimate_kernel_weights Logical. When `TRUE`, fit the relative kernel mixture weights by REML profile likelihood instead of holding them fixed. The first kernel is held at 1 because the overall genetic scale is carried by the trait covariance, so the fitted values are ratios. Requires `varcomp_mode = "reml"` and at least two kernels; otherwise the request is ignored with a warning.
+#' @param force_prediction_se Logical. Prediction standard errors and per-cell trait covariance cost one linear solve per test cell per trait, so they are capped: past the solve budget the fit returns predictions without them and warns rather than running for hours. Set `TRUE` to compute them anyway.
+#' @param varcomp_mode Variance component mode. Use \code{"reml"} for prediction SE output.
+#' @param gp_factor_cache Optional Python GRM factor-cache object or serializable
+#'   factor-cache specification for \code{varcomp_mode = "mom"}.
+#' @param trait_structure Trait covariance structure. Defaults to
+#'   \code{"unstructured"}. Use \code{"fa"} only as an explicit, benchmarked
+#'   opt-in.
+#' @param residual_structure Residual covariance structure.
+#' @param max_iter Maximum REML iterations.
+#' @param tol_loglik Log-likelihood tolerance.
+#' @param seed Integer random seed.
+#' @param python_bin Optional Python executable for the GP runtime.
+#' @param project_root Optional path to the vendored GP Python module directory.
 #' @return A list with \code{predictions}, \code{result}, \code{fit}, and
 #' \code{info}. The result includes per-kernel variance and covariance tables.
 #' Variance output is withheld when the variance-component fit explicitly
 #' reports non-convergence.
+#' REML results include \code{covariance_parameters},
+#' \code{correlation_parameters}, and \code{inference_summary}, with
+#' response-scale parameter SEs conditional on kernel weights and training
+#' standardization. Unidentified or boundary covariance inference is labelled
+#' unavailable. Prediction \code{PEV} is latent SE squared; genetic PEV is
+#' \code{Reliability_variance_input}, with a row genetic prior as its reference.
+#' @details With \code{trait_structure = "unstructured"} and
+#' \code{residual_structure = "unstructured"}, a single-environment model with
+#' \eqn{T} traits estimates \eqn{T(T+1)} covariance parameters: \eqn{T(T+1)/2}
+#' in each of the genetic and residual covariance matrices. This is 42
+#' covariance parameters at six traits and 110 at ten traits, excluding fixed
+#' effects and any separately estimated kernel weights.
+#'
+#' With few observed lines or many missing trait records, the data may not
+#' support these covariance estimates. Fits can fail to converge, and
+#' covariance-parameter SEs may be unavailable because of weak identification
+#' or boundary estimates. Consider a factor-analytic (FA) covariance where its
+#' rank is identifiable, fewer jointly modelled traits, or more phenotyped
+#' lines with overlapping trait measurements. The FA parameter-count bound
+#' above is necessary but does not guarantee identification or convergence.
+#' These parameter counts are not minimum sample-size rules. Practical limits
+#' depend on the data and covariance model; numerical line-count and
+#' missingness recommendations await the capacity study.
+#'
+#' For REML, complete trait grids among training genotypes use exact
+#' Kronecker solves even when other genotypes are held out. Partially observed
+#' training grids use an exact missing-cell correction when eligible, and
+#' dense observed-data solves otherwise. The final solver is reused
+#' for prediction and covariance-parameter inference. Prediction queries are
+#' batched, and \code{return_se = FALSE} skips prediction-variance solves;
+#' it does not disable the explicitly selected REML estimation route.
+#' \code{info$training_solver} records \code{"balanced_kronecker"},
+#' \code{"missing_cell_correction"}, or
+#' \code{"dense_observed"}, and \code{info$n_training_genotypes} records the
+#' number of genotypes contributing observations. The full relationship matrix
+#' is still retained for held-out predictions and kernel validation.
+#'
+#' Dense REML with unstructured genetic and residual covariance uses a
+#' combined-solve observed Hessian. The dense fallback applies when more than
+#' 25 percent of training-genotype trait cells are missing, cells are duplicated,
+#' or the missing-cell correction exceeds its configurable workspace allowance
+#' (\code{PREDICTPRO_GP_MISSING_MAX_MB}, default 512 MiB). Typical grids with
+#' about 10 percent missing cells use the exact correction and are unaffected.
+#' Controlled timings on five dense fixtures showed approximately 25--38 percent
+#' less native Python process time; these exclude R bridge and
+#' \code{model_execute()} overhead and are not a general multi-trait speed gain.
+#' Training-grid/correction solves, FA, MET and MoM retain their existing methods.
 #' @export
 gp_multi_trait_model <- function(pheno_data,
                                  gmatrix = NULL,
@@ -5876,6 +5963,10 @@ gp_multi_trait_model <- function(pheno_data,
                                  python_bin = NULL,
                                  project_root = NULL) {
   long_df <- gp_public_long_traits(pheno_data, response = response, gen_name = gen_name)
+  if (identical(tolower(trait_structure),"fa"))
+    gp_validate_fa_rank(trait_fa_rank,length(response),"traits","trait_fa_rank")
+  if (identical(tolower(residual_structure),"fa"))
+    gp_validate_fa_rank(residual_fa_rank %||% trait_fa_rank,length(response),"residual traits","residual_fa_rank")
   backend_schema <- gp_backend_schema_cols()
   long_cols <- backend_schema$long
   varcomp_mode <- gp_match_gp_choice(
@@ -6195,6 +6286,12 @@ gp_multi_trait_model <- function(pheno_data,
 #' @param varcomp_mode Variance-component estimation mode passed to the
 #' MT-MET GP backend. The default \code{"reml"} reports REML-derived variance
 #' components; \code{"mom"} remains available for scalable factor-cache fits.
+#' Without additional fixed-effect columns, the MoM route stores environment
+#' by trait means implicitly and absorbs them in projected GLS. Mean-only
+#' prediction needs one projected covariance solve; optional uncertainty needs
+#' further target solves. Its PCG residual diagnostics refer to the projected
+#' equations. Additional fixed covariates and dense REML retain dense GLS.
+#' The native \code{info$mean_design_method} identifies the MoM mean design.
 #' @param return_se Logical; request prediction standard errors.
 #' @param prediction_output One of \code{"test_only"} or \code{"all"}. The
 #' latter queries every genotype-environment-trait cell from the fitted
@@ -6227,17 +6324,41 @@ gp_multi_trait_model <- function(pheno_data,
 #' \code{"unstructured"}. Use \code{"fa"} only as an explicit, benchmarked
 #' opt-in. This is not an environment covariance structure.
 #' @param trait_fa_rank Optional factor-analytic rank when
-#' \code{trait_structure = "fa"}.
+#' \code{trait_structure = "fa"}. For \eqn{n} traits and rank \eqn{k},
+#' requires \eqn{n(k+1)-k(k-1)/2 \le n(n+1)/2}. Equality is saturated;
+#' passing this necessary bound does not guarantee identification on a dataset.
 #' @param gxe_trait_structure Cross-trait covariance structure for the GxE
 #' component. When \code{NULL}, it follows \code{trait_structure}. This is not
 #' an environment covariance structure.
 #' @param gxe_trait_fa_rank Optional factor-analytic rank when
-#' \code{gxe_trait_structure = "fa"}.
+#' \code{gxe_trait_structure = "fa"}; subject to the same count bound.
+#' @param test_set Optional genotype IDs to predict.
+#' @param env_ids Optional environment IDs for \code{env_similarity}.
+#' @param geno_ids Optional genotype IDs matching the rows and columns of
+#'   \code{gmatrix}, or the rows represented by \code{gp_factor_cache} when
+#'   \code{gmatrix} is omitted.
+#' @param force_prediction_se Logical. Prediction standard errors and per-cell trait covariance cost one linear solve per test cell per trait, so they are capped: past the solve budget the fit returns predictions without them and warns rather than running for hours. Set `TRUE` to compute them anyway.
+#' @param gp_factor_cache Optional Python GRM factor-cache object or serializable
+#'   factor-cache specification. If omitted, an in-memory factor cache is built from
+#'   \code{gmatrix}.
+#' @param mom_pcg_tol PCG tolerance for the method-of-moments operator path.
+#' @param mom_pcg_max_iter Maximum PCG iterations.
+#' @param dense_reml_max_train Maximum training rows for dense REML variance estimation.
+#' @param reml_max_iter Maximum REML iterations.
+#' @param reml_tol REML tolerance.
+#' @param seed Integer random seed.
+#' @param python_bin Optional Python executable for the GP runtime.
+#' @param project_root Optional path to the vendored GP Python module directory.
 #' @return A list with \code{predictions}, \code{result}, \code{fit}, and
 #' \code{info}. Response-scale covariance matrices are returned even when trait
 #' correlations are not requested. Per-kernel genetic/GxE variance and
 #' covariance decompositions are withheld if the backend explicitly reports
 #' non-convergence.
+#' REML results include \code{covariance_parameters},
+#' \code{correlation_parameters}, and \code{inference_summary}; their SEs
+#' condition on kernel weights and a common training scale per trait.
+#' Prediction \code{PEV} is latent SE squared. Genetic-plus-GxE PEV is in
+#' \code{Reliability_variance_input}, and its reference is the row prior.
 #' @export
 gp_multi_trait_met_model <- function(pheno_data,
                                      gmatrix = NULL,
@@ -6276,7 +6397,7 @@ gp_multi_trait_met_model <- function(pheno_data,
                                      mom_pcg_tol = 1e-4,
                                      mom_pcg_max_iter = 300L,
                                      dense_reml_max_train = 3000L,
-                                     reml_max_iter = 30L,
+                                     reml_max_iter = 300L,
                                      reml_tol = 1e-5,
                                      seed = 12345L,
                                      python_bin = NULL,
@@ -6366,6 +6487,10 @@ gp_multi_trait_met_model <- function(pheno_data,
     name = "gxe_trait_structure",
     default = trait_structure
   )
+  if (identical(trait_structure,"fa"))
+    gp_validate_fa_rank(trait_fa_rank,length(response),"traits","trait_fa_rank")
+  if (identical(gxe_trait_structure,"fa"))
+    gp_validate_fa_rank(gxe_trait_fa_rank %||% trait_fa_rank,length(response),"GxE traits","gxe_trait_fa_rank")
   if (varcomp_mode %in% c("reml", "reml_dense") &&
       (!identical(trait_structure, "unstructured") ||
        !identical(gxe_trait_structure, "unstructured"))) {

@@ -6,6 +6,7 @@ test_that("MET multi-trait dense REML reports convergence from the optimizer, no
   # MET multi-trait GP always withheld genetic and GxE trait covariances.
   py <- Sys.getenv("PREDICTPRO_GP_PYTHON")
   skip_if(!nzchar(py) || !file.exists(py), "No GP Python runtime (PREDICTPRO_GP_PYTHON)")
+  skip_if_no_gp_python(py)
 
   set.seed(11)
   n <- 30L; p <- 60L
@@ -33,7 +34,14 @@ test_that("MET multi-trait dense REML reports convergence from the optimizer, no
 
   expect_true(isTRUE(fit$fit$reml_converged))
   expect_lt(fit$fit$reml_n_iter, 200L)
-  expect_identical(fit$result$variance_component_status, "promoted")
+  expect_true(fit$result$variance_component_status %in% c("promoted", "promoted_boundary"))
+  expect_lte(fit$fit$reml_gradient_scaled_max_abs, 1e-5)
+  if (identical(fit$result$variance_component_status, "promoted_boundary")) {
+    expect_identical(fit$fit$reml_convergence_status, "converged_boundary")
+    expect_identical(fit$result$inference_summary$inference_status,
+      "unavailable_covariance_boundary")
+    expect_false(isTRUE(fit$result$inference_summary$inference_available))
+  }
   gc <- as.matrix(fit$result$genetic_correlation)
   expect_true(all(is.finite(gc)))
   expect_equal(unname(diag(gc)), c(1, 1), tolerance = 1e-8)

@@ -105,7 +105,7 @@ for (m in tetraploid_models) {
       gp_backend = "auto",
 
       # Deep-learning controls
-      epochs = 100L,                 # attention models (TabNet, TabAttention) need ~100
+      epochs = "auto",                 # default: sized to the data (about 200 optimizer steps)
       batch_size = 16L,
       deterministic = TRUE,
       random_seed = 20260903L,
@@ -355,7 +355,7 @@ for (cfg in met_models) {
       gp_backend = "auto",
 
       # Deep-learning controls
-      epochs = 100L,
+      epochs = "auto",
       batch_size = 16L,
       deterministic = TRUE,
       random_seed = 20260903L,
@@ -447,7 +447,7 @@ for (cfg in mt_models) {
       thin = 5L,
 
       # Deep-learning controls
-      epochs = 100L,
+      epochs = "auto",
       batch_size = 16L,
       deterministic = TRUE,
       random_seed = 20260903L,

@@ -500,6 +500,7 @@ test_that("RandomForest feature scoring uses Python feature importance", {
   expect_false(anyNA(captured$y_train))
   expect_equal(nrow(captured$X_train), 4L)
   expect_equal(captured$model_params$n_jobs, 1L)
+  expect_identical(captured$model_params$importance, "air")
   expect_equal(meta$predictor[order(meta$rank)][[1L]], "m2")
 })
 
@@ -812,68 +813,39 @@ test_that("kernel adapter rebuilds a relationship matrix from selected source co
   expect_equal(dim(bank$gmatrix_model_ready), c(6L, 6L))
 })
 
-test_that("joint multi-trait view keeps trait selections and uses their union", {
-  x <- data.frame(
-    a = seq_len(12),
-    b = rep(c(-3, 3), 6),
-    c = rep(c(0, 1, 1), 4),
-    check.names = FALSE
-  )
-  rownames(x) <- paste0("g", seq_len(nrow(x)))
-  pheno <- data.frame(
-    ID = rownames(x),
-    T1 = x$a,
-    T2 = x$b,
-    stringsAsFactors = FALSE
-  )
-  meta <- feature_score_predictors(x, pheno, c("T1", "T2"), "ID", seed = 12L)
-  view <- gp_feature_multitrait_view(
-    predictor_data = x,
-    pheno_data = pheno,
-    response = c("T1", "T2"),
-    gen_name = "ID",
-    k = 1L,
-    selection_mode = "fixed",
-    feature_score_metadata = meta
-  )
-
-  expect_equal(view$selected_by_trait$T1, "a")
-  expect_equal(view$selected_by_trait$T2, "b")
-  expect_equal(colnames(view$predictor_data), c("a", "b"))
-  expect_equal(view$joint_union_k, 2L)
-  expect_true(all(c("joint_union_selected", "joint_union_k") %in% names(view$metadata)))
+# Part A replaces the per-trait union with one joint ranking and exactly k.
+test_that("joint multi-trait fixed view uses exactly one shared top-k set", {
+  x <- data.frame(a=seq_len(12),b=rep(c(-3,3),6),c=rep(c(0,1,1),4))
+  rownames(x) <- paste0("g",seq_len(nrow(x)))
+  pheno <- data.frame(ID=rownames(x),T1=x$a,T2=x$b)
+  meta <- feature_score_predictors(x,pheno,c("T1","T2"),"ID",joint=TRUE,seed=12L,
+                                   bayes_nIter=300L,bayes_burnIn=150L,bayes_thin=3L)
+  view <- gp_feature_joint_view(
+    predictor_data=x,pheno_visible=pheno,response=c("T1","T2"),gen_name="ID",
+    k=1L,selection_mode="fixed",feature_score_metadata=meta)
+  expect_identical(view$selected_predictors,meta$predictor[1L])
+  expect_identical(colnames(view$predictor_data),meta$predictor[1L])
+  expect_identical(view$feature_k,1L)
+  expect_equal(sum(view$metadata$selected),1L)
+  expect_false(any(c("joint_union_selected","joint_union_k")%in%names(view$metadata)))
 })
 
-test_that("joint fold_internal rankings are fitted only on outer training rows", {
+test_that("joint fold_internal rankings use only visible outer-fold records", {
   set.seed(22)
-  x <- as.data.frame(matrix(rnorm(80), nrow = 16), check.names = FALSE)
-  names(x) <- paste0("m", 1:5)
-  rownames(x) <- paste0("g", 1:16)
-  pheno <- data.frame(
-    ID = rownames(x),
-    T1 = x$m1 + rnorm(16, sd = 0.01),
-    T2 = x$m4 + rnorm(16, sd = 0.01),
-    stringsAsFactors = FALSE
-  )
-  view <- gp_feature_multitrait_view(
-    predictor_data = x,
-    pheno_data = pheno,
-    response = c("T1", "T2"),
-    gen_name = "ID",
-    k = 2L,
-    selection_mode = "fold_internal",
-    test_rows = 13:16,
-    scoring_model = "Ridge_Regression",
-    seed = 22L,
-    replication = 1L,
-    fold = 4L
-  )
-
-  expect_equal(unique(view$metadata$n_train), 12L)
-  expect_equal(sort(unique(view$metadata$trait)), c("T1", "T2"))
-  expect_true(all(view$metadata$selection_mode == "fold_internal"))
-  expect_true(view$joint_union_k >= 2L)
-  expect_true(view$joint_union_k <= 4L)
+  x <- as.data.frame(matrix(rnorm(80),nrow=16)); names(x)<-paste0("m",1:5)
+  rownames(x)<-paste0("g",1:16)
+  pheno <- data.frame(ID=rownames(x),T1=x$m1+rnorm(16,sd=.01),T2=x$m4+rnorm(16,sd=.01))
+  pheno[13:16,c("T1","T2")] <- NA_real_
+  view <- gp_feature_joint_view(
+    predictor_data=x,pheno_visible=pheno,response=c("T1","T2"),gen_name="ID",
+    k=2L,selection_mode="fold_internal",scoring_model="Ridge_Regression",seed=22L,
+    replication=1L,fold=4L,bayes_nIter=300L,bayes_burnIn=150L,bayes_thin=3L)
+  expect_equal(unique(view$metadata$n_train),12L)
+  expect_identical(unique(view$metadata$trait),"T1+T2")
+  expect_true(all(view$metadata$scoring_scope=="joint"))
+  expect_true(all(view$metadata$selection_mode=="fold_internal"))
+  expect_identical(view$feature_k,2L)
+  expect_equal(sum(view$metadata$selected),2L)
 })
 
 test_that("specialized routes require one k and one selection mode per run", {
@@ -903,7 +875,8 @@ test_that("multi-trait ML fold_internal route records trait-wise selections", {
     T2 = x$m5 + rnorm(12, sd = 0.01),
     stringsAsFactors = FALSE
   )
-  meta <- feature_score_predictors(x, pheno, c("T1", "T2"), "ID", seed = 31L)
+  meta <- feature_score_predictors(x, pheno, c("T1", "T2"), "ID", seed = 31L,
+                                   joint = TRUE, bayes_nIter = 200L, bayes_burnIn = 100L, bayes_thin = 2L)
 
   # The CV fold fits run as one batch; predict the (scaled) training mean.
   local_mocked_bindings(
@@ -934,7 +907,9 @@ test_that("multi-trait ML fold_internal route records trait-wise selections", {
 
   feature_meta <- out$cv_results[[1]]$feature_selection_metadata
   expect_true(is.data.frame(feature_meta))
-  expect_equal(sort(unique(feature_meta$trait)), c("T1", "T2"))
+  expect_identical(unique(feature_meta$trait), "T1+T2")
+  expect_equal(sort(unique(feature_meta$held_out_trait)), c("T1", "T2"))
+  expect_true(all(tapply(feature_meta$selected, interaction(feature_meta$held_out_trait, feature_meta$fold), sum) == 2L))
   expect_true(all(feature_meta$selection_mode == "fold_internal"))
   expect_true(all(out$cv_results[[1]]$eval_metrics_reps$feature_k == 2L))
   expect_true(all(out$cv_results[[1]]$eval_metrics_reps$feature_scoring_cv == "fold_internal"))

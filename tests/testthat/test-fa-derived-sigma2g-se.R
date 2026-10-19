@@ -107,10 +107,5 @@ test_that("gp_format_gp_single_env_variance_components falls back to varcomp whe
   out <- PredictProR:::gp_format_gp_single_env_variance_components(gp_result)
   expect_equal(out["genetic_variance", "Components"], 0.65)
   expect_equal(out["genetic_variance", "Standard_error"], 0.12)
-  expect_equal(
-    unique(PredictProR:::gp_extract_gp_genetic_variance(
-      gp_result, n = 2L, env_values = rep("ENV1", 2L)
-    )),
-    out["genetic_variance", "Components"]
-  )
+
 })

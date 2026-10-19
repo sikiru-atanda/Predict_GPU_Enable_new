@@ -43,6 +43,20 @@ test_that("every scoring weight referenced in parallel_policy.R is in the table"
               info = paste("Missing knobs:", paste(setdiff(hits, knobs$name), collapse = ", ")))
 })
 
+test_that("every scoring weight in the table is still read by parallel_policy.R", {
+  # A retired weight must leave the table too (0.20.201 retired the mirai,
+  # future and foreach weights when auto mode stopped scoring those backends).
+  src <- readLines(system.file("..", "R", "parallel_policy.R",
+                               package = "PredictProR",
+                               mustWork = FALSE),
+                   warn = FALSE)
+  if (!length(src)) skip("parallel_policy.R not installed; skipping")
+  hits <- unique(unlist(regmatches(src, gregexpr('GP_PAR_SCORE_[A-Z_]+', src))))
+  knobs <- gp_parallel_policy_knobs()
+  documented <- grep("^GP_PAR_SCORE_", knobs$name, value = TRUE)
+  expect_identical(setdiff(documented, hits), character())
+})
+
 test_that("every GP_MORI_* knob in mori_policy.R is in the table", {
   src <- readLines(system.file("..", "R", "mori_policy.R",
                                package = "PredictProR",
@@ -73,8 +87,7 @@ test_that("scoring weight defaults match the policy source defaults", {
     GP_BLAS_THREADS = "1",
     GP_PAR_MEMORY_FRACTION = "0.7",
     PREDICTPRO_GPU_BUSY_THRESHOLD = "85",
-    GP_RANDOM_SEED = "123",
-    GP_MIRAI_SUBMIT_TIMEOUT_SEC = "600"
+    GP_RANDOM_SEED = "123"
   )
   for (nm in names(expected)) {
     row <- knobs[knobs$name == nm, , drop = FALSE]

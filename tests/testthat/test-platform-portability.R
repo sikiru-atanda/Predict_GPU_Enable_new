@@ -46,10 +46,14 @@ test_that("core detection fails closed on unavailable host information", {
   expect_identical(PredictProR:::gp_detect_cores(detected = 1L, reserve = 1L), 1L)
 })
 
-test_that("forking is disabled when workers require process initialization", {
+test_that("forking is disabled when workers require process initialization or after mirai", {
+  local_mocked_bindings(gp_fork_safe_after_mirai = function() TRUE, .package = "PredictProR")
   expect_true(PredictProR:::gp_parallel_safe_fork_preference(TRUE, FALSE))
   expect_false(PredictProR:::gp_parallel_safe_fork_preference(TRUE, TRUE))
   expect_false(PredictProR:::gp_parallel_safe_fork_preference(FALSE, FALSE))
+  # once mirai daemons ran in the session, forked workers crashed
+  local_mocked_bindings(gp_fork_safe_after_mirai = function() FALSE, .package = "PredictProR")
+  expect_false(PredictProR:::gp_parallel_safe_fork_preference(TRUE, FALSE))
 })
 
 test_that("shipped R runtime has no developer-specific absolute path", {
@@ -70,7 +74,9 @@ test_that("shipped docs and Python modules have no developer-specific absolute p
   files <- c(list.files(inst, pattern = "[.]md$", full.names = TRUE),
              list.files(file.path(inst, "python"), pattern = "[.]py$", full.names = TRUE, recursive = TRUE))
   ignored <- "(^|/)(bench_|test_|smoke_|probe_|export_|diag_)|old|OLD|legacy|experimental"
-  files <- files[!grepl(ignored, sub(paste0("^", inst, "/"), "", files))]
+  # the path below inst/, cut off as text: as a pattern the root failed on a
+  # path holding a backslash and a digit ("\1" is a back reference)
+  files <- files[!grepl(ignored, substring(files, nchar(inst) + 2L))]
   hits <- Filter(function(f) any(grepl("[A-Za-z]:[/\\\\]+Users[/\\\\]+[^/\\\\\"'<> ]+[/\\\\]|D:/PredictProR",
                                        readLines(f, warn = FALSE))), files)
   expect_identical(basename(hits), character())

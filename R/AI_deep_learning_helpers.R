@@ -46,6 +46,20 @@ encode_y <- function(y, task) {
   }
 }
 
+# Deep-learning epochs: "auto" (sized to the data by the Python trainer: about
+# 200 optimizer steps, kept within 20-100 epochs) or a positive whole number.
+gp_dl_epochs_arg <- function(epochs) {
+  if (is.null(epochs)) return("auto")
+  if (is.character(epochs) && length(epochs) == 1L && identical(tolower(trimws(epochs)), "auto")) {
+    return("auto")
+  }
+  e <- suppressWarnings(as.numeric(epochs))
+  if (length(e) != 1L || !is.finite(e) || e < 1 || e != round(e)) {
+    stop("`epochs` must be \"auto\" or a positive whole number.", call. = FALSE)
+  }
+  as.integer(e)
+}
+
 # Map old->canonical commons and coerce
 normalize_common <- function(args) {
   canon <- list(
@@ -63,7 +77,7 @@ normalize_common <- function(args) {
     args$batch_norm <- args$batch_normalization
 
   canon$learning_rate    <- coerce_num(args$learning_rate %||% 1e-3)
-  canon$epochs           <- coerce_int_vec(args$epochs %||% 30L)
+  canon$epochs           <- gp_dl_epochs_arg(args$epochs %||% "auto")
   canon$batch_size       <- coerce_int_vec(args$batch_size %||% 64L)
   canon$l2_weight_decay  <- coerce_num(args$l2_weight_decay %||% 1e-3)
   canon$dropout          <- coerce_num(args$dropout %||% 0.5)
@@ -72,7 +86,7 @@ normalize_common <- function(args) {
   canon$compile_model    <- coerce_logi(args$compile_model %||% TRUE)
   canon$deterministic    <- coerce_logi(args$deterministic %||% FALSE)
   canon$random_seed      <- if (is.null(args$random_seed)) NULL else coerce_int_vec(args$random_seed)
-  canon$device           <- if (is.null(args$device)) NULL else as.character(args$device)
+  canon$device           <- gp_dl_device_arg(args$device)
   canon$use_amp          <- coerce_logi(args$use_amp %||% TRUE)
   canon$max_grad_norm    <- if (is.null(args$max_grad_norm)) NULL else coerce_num(args$max_grad_norm)
   canon$optimizer_name   <- as.character(args$optimizer_name %||% "adam")
@@ -307,7 +321,12 @@ dl_mlp <- function(X, y, ..., model_type = c("mlp","mlp_with_attention")) {
 }
 
 canon_ft_args <- function(dots) {
-  dots <- apply_aliases(dots, aliases_ft()); C <- normalize_common(dots)
+  dots <- apply_aliases(dots, aliases_ft())
+  # TabTransformer's own default learning rate: the shared 1e-3 trained it less
+  # stably and less accurately on panels of up to a few hundred lines. An
+  # explicit learning_rate / ft_learning_rate still wins.
+  dots$learning_rate <- dots$learning_rate %||% 3e-4
+  C <- normalize_common(dots)
   list(
     ft_d_model = coerce_int_vec(dots$ft_d_model %||% 192L),
     ft_heads = coerce_int_vec(dots$ft_heads %||% 8L),
@@ -388,13 +407,18 @@ dl_saint <- function(X, y, ..., model_type = "saint") {
 }
 
 canon_tabnet_args <- function(dots) {
-  dots <- apply_aliases(dots, aliases_tabnet()); C <- normalize_common(dots)
+  dots <- apply_aliases(dots, aliases_tabnet())
+  # TabNet's own default learning rate (the reference implementation's 2e-2):
+  # at the shared 1e-3 it was undertrained in 30-100 epochs. An explicit
+  # learning_rate / tabnet_learning_rate still wins.
+  dots$learning_rate <- dots$learning_rate %||% 2e-2
+  C <- normalize_common(dots)
   list(
-    tabnet_steps=coerce_int_vec(dots$tabnet_steps %||% 5L),
-    tabnet_feature_dim=coerce_int_vec(dots$tabnet_feature_dim %||% 64L),
-    tabnet_output_dim=coerce_int_vec(dots$tabnet_output_dim %||% 64L),
-    tabnet_gamma=coerce_num(dots$tabnet_gamma %||% 1.5),
-    tabnet_lambda_sparse=coerce_num(dots$tabnet_lambda_sparse %||% 1e-4),
+    tabnet_steps=coerce_int_vec(dots$tabnet_steps %||% 3L),
+    tabnet_feature_dim=coerce_int_vec(dots$tabnet_feature_dim %||% 8L),
+    tabnet_output_dim=coerce_int_vec(dots$tabnet_output_dim %||% 8L),
+    tabnet_gamma=coerce_num(dots$tabnet_gamma %||% 1.3),
+    tabnet_lambda_sparse=coerce_num(dots$tabnet_lambda_sparse %||% 1e-3),
     # common
     learning_rate=C$learning_rate, epochs=C$epochs, batch_size=coerce_int_vec(dots$batch_size %||% 512L),
     l2_weight_decay=C$l2_weight_decay, dropout=C$dropout, batch_norm=C$batch_norm,
@@ -816,6 +840,7 @@ deep_learning_model <- function(pheno_object = NULL,
                                 # FT
                                 ft_d_model = 192L, ft_heads = 8L, ft_layers = 4L, ft_ff_mult = 4L,
                                 ft_dropout = 0.1, ft_token_dropout = 0.1, ft_use_cls = TRUE,
+                                ft_learning_rate = 3e-4,
                                 # SAINT
                                 saint_d_model = 128L, saint_heads = 8L, saint_layers = 4L, saint_ff_mult = 4L,
                                 saint_dropout = 0.1, saint_token_dropout = 0.1, saint_use_cls = TRUE,
@@ -823,8 +848,9 @@ deep_learning_model <- function(pheno_object = NULL,
                                 use_grouping   = FALSE, group_trigger  = 2048, group_method   = "auto",
                                 init_group_size = 64, max_tokens = 1024, kmeans_batch = 4096, kmeans_iter = 100,
                                 # TabNet
-                                tabnet_steps = 5L, tabnet_feature_dim = 64L, tabnet_output_dim = 64L,
-                                tabnet_gamma = 1.5, tabnet_lambda_sparse = 1e-4,
+                                tabnet_steps = 3L, tabnet_feature_dim = 8L, tabnet_output_dim = 8L,
+                                tabnet_gamma = 1.3, tabnet_lambda_sparse = 1e-3,
+                                tabnet_learning_rate = 2e-2,
                                 # NODE
                                 node_trees = 8L, node_depth = 3L,
                                 # DeepFM
@@ -841,7 +867,7 @@ deep_learning_model <- function(pheno_object = NULL,
                                 gp_kernel = "rbf", gp_ard = TRUE, gp_lr_mult = 0.5,
                                 rff_features = 1024, rff_lengthscale = 1.0, rff_deep_hidden = c(128),
                                 # generic training
-                                epochs = 30, batch_size = 64 , dropout = 0.2,
+                                epochs = "auto", batch_size = 64 , dropout = 0.2,
                                 l2_weight_decay = 1e-4, l2_regularizer_dp = 0.001, dropout_rate = 0.5,
                                 batch_norm = TRUE, validation_split = 0.2, compile_model = FALSE,
                                 deterministic = TRUE, random_seed = 123,
@@ -1058,6 +1084,7 @@ deep_learning_model <- function(pheno_object = NULL,
         ft_ff_mult = value("ft_ff_mult"),
         ft_dropout = value("ft_dropout"),
         ft_token_dropout = value("ft_token_dropout"),
+        ft_learning_rate = value("ft_learning_rate"),
         ft_use_cls = value("ft_use_cls"),
         ft_use_grouping = value("use_grouping"),
         ft_group_trigger = value("group_trigger"),
@@ -1101,6 +1128,7 @@ deep_learning_model <- function(pheno_object = NULL,
         tabnet_output_dim = value("tabnet_output_dim"),
         tabnet_gamma = value("tabnet_gamma"),
         tabnet_lambda_sparse = value("tabnet_lambda_sparse"),
+        tabnet_learning_rate = value("tabnet_learning_rate"),
         tabnet_epochs = value("epochs"),
         tabnet_batch_size = value("batch_size")
       )),
@@ -1852,7 +1880,7 @@ gp_met_deep_learning_model <- function(model_type = "mlp",
                                        use_amp = FALSE,
                                        batch_norm = FALSE,
                                        validation_split = 0.2,
-                                       epochs = 30,
+                                       epochs = "auto",
                                        batch_size = 64,
                                        mlp_neurons_per_layer = as.integer(c(128L, 64L)),
                                        mlp_learning_rate = 1e-3,
@@ -1862,6 +1890,7 @@ gp_met_deep_learning_model <- function(model_type = "mlp",
                                        ft_ff_mult = 2L,
                                        ft_dropout = 0.1,
                                        ft_token_dropout = 0.1,
+                                       ft_learning_rate = 3e-4,
                                        ft_use_cls = TRUE,
                                        saint_d_model = 64L,
                                        saint_heads = 4L,
@@ -1871,10 +1900,11 @@ gp_met_deep_learning_model <- function(model_type = "mlp",
                                        saint_token_dropout = 0.1,
                                        saint_use_cls = TRUE,
                                        tabnet_steps = 3L,
-                                       tabnet_feature_dim = 16L,
-                                       tabnet_output_dim = 16L,
+                                       tabnet_feature_dim = 8L,
+                                       tabnet_output_dim = 8L,
                                        tabnet_gamma = 1.3,
-                                       tabnet_lambda_sparse = 1e-4,
+                                       tabnet_lambda_sparse = 1e-3,
+                                       tabnet_learning_rate = 2e-2,
                                        moe_n_experts = 4L,
                                        moe_expert_hidden = as.integer(c(128L, 64L)),
                                        moe_gate_hidden = 128L,
@@ -1955,13 +1985,13 @@ gp_met_deep_learning_model <- function(model_type = "mlp",
     y = long_dat[[response]][train_idx],
     stringsAsFactors = FALSE
   )
-  x_prep <- caret::preProcess(x_all[train_idx, , drop = FALSE], method = c("center", "scale"))
-  train_x <- stats::predict(x_prep, x_all[train_idx, , drop = FALSE])
-  all_x <- stats::predict(x_prep, x_all)
+  x_prep <- gp_center_scale_fit(x_all[train_idx, , drop = FALSE])
+  train_x <- gp_center_scale_apply(x_prep, x_all[train_idx, , drop = FALSE])
+  all_x <- gp_center_scale_apply(x_prep, x_all)
   y_train_raw <- long_dat[[response]][train_idx]
   if (identical(fam, "gaussian")) {
-    y_scaler <- caret::preProcess(as.data.frame(as.matrix(y_train_raw)), method = c("center", "scale"))
-    y_train_fit <- stats::predict(y_scaler, as.data.frame(as.matrix(y_train_raw)))[, 1]
+    y_scaler <- gp_center_scale_fit(as.data.frame(as.matrix(y_train_raw)))
+    y_train_fit <- gp_center_scale_apply(y_scaler, as.data.frame(as.matrix(y_train_raw)))[, 1]
   } else {
     y_scaler <- NULL
     y_train_fit <- gp_dl_bridge_prepare_target(y_train_raw, fam, class_levels = class_levels)$y
@@ -1986,6 +2016,7 @@ gp_met_deep_learning_model <- function(model_type = "mlp",
     ft_ff_mult = ft_ff_mult,
     ft_dropout = ft_dropout,
     ft_token_dropout = ft_token_dropout,
+    ft_learning_rate = ft_learning_rate,
     ft_use_cls = ft_use_cls,
     saint_d_model = saint_d_model,
     saint_heads = saint_heads,
@@ -1999,6 +2030,7 @@ gp_met_deep_learning_model <- function(model_type = "mlp",
     tabnet_output_dim = tabnet_output_dim,
     tabnet_gamma = tabnet_gamma,
     tabnet_lambda_sparse = tabnet_lambda_sparse,
+    tabnet_learning_rate = tabnet_learning_rate,
     moe_n_experts = moe_n_experts,
     moe_expert_hidden = moe_expert_hidden,
     moe_gate_hidden = moe_gate_hidden,
@@ -2050,18 +2082,9 @@ gp_met_deep_learning_model <- function(model_type = "mlp",
       predictor_matrix = x_all,
       row_id = long_dat$.met_row_id,
       fit_predict = function(fit_idx, prediction_idx, fold_index) {
-        fold_x_prep <- caret::preProcess(
-          x_all[fit_idx, , drop = FALSE],
-          method = c("center", "scale")
-        )
-        fold_train_x <- stats::predict(
-          fold_x_prep,
-          x_all[fit_idx, , drop = FALSE]
-        )
-        fold_pred_x <- stats::predict(
-          fold_x_prep,
-          x_all[prediction_idx, , drop = FALSE]
-        )
+        fold_x_prep <- gp_center_scale_fit(x_all[fit_idx, , drop = FALSE])
+        fold_train_x <- gp_center_scale_apply(fold_x_prep, x_all[fit_idx, , drop = FALSE])
+        fold_pred_x <- gp_center_scale_apply(fold_x_prep, x_all[prediction_idx, , drop = FALSE])
         fold_y_raw <- as.numeric(long_dat[[response]][fit_idx])
         fold_y_mean <- mean(fold_y_raw)
         fold_y_sd <- stats::sd(fold_y_raw)
@@ -2276,7 +2299,7 @@ gp_met_dl_cv_predict <- function(model_type = "mlp",
     use_amp = model_params$use_amp %||% FALSE,
     batch_norm = model_params$batch_norm %||% FALSE,
     validation_split = model_params$validation_split %||% 0.2,
-    epochs = model_params$epochs %||% 30L,
+    epochs = model_params$epochs %||% "auto",
     batch_size = model_params$batch_size %||% 64L,
     mlp_neurons_per_layer = model_params$mlp_neurons_per_layer %||% as.integer(c(128L, 64L)),
     mlp_learning_rate = model_params$mlp_learning_rate %||% 1e-3,
@@ -2286,6 +2309,7 @@ gp_met_dl_cv_predict <- function(model_type = "mlp",
     ft_ff_mult = model_params$ft_ff_mult %||% 2L,
     ft_dropout = model_params$ft_dropout %||% 0.1,
     ft_token_dropout = model_params$ft_token_dropout %||% 0.1,
+    ft_learning_rate = model_params$ft_learning_rate %||% 3e-4,
     ft_use_cls = model_params$ft_use_cls %||% TRUE,
     saint_d_model = model_params$saint_d_model %||% 64L,
     saint_heads = model_params$saint_heads %||% 4L,
@@ -2295,10 +2319,11 @@ gp_met_dl_cv_predict <- function(model_type = "mlp",
     saint_token_dropout = model_params$saint_token_dropout %||% 0.1,
     saint_use_cls = model_params$saint_use_cls %||% TRUE,
     tabnet_steps = model_params$tabnet_steps %||% 3L,
-    tabnet_feature_dim = model_params$tabnet_feature_dim %||% 16L,
-    tabnet_output_dim = model_params$tabnet_output_dim %||% 16L,
+    tabnet_feature_dim = model_params$tabnet_feature_dim %||% 8L,
+    tabnet_output_dim = model_params$tabnet_output_dim %||% 8L,
     tabnet_gamma = model_params$tabnet_gamma %||% 1.3,
-    tabnet_lambda_sparse = model_params$tabnet_lambda_sparse %||% 1e-4,
+    tabnet_lambda_sparse = model_params$tabnet_lambda_sparse %||% 1e-3,
+    tabnet_learning_rate = model_params$tabnet_learning_rate %||% 2e-2,
     moe_n_experts = model_params$moe_n_experts %||% 4L,
     moe_expert_hidden = model_params$moe_expert_hidden %||% as.integer(c(128L, 64L)),
     moe_gate_hidden = model_params$moe_gate_hidden %||% 128L,
@@ -2664,7 +2689,7 @@ gp_multitrait_dl_gaussian_model <- function(model_type = c("mlp", "ft_transforme
                                             use_amp = FALSE,
                                             batch_norm = FALSE,
                                             validation_split = 0.2,
-                                            epochs = 30L,
+                                            epochs = "auto",
                                             batch_size = 64L,
                                             mlp_neurons_per_layer = as.integer(c(128L, 64L)),
                                             mlp_learning_rate = 1e-3,
@@ -2674,6 +2699,7 @@ gp_multitrait_dl_gaussian_model <- function(model_type = c("mlp", "ft_transforme
                                             ft_ff_mult = 2L,
                                             ft_dropout = 0.1,
                                             ft_token_dropout = 0.1,
+                                            ft_learning_rate = 3e-4,
                                             ft_use_cls = TRUE,
                                             dropout = 0.1,
                                             l2_weight_decay = 1e-4,
@@ -2708,9 +2734,9 @@ gp_multitrait_dl_gaussian_model <- function(model_type = c("mlp", "ft_transforme
     stop("Multi-trait DL requires at least one genotype with all requested traits observed.", call. = FALSE)
   }
   if (isTRUE(scaling) || isTRUE(centering)) {
-    pp_methods <- c(if (isTRUE(centering)) "center", if (isTRUE(scaling)) "scale")
-    x_prep <- caret::preProcess(x_all[train_rows, , drop = FALSE], method = pp_methods)
-    x_all <- as.matrix(stats::predict(x_prep, x_all))
+    x_prep <- gp_center_scale_fit(x_all[train_rows, , drop = FALSE],
+                                  center = isTRUE(centering), scale = isTRUE(scaling))
+    x_all <- as.matrix(gp_center_scale_apply(x_prep, x_all))
   }
 
   y_train_mat <- y_mat[train_rows, , drop = FALSE]
@@ -2737,6 +2763,7 @@ gp_multitrait_dl_gaussian_model <- function(model_type = c("mlp", "ft_transforme
     ft_ff_mult = ft_ff_mult,
     ft_dropout = ft_dropout,
     ft_token_dropout = ft_token_dropout,
+    ft_learning_rate = ft_learning_rate,
     ft_use_cls = ft_use_cls,
     dropout = dropout,
     dropout_rate = dropout,
@@ -2813,6 +2840,7 @@ gp_multitrait_dl_gaussian_model <- function(model_type = c("mlp", "ft_transforme
       ft_ff_mult = ft_ff_mult,
       ft_dropout = ft_dropout,
       ft_token_dropout = ft_token_dropout,
+      ft_learning_rate = ft_learning_rate,
       ft_use_cls = ft_use_cls,
       dropout = dropout,
       l2_weight_decay = l2_weight_decay,
@@ -3334,7 +3362,7 @@ gp_multitrait_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer")
                                          use_amp = FALSE,
                                          batch_norm = FALSE,
                                          validation_split = 0.2,
-                                         epochs = 30L,
+                                         epochs = "auto",
                                          batch_size = 64L,
                                          mlp_neurons_per_layer = as.integer(c(128L, 64L)),
                                          mlp_learning_rate = 1e-3,
@@ -3344,6 +3372,7 @@ gp_multitrait_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer")
                                          ft_ff_mult = 2L,
                                          ft_dropout = 0.1,
                                          ft_token_dropout = 0.1,
+                                         ft_learning_rate = 3e-4,
                                          ft_use_cls = TRUE,
                                          dropout = 0.1,
                                          l2_weight_decay = 1e-4,
@@ -3408,15 +3437,16 @@ gp_multitrait_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer")
       x_fold <- x_all0
       x_target_fold <- target_x_all0
       if (isTRUE(feature_active)) {
-        feature_view <- gp_feature_multitrait_view(
+        ph_masked <- ph
+        ph_masked[test_idx, response] <- NA_real_
+        feature_view <- gp_feature_joint_view(
           predictor_data = x_all0,
-          pheno_data = ph,
+          pheno_visible = ph_masked,
           response = response,
           gen_name = gen_name,
           k = feature_k,
           selection_mode = feature_scoring_cv,
           feature_score_metadata = feature_score_metadata,
-          test_rows = test_idx,
           scoring_model = feature_scoring_model,
           seed = as.integer((random_seed %||% 123L) + rep_idx * 10000L + fold_idx),
           source_block = feature_source_map,
@@ -3438,6 +3468,7 @@ gp_multitrait_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer")
           stop("Could not apply fold-selected DL features to all prediction targets.", call. = FALSE)
         }
         x_target_fold <- target_x_all0[, selected_columns, drop = FALSE]
+        feature_k_actual <- feature_view$feature_k
         feature_records[[length(feature_records) + 1L]] <- feature_view$metadata
       }
       x_train <- x_fold[train_idx, , drop = FALSE]
@@ -3473,6 +3504,7 @@ gp_multitrait_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer")
         ft_ff_mult = ft_ff_mult,
         ft_dropout = ft_dropout,
         ft_token_dropout = ft_token_dropout,
+        ft_learning_rate = ft_learning_rate,
         ft_use_cls = ft_use_cls,
         dropout = dropout,
         dropout_rate = dropout,
@@ -3538,7 +3570,7 @@ gp_multitrait_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer")
         )
       }))
       if (isTRUE(feature_active)) {
-        pred_blocks[[fold_idx]][["feature_k"]] <- as.integer(feature_k)
+        pred_blocks[[fold_idx]][["feature_k"]] <- as.integer(feature_k_actual)
         pred_blocks[[fold_idx]][["feature_scoring_model"]] <- feature_scoring_model
         pred_blocks[[fold_idx]][["feature_scoring_cv"]] <- feature_scoring_cv
       }
@@ -3555,7 +3587,7 @@ gp_multitrait_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer")
       rep = rep_idx
     )
     if (isTRUE(feature_active) && nrow(metric_table)) {
-      metric_table[["feature_k"]] <- as.integer(feature_k)
+      metric_table[["feature_k"]] <- as.integer(feature_k_actual)
       metric_table[["feature_scoring_model"]] <- feature_scoring_model
       metric_table[["feature_scoring_cv"]] <- feature_scoring_cv
     }

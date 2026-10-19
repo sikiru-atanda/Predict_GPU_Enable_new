@@ -57,6 +57,18 @@ test_that("GP MET varcomp without a boundary keeps the pinned 3-column contract"
   expect_identical(names(out), gp_variance_component_columns())
 })
 
+test_that("a term absorbed by fixed effects keeps its zero and explicit reason", {
+  x <- make_gp_met_result(omic_bound = "F", omic_val = 0)
+  x$varcomp$Component[2] <- "Env!var"
+  x$varcomp$identifiability_reason <- c("", "absorbed by fixed effects", "", "")
+  out <- gp_format_gp_multi_env_variance_components(x, heter_groups = "Env")
+  absorbed <- out$Component == "Env!var"
+  expect_equal(sum(absorbed), 1)
+  expect_equal(out$Components[absorbed], 0)
+  expect_true(is.na(out$Standard_error[absorbed]))
+  expect_equal(out$Boundary[absorbed], "absorbed_by_fixed_effects")
+})
+
 test_that("GP MET varcomp preserves non-boundary optimizer statuses", {
   x <- make_gp_met_result(omic_bound = "F", omic_se = NA_real_, omic_val = 0.08)
   out <- gp_format_gp_multi_env_variance_components(x, heter_groups = "Env")

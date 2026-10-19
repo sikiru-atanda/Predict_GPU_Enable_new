@@ -25,7 +25,7 @@ test_that("CV response scaler is fit on training rows only (no test-response lea
   expect_lt(as.numeric(sc$std[[1]]), 3)         # train sd ~1, NOT ~480
 
   # The scaler must round-trip training values (apply then reverse = identity).
-  scaled <- stats::predict(sc, as.data.frame(as.matrix(y)))[, 1]
+  scaled <- gp_center_scale_apply(sc, as.data.frame(as.matrix(y)))[, 1]
   reverted <- scaled * as.numeric(sc$std[[1]]) + as.numeric(sc$mean[[1]])
   expect_equal(reverted[1:5], y[1:5], tolerance = 1e-8)
 })

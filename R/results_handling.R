@@ -141,7 +141,19 @@ is_predicted_value_export_name <- function(prefix) {
   identical(format_model_table_export_name(prefix), "Predicted_Value")
 }
 
+# The public formatters rebuild prediction tables from column whitelists; a table estimated from
+# selected markers keeps its Feature_selection_remark column through them (spec B5).
 standard_predicted_value_export_table <- function(x) {
+  out <- standard_predicted_value_export_table_format(x)
+  remark <- if (is.data.frame(x)) unique(as.character(x[["Feature_selection_remark"]])) else character()
+  if (length(remark) == 1L && is.data.frame(out) && nrow(out) &&
+      !"Feature_selection_remark" %in% names(out)) {
+    out[["Feature_selection_remark"]] <- remark
+  }
+  out
+}
+
+standard_predicted_value_export_table_format <- function(x) {
   df <- tryCatch(
     as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE),
     error = function(e) NULL
@@ -226,7 +238,7 @@ write_nested_csv_tables <- function(x, pathout, prefix) {
   }
   if (is.matrix(x)) {
     write.csv(
-      as.data.frame(x),
+      as.data.frame(gp_feature_remark_export_table(x)),
       file.path(pathout, paste0(export_prefix, ".csv")),
       row.names = TRUE
     )
@@ -389,7 +401,8 @@ results_handling <-  function(GS_model = NULL,
                               plot_dpi = 300,
                               feature_selected = NULL,
                               feature_score_metadata = NULL,
-                              run_metadata = NULL
+                              run_metadata = NULL,
+                              feature_selection_kind = NULL
                               ){
 
   if (exists("gp_standardize_hybrid_model_result", mode = "function")) {
@@ -415,6 +428,13 @@ results_handling <-  function(GS_model = NULL,
     res_model_output <- res_model_output[
       !names(res_model_output) %in% internal_result_fields
     ]
+  }
+
+  # Spec B5: tables estimated from selected markers carry Feature_selection_remark in the files
+  # written below as well as in the returned list (feature_selection_kind from
+  # gp_feature_selection_kind(); NULL or "none" leaves the tables unchanged).
+  if (!is.null(feature_selection_kind)) {
+    res_model_output <- gp_feature_add_selection_remark(res_model_output, feature_selection_kind)
   }
 
   saveOutput <- function(res_model_output,
@@ -455,6 +475,14 @@ results_handling <-  function(GS_model = NULL,
         # header-only CSVs.  Omit both directly at the package writer.
         if (is.null(output_value) ||
             (is.data.frame(output_value) && nrow(output_value) == 0L)) {
+          next
+        }
+        # Score tables also carry predictpror_feature_scores. The scalar-class
+        # gate below otherwise silently drops the public selection ranking.
+        if (identical(names(res_model_output)[i], "feature_selection_metadata") &&
+            is.data.frame(output_value)) {
+          write_nested_csv_tables(output_value, pathout,
+                                  prefix = names(res_model_output)[i])
           next
         }
         ### check which output is a list
@@ -501,7 +529,7 @@ results_handling <-  function(GS_model = NULL,
                    "matrix" %in% class(output_value) &&
                    "array" %in% class(output_value)) {
 
-          write.csv(output_value,
+          write.csv(gp_feature_remark_export_table(output_value),
                     file.path(pathout,paste(names(res_model_output)[i], "csv", sep = ".")),
                     row.names = TRUE)
 
@@ -517,7 +545,7 @@ results_handling <-  function(GS_model = NULL,
               }
             } else if(names(res_model_output)[i]=="Covariance" | names(res_model_output)[i]=="Correlation"){
               for(j in seq_along(output_value)){
-                write.csv(output_value[[j]],
+                write.csv(gp_feature_remark_export_table(output_value[[j]]),
                           file.path(pathout, paste(names(output_value[j]), "csv", sep = ".")),
                           row.names = TRUE)
 

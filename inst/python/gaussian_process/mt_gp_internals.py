@@ -9,6 +9,7 @@ import pandas as pd
 from typing import Any, Dict, Sequence, Optional
 
 from gp_device import pick_torch_device, torch_to_numpy
+from gp_fixed_effects import trait_fixed_design
 
 
 def _sanitize_kernel_eigenvalues(
@@ -148,26 +149,8 @@ def _build_mt_design(
     # Trait-specific fixed-effect expansion
     # Always start with T intercept columns (one-hot trait indicator)
     trait_idx = df["_trait_idx"].to_numpy(dtype=np.int64)
-    n_rows = len(df)
-    blocks = [np.eye(T)[trait_idx]]  # (n_rows, T) intercepts
-    for col in fixed_effects:
-        if col not in df.columns:
-            raise ValueError(f"fixed_effects col {col!r} not in pheno_df")
-        levels = sorted(df[col].astype(str).unique().tolist())
-        if len(levels) < 2:
-            continue  # constant column contributes nothing
-        # One-hot of the column (no drop_first for fixed effects across traits)
-        col_oh = pd.get_dummies(df[col].astype(str), drop_first=False).to_numpy(dtype=np.float64)
-        # Trait-specific expansion: each col_oh column × T traits = T expanded cols
-        for c in range(col_oh.shape[1]):
-            block = np.zeros((n_rows, T), dtype=np.float64)
-            for t in range(T):
-                m = trait_idx == t
-                block[m, t] = col_oh[m, c]
-            blocks.append(block)
-    X_fixed = np.concatenate(blocks, axis=1)
-
     train_mask = df["_is_train"].to_numpy(dtype=bool)
+    X_fixed = trait_fixed_design(df, fixed_effects, trait_idx, train_mask, T, np.eye(T)[trait_idx])
     test_mask = ~train_mask
 
     return {
@@ -259,8 +242,17 @@ def _fit_mt_ai_reml(
     tol_loglik: float = 1e-4,
     dtype: str = "float64",
     device: Optional[Any] = None,
+    dense_step_method: str = "observed_hessian_combined",
 ) -> Dict[str, Any]:
-    """Joint AI-REML fit over (Sigma_G, Sigma_eps) using torch.func score + Hessian Newton steps.
+    """Joint REML fit; experimental dense AI steps are internal opt-in only.
+
+    Structured solves and FA retain their existing Newton step policy.
+    ``average_information`` is the historical diagnostic control (known to
+    stall on boundary fits); ``ai_newton`` caps AI warm-up before Newton.
+    ``observed_hessian_combined`` uses Newton throughout, combining the y/X
+    solves in its Hessian expression. It is the default only for dense US/US
+    fits; other routes retain the legacy expression. ``observed_hessian``
+    remains available internally, and both AI alternatives remain opt-in.
 
     Returns dict with keys: Sigma_G, Sigma_eps, Lambda_G, psi_G, Lambda_eps, psi_eps,
     beta, loglik_history, n_iter, converged.
@@ -278,6 +270,19 @@ def _fit_mt_ai_reml(
     g_t = torch.tensor(gid_idx, dtype=torch.int64, device=device)
     t_t = torch.tensor(trait_idx, dtype=torch.int64, device=device)
     tm_t = torch.tensor(train_mask, dtype=torch.bool, device=device)
+    # Reconstruct the sanitized kernel once, outside objective/gradient/Hessian
+    # evaluations. This also keeps the final GLS fit on the same covariance.
+    if kernel_eigen_clip_count:
+        K_t = (U_K * D_K) @ U_K.T
+    g_train = g_t[tm_t]
+    from mt_gp_solvers import MTTrainingLayout
+    layout = MTTrainingLayout(K_t, g_train, t_t[tm_t], T, eigen=(D_K, U_K))
+    # Only training genotypes enter REML. Keep the full sanitized kernel for
+    # held-out cross-covariances, but reindex training rows for the fast path.
+    g_objective = g_t.clone()
+    g_objective[tm_t] = layout.compact
+    D_objective, U_objective = ((layout.D, layout.U) if layout.balanced else (D_K, U_K))
+    K_train_pairs = layout.pairs
 
     # --- parameter packing ---
     if trait_structure == "unstructured":
@@ -291,7 +296,8 @@ def _fit_mt_ai_reml(
     elif trait_structure == "fa":
         if trait_fa_rank is None:
             raise ValueError("trait_fa_rank required when trait_structure='fa'")
-        kG = int(trait_fa_rank)
+        from fa_rank import validate_fa_rank
+        kG = validate_fa_rank(trait_fa_rank, T, 'trait_fa_rank')
         w, V = torch.linalg.eigh(torch.tensor(Sigma_G_init, dtype=torch_dtype, device=device))
         Lambda0 = (V[:, -kG:] * torch.sqrt(torch.clamp(w[-kG:], min=1e-6))).contiguous()
         for i in range(kG):
@@ -317,7 +323,8 @@ def _fit_mt_ai_reml(
     elif residual_structure == "fa":
         if residual_fa_rank is None:
             raise ValueError("residual_fa_rank required when residual_structure='fa'")
-        kE = int(residual_fa_rank)
+        from fa_rank import validate_fa_rank
+        kE = validate_fa_rank(residual_fa_rank, T, 'residual_fa_rank')
         w, V = torch.linalg.eigh(torch.tensor(Sigma_eps_init, dtype=torch_dtype, device=device))
         Lambda0 = (V[:, -kE:] * torch.sqrt(torch.clamp(w[-kE:], min=1e-6))).contiguous()
         for i in range(kE):
@@ -333,20 +340,34 @@ def _fit_mt_ai_reml(
         raise ValueError(f"unknown residual_structure {residual_structure!r}")
 
     theta = torch.cat([theta_G_init, theta_E_init]).detach().clone().to(device=device, dtype=torch_dtype)
+    if dense_step_method not in ('observed_hessian', 'average_information',
+                                 'ai_newton', 'observed_hessian_combined'):
+        raise ValueError('unknown dense_step_method')
+    dense_unstructured = (not layout.use_grid and trait_structure == 'unstructured'
+                          and residual_structure == 'unstructured')
+    use_dense_ai = (dense_step_method in ('average_information', 'ai_newton')
+                    and dense_unstructured)
+    use_combined_newton = (dense_step_method in ('ai_newton', 'observed_hessian_combined')
+                          and dense_unstructured)
 
     def nll_of_theta(theta_v: "torch.Tensor") -> "torch.Tensor":
         Sigma_G = unpack_G(theta_v[:n_G])
         Sigma_eps = unpack_E(theta_v[n_G:])
         return _neg_reml_loglik(
             Sigma_G=Sigma_G, Sigma_eps=Sigma_eps,
-            y_std=y_t, X=X_t, gid_idx=g_t, trait_idx=t_t,
-            train_mask=tm_t, D=D_K, U=U_K, T=T, n_gid=n_gid,
+            y_std=y_t, X=X_t, gid_idx=g_objective, trait_idx=t_t,
+            train_mask=tm_t, D=D_objective, U=U_objective, T=T, n_gid=layout.n_gid,
+            K_train_pairs=K_train_pairs,
+            training_layout=layout,
         )
 
     loglik_history: list = []
     converged = False
     singular_streak = 0
+    rejected_streak = 0
     line_search_invalid_candidate_rejections = 0
+    optimizer_step_history = []
+    newton_phase = not use_dense_ai
     for it in range(max_iter):
         nll_curr = _objective_value_or_none(nll_of_theta, theta)
         if nll_curr is None:
@@ -357,8 +378,39 @@ def _fit_mt_ai_reml(
             )
         loglik_history.append(-nll_curr)
         score = torch.func.grad(nll_of_theta)(theta)
+        if not bool(torch.isfinite(score).all()):
+            raise RuntimeError('MT REML has non-finite derivatives at an accepted state')
+        if float(score.abs().max()) <= tol_loglik:
+            converged = True
+            break
+        # AI is only a bounded warm-up. At covariance boundaries a small
+        # Cholesky score does not imply small covariance-scale scores; pure AI
+        # can approach the boundary arbitrarily slowly. Switch permanently,
+        # including a hard iteration cap so a large score cannot prevent it.
+        if dense_step_method == 'ai_newton' and (
+                it >= 3 or float(score.abs().max()) <= 1.0):
+            newton_phase = True
+        step_basis = 'observed_hessian' if newton_phase else 'average_information'
+        optimizer_step_history.append(step_basis)
         try:
-            H = torch.func.hessian(nll_of_theta)(theta)
+            if not newton_phase:
+                from gp_covariance_inference import average_information
+                unpack = lambda th: [unpack_G(th[:n_G]), unpack_E(th[n_G:])]
+                step_solver = layout.factor(*unpack(theta))
+                H = average_information(theta, unpack, y_t[tm_t], X_t[tm_t],
+                                        step_solver.solve, layout.matmul)
+            else:
+                if use_combined_newton:
+                    # Same observed Hessian; the solver combines the y/X
+                    # solves and obtains V^-1 r by subtraction, avoiding a
+                    # repeated differentiated solve. Eligibility above keeps
+                    # structured solves and FA on the legacy expression.
+                    def step_objective(th):
+                        return layout.factor(unpack_G(th[:n_G]), unpack_E(th[n_G:])).reml(
+                            y_t[tm_t], X_t[tm_t])[0]
+                    H = torch.func.hessian(step_objective)(theta)
+                else:
+                    H = torch.func.hessian(nll_of_theta)(theta)
             # Levenberg-Marquardt style: ensure H_reg is positive definite before solving.
             # If Hessian has negative eigenvalues, add enough diagonal to make it PD.
             eig_min = torch.linalg.eigvalsh(H).min().item()
@@ -402,31 +454,35 @@ def _fit_mt_ai_reml(
                     step_accepted = True
                     break
         # Convergence: only when we made a step AND log-lik change is small
-        if it > 0 and step_accepted and abs(loglik_history[-1] - loglik_history[-2]) < tol_loglik:
-            converged = True
-            break
+        if step_accepted:
+            rejected_streak = 0
+            if abs(nll_try - nll_curr) < tol_loglik:
+                final_score = torch.func.grad(nll_of_theta)(theta)
+                if bool(torch.isfinite(final_score).all()) and float(final_score.abs().max()) <= tol_loglik:
+                    converged = True
+                    break
         # Hard stop if 3 iterations in a row failed to improve
         if not step_accepted:
-            singular_streak += 1
-            if singular_streak >= 3:
+            rejected_streak += 1
+            if rejected_streak >= 3:
                 converged = False
                 break
 
+    final_score = torch.func.grad(nll_of_theta)(theta)
+    grad_max_abs = float(final_score.abs().max())
+    converged = bool(torch.isfinite(final_score).all()) and grad_max_abs <= tol_loglik
+    final_nll = _objective_value_or_none(nll_of_theta, theta)
+    if final_nll is None:
+        raise RuntimeError('MT REML returned an invalid covariance state')
     Sigma_G_final = torch_to_numpy(unpack_G(theta[:n_G]))
     Sigma_eps_final = torch_to_numpy(unpack_E(theta[n_G:]))
     Sigma_G_t = unpack_G(theta[:n_G])
     Sigma_eps_t = unpack_E(theta[n_G:])
-    y_tr = y_t[tm_t]; X_tr = X_t[tm_t]; g_tr = g_t[tm_t]; t_tr = t_t[tm_t]
-    K_pairs = K_t[g_tr.unsqueeze(1), g_tr.unsqueeze(0)]
-    G_pairs = Sigma_G_t[t_tr.unsqueeze(1), t_tr.unsqueeze(0)]
-    E_pairs = Sigma_eps_t[t_tr.unsqueeze(1), t_tr.unsqueeze(0)]
-    same_gid = (g_tr.unsqueeze(1) == g_tr.unsqueeze(0)).to(K_pairs.dtype)
-    V = G_pairs * K_pairs + E_pairs * same_gid
-    V = V + 1e-6 * torch.eye(y_tr.shape[0], dtype=V.dtype, device=V.device)
-    L_V = torch.linalg.cholesky(V)
-    Vinv_y = torch.cholesky_solve(y_tr.unsqueeze(1), L_V).squeeze(1)
-    Vinv_X = torch.cholesky_solve(X_tr, L_V)
-    Xt_Vinv_X = X_tr.T @ Vinv_X + 1e-6 * torch.eye(X_tr.shape[1], dtype=V.dtype, device=V.device)
+    y_tr = y_t[tm_t]; X_tr = X_t[tm_t]
+    solver = layout.factor(Sigma_G_t, Sigma_eps_t)
+    Vinv_y = solver.solve(y_tr.unsqueeze(1)).squeeze(1)
+    Vinv_X = solver.solve(X_tr)
+    Xt_Vinv_X = X_tr.T @ Vinv_X
     L_xvx = torch.linalg.cholesky(Xt_Vinv_X)
     beta_hat = torch.cholesky_solve(
         (X_tr.T @ Vinv_y).unsqueeze(1), L_xvx
@@ -441,14 +497,28 @@ def _fit_mt_ai_reml(
         "loglik_history": np.asarray(loglik_history, dtype=np.float64),
         "n_iter": len(loglik_history),
         "converged": bool(converged),
-        "_K_geno": K_geno,
+        "grad_max_abs": grad_max_abs,
+        "neg_reml": final_nll,
+        "_K_geno": torch_to_numpy(K_t),
         "_D_K": torch_to_numpy(D_K),
         "_U_K": torch_to_numpy(U_K),
+        "_training_solver": solver,
+        "training_solver": layout.method,
+        "optimizer_step_basis": (dense_step_method if use_dense_ai or use_combined_newton
+                                 else 'observed_hessian'),
+        "optimizer_step_history": optimizer_step_history,
+        "n_training_genotypes": layout.n_gid,
         "device": str(device),
         "kernel_eigen_clip_count": kernel_eigen_clip_count,
         "kernel_min_eigenvalue_input": kernel_min_eigenvalue_input,
         "line_search_invalid_candidate_rejections": line_search_invalid_candidate_rejections,
     }
+    from gp_covariance_inference import covariance_inference
+    out['parameter_inference'] = covariance_inference(theta,
+        lambda t: [unpack_G(t[:n_G]), unpack_E(t[n_G:])],
+        layout.dense_covariance,
+        y_tr, X_tr, ['genetic', 'residual'], converged,
+        solve=solver.solve, covariance_matmul=layout.matmul)
     if trait_structure == "fa":
         Lambda_G, log_psi_G = _unpack_fa(theta[:n_G], T, int(trait_fa_rank))
         out["Lambda_G"] = torch_to_numpy(Lambda_G)
@@ -620,11 +690,15 @@ def _fit_mt_ai_reml_multikernel(
         if not np.isfinite(ll):
             cache[key] = None
             return None
+        # A partial-grid factor can be large. The profile cache needs the
+        # likelihood/fit metadata, not one dense factor per trial mixture.
+        # Keep a reusable factor only on the selected best fit.
+        candidate_solver = cand.pop("_training_solver", None)
         out = (ll, cand)
         cache[key] = out
         if ll > best["ll"]:
             best["ll"] = ll
-            best["fit"] = cand
+            best["fit"] = dict(cand, _training_solver=candidate_solver)
             best["log_w"] = np.asarray(key, dtype=np.float64)
         return out
 
@@ -686,19 +760,17 @@ def _predict_mt(
     gid_col: str,
     trait_col: str,
     device: Optional[Any] = None,
+    return_se: bool = True,
+    return_cov_traits: bool = True,
+    prediction_batch_size: int = 256,
 ) -> tuple:
-    """Form long-format predictions DataFrame + (n_test_gid, T, T) cov_traits.
+    """Batched exact predictions using the final fit's training solver.
 
-    Posterior:
-      g | y_train ~ N(mu_g, C)
-      mu_g[i,t] = (Σ_G ⊗ K_{i, train}) V^{-1} (y_train - Xβ̂)
-      C = (Σ_G ⊗ K_{ii}) − (Σ_G ⊗ K_{i,train}) V^{-1} (Σ_G ⊗ K_{train,i})
-
-    Predictions are y_pred = X_test β̂ + mu_g, with SE_latent² = diag(C) and
-    SE² = SE_latent² + diag(Σ_eps for each trait).
+    SE_latent includes fixed-mean estimation uncertainty. Genetic PEV uses
+    the genetic-effect correction instead; optional cov_traits contains its
+    within-genotype blocks. Mean-only requests need no query-column solves.
     """
     T = design["T"]
-    n_gid = design["n_gid"]
     Sigma_G = fit["Sigma_G"]
     Sigma_eps = fit["Sigma_eps"]
     beta = fit["beta"]
@@ -719,52 +791,60 @@ def _predict_mt(
     t_tr = trait_idx[train_mask]
     y_tr = y_std[train_mask]
     X_tr = X[train_mask]
-    K_tr_tr = K_t[g_tr.unsqueeze(1), g_tr.unsqueeze(0)]
-    G_tr = Sigma_G_t[t_tr.unsqueeze(1), t_tr.unsqueeze(0)]
-    E_tr = Sigma_eps_t[t_tr.unsqueeze(1), t_tr.unsqueeze(0)]
-    same_gid_tr = (g_tr.unsqueeze(1) == g_tr.unsqueeze(0)).to(K_tr_tr.dtype)
-    V = G_tr * K_tr_tr + E_tr * same_gid_tr
-    V = V + 1e-6 * torch.eye(V.shape[0], dtype=V.dtype, device=device)
-    L_V = torch.linalg.cholesky(V)
+    from mt_gp_solvers import MTTrainingLayout
+    solver = fit.get("_training_solver")
+    if (solver is None or solver.cholesky.dtype != K_t.dtype or
+            solver.cholesky.device != K_t.device or
+            not torch.equal(solver.layout.gid, g_tr) or
+            not torch.equal(solver.layout.trait, t_tr)):
+        solver = MTTrainingLayout(K_t, g_tr, t_tr, T).factor(Sigma_G_t, Sigma_eps_t)
     r_tr = y_tr - X_tr @ beta_t
-    Vinv_r = torch.cholesky_solve(r_tr.unsqueeze(1), L_V).squeeze(1)
+    Vinv_r = solver.solve(r_tr.unsqueeze(1)).squeeze(1)
 
     g_te = gid_idx[test_mask]
     t_te = trait_idx[test_mask]
     X_te = X[test_mask]
-    K_te_tr = K_t[g_te.unsqueeze(1), g_tr.unsqueeze(0)]
-    G_te_tr = Sigma_G_t[t_te.unsqueeze(1), t_tr.unsqueeze(0)]
-    cross = G_te_tr * K_te_tr
-    mu_g_std = cross @ Vinv_r
-    y_pred_std = X_te @ beta_t + mu_g_std
-    Vinv_cross = torch.cholesky_solve(cross.T, L_V).T  # (n_te, n_tr)
-    K_te_te_diag = K_t[g_te, g_te]
-    G_te_te_diag = Sigma_G_t[t_te, t_te]
-    var_lat = G_te_te_diag * K_te_te_diag - (cross * Vinv_cross).sum(dim=1)
-    var_lat = torch.clamp(var_lat, min=1e-10)
-    E_te_te_diag = Sigma_eps_t[t_te, t_te]
-    var_obs = var_lat + E_te_te_diag
-
     trait_means = torch.tensor(design["trait_means"], dtype=torch.float64, device=device)
     trait_sds = torch.tensor(design["trait_sds"], dtype=torch.float64, device=device)
+    if return_se or return_cov_traits:
+        Vinv_X = solver.solve(X_tr)
+        Var_beta = torch.linalg.pinv(X_tr.T @ Vinv_X, hermitian=True)
+    batch = int(prediction_batch_size)
+    if batch < 1:
+        raise ValueError('prediction_batch_size must be positive')
+    y_pred_std = torch.empty(len(g_te), dtype=K_t.dtype, device=device)
+    if return_se:
+        var_lat = torch.empty_like(y_pred_std)
+        var_genetic = torch.empty_like(y_pred_std)
+    for start in range(0, len(g_te), batch):
+        sl = slice(start, start + batch)
+        cross = (K_t[g_te[sl, None], g_tr[None, :]] *
+                 Sigma_G_t[t_te[sl, None], t_tr[None, :]])
+        y_pred_std[sl] = X_te[sl] @ beta_t + cross @ Vinv_r
+        if return_se:
+            vinv_cross = solver.solve(cross.T).T
+            q = cross @ Vinv_X
+            b = X_te[sl] - q
+            conditional = (Sigma_G_t[t_te[sl], t_te[sl]] * K_t[g_te[sl], g_te[sl]] -
+                           (cross * vinv_cross).sum(dim=1))
+            var_genetic[sl] = conditional + ((q @ Var_beta) * q).sum(dim=1)
+            var_lat[sl] = torch.clamp(conditional + ((b @ Var_beta) * b).sum(dim=1), min=1e-10)
     y_pred = y_pred_std * trait_sds[t_te] + trait_means[t_te]
-    SE_lat = torch.sqrt(var_lat) * trait_sds[t_te]
-    SE = torch.sqrt(var_obs) * trait_sds[t_te]
-    var_lat_orig = var_lat * trait_sds[t_te] ** 2
-    var_obs_orig = var_obs * trait_sds[t_te] ** 2
 
     test_gid_unique = torch.unique(g_te).tolist()
-    n_test_gid = len(test_gid_unique)
-    cov_traits = np.zeros((n_test_gid, T, T), dtype=np.float64)
-    for s, gi in enumerate(test_gid_unique):
+    cov_traits = (np.zeros((len(test_gid_unique), T, T), dtype=np.float64)
+                  if return_cov_traits else None)
+    for s, gi in enumerate(test_gid_unique if return_cov_traits else []):
         g_query = torch.tensor([gi] * T, dtype=torch.int64, device=device)
-        t_query = torch.arange(T, dtype=torch.int64)
+        t_query = torch.arange(T, dtype=torch.int64, device=device)
         K_q_tr = K_t[g_query.unsqueeze(1), g_tr.unsqueeze(0)]
         G_q_tr = Sigma_G_t[t_query.unsqueeze(1), t_tr.unsqueeze(0)]
         cross_q = G_q_tr * K_q_tr
-        Vinv_cross_q = torch.cholesky_solve(cross_q.T, L_V).T
+        Vinv_cross_q = solver.solve(cross_q.T).T
         K_q_q = K_t[gi, gi]
         Sigma_lat_q = K_q_q * Sigma_G_t - cross_q @ Vinv_cross_q.T
+        Q = cross_q @ Vinv_X
+        Sigma_lat_q = Sigma_lat_q + Q @ Var_beta @ Q.T
         sd = trait_sds
         Sigma_lat_q_orig = (sd.unsqueeze(1) * sd.unsqueeze(0)) * Sigma_lat_q
         cov_traits[s] = torch_to_numpy(0.5 * (Sigma_lat_q_orig + Sigma_lat_q_orig.T))
@@ -775,12 +855,21 @@ def _predict_mt(
         gid_col: [geno_ids[int(g)] for g in g_te.tolist()],
         trait_col: [trait_levels[int(t)] for t in t_te.tolist()],
         "Prediction": torch_to_numpy(y_pred),
-        "SE": torch_to_numpy(SE),
-        "SE_latent": torch_to_numpy(SE_lat),
-        "PEV": torch_to_numpy(var_lat_orig),
-        "Prediction_Var_latent": torch_to_numpy(var_lat_orig),
-        "Prediction_Var_observed": torch_to_numpy(var_obs_orig),
     })
+    if return_se:
+        var_obs = var_lat + Sigma_eps_t[t_te, t_te]
+        var_lat_orig = var_lat * trait_sds[t_te] ** 2
+        var_obs_orig = var_obs * trait_sds[t_te] ** 2
+        uncertainty = {
+            "SE": torch.sqrt(var_obs_orig), "SE_latent": torch.sqrt(var_lat_orig),
+            "PEV": var_lat_orig,
+            "Reliability_variance_input": torch.clamp(var_genetic, min=0.) * trait_sds[t_te] ** 2,
+            "Reliability_reference_variance": Sigma_G_t[t_te, t_te] * K_t[g_te, g_te] * trait_sds[t_te] ** 2,
+            "Prediction_Var_latent": var_lat_orig, "Prediction_Var_observed": var_obs_orig,
+        }
+        for name, values in uncertainty.items():
+            df_out[name] = torch_to_numpy(values)
+        df_out['Reliability_basis'] = 'genetic_prior_variance'
     for col in (gid_col, trait_col):
         df_out[col] = pd.Series([str(x) for x in df_out[col].tolist()], index=df_out.index, dtype=object)
     return df_out, cov_traits
@@ -894,9 +983,7 @@ def _neg_reml_loglik_balanced(
     Xt_Vinv_y = torch.einsum("itp,it->p", X_tilde, Vinv_Y)
 
     # GLS β̂ via Cholesky on (p,p)
-    L_xvx = torch.linalg.cholesky(
-        Xt_Vinv_X + 1e-6 * torch.eye(p, dtype=B.dtype, device=B.device)
-    )
+    L_xvx = torch.linalg.cholesky(Xt_Vinv_X)
     log_det_xvx = 2.0 * torch.log(torch.diagonal(L_xvx)).sum()
     beta_hat = torch.cholesky_solve(Xt_Vinv_y.unsqueeze(-1), L_xvx).squeeze(-1)
 
@@ -923,6 +1010,8 @@ def _neg_reml_loglik(
     U: "torch.Tensor",            # (n_gid, n_gid) eigenvectors of K
     T: int,
     n_gid: int,
+    K_train_pairs: Optional["torch.Tensor"] = None,
+    training_layout=None,
 ) -> "torch.Tensor":
     """Negative REML log-likelihood, restricted to training rows.
 
@@ -931,11 +1020,16 @@ def _neg_reml_loglik(
 
     Auto-routes to the Kronecker fast path (`_neg_reml_loglik_balanced`) when the
     (gid × trait) grid is complete (n_obs == n_gid * T after train_mask).
-    Otherwise falls through to the dense V_obs Cholesky body.
+    Partial grids with a small missing set use an exact precision correction.
+    Other partial grids fall through to the dense V_obs Cholesky body.
     """
     g_tr_check = gid_idx[train_mask]
     t_tr_check = trait_idx[train_mask]
-    if _is_balanced_grid(g_tr_check, t_tr_check, n_gid, T):
+    if training_layout is not None and training_layout.missing_correction:
+        return training_layout.factor(Sigma_G, Sigma_eps).reml(y_std[train_mask], X[train_mask])[0]
+    # A cached pair matrix explicitly selects the observed-data route. The
+    # training layout also checks cell uniqueness, not merely the row count.
+    if K_train_pairs is None and _is_balanced_grid(g_tr_check, t_tr_check, n_gid, T):
         return _neg_reml_loglik_balanced(
             Sigma_G=Sigma_G, Sigma_eps=Sigma_eps,
             y_std=y_std, X=X,
@@ -954,11 +1048,13 @@ def _neg_reml_loglik(
 
     # v1 simplicity: build V_obs (n_tr × n_tr) explicitly using Kronecker indexing.
     # V[r, s] = Sigma_G[t_r, t_s] * K[g_r, g_s] + Sigma_eps[t_r, t_s] * δ(g_r, g_s)
-    # Cost: O(n_tr²) memory, O(n_tr³) Cholesky. At n_tr=4500 (n_gid=1500, T=3) that's
-    # 162 MB and ~4 GFLOPs — under 1s in float64. Kronecker-shortcut left to operator-backend v2.
-    # D, U passed for prediction reuse — unused here.
-    K_full = U @ torch.diag(D) @ U.T  # (n_gid, n_gid) reconstructed for indexing
-    K_pairs = K_full[g_tr.unsqueeze(1), g_tr.unsqueeze(0)]   # (n_tr, n_tr)
+    # Cost: O(n_tr²) memory, O(n_tr³) Cholesky. The caller caches the constant
+    # kernel pairs for repeated score/Hessian evaluations on an incomplete grid.
+    if K_train_pairs is None:
+        K_full = (U * D) @ U.T
+        K_pairs = K_full[g_tr.unsqueeze(1), g_tr.unsqueeze(0)]
+    else:
+        K_pairs = K_train_pairs
     G_pairs = Sigma_G[t_tr.unsqueeze(1), t_tr.unsqueeze(0)]  # (n_tr, n_tr)
     E_pairs = Sigma_eps[t_tr.unsqueeze(1), t_tr.unsqueeze(0)]  # (n_tr, n_tr)
     same_gid = (g_tr.unsqueeze(1) == g_tr.unsqueeze(0)).to(K_pairs.dtype)
@@ -970,9 +1066,7 @@ def _neg_reml_loglik(
     Vinv_y = torch.cholesky_solve(y_tr.unsqueeze(1), L).squeeze(1)
     Vinv_X = torch.cholesky_solve(X_tr, L)
     Xt_Vinv_X = X_tr.T @ Vinv_X
-    L_xvx = torch.linalg.cholesky(
-        Xt_Vinv_X + 1e-6 * torch.eye(p, dtype=V.dtype, device=V.device)
-    )
+    L_xvx = torch.linalg.cholesky(Xt_Vinv_X)
     log_det_xvx = 2.0 * torch.log(torch.diagonal(L_xvx)).sum()
     beta_hat = torch.cholesky_solve(
         (X_tr.T @ Vinv_y).unsqueeze(1), L_xvx
@@ -1009,6 +1103,9 @@ def _fit_mt_mom_op(
     from mixed_model_gpu_large_scale_backend import (
         pcg_solve, FoldIndexCache, _unique_inverse,
     )
+    from gp_pcg_diagnostics import PCGAudit
+    pcg_audit = PCGAudit(pcg_solve)
+    pcg_solve = pcg_audit.solve
 
     device = pick_torch_device(device)
     T = design["T"]
@@ -1078,10 +1175,9 @@ def _fit_mt_mom_op(
     # GLS fixed effects under the MoM covariance: beta = (X' V^-1 X)^+ X' V^-1 y.
     # The OLS beta-hat returned by _estimate_sigma_mom is used only for
     # variance-component estimation; the BLUP posterior mean requires GLS so that
-    # the prediction is the exact empirical ICM-BLUP rather than an OLS-centred
-    # approximation. V^-1 is applied with the same PCG used for alpha. pinv keeps
-    # this well-defined when the trait-expanded fixed-effect design is rank
-    # deficient (one-hot factors are collinear with the per-trait intercepts).
+    # the prediction is the empirical ICM-BLUP. V^-1 is applied with the same
+    # PCG used for alpha. The public design is full rank; pinv also supports
+    # estimable predictions for legacy direct internal calls with aliased X.
     y_tr_t = torch.tensor(y_tr_std, dtype=torch.float64, device=device)
     X_tr_t = torch.tensor(X_tr, dtype=torch.float64, device=device)
     Vinv_y = pcg_solve(A_mv, y_tr_t, M_inv_mv=None, tol=pcg_tol, max_iter=pcg_max_iter).x
@@ -1094,7 +1190,8 @@ def _fit_mt_mom_op(
     Vinv_X = torch.stack(Vinv_X_cols, dim=1) if p_fixed > 0 else X_tr_t.new_zeros((X_tr_t.shape[0], 0))
     XtVinvX = X_tr_t.transpose(0, 1) @ Vinv_X
     XtVinvy = X_tr_t.transpose(0, 1) @ Vinv_y
-    beta_t = torch.linalg.pinv(XtVinvX) @ XtVinvy
+    Var_beta = torch.linalg.pinv(XtVinvX, hermitian=True)
+    beta_t = Var_beta @ XtVinvy
     beta = torch_to_numpy(beta_t)
 
     r = y_tr_t - X_tr_t @ beta_t
@@ -1167,12 +1264,16 @@ def _fit_mt_mom_op(
                 K_gi_gi += float(weight) * float(
                     (Phi_row_gi @ Phi_row_gi.transpose(0, 1)).item()
                 )
-            schur = np.zeros((T, T), dtype=np.float64)
+            cols, solutions = [], []
             for t in range(T):
                 col = (Sigma_G_t[t][torch.tensor(t_tr, dtype=torch.int64, device=device)] *
                        K_row[fold_train.inv]).to(torch.float64)
                 pcg_t = pcg_solve(A_mv, col, M_inv_mv=None, tol=pcg_tol, max_iter=pcg_max_iter)
-                schur[t, :] = torch_to_numpy(Sigma_G_t[t] * K_gi_gi) - torch_to_numpy(col) @ torch_to_numpy(pcg_t.x)
+                cols.append(col)
+                solutions.append(pcg_t.x)
+            C = torch.stack(cols)
+            Q = C @ Vinv_X
+            schur = torch_to_numpy(K_gi_gi * Sigma_G_t - C @ torch.stack(solutions).T + Q @ Var_beta @ Q.T)
             schur = 0.5 * (schur + schur.T)
             sd = trait_sds
             cov_traits[s] = (np.outer(sd, sd)) * schur
@@ -1187,6 +1288,7 @@ def _fit_mt_mom_op(
         "mom_psd_clip_count":  mom_out["mom_psd_clip_count"],
         "pcg_n_iter":          int(pcg_res.iters),
         "pcg_residual_norm":   float(pcg_res.rel_resid),
+        **pcg_audit.report(),
         "device":              str(device),
         "predictions":         preds_df,
         "cov_traits":          cov_traits,

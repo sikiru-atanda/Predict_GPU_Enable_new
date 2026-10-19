@@ -226,7 +226,7 @@ model_runtime <- system.time({
     gp_backend = "auto",
 
     # Deep-learning controls
-    epochs = 100L,                     # attention models (TabNet, TabAttention) need ~100
+    epochs = "auto",                     # default: sized to the data (about 200 optimizer steps)
     batch_size = 16L,
     deterministic = TRUE,
     random_seed = 20260903L,

@@ -30,8 +30,8 @@ for `"Dominance_Vitezica"`; `"Dominance_Heterozygosity"` is an alias for
 
 \item{backend}{Backend selector. One of `"auto"`, `"cpp"`, or `"r"`. `NULL`
 uses `PREDICTPRO_GRM_BACKEND`, `PREDICTPRO_KERNEL_BACKEND`, or `"auto"`.
-The automatic route is performance-aware and keeps current dense methods
-on the R/BLAS path in this phase.}
+The automatic route uses the native backend, which forms each product
+with BLAS dsyrk for every ploidy the method allows.}
 
 \item{ploidy}{One positive integer or `"auto"`. Automatic resolution uses
 matrix metadata; an unannotated matrix defaults to diploid only when all

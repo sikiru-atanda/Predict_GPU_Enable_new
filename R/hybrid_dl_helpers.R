@@ -54,7 +54,7 @@ gp_hybrid_dl_fit_response <- function(model_type,
                                       use_amp = TRUE,
                                       batch_norm = TRUE,
                                       validation_split = 0.2,
-                                      epochs = 20L,
+                                      epochs = "auto",
                                       batch_size = 64L,
                                       mlp_neurons_per_layer = as.integer(c(128L, 64L)),
                                       mlp_learning_rate = 1e-3,
@@ -64,6 +64,7 @@ gp_hybrid_dl_fit_response <- function(model_type,
                                       ft_ff_mult = 4L,
                                       ft_dropout = 0.1,
                                       ft_token_dropout = 0,
+                                      ft_learning_rate = 3e-4,
                                        ft_use_cls = TRUE,
                                        dropout = 0.2,
                                        l2_weight_decay = 1e-4,
@@ -137,6 +138,7 @@ gp_hybrid_dl_fit_response <- function(model_type,
       ft_ff_mult = ft_ff_mult,
       ft_dropout = ft_dropout,
       ft_token_dropout = ft_token_dropout,
+      ft_learning_rate = ft_learning_rate,
       ft_use_cls = ft_use_cls,
       ft_epochs = epochs,
       ft_batch_size = batch_size,
@@ -201,7 +203,7 @@ gp_hybrid_dl_gaussian_model <- function(model_type = c("mlp", "ft_transformer"),
                                         use_amp = TRUE,
                                         batch_norm = TRUE,
                                         validation_split = 0.2,
-                                        epochs = 20L,
+                                        epochs = "auto",
                                         batch_size = 64L,
                                         mlp_neurons_per_layer = as.integer(c(128L, 64L)),
                                         mlp_learning_rate = 1e-3,
@@ -211,6 +213,7 @@ gp_hybrid_dl_gaussian_model <- function(model_type = c("mlp", "ft_transformer"),
                                         ft_ff_mult = 4L,
                                         ft_dropout = 0.1,
                                         ft_token_dropout = 0,
+                                        ft_learning_rate = 3e-4,
                                         ft_use_cls = TRUE,
                                          dropout = 0.2,
                                          l2_weight_decay = 1e-4,
@@ -286,6 +289,7 @@ gp_hybrid_dl_gaussian_model <- function(model_type = c("mlp", "ft_transformer"),
     ft_ff_mult = ft_ff_mult,
     ft_dropout = ft_dropout,
     ft_token_dropout = ft_token_dropout,
+    ft_learning_rate = ft_learning_rate,
     ft_use_cls = ft_use_cls,
     dropout = dropout,
     l2_weight_decay = l2_weight_decay
@@ -381,7 +385,7 @@ gp_hybrid_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer"),
                                      use_amp = TRUE,
                                      batch_norm = TRUE,
                                      validation_split = 0.2,
-                                     epochs = 20L,
+                                     epochs = "auto",
                                      batch_size = 64L,
                                      mlp_neurons_per_layer = as.integer(c(128L, 64L)),
                                      mlp_learning_rate = 1e-3,
@@ -391,6 +395,7 @@ gp_hybrid_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer"),
                                      ft_ff_mult = 4L,
                                      ft_dropout = 0.1,
                                      ft_token_dropout = 0,
+                                     ft_learning_rate = 3e-4,
                                      ft_use_cls = TRUE,
                                      dropout = 0.2,
                                      l2_weight_decay = 1e-4,
@@ -453,7 +458,7 @@ gp_hybrid_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer"),
       if (!length(train_idx) || !length(test_idx)) next
       x_feature <- x
       if (isTRUE(feature_active)) {
-        feature_view <- gp_feature_multitrait_view(
+        feature_view <- gp_feature_trait_view(
           predictor_data = x,
           pheno_data = ph,
           response = response,
@@ -462,6 +467,9 @@ gp_hybrid_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer"),
           selection_mode = feature_scoring_cv,
           feature_score_metadata = feature_score_metadata,
           test_rows = test_idx,
+          # the scenario's training rows: Both_New_Parents also keeps the test parents'
+          # half-sib hybrids out of training, so scoring must not see them either
+          train_rows = train_idx,
           scoring_model = feature_scoring_model,
           seed = as.integer((random_state %||% 123L) + rep_idx * 10000L + part_idx),
           source_block = feature_source_map,
@@ -475,7 +483,8 @@ gp_hybrid_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer"),
           ntree = ntree,
           mtry = mtry,
           nodesize = nodesize,
-          rf_n_jobs = rf_n_jobs
+          rf_n_jobs = rf_n_jobs,
+          heter_groups = heter_groups
         )
         x_feature <- feature_view$predictor_data
         feature_records[[length(feature_records) + 1L]] <- feature_view$metadata
@@ -516,6 +525,7 @@ gp_hybrid_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer"),
         ft_ff_mult = ft_ff_mult,
         ft_dropout = ft_dropout,
         ft_token_dropout = ft_token_dropout,
+        ft_learning_rate = ft_learning_rate,
         ft_use_cls = ft_use_cls,
         dropout = dropout,
         l2_weight_decay = l2_weight_decay,
@@ -542,7 +552,7 @@ gp_hybrid_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer"),
         pred_parts[[part_idx]][[heter_groups]] <- ph[[heter_groups]][test_idx]
       }
       if (isTRUE(feature_active)) {
-        pred_parts[[part_idx]][["feature_k"]] <- as.integer(feature_k)
+        pred_parts[[part_idx]][["feature_k"]] <- as.integer(feature_view$feature_k)
         pred_parts[[part_idx]][["feature_scoring_model"]] <- feature_scoring_model
         pred_parts[[part_idx]][["feature_scoring_cv"]] <- feature_scoring_cv
       }
@@ -561,7 +571,7 @@ gp_hybrid_dl_gaussian_cv <- function(model_type = c("mlp", "ft_transformer"),
       model_type = model_type
     )
     if (isTRUE(feature_active) && nrow(metric_table)) {
-      metric_table[["feature_k"]] <- as.integer(feature_k)
+      metric_table[["feature_k"]] <- as.integer(feature_view$feature_k)
       metric_table[["feature_scoring_model"]] <- feature_scoring_model
       metric_table[["feature_scoring_cv"]] <- feature_scoring_cv
     }

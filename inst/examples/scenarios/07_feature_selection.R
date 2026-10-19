@@ -207,4 +207,100 @@ model_runtime <- system.time({
 })
 log_result(label, res, model_runtime)
 
+# ---- (c) Joint selection: one top-50 set for both traits ----------------------------
+# Short chains demonstrate routing; they do not certify MCMC convergence.
+(function() {
+  # Preserve the session state expected by all pre-existing scenarios.
+  saved_kind <- RNGkind()
+  had_seed <- exists(".Random.seed",envir=.GlobalEnv,inherits=FALSE)
+  saved_seed <- if(had_seed)get(".Random.seed",envir=.GlobalEnv,inherits=FALSE) else NULL
+  on.exit({
+    do.call(RNGkind,as.list(saved_kind))
+    if(had_seed)assign(".Random.seed",saved_seed,envir=.GlobalEnv)
+    else if(exists(".Random.seed",envir=.GlobalEnv,inherits=FALSE))
+      rm(".Random.seed",envir=.GlobalEnv)
+  },add=TRUE)
+  joint_dat <- sim_multi_trait(n = 80, p = 300)
+  label <- "Feature selection joint TP: top 50 - multi-trait RandomForest"
+  if (!is.null(need <- missing_software(needs_for_model("RandomForest")))) {
+    log_skip(label, need)
+  } else {
+    model_runtime <- system.time({
+      res <- try(PredictProR::model_execute(
+        pheno_data = joint_dat$pheno,
+        geno_data = joint_dat$geno,
+        response = c("Yield", "Protein"),
+        gen_name = "GID",
+        response_family = "gaussian",
+        multi_trait_ml = TRUE,
+        GS_model = "RandomForest",
+        fixed = ~1,
+        gmatrix_method = "VanRaden",
+        qc_filtering = TRUE,
+        impute = TRUE,
+        imputation_method = "knn",
+        ld_prunning_qc = TRUE,
+        ld_pruning = FALSE,
+        cross_validation = FALSE,
+        para_tunning = FALSE,
+        ntree = 50L,
+        feature_scoring = TRUE,
+        feature_scoring_model = "Ridge_Regression",
+        feature_k = 50L,
+        feature_scoring_seed = 1L,
+        feature_bayes_nIter = 600L,
+        feature_bayes_burnIn = 200L,
+        feature_bayes_thin = 5L,
+        random_seed = 20260903L,
+        random_state = 20260903L,
+        parallel_mode = "auto",
+        parallel_backend_prefer_fork = FALSE,
+        system_database = TRUE,
+        message = FALSE,
+        verbose = FALSE
+      ), silent = TRUE)
+    })
+    log_result(label, res, model_runtime)
+  }
+
+  label <- "Feature selection joint TP: top 50 - multi-trait GBLUP_BRR"
+  model_runtime <- system.time({
+    res <- try(PredictProR::model_execute(
+      pheno_data = joint_dat$pheno,
+      geno_data = joint_dat$geno,
+      response = c("Yield", "Protein"),
+      gen_name = "GID",
+      response_family = "gaussian",
+      multi_trait_bayes = TRUE,
+      GS_model = "GBLUP_BRR",
+      fixed = ~1,
+      gmatrix_method = "VanRaden",
+      qc_filtering = TRUE,
+      impute = TRUE,
+      imputation_method = "knn",
+      ld_prunning_qc = TRUE,
+      ld_pruning = FALSE,
+      cross_validation = FALSE,
+      feature_scoring = TRUE,
+      feature_scoring_model = "Ridge_Regression",
+      feature_k = 50L,
+      feature_scoring_seed = 1L,
+      feature_bayes_nIter = 600L,
+      feature_bayes_burnIn = 200L,
+      feature_bayes_thin = 5L,
+      nIter = 600L,
+      burnIn = 200L,
+      thin = 5L,
+      random_seed = 20260903L,
+      random_state = 20260903L,
+      parallel_mode = "auto",
+      parallel_backend_prefer_fork = FALSE,
+      system_database = TRUE,
+      message = FALSE,
+      verbose = FALSE
+    ), silent = TRUE)
+  })
+  log_result(label, res, model_runtime)
+})()
+
 scenario_report()
