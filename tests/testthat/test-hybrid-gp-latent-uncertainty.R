@@ -1,4 +1,14 @@
-# Independent universal-kriging equations, conditional on the supplied covariance.
+# Independent universal-kriging equations for y ~ N(X beta, s2 (K + lambda I)),
+# with s2 profiled by REML (y'Py / (n - p)) because lambda is fixed.
+hybrid_scale_oracle <- function(y, K, X, train, lambda) {
+  V <- K[train, train, drop = FALSE] + diag(lambda, length(train))
+  Xt <- X[train, , drop = FALSE]
+  Vi <- solve(V)
+  P <- Vi - Vi %*% Xt %*% solve(crossprod(Xt, Vi %*% Xt), crossprod(Xt, Vi))
+  yt <- y[train]
+  drop(crossprod(yt, P %*% yt)) / (length(train) - ncol(X))
+}
+
 hybrid_latent_oracle <- function(K, X, train, lambda) {
   V <- K[train, train, drop = FALSE] + diag(lambda, length(train))
   C <- K[, train, drop = FALSE]
@@ -43,11 +53,13 @@ test_that("single-trait hybrid SE is latent GLS uncertainty on training and test
   d <- hybrid_latent_fixture(); ph <- d$ph
   X <- model.matrix(~ Env, ph); train <- which(is.finite(ph$a)); lambda <- .4
   fit <- PredictProR:::gp_hybrid_gp_fit_core(ph$a, d$kernels, X, train, lambda)
-  expected <- hybrid_latent_oracle(d$kernels$total, X, train, lambda) * var(ph$a[train])
+  ys <- (ph$a - mean(ph$a[train])) / sd(ph$a[train])
+  s2 <- hybrid_scale_oracle(ys, d$kernels$total, X, train, lambda)
+  expected <- hybrid_latent_oracle(d$kernels$total, X, train, lambda) * s2 * var(ph$a[train])
   raw <- PredictProR:::gp_hybrid_gp_prediction_frame(
     ph, "a", "HybridID", "Female", "Male", "Env", fit, "GP")
   expect_equal(unname(fit$latent_var), expected, tolerance = 1e-7)
-  expect_equal(unname(fit$observed_var - fit$latent_var), rep(lambda * var(ph$a[train]), 6))
+  expect_equal(unname(fit$observed_var - fit$latent_var), rep(lambda * s2 * var(ph$a[train]), 6))
   expect_equal(raw$Standard_error^2, expected, tolerance = 1e-7)
   expect_equal(raw$Prediction_error_variance, expected, tolerance = 1e-7)
   expect_equal(raw$Prediction_Var_latent, expected, tolerance = 1e-7)
@@ -67,12 +79,13 @@ test_that("joint hybrid SE uses latent variance and each trait's response scale"
   K <- cor[trait, trait] * d$kernels$total[row, row]
   fit <- PredictProR:::gp_hybrid_gp_fit_joint_core(y, d$kernels, cor,
     X_joint = X, train_obs_idx = train, all_row = row, all_trait = trait, lambda = lambda)
-  expected <- hybrid_latent_oracle(K, X, train, lambda) * unname(sds[trait])^2
+  s2 <- hybrid_scale_oracle(y, K, X, train, lambda)
+  expected <- hybrid_latent_oracle(K, X, train, lambda) * s2 * unname(sds[trait])^2
   raw <- PredictProR:::gp_hybrid_gp_joint_prediction_frame(
     ph, c("a", "b"), "HybridID", "Female", "Male", "Env", fit,
     means, sds, row, trait, "GP")
   expect_equal(unname(fit$latent_var_std) * unname(sds[trait])^2, expected, tolerance = 1e-7)
-  expect_equal(unname(fit$observed_var_std - fit$latent_var_std), rep(lambda, 12))
+  expect_equal(unname(fit$observed_var_std - fit$latent_var_std), rep(lambda * s2, 12))
   expect_equal(raw$Standard_error^2, expected, tolerance = 1e-7)
   expect_equal(raw$Prediction_error_variance, expected, tolerance = 1e-7)
   expect_equal(raw$Prediction_Var_latent, expected, tolerance = 1e-7)

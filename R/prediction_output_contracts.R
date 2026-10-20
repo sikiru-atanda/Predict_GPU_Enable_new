@@ -114,6 +114,8 @@ prediction_output_standard <- function(response_family = c("gaussian", "classifi
       "multitrait_prediction_wide", "multitrait_trait_counts"
     ),
     prediction_columns = prediction_columns,
+    # trailing columns a table may add after prediction_columns
+    optional_trailing_prediction_columns = "Feature_selection_remark",
     variance_component_columns = gp_variance_component_columns(
       include_trait = include_trait,
       include_env = include_env
@@ -252,7 +254,14 @@ gp_output_contract_validate_one <- function(result,
       issues <- c(issues, "classification output requires Probability_<class> columns")
     }
   }
-  if (!identical(names(pred), expected)) {
+  # Response-based feature selection appends one trailing remark column
+  # (gp_feature_selection_remark_*); it is part of the contract.
+  trailing_optional <- standard$optional_trailing_prediction_columns
+  observed_columns <- names(pred)
+  while (length(observed_columns) && utils::tail(observed_columns, 1L) %in% trailing_optional) {
+    observed_columns <- observed_columns[-length(observed_columns)]
+  }
+  if (!identical(observed_columns, expected)) {
     issues <- c(issues, "prediction columns do not match the canonical order")
   }
 

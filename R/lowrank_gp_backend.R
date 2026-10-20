@@ -1143,7 +1143,7 @@ gp_bridge_fit_mixed_model_direct <- function(args,
   if (!file.exists(pred_path)) {
     stop("GP Python bridge did not write predictions.csv.", call. = FALSE)
   }
-  predictions <- utils::read.csv(pred_path, stringsAsFactors = FALSE, check.names = FALSE)
+  predictions <- gp_bridge_read_predictions(pred_path)
   result_extra <- gp_bridge_read_json_simplified(file.path(spec$out_dir, "result.json"))
   if (!is.list(result_extra)) {
     result_extra <- list()
@@ -1344,7 +1344,7 @@ gp_bridge_fit_mixed_model_cv_direct <- function(args,
   if (!file.exists(pred_path)) {
     stop("GP Python bridge did not write batched CV predictions.csv.", call. = FALSE)
   }
-  predictions <- utils::read.csv(pred_path, stringsAsFactors = FALSE, check.names = FALSE)
+  predictions <- gp_bridge_read_predictions(pred_path)
   meta <- gp_bridge_read_json(file.path(spec$out_dir, "meta.json"))
   fold_summary <- NULL
   cv_metrics <- NULL
@@ -1475,7 +1475,7 @@ gp_bridge_public_result_from_dir <- function(out_dir,
   if (!file.exists(pred_path)) {
     stop("GP Python bridge did not write predictions.csv.", call. = FALSE)
   }
-  predictions <- gp_plain_data_frame(utils::read.csv(pred_path, stringsAsFactors = FALSE, check.names = FALSE))
+  predictions <- gp_plain_data_frame(gp_bridge_read_predictions(pred_path))
   result_extra <- gp_bridge_read_json_simplified(file.path(out_dir, "result.json"))
   if (!is.list(result_extra)) {
     result_extra <- list()
@@ -2151,7 +2151,7 @@ gp_bridge_fit_predict <- function(model_name,
   if (!file.exists(pred_path)) {
     stop("GP Python bridge did not write predictions.csv.", call. = FALSE)
   }
-  pred_df <- utils::read.csv(pred_path, stringsAsFactors = FALSE, check.names = FALSE)
+  pred_df <- gp_bridge_read_predictions(pred_path)
   if (isTRUE(getOption("PredictProR.force_gc", FALSE))) {
     invisible(gc(verbose = FALSE))
   }
@@ -4379,7 +4379,11 @@ gp_model_execute_single_trait_predicted_values <- function(predictions,
   }
   row_genetic_variance <- gp_cv_pick_numeric_column(pred, "Reliability_reference_variance")
   genetic_variance_out <- row_genetic_variance %||% rep(NA_real_, length(ids))
-
+  # Residual estimated at zero: genetic and residual variance are not
+  # separable, so the genetic prior (and reliability) is not estimable for
+  # that trait / environment (rule of 0.20.185; lost in 0.20.221).
+  residual_at_zero <- gp_residual_at_zero_rows(gp_result, env_values)
+  genetic_variance_out[residual_at_zero] <- NA_real_
 
   has_genetic_variance <- any(is.finite(genetic_variance_out) & genetic_variance_out > 0)
   reference_variance_out <- if (isTRUE(has_genetic_variance)) {
@@ -4425,6 +4429,7 @@ gp_model_execute_single_trait_predicted_values <- function(predictions,
     use_reason <- !rel_valid & !is.na(missing_reason) & nzchar(missing_reason)
     reliability_remarks[use_reason] <- missing_reason[use_reason]
   }
+  reliability_remarks[residual_at_zero] <- "residual variance at zero: genetic variance not estimable"
 
   out <- data.frame(
     GID = ids,
@@ -6852,4 +6857,19 @@ build_gp_factor_cache <- function(grm,
     type = "zarr",
     root = normalizePath(out_dir, winslash = "/", mustWork = TRUE)
   ))
+}
+
+# GP bridge prediction files: identifier columns are read verbatim (text) and
+# every other column is parsed as usual. read.csv() turned zero-padded IDs
+# such as "0001" into 1 and the ID "NA" into a missing value, so predictions
+# no longer matched the phenotype rows (fixed for every bridge reader in
+# 0.20.224).
+gp_bridge_read_predictions <- function(path) {
+  tab <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE,
+                         colClasses = "character", na.strings = NULL)
+  identity <- c("Name", "GID", "gid", ".gid", "sample_id", "Env", "env", "environment", "Trait", "trait")
+  for (nm in setdiff(names(tab), identity)) {
+    tab[[nm]] <- utils::type.convert(tab[[nm]], as.is = TRUE, na.strings = c("", "NA", "NaN"))
+  }
+  tab
 }

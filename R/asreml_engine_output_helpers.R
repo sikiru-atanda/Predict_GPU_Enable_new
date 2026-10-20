@@ -921,6 +921,12 @@ asreml_apply_genetic_reliability <- function(pred_df, mod, pheno_data, gen_name,
   kmat <- if (have_diag) do.call(cbind, kd) else matrix(1, n, length(names_in_inv_list))
   prior <- rowSums(vg_row * kmat)
 
+  # Residual estimated at zero (boundary "B"): genetic and residual variance
+  # are not separable, so the prior and reliability are not estimable there
+  # (same rule as the GP routes).
+  residual_at_zero <- asreml_residual_at_zero_rows(mod, if (by_env) env_of_row else rep("ENV1", n))
+  prior[residual_at_zero] <- NA_real_
+
   rel <- rep(NA_real_, n)
   ok <- is.finite(gpev) & is.finite(prior) & prior > 0
   rel[ok] <- pmax(0, pmin(1, 1 - gpev[ok] / prior[ok]))
@@ -937,7 +943,78 @@ asreml_apply_genetic_reliability <- function(pred_df, mod, pheno_data, gen_name,
     ifelse(rel >= high_reliability_thres, "Reliable",
            ifelse(rel <= low_reliability_thres, "Unreliable", "Acceptable"))
   )
+  if (any(residual_at_zero)) {
+    pred_df[["Reliability_basis"]][residual_at_zero] <-
+      "genetic_prior_variance_not_estimable: residual variance at zero"
+    pred_df[["Reliability_remarks"]][residual_at_zero] <-
+      "residual variance at zero: genetic variance not estimable"
+  }
   pred_df
+}
+
+# Prediction rows whose environment (or the whole single-environment fit)
+# has its residual variance on the zero boundary in an ASReml fit.
+asreml_residual_at_zero_rows <- function(mod, env_values) {
+  vc <- tryCatch(summary(mod)$varcomp, error = function(e) NULL)
+  if (!is.data.frame(vc) || !nrow(vc) || !"bound" %in% names(vc)) {
+    return(rep(FALSE, length(env_values)))
+  }
+  vc_df <- data.frame(
+    component = rownames(vc),
+    estimate = as.numeric(vc[["component"]]),
+    std.error = as.numeric(vc[["std.error"]] %||% NA_real_),
+    bound = as.character(vc[["bound"]]),
+    stringsAsFactors = FALSE
+  )
+  gp_residual_at_zero_rows(list(varcomp = vc_df), env_values)
+}
+
+# Variance-component rows of an environment (or of the single-environment
+# fit) whose residual is on the zero boundary: genetic variance, residual
+# variance and heritability are not separable there, so they are NA with
+# Boundary "not_estimable" (the GP rule of 0.20.185, applied to ASReml in
+# 0.20.224).
+asreml_flag_residual_at_zero_vc <- function(variance_components, mod) {
+  if (!is.data.frame(variance_components) || !nrow(variance_components)) {
+    return(variance_components)
+  }
+  vc <- tryCatch(summary(mod)$varcomp, error = function(e) NULL)
+  if (!is.data.frame(vc) || !nrow(vc) || !"bound" %in% names(vc)) {
+    return(variance_components)
+  }
+  labels <- rownames(vc)
+  residual_rows <- grepl("!R$|^units", labels) & toupper(trimws(as.character(vc$bound))) == "B"
+  if (!any(residual_rows)) {
+    return(variance_components)
+  }
+  envs <- sub("^Env_", "", sub("!R$", "", labels[residual_rows]))
+  rn <- rownames(variance_components)
+  per_env_row <- grepl("^(genetic_variance|total_genetic_variance|residual_variance|heritability)", rn)
+  flagged <- per_env_row & Reduce(`|`, lapply(envs, function(e) endsWith(rn, paste0("_", e))))
+  if (!any(flagged)) {
+    # single-environment fit or a residual common to every environment
+    flagged <- grepl("^(genetic_variance|total_genetic_variance|residual_variance|heritability)", rn)
+  }
+  value_cols <- intersect(c("Components", "Standard_error"), names(variance_components))
+  for (col in value_cols) variance_components[[col]][flagged] <- NA_real_
+  if (!"Boundary" %in% names(variance_components)) variance_components[["Boundary"]] <- ""
+  variance_components[["Boundary"]][is.na(variance_components[["Boundary"]])] <- ""
+  variance_components[["Boundary"]][flagged] <- "not_estimable"
+  # across-environment means use the environments that remain estimable
+  mean_rows <- c("mean_genetic_variance_across_environments",
+                 "mean_residual_variance_across_environments",
+                 "heritability_from_mean_variances")
+  if (all(mean_rows %in% rn)) {
+    vals <- stats::setNames(variance_components[["Components"]], rn)
+    total_rows <- grepl("^total_genetic_variance_", rn)
+    g_rows <- if (any(total_rows)) total_rows else grepl("^genetic_variance_", rn) & !grepl("^genetic_variance_[0-9]+_", rn)
+    mean_g <- mean(vals[g_rows], na.rm = TRUE)
+    mean_e <- mean(vals[grepl("^residual_variance_", rn)], na.rm = TRUE)
+    h2 <- if (is.finite(mean_g + mean_e) && (mean_g + mean_e) > 0) mean_g / (mean_g + mean_e) else NA_real_
+    variance_components[["Components"]][match(mean_rows, rn)] <-
+      c(if (is.finite(mean_g)) mean_g else NA_real_, if (is.finite(mean_e)) mean_e else NA_real_, h2)
+  }
+  variance_components
 }
 
 asreml_mark_prediction_uncertainty_unavailable <- function(predicted_df,

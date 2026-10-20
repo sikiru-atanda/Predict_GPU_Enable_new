@@ -3526,6 +3526,7 @@ def multikernel_krr_posterior_with_se(
     fa_rank: Optional[int] = None,
     interaction_term_name: str = "G:Env",
     interaction_terms_meta: Optional[Sequence[Dict[str, Any]]] = None,
+    kernel_names: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
 
     assert TORCH_AVAILABLE, "PyTorch required"
@@ -3773,7 +3774,9 @@ def multikernel_krr_posterior_with_se(
     sigma2_env_orig = stdr.inv_var(np.asarray(resid_diag_env, dtype=float), np.arange(n_env))
     S_rep = _to_numpy(Se_t if Se_t is not None else (env_cov_module.cov() if env_cov_module is not None else torch.eye(n_env, dtype=dtype_t, device=device)))
     report_bundle = _build_reporting_bundle(
-        kernel_names=[f"G{i+1}" for i in range(nK)],
+        # the user's kernel names (G1, G2, ... only when none were given)
+        kernel_names=(list(map(str, kernel_names)) if kernel_names is not None and len(kernel_names) == nK
+                      else [f"G{i+1}" for i in range(nK)]),
         w_g=np.asarray(wg_vec, dtype=float) * float(kernel_variance_scale),
         w_ge=np.asarray(wge_vec, dtype=float) * float(kernel_variance_scale),
         level_names=env_names,
@@ -7117,7 +7120,7 @@ def fit_mixed_model(
         ), output_level)
     if method == "krr_exact":
         res = multikernel_krr_posterior_with_se(
-            G_list=G_list, obs_gidx=gi, obs_eidx=ei, y=y,
+            G_list=G_list, kernel_names=K_names, obs_gidx=gi, obs_eidx=ei, y=y,
             train_idx=train_idx, test_idx=test_idx,
             w_g=w_g, w_ge=w_ge, w_e=w_e, S_e=env_similarity, lam=lam_eff,
             env_levels=env_levels, obs_names=list(geno_ids),
@@ -7359,7 +7362,7 @@ def fit_mixed_model(
                 if sigma_g_fa.ndim != 2 or sigma_g_fa.shape[0] != sigma_g_fa.shape[1]:
                     raise ValueError(f"env_covariance_fa has unexpected shape {sigma_g_fa.shape}")
                 krr_res = multikernel_krr_posterior_with_se(
-                    G_list=G_list, obs_gidx=gi, obs_eidx=ei, y=y,
+                    G_list=G_list, kernel_names=K_names, obs_gidx=gi, obs_eidx=ei, y=y,
                     train_idx=train_idx, test_idx=test_idx,
                     w_g=w_g, w_ge=w_ge, w_e=w_e,
                     S_e=sigma_g_fa, lam=lam_eff,

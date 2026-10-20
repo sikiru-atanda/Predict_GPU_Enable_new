@@ -405,21 +405,28 @@ bayes_compute_prediction_targets <- function(mod,
     total_draws <- Reduce(`+`, random_draws)
     prediction_draws <- total_draws
     if (length(fixed_idx)) {
+      # BGLR saves FIXED-term draws as text (ETA_<k>_b.dat), not binary; up to
+      # 0.20.223 only a .bin file was looked for, so the fixed effects (the
+      # environment means of a MET fit) were left out of the predictions.
       for (eta_idx in fixed_idx) {
-        b_file <- output_files_names[grepl(
-          paste0("ETA_", eta_idx, "_b\\.bin$"),
-          basename(output_files_names)
-        )]
-        if (length(b_file) == 1L) {
-          beta_draws <- as.matrix(BGLR::readBinMat(b_file))
-          if (length(draw_indices) && max(draw_indices) <= nrow(beta_draws)) {
-            beta_draws <- beta_draws[draw_indices, , drop = FALSE]
-          }
-          fixed_draws <- as.matrix(eta_input[[eta_idx]]$X) %*% t(beta_draws)
-          n_draws <- min(ncol(prediction_draws), ncol(fixed_draws))
-          prediction_draws <- prediction_draws[, seq_len(n_draws), drop = FALSE] +
-            fixed_draws[, seq_len(n_draws), drop = FALSE]
+        X_fixed_eta <- as.matrix(eta_input[[eta_idx]]$X)
+        beta_draws <- gp_bayes_read_fixed_draws(
+          output_files_names,
+          eta_index = eta_idx,
+          n_coef = ncol(X_fixed_eta),
+          draw_indices = draw_indices,
+          n_draws = ncol(prediction_draws)
+        )
+        fixed_draws <- if (!is.null(beta_draws)) {
+          X_fixed_eta %*% t(beta_draws)
+        } else {
+          b_hat <- as.double(eta_model[[eta_idx]]$b %||% rep(0, ncol(X_fixed_eta)))
+          matrix(drop(X_fixed_eta %*% b_hat), nrow = nrow(X_fixed_eta),
+                 ncol = ncol(prediction_draws))
         }
+        n_draws <- min(ncol(prediction_draws), ncol(fixed_draws))
+        prediction_draws <- prediction_draws[, seq_len(n_draws), drop = FALSE] +
+          fixed_draws[, seq_len(n_draws), drop = FALSE]
       }
     }
     mu_draws <- gp_bayes_read_mu_draws(
@@ -1169,18 +1176,31 @@ mod_output_bayes_gbluBRR_RKHS <- function(mod=NULL,
       extra_coef <- BIN[grepl(paste0("ETA_", extra_idx, "_b\\.bin$"),
                               basename(BIN))]
       if (length(extra_coef) == 1L && file.exists(extra_coef)) {
-        extra_vu <- tryCatch({
+        pred_extra <- tryCatch({
           beta_draws_extra <- BGLR::readBinMat(extra_coef)
-          eta_X_extra <- as.matrix(ETA[["ETA"]][[extra_idx]]$X)
-          pred_extra <- eta_X_extra %*% t(beta_draws_extra)
-          train_idx_extra <- if (length(tst) > 0) setdiff(seq_len(nrow(eta_X_extra)), tst) else seq_len(nrow(eta_X_extra))
-          apply(pred_extra[train_idx_extra, , drop = FALSE], 2, stats::var, na.rm = TRUE)
+          if (length(posindex) && max(posindex) <= nrow(beta_draws_extra)) {
+            beta_draws_extra <- beta_draws_extra[posindex, , drop = FALSE]
+          }
+          as.matrix(ETA[["ETA"]][[extra_idx]]$X) %*% t(beta_draws_extra)
         }, error = function(e) NULL)
+        if (!is.null(pred_extra)) {
+          train_idx_extra <- if (length(tst) > 0) setdiff(seq_len(nrow(pred_extra)), tst) else seq_len(nrow(pred_extra))
+          extra_vu <- apply(pred_extra[train_idx_extra, , drop = FALSE], 2, stats::var, na.rm = TRUE)
+          # The all-BRR total genetic variance below is the variance of the
+          # summed realized genetic values, so the GxE (or other extra) term
+          # belongs in that sum too; it was left out up to 0.20.223, which
+          # made GBLUP_BRR's total and heritability smaller than RKHS's for
+          # the same model.
+          if (is.matrix(sum_posterior) && identical(dim(sum_posterior), dim(pred_extra))) {
+            sum_posterior <- sum_posterior + pred_extra
+          }
+        }
       }
     }
     extra_vu <- align_to_posindex(extra_vu)
     if (!is.null(extra_vu) && length(extra_vu) > 0L) {
-      extra_label <- paste0("genetic_variance_eta_", extra_idx)
+      # bayes_variance_componentsnew() adds the "genetic_variance_" prefix
+      extra_label <- paste0("eta_", extra_idx)
       var_u_mean_omics_list[[extra_label]] <- mean(extra_vu, na.rm = TRUE)
       se_var_u_omics_list[[extra_label]] <- standard_deviation(extra_vu)
       var_u_total <- var_u_total + extra_vu

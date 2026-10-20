@@ -850,13 +850,12 @@ bayes_multitrait_joint_fit <- function(pheno_data,
     full.names = TRUE
   )
   on.exit(unlink(output_files_names), add = TRUE)
-  pred_mat <- sweep(as.matrix(fit$ETAHat), 2, as.double(fit$mu), FUN = "+")
-  sd_mu <- as.double(fit$SD.mu %||% rep(0, ncol(pred_mat)))
-  if (length(sd_mu) != ncol(pred_mat)) {
-    sd_mu <- rep(0, ncol(pred_mat))
-  }
-  se_mat <- sqrt(as.matrix(fit$SD.ETAHat) ^ 2 +
-                   matrix(sd_mu ^ 2, nrow = nrow(pred_mat), ncol = ncol(pred_mat), byrow = TRUE))
+  # BGLR::Multitrait() keeps ETAHat as the posterior mean of the whole linear
+  # predictor (intercept included) and SD.ETAHat as its posterior SD, so both
+  # are already on the phenotype scale. Adding fit$mu again doubled the
+  # intercept (up to 0.20.223).
+  pred_mat <- as.matrix(fit$ETAHat)
+  se_mat <- as.matrix(fit$SD.ETAHat)
   random <- bayes_multitrait_random_component(
     fit = fit,
     ETA = eta_bundle$ETA,

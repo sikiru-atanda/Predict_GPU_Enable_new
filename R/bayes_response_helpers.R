@@ -436,6 +436,42 @@ gp_bayes_read_mu_draws <- function(output_files_names,
   out
 }
 
+# Posterior draws (rows) of a FIXED or BRR term's coefficients (columns).
+# BGLR writes FIXED terms as text (ETA_<k>_b.dat) and BRR terms as binary
+# (ETA_<k>_b.bin). Draws are aligned as in gp_bayes_read_mu_draws().
+gp_bayes_read_fixed_draws <- function(output_files_names,
+                                      eta_index,
+                                      n_coef,
+                                      draw_indices = NULL,
+                                      n_draws = NULL) {
+  base <- basename(output_files_names)
+  stem <- paste0("ETA_", as.integer(eta_index), "_b")
+  bin_file <- output_files_names[endsWith(base, paste0(stem, ".bin"))]
+  dat_file <- output_files_names[endsWith(base, paste0(stem, ".dat"))]
+  draws <- NULL
+  if (length(bin_file) == 1L) {
+    draws <- tryCatch(as.matrix(BGLR::readBinMat(bin_file)), error = function(e) NULL)
+  } else if (length(dat_file) == 1L) {
+    draws <- tryCatch(as.matrix(utils::read.table(dat_file, header = FALSE)),
+                      error = function(e) NULL)
+  }
+  if (is.null(draws) || !nrow(draws) || ncol(draws) != as.integer(n_coef)) {
+    return(NULL)
+  }
+  storage.mode(draws) <- "double"
+  if (length(draw_indices) && max(draw_indices) <= nrow(draws)) {
+    draws <- draws[draw_indices, , drop = FALSE]
+  }
+  if (!is.null(n_draws) && is.finite(n_draws) && n_draws > 0L) {
+    n_draws <- as.integer(n_draws)
+    if (nrow(draws) < n_draws) {
+      return(NULL)
+    }
+    draws <- draws[utils::tail(seq_len(nrow(draws)), n_draws), , drop = FALSE]
+  }
+  draws
+}
+
 gp_bayes_read_eta_variance_draws <- function(output_files_names,
                                               eta_index,
                                               eta_model,

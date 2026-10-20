@@ -300,11 +300,31 @@ log_result <- function(label, res, model_runtime = NULL) {
       if (length(bad)) return(invisible(log_row(label, "FAIL", secs,
                                                  paste("NA variance without a reason:", paste(bad, collapse = ", ")))))
     }
-    return(invisible(log_row(label, "PASS", secs, sprintf("%d prediction rows", nrow(pred)))))
+    # The contents of every output table (prediction, variance-component,
+    # covariance and correlation tables): identities, ranges, labels and the
+    # prediction level against the observed data. Any violation fails the run.
+    audit <- table_checks(keep)
+    if (!is.null(audit$failed)) return(invisible(log_row(label, "FAIL", secs, audit$failed)))
+    return(invisible(log_row(label, "PASS", secs, sprintf("%d prediction rows; %d table checks passed",
+                                                          nrow(pred), audit$n))))
   }
   cvs <- cv_summary(res)
   if (!is.null(cvs)) return(invisible(log_row(label, "PASS", secs, sprintf("CV summary with %d rows", nrow(cvs)))))
   invisible(log_row(label, "FAIL", secs, "no prediction table or CV summary found"))
+}
+# Content checks of every output table (PredictProR's internal audit).
+# Returns the number of checks and, when any failed, a one-line summary.
+table_checks <- function(res) {
+  audit <- tryCatch(PredictProR:::gp_audit_output_tables(res),
+                    error = function(e) data.frame(path = "", table = "", check = "table checks could not run",
+                                                   ok = FALSE, detail = conditionMessage(e)))
+  bad <- audit[audit$ok %in% FALSE, , drop = FALSE]
+  failed <- if (nrow(bad)) {
+    first <- bad[!duplicated(paste(bad$table, bad$check)), , drop = FALSE]
+    paste0("table checks failed (", nrow(bad), "): ",
+           paste(utils::head(sprintf("%s: %s [%s]", first$table, first$check, first$detail), 3L), collapse = " | "))
+  }
+  list(n = sum(audit$ok %in% TRUE), failed = if (!is.null(failed)) substr(failed, 1L, 400L))
 }
 # genetic / residual variance rows that are NA without Boundary = "not_estimable"
 unexplained_na_variance <- function(x, depth = 0) {

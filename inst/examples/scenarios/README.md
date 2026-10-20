@@ -44,6 +44,38 @@ only <- c("01", "09")
 source(file.path(folder, "run_all_scenarios.R"))
 ```
 
+## What PASS means
+
+A call passes only when its output tables are correct, not just present.
+`log_result()` checks every model result in the output:
+
+- **Prediction table:**
+  - the output contract;
+  - PEV = SE^2;
+  - Gaussian bounds = prediction -/+ z SE;
+  - intervals contain the prediction;
+  - reliability in [0, 1], and equal to 1 - genetic PEV / prior on rows with
+    a genetic basis;
+  - no reliability where the residual variance is at zero;
+  - model-based SEs below twice the phenotypic SD;
+  - predicted levels within 0.75 phenotypic SD of the observed training
+    data per trait (1 SD per environment).
+- **Variance-component table:**
+  - variances >= 0, SEs >= 0;
+  - heritability in [0, 1] and equal to genetic / (genetic + residual)
+    (the Bayesian posterior mean is exempt);
+  - no duplicated rows;
+  - per-environment rows that name real environments.
+- **Covariance and correlation tables:**
+  - real row/column labels, no duplicated cells;
+  - symmetric and positive semi-definite;
+  - correlations in [-1, 1] with a unit diagonal, equal to
+    cov2cor(covariance);
+  - a correlation table for every covariance table;
+  - genetic and residual diagonals equal to the variance table.
+
+Any violation is a FAIL that names the table and the check.
+
 To adapt a script, copy it and replace the simulated `pheno` / `Geno.data`
 with your own data:
 `file.copy(file.path(folder, "01_single_env_true_prediction.R"), ".")`.

@@ -817,7 +817,10 @@ gp_public_variance_components <- function(x,
         gp_vc_extract_fa_derived(x)
       } else NULL
       if (exists("gp_met_varcomp_augment_per_env", mode = "function")) {
-        gp_vc <- gp_met_varcomp_augment_per_env(gp_vc, fa_derived = fa_derived)
+        met_info <- gp_met_varcomp_env_info(x, heter_groups)
+        gp_vc <- gp_met_varcomp_augment_per_env(gp_vc, fa_derived = fa_derived,
+                                                env_levels = met_info$env_levels,
+                                                gxe_variance = met_info$gxe_variance)
       }
       # Phase 3.29: the per-env rows appended above inherit NA in the optional
       # `Boundary` flag column (it is only set on the raw varcomp rows). Per-env

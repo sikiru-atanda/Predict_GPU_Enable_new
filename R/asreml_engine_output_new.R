@@ -798,6 +798,7 @@ asreml_mod_output_new <- function(
 
   }
 }
+  variance_components <- asreml_flag_residual_at_zero_vc(variance_components, mod)
 
 #######################################################
   if(!"geno_model_ready" %in%names(m_matrix_model_ready_list)){

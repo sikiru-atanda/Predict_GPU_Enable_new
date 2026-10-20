@@ -1,7 +1,7 @@
 Package: PredictProR
 Type: Package
 Title: Genomic and Multi-Omics Prediction Workflows
-Version: 0.20.223
+Version: 0.20.224
 Author: Sikiru Atanda
 Maintainer: PredictProR maintainer <sikiru.atanda@ndsu.edu>
 Description: Genomic and multi-omics prediction for diploid and polyploid

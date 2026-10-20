@@ -357,6 +357,18 @@ gp_route_true_prediction_specialized_models <- function(ctx) {
      res_model_output[["across_environment_predicted_values"]] <- total_pred_long
      res_model_output[["Total_Predicted_value"]] <- total_pred_long
    }
+   # A reported covariance matrix always comes with its correlation (cov2cor):
+   # up to 0.20.223 the correlations needed gp_return_trait_correlations = TRUE
+   # (default FALSE), so a default multi-trait GP run reported covariance
+   # matrices without correlation tables, unlike every other engine.
+   for (part in c("genetic", "gxe", "residual")) {
+     cov_part <- mt_gp_fit[["result"]][[paste0(part, "_covariance")]]
+     cor_name <- paste0(part, "_correlation")
+     if (is.null(mt_gp_fit[["result"]][[cor_name]]) && is.matrix(cov_part) &&
+         nrow(cov_part) == ncol(cov_part) && nrow(cov_part) >= 2L) {
+       mt_gp_fit[["result"]][[cor_name]] <- gp_public_covariance_correlation(cov_part)
+     }
+   }
    if (!is.null(mt_gp_fit[["result"]][["genetic_correlation"]])) {
      res_model_output[["genetic_correlation"]] <- mt_gp_fit[["result"]][["genetic_correlation"]]
    }

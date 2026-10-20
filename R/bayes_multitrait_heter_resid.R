@@ -283,7 +283,10 @@ bayes_multitrait_env_heter_fit <- function(pheno_data,
     target_ids <- real_ids
   }
 
-  pred_mat <- sweep(as.matrix(fit$ETAHat), 2, as.double(fit$mu), FUN = "+")
+  # ETAHat already holds intercept + random effects (BGLR::Multitrait); the
+  # genetic part is ETAHat minus each environment's intercept.
+  pred_mat <- as.matrix(fit$ETAHat)
+  genetic_mat <- sweep(pred_mat, 2, as.double(fit$mu), FUN = "-")
   env_levels <- colnames(pred_mat)
   eta_for_covariance <- lapply(ETA, function(term) {
     if (!is.null(term$K)) {
@@ -315,12 +318,7 @@ bayes_multitrait_env_heter_fit <- function(pheno_data,
   )
   genetic_covariance <- covariance_bundle$main$covariance
   residual_covariance <- covariance_bundle$residual$covariance
-  sd_mu <- as.double(fit$SD.mu %||% rep(0, length(env_levels)))
-  if (length(sd_mu) != length(env_levels)) {
-    sd_mu <- rep(0, length(env_levels))
-  }
-  se_mat <- sqrt(as.matrix(fit$SD.ETAHat) ^ 2 +
-                   matrix(sd_mu ^ 2, nrow = nrow(pred_mat), ncol = ncol(pred_mat), byrow = TRUE))
+  se_mat <- as.matrix(fit$SD.ETAHat)
   pev_mat <- se_mat ^ 2
   alpha <- (1 - confidence_level) / 2
   z <- stats::qnorm(1 - alpha)
@@ -338,7 +336,7 @@ bayes_multitrait_env_heter_fit <- function(pheno_data,
   pev <- pev_mat[idx]
   lower <- pred - z * se
   upper <- pred + z * se
-  genetic_mean <- as.matrix(fit$ETAHat)[idx]
+  genetic_mean <- genetic_mat[idx]
   env_genetic_var <- diag(genetic_covariance)
   names(env_genetic_var) <- env_levels
   genetic_var <- as.double(env_genetic_var[grid$env])
@@ -391,7 +389,7 @@ bayes_multitrait_env_heter_fit <- function(pheno_data,
 
   n_env <- ncol(pred_mat)
   across_pred <- rowMeans(pred_mat, na.rm = TRUE)
-  across_genetic <- rowMeans(as.matrix(fit$ETAHat), na.rm = TRUE)
+  across_genetic <- rowMeans(genetic_mat, na.rm = TRUE)
   across_se <- sqrt(rowSums(se_mat ^ 2, na.rm = TRUE)) / n_env
   across_pev <- across_se ^ 2
   across_lower <- across_pred - z * across_se

@@ -586,10 +586,15 @@ gp_attach_correlation_matrices <- function(public_result, source_result) {
   vc_for_labels <- public_result[["variance_components"]]
   if (is.data.frame(vc_for_labels) && nrow(vc_for_labels) > 0L &&
       "Component" %in% names(vc_for_labels)) {
-    hits <- grep("^genetic_variance_", as.character(vc_for_labels[["Component"]]))
+    comps <- as.character(vc_for_labels[["Component"]])
+    # ML/DL tables carry `genetic_variance_not_identifiable` once per
+    # environment/trait; those are not environment labels (up to 0.20.223
+    # every Row/Column became "not_identifiable").
+    hits <- grep("^genetic_variance_", comps)
+    hits <- hits[!grepl("_not_identifiable$", comps[hits])]
     if (length(hits)) {
-      env_labels_from_vc <- sub("^genetic_variance_", "",
-                                as.character(vc_for_labels[["Component"]][hits]))
+      env_labels_from_vc <- sub("^genetic_variance_", "", comps[hits])
+      if (anyDuplicated(env_labels_from_vc)) env_labels_from_vc <- NULL
     }
   }
   if (exists("gp_extract_matrix_component_table", mode = "function")) {

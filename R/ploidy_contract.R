@@ -105,6 +105,24 @@ gp_recode_alt_dosage <- function(x, ploidy, recode_format = "alt_dosage") {
   out
 }
 
+# Shared summary statistics for reusable numeric-source fit/apply transforms.
+# Genotype callers keep their validation and clipping policies around this helper.
+gp_fit_summary_imputation <- function(x, method) {
+  method <- match.arg(method, c("mean", "median", "mode"))
+  values <- vapply(seq_len(ncol(x)), function(j) {
+    observed <- x[, j][!is.na(x[, j])]
+    if (!length(observed)) stop("Cannot impute a feature with no observed reference values.", call. = FALSE)
+    switch(method, mean = mean(observed), median = stats::median(observed), mode = {
+      # table() formats numeric values as category labels and can merge nearby
+      # distinct doubles. Count exact observed values, retaining their precision.
+      levels <- unique(observed)
+      counts <- tabulate(match(observed, levels), nbins = length(levels))
+      min(levels[counts == max(counts)])
+    })
+  }, numeric(1))
+  stats::setNames(values, colnames(x))
+}
+
 gp_impute_alt_dosage <- function(dosage,
                                   ploidy,
                                   method = c("mean", "median", "mode", "knn"),
@@ -138,18 +156,7 @@ gp_impute_alt_dosage <- function(dosage,
     }
     dosage <- t(samples_by_markers)
   } else {
-    replacement <- apply(dosage, 1L, function(x) {
-      observed <- x[!is.na(x)]
-      switch(
-        method,
-        mean = mean(observed),
-        median = stats::median(observed),
-        mode = {
-          counts <- table(observed)
-          as.numeric(names(counts)[which.max(counts)])
-        }
-      )
-    })
+    replacement <- gp_fit_summary_imputation(t(dosage), method)
     for (i in which(rowSums(missing_before) > 0L)) {
       dosage[i, missing_before[i, ]] <- replacement[[i]]
     }

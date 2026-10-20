@@ -142,8 +142,14 @@ def fit_hybrid_additive_gp(
     )
     x_delta = X_t - K_all_train @ Vinv_X
     fixed_var = torch.sum((x_delta @ M_inv) * x_delta, dim=1)
-    latent_var_std = torch.clamp(base_var + fixed_var, min=0.0)
-    observed_var_std = torch.clamp(latent_var_std + lam, min=0.0)
+    # lambda (kernel/noise ratio) is fixed, so the GP scale is profiled:
+    # s2 = y'Py / (n - p) = y_train' alpha / (n - p) (REML). It was taken as 1
+    # up to 0.20.223.
+    n_fixed = int(X_train.shape[1])
+    s2 = float((y_train.reshape(-1) * alpha.reshape(-1)).sum()) / max(1, int(y_train.shape[0]) - n_fixed)
+    variance_scale = s2 if np.isfinite(s2) and s2 > 0 else 1.0
+    latent_var_std = variance_scale * torch.clamp(base_var + fixed_var, min=0.0)
+    observed_var_std = variance_scale * torch.clamp(base_var + fixed_var + lam, min=0.0)
 
     scale = float(y_sd)
     info = torch_device_info(dev)
@@ -165,6 +171,7 @@ def fit_hybrid_additive_gp(
         "prediction": y_mean + scale * _to_cpu_numpy(total_std),
         "latent_var": (scale ** 2) * _to_cpu_numpy(latent_var_std),
         "observed_var": (scale ** 2) * _to_cpu_numpy(observed_var_std),
+        "variance_scale": variance_scale,
         "train_idx": train_np + 1,
         "device_info": info,
     }
@@ -286,8 +293,14 @@ def fit_hybrid_additive_multi_trait_gp(
     )
     x_delta = X_t - K_total_all_train @ Vinv_X
     fixed_var = torch.sum((x_delta @ M_inv) * x_delta, dim=1)
-    latent_var_std = torch.clamp(base_var + fixed_var, min=0.0)
-    observed_var_std = torch.clamp(latent_var_std + lam, min=0.0)
+    # lambda (kernel/noise ratio) is fixed, so the GP scale is profiled:
+    # s2 = y'Py / (n - p) = y_train' alpha / (n - p) (REML). It was taken as 1
+    # up to 0.20.223.
+    n_fixed = int(X_train.shape[1])
+    s2 = float((y_train.reshape(-1) * alpha.reshape(-1)).sum()) / max(1, int(y_train.shape[0]) - n_fixed)
+    variance_scale = s2 if np.isfinite(s2) and s2 > 0 else 1.0
+    latent_var_std = variance_scale * torch.clamp(base_var + fixed_var, min=0.0)
+    observed_var_std = variance_scale * torch.clamp(base_var + fixed_var + lam, min=0.0)
 
     info = torch_device_info(dev)
     info["backend"] = "torch"
@@ -307,6 +320,7 @@ def fit_hybrid_additive_multi_trait_gp(
         "prediction_std": _to_cpu_numpy(prediction_std),
         "latent_var_std": _to_cpu_numpy(latent_var_std),
         "observed_var_std": _to_cpu_numpy(observed_var_std),
+        "variance_scale": variance_scale,
         "train_obs_idx": train_np + 1,
         "device_info": info,
     }

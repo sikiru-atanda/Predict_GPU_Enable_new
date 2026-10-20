@@ -428,7 +428,35 @@ def _read_matrix_bin(bin_path: str, meta_path: str) -> np.ndarray:
 
 
 def _read_lines(path: str) -> list[str]:
-    return [line.strip() for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
+    # identifiers are opaque: keep surrounding whitespace (R writes them as is)
+    return [line for line in Path(path).read_text(encoding="utf-8").splitlines() if line != ""]
+
+
+_DEFAULT_ID_COLUMNS = ("GID", "gid", "Env", "env", "Name", "sample_id")
+
+
+def _read_pheno_csv(path, spec=None, id_cols=(), y_cols=()):
+    """Read a phenotype CSV with identifier columns kept as text.
+
+    pandas parses "0001" as 1 and "NA" as missing, so genotype IDs such as
+    zero-padded numbers no longer matched the kernel's IDs ("Unknown genotype
+    IDs encountered", up to 0.20.223). Identifier columns are read verbatim;
+    responses and covariates keep normal parsing.
+    """
+    names = set(_DEFAULT_ID_COLUMNS) | {str(c) for c in id_cols if c}
+    drop = {str(c) for c in y_cols if c}
+    if isinstance(spec, dict):
+        cols = _spec_get(spec, "columns", default={}) or {}
+        for key in ("gid_col", "env_col", "trait_col"):
+            for value in (_spec_get(spec, key), cols.get(key), cols.get(key.replace("_col", ""))):
+                if value:
+                    names.add(str(value))
+        for value in (_spec_get(spec, "y_col"), cols.get("y"), cols.get("y_col")):
+            if value:
+                drop.add(str(value))
+    header = pd.read_csv(path, nrows=0).columns
+    converters = {c: str for c in header if str(c) in names and str(c) not in drop}
+    return pd.read_csv(path, converters=converters)
 
 
 def _read_idx(path: str) -> np.ndarray:
@@ -816,7 +844,7 @@ def _fit_predict_spec(args) -> int:
         required=True,
         label="pheno_csv",
     )
-    pheno_df = pd.read_csv(pheno_csv)
+    pheno_df = _read_pheno_csv(pheno_csv, spec)
 
     geno_kernels = _read_geno_kernels_from_spec(spec, base_dir)
     geno_ids = _read_lines_from_spec(
@@ -1949,7 +1977,7 @@ def _fit_predict_cv_spec(args, fw=None) -> int:
         required=True,
         label="pheno_csv",
     )
-    pheno_df = pd.read_csv(pheno_csv).reset_index(drop=True)
+    pheno_df = _read_pheno_csv(pheno_csv, spec).reset_index(drop=True)
 
     geno_kernels = _read_geno_kernels_from_spec(spec, base_dir)
     first_kernel_name = next(iter(geno_kernels))
@@ -2250,7 +2278,7 @@ def _fit_batch_candidates_spec(args, fw=None) -> int:
         required=True,
         label="pheno_csv",
     )
-    pheno_df = pd.read_csv(pheno_csv)
+    pheno_df = _read_pheno_csv(pheno_csv, spec)
     kernel_spec = _coalesce(
         _spec_get(spec, "geno_kernel", "kernel", "inputs.geno_kernel", "inputs.kernel"),
         {
@@ -2285,7 +2313,7 @@ def _fit_batch_candidates_spec(args, fw=None) -> int:
         required=True,
         label="candidates_csv",
     )
-    candidates = pd.read_csv(candidates_csv)
+    candidates = _read_pheno_csv(candidates_csv, spec)
 
     cols = _spec_get(spec, "columns", default={}) or {}
     gid_col = _coalesce(_spec_get(spec, "gid_col"), cols.get("gid"), cols.get("gid_col"), default="GID")
@@ -2422,7 +2450,7 @@ def _read_common_public_spec(args) -> Tuple[Dict[str, Any], Path, str, pd.DataFr
         required=True,
         label="pheno_csv",
     )
-    pheno_df = pd.read_csv(pheno_csv)
+    pheno_df = _read_pheno_csv(pheno_csv, spec, id_cols=("trait",))
     geno_kernels = _read_geno_kernels_from_spec(spec, base_dir)
     geno_ids = _read_lines_from_spec(
         _spec_get(spec, "geno_ids", "genotype_ids", "inputs.geno_ids", "inputs.genotype_ids"),
@@ -2709,7 +2737,7 @@ def _materialize_factor_cache(args) -> int:
 
 
 def _fit_predict_with_framework(args, fw) -> int:
-    pheno_df = pd.read_csv(args.pheno_csv)
+    pheno_df = _read_pheno_csv(args.pheno_csv, id_cols=(args.gid_col, args.env_col), y_cols=(args.y_col,))
     geno_kernel = _read_matrix_bin(args.kernel_bin, args.kernel_meta)
     geno_ids = _read_lines(args.geno_ids)
     train_idx = _read_idx(args.train_idx)

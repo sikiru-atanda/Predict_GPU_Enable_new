@@ -409,6 +409,14 @@ gp_hybrid_gp_solve_spd <- function(A, B, jitter = 1e-8, max_tries = 6L) {
   MASS::ginv(A) %*% B
 }
 
+# REML profile of the GP scale for y ~ N(X beta, s2 (K + lambda I)) with
+# lambda fixed: s2 = y'Py / (n - p), and alpha = P y.
+gp_hybrid_gp_profiled_scale <- function(y_train, alpha, n_fixed) {
+  n <- length(y_train)
+  s2 <- sum(as.numeric(y_train) * as.numeric(alpha)) / max(1, n - as.integer(n_fixed))
+  if (!is.finite(s2) || s2 <= 0) 1 else s2
+}
+
 gp_hybrid_gp_fit_core <- function(y,
                                   kernels,
                                   X,
@@ -457,8 +465,14 @@ gp_hybrid_gp_fit_core <- function(y,
   )
   x_delta <- X - K_all_train %*% Vinv_X
   fixed_var <- rowSums((x_delta %*% M_inv) * x_delta)
-  latent_var_std <- pmax(base_var + fixed_var, 0)
-  observed_var_std <- pmax(latent_var_std + lambda, 0)
+  # The kernel/noise ratio lambda is fixed, so the GP scale is profiled:
+  # y ~ N(X beta, s2 (K + lambda I)) gives the REML estimate
+  # s2 = y'Py / (n - p) = y_train' alpha / (n - p). Up to 0.20.223 s2 was
+  # taken as 1, so posterior variances followed the kernel diagonal and not
+  # the data (test SEs above the phenotypic SD).
+  variance_scale <- gp_hybrid_gp_profiled_scale(y_train, alpha, ncol(X_train))
+  latent_var_std <- variance_scale * pmax(base_var + fixed_var, 0)
+  observed_var_std <- variance_scale * pmax(base_var + fixed_var + lambda, 0)
 
   list(
     lambda = lambda,
@@ -474,6 +488,7 @@ gp_hybrid_gp_fit_core <- function(y,
     prediction = y_mean + y_sd * total_std,
     latent_var = latent_var_std * y_sd^2,
     observed_var = observed_var_std * y_sd^2,
+    variance_scale = variance_scale,
     train_idx = train_idx,
     backend_runtime = "R",
     backend_device = "cpu"
@@ -924,7 +939,7 @@ gp_hybrid_gp_prediction_frame <- function(ph,
   out$Prediction_error_variance <- out$Standard_error^2
   out$Prediction_SE_latent <- sqrt(pmax(as.numeric(fit$latent_var), 0))
   out$Prediction_Var_latent <- pmax(as.numeric(fit$latent_var), 0)
-  out$PEV_basis <- "latent total prediction error (fixed mean + hybrid effects); conditional on fitted kernel and lambda"
+  out$PEV_basis <- "latent total prediction error (fixed mean + hybrid effects); kernel scale profiled by REML given the selected lambda"
   out$Prediction_uncertainty_source <- "hybrid_gp_conditional_latent"
   out$hybrid_gp_model <- model_type
   out$hybrid_gp_lambda <- fit$lambda
@@ -1550,8 +1565,14 @@ gp_hybrid_gp_fit_joint_core <- function(y_std_vec,
   )
   x_delta <- X_joint - K_total_all_train %*% Vinv_X
   fixed_var <- rowSums((x_delta %*% M_inv) * x_delta)
-  latent_var_std <- pmax(base_var + fixed_var, 0)
-  observed_var_std <- pmax(latent_var_std + lambda, 0)
+  # The kernel/noise ratio lambda is fixed, so the GP scale is profiled:
+  # y ~ N(X beta, s2 (K + lambda I)) gives the REML estimate
+  # s2 = y'Py / (n - p) = y_train' alpha / (n - p). Up to 0.20.223 s2 was
+  # taken as 1, so posterior variances followed the kernel diagonal and not
+  # the data (test SEs above the phenotypic SD).
+  variance_scale <- gp_hybrid_gp_profiled_scale(y_train, alpha, ncol(X_train))
+  latent_var_std <- variance_scale * pmax(base_var + fixed_var, 0)
+  observed_var_std <- variance_scale * pmax(base_var + fixed_var + lambda, 0)
 
   list(
     lambda = lambda,
@@ -1565,6 +1586,7 @@ gp_hybrid_gp_fit_joint_core <- function(y_std_vec,
     prediction_std = total_std,
     latent_var_std = latent_var_std,
     observed_var_std = observed_var_std,
+    variance_scale = variance_scale,
     train_obs_idx = train_obs_idx,
     backend_runtime = "R",
     backend_device = "cpu"
@@ -1925,7 +1947,7 @@ gp_hybrid_gp_joint_prediction_frame <- function(ph,
   out$Prediction_error_variance <- out$Standard_error^2
   out$Prediction_SE_latent <- sqrt(pmax(as.numeric(fit$latent_var_std) * scale^2, 0))
   out$Prediction_Var_latent <- pmax(as.numeric(fit$latent_var_std) * scale^2, 0)
-  out$PEV_basis <- "latent total prediction error (fixed mean + hybrid effects); conditional on fitted kernel and lambda"
+  out$PEV_basis <- "latent total prediction error (fixed mean + hybrid effects); kernel scale profiled by REML given the selected lambda"
   out$Prediction_uncertainty_source <- "hybrid_gp_conditional_latent"
   out$hybrid_gp_model <- model_type
   out$hybrid_gp_lambda <- fit$lambda

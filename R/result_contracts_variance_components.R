@@ -149,6 +149,59 @@ gp_variance_components_add_per_env <- function(vc, env_genetic, env_residual,
   rbind(vc, add)
 }
 
+# Environment levels and the fitted total G x Env variance of a GP MET result,
+# for gp_met_varcomp_augment_per_env().
+gp_met_varcomp_env_info <- function(x, heter_groups = NULL) {
+  find <- function(nm) tryCatch(gp_vc_find_named_data_frame(x, nm), error = function(e) NULL)
+  env_levels <- NULL
+  env_summary <- find("env_variance_summary")
+  if (is.data.frame(env_summary) && "level" %in% names(env_summary)) {
+    env_levels <- as.character(env_summary[["level"]])
+  }
+  if (!length(env_levels) && is.list(x)) {
+    pred <- x[["predicted_values"]] %||% x[["Predicted_value"]]
+    env_col <- intersect(c(heter_groups, "Env"), names(pred))[1L]
+    if (is.data.frame(pred) && !is.na(env_col)) env_levels <- unique(as.character(pred[[env_col]]))
+  }
+  gxe_variance <- NULL
+  components <- find("var_components_summary") %||% find("var_components")
+  if (is.data.frame(components) && all(c("term_group", "kernel", "estimate") %in% names(components))) {
+    hit <- components[["term_group"]] %in% "interaction" & components[["kernel"]] %in% "total"
+    if (any(hit)) gxe_variance <- suppressWarnings(as.numeric(components[["estimate"]][which(hit)[1L]]))
+  }
+  list(env_levels = env_levels, gxe_variance = gxe_variance)
+}
+
+# Append the GxE variance row `Env!var` when the backend fitted a G x Env
+# term but left it out of its varcomp table because the estimate is zero.
+gp_met_varcomp_add_gxe_row <- function(vc, gxe_variance) {
+  gxe_variance <- suppressWarnings(as.numeric(gxe_variance))
+  if (!length(gxe_variance) || !is.finite(gxe_variance[1L]) || !is.data.frame(vc)) return(vc)
+  rn <- rownames(vc)
+  has_gxe <- any(grepl("^env!var$|g:env|gxe|interaction", tolower(rn)))
+  # KRR fits one combined kernel: its G x Env share is not identifiable
+  # separately (kernel_variance_components says so), so no GxE row there.
+  combined_kernel <- any(grepl("KRR_kernel", rn, fixed = TRUE))
+  if (has_gxe || combined_kernel || !any(grepl("!R$", rn))) return(vc)
+  add <- vc[1L, , drop = FALSE]
+  add[1L, ] <- NA
+  if ("Component" %in% names(add)) add[["Component"]] <- "Env!var"
+  if ("Components" %in% names(add)) add[["Components"]] <- max(0, gxe_variance[1L])
+  if ("Standard_error" %in% names(add)) add[["Standard_error"]] <- NA_real_
+  if ("Estimation_method" %in% names(add)) add[["Estimation_method"]] <- vc[["Estimation_method"]][1L]
+  if (gxe_variance[1L] <= sqrt(.Machine$double.eps)) {
+    if (!"Boundary" %in% names(vc)) {
+      vc[["Boundary"]] <- ""
+      add[["Boundary"]] <- NA_character_
+    }
+    add[["Boundary"]] <- "bound_at_zero"
+  }
+  rownames(add) <- "Env!var"
+  resid_first <- grep("!R$", rn)[1L]
+  rbind(vc[seq_len(resid_first - 1L), , drop = FALSE], add,
+        vc[resid_first:nrow(vc), , drop = FALSE])
+}
+
 #' Reconstruct per-environment Vg + h2 from a GP MET varcomp table
 #'
 #' Internal helper covering the two MET variance-structure layouts the GP backend
@@ -170,10 +223,15 @@ gp_variance_components_add_per_env <- function(vc, env_genetic, env_residual,
 #' @return `vc` with per-env genetic/residual/heritability rows appended, else `vc`.
 #' @keywords internal
 #' @noRd
-gp_met_varcomp_augment_per_env <- function(vc, fa_derived = NULL) {
+gp_met_varcomp_augment_per_env <- function(vc, fa_derived = NULL, env_levels = NULL,
+                                           gxe_variance = NULL) {
   if (!is.data.frame(vc) || !nrow(vc)) return(vc)
   rn <- rownames(vc)
   if (is.null(rn)) return(vc)
+  # A GxE term that the backend estimated at zero is dropped from its varcomp
+  # table (0.20.221); report it as 0 at the boundary, as before.
+  vc <- gp_met_varcomp_add_gxe_row(vc, gxe_variance)
+  rn <- rownames(vc)
   resid_idx <- grep("!R$", rn)
   if (!length(resid_idx)) return(vc)                    # no per-env residual structure
   valcol <- if ("Components" %in% names(vc)) "Components" else
@@ -185,6 +243,16 @@ gp_met_varcomp_augment_per_env <- function(vc, fa_derived = NULL) {
   resid_env <- sub("^Env_", "", sub("!R$", "", rn[resid_idx]))
   env_residual    <- stats::setNames(val[resid_idx], resid_env)
   env_residual_se <- stats::setNames(se[resid_idx],  resid_env)
+  # One residual shared by every environment (heter_resid = FALSE: labelled
+  # `Env_common!R`, or `Residual!R` on the KRR route): report it for each
+  # environment instead of as a pseudo-environment called "common"/"Residual".
+  env_levels <- unique(as.character(env_levels[!is.na(env_levels) & nzchar(env_levels)]))
+  if (length(resid_idx) == 1L && length(env_levels) > 1L && !resid_env %in% env_levels) {
+    env_residual    <- stats::setNames(rep(env_residual[[1L]], length(env_levels)), env_levels)
+    env_residual_se <- stats::setNames(rep(env_residual_se[[1L]], length(env_levels)), env_levels)
+    resid_env <- env_levels
+    resid_idx <- rep(resid_idx, length(env_levels))
+  }
 
   env_h2_se <- NULL  # set only by the FA branch (delta-method via fa_derived)
 
@@ -1597,6 +1665,35 @@ gp_vc_residual_at_zero <- function(df) {
   gp_vc_kind_mask(df, "residual") & gp_vc_boundary_status(df) == "bound_at_zero"
 }
 
+# Prediction rows whose trait / environment has its residual estimated at
+# zero (see gp_vc_residual_at_zero): the whole trait in a single-environment
+# fit, only the affected environments in a MET fit.
+gp_residual_at_zero_rows <- function(gp_result, env_values) {
+  n <- length(env_values)
+  out <- rep(FALSE, n)
+  if (!n || is.null(gp_result) || !is.list(gp_result)) {
+    return(out)
+  }
+  varcomp <- tryCatch(gp_vc_find_named_data_frame(gp_result, c("varcomp", "var_components_ai")),
+                      error = function(e) NULL)
+  at_zero <- if (is.data.frame(varcomp) && nrow(varcomp)) gp_vc_residual_at_zero(varcomp) else logical(0L)
+  if (!any(at_zero)) {
+    return(out)
+  }
+  env_values <- as.character(env_values)
+  if (length(unique(env_values[!is.na(env_values)])) <= 1L) {
+    return(rep(TRUE, n))
+  }
+  comp_col <- gp_contract_first_name(names(varcomp), c("Component", "component", "term", "source"))
+  labels <- if (!is.na(comp_col)) as.character(varcomp[[comp_col]]) else rownames(varcomp)
+  not_estimable_env <- sub("^Env_", "", sub("!R$", "", labels[at_zero]))
+  # a common residual (one term for all environments) at zero affects every row
+  if (any(!not_estimable_env %in% env_values)) {
+    return(rep(TRUE, n))
+  }
+  env_values %in% not_estimable_env
+}
+
 gp_vc_component_boundary <- function(df, kind = c("genetic", "residual")) {
   kind <- match.arg(kind)
   if (!is.data.frame(df) || !nrow(df)) {
@@ -2331,8 +2428,15 @@ gp_matrix_to_component_table <- function(mat,
   # Phase 3.27: apply caller-supplied env labels when present and matching
   # the matrix size (rescues numpy-array Cov/Cor that came from Python
   # without dimnames -- env_covariance_fa is the canonical case).
+  # Only for matrices without informative labels of their own; a labelled
+  # matrix keeps its dimnames.
+  informative <- function(x) {
+    !is.null(x) && length(x) && all(nzchar(x)) && !anyDuplicated(x) &&
+      !all(grepl("^[0-9]+$", x))
+  }
   if (!is.null(env_labels) && length(env_labels) == nrow(mat) &&
-      length(env_labels) == ncol(mat)) {
+      length(env_labels) == ncol(mat) && !anyDuplicated(env_labels) &&
+      !(informative(rownames(mat)) && informative(colnames(mat)))) {
     dimnames(mat) <- list(as.character(env_labels), as.character(env_labels))
   }
   row_labs <- rownames(mat)
